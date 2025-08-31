@@ -24,13 +24,32 @@ export const msalConfig: Configuration = {
 };
 
 // Scopes for Microsoft Graph API
-// For Replit deployments, use the Replit app URL
-const replitUrl = process.env.REPL_SLUG && process.env.REPL_OWNER 
-  ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-  : 'http://localhost:5000';
+// Determine the base URL - always use HTTPS in production
+const getBaseUrl = () => {
+  // If explicit redirect URI is set, extract base URL from it
+  if (process.env.AZURE_REDIRECT_URI) {
+    const url = new URL(process.env.AZURE_REDIRECT_URI);
+    return `${url.protocol}//${url.host}`;
+  }
+  
+  // For Replit deployments
+  if (process.env.REPL_SLUG && process.env.REPL_OWNER) {
+    return `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+  }
+  
+  // For production domains (always use HTTPS)
+  if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS) {
+    return 'https://scdp.synozur.com';
+  }
+  
+  // Only use HTTP for local development
+  return 'http://localhost:5000';
+};
 
-export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || `${replitUrl}/api/auth/callback`;
-export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || replitUrl;
+const baseUrl = getBaseUrl();
+
+export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || `${baseUrl}/api/auth/callback`;
+export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || baseUrl;
 
 // Create MSAL application instance only if configured
 export const msalInstance = isConfigured 

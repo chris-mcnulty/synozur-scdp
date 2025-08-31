@@ -504,7 +504,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Service account and admin logins for development/demo
       const serviceAccounts: Record<string, string> = {
-        "sarah.chen@synozur.com": "admin123",  // Existing admin
+        "chris.mcnulty@synozur.com": "admin123",  // Chris McNulty - Admin
+        "admin@synozur.com": "admin123",  // Admin account
+        "sarah.chen@synozur.com": "admin123",  // Demo admin
         "service.admin@synozur.com": "ServiceAdmin2025!",  // Service account
       };
       
