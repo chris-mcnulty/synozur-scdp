@@ -46,6 +46,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
+  // User management
+  app.get("/api/users", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/users", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = insertUserSchema.parse(req.body);
+      const user = await storage.createUser(validatedData);
+      res.status(201).json(user);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid user data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/users/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = await storage.updateUser(req.params.id, req.body);
+      res.json(user);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
   // Dashboard metrics
   app.get("/api/dashboard/metrics", requireAuth, async (req, res) => {
     try {

@@ -31,12 +31,20 @@ export default function Login() {
     if (sessionId) {
       // Store session and redirect
       localStorage.setItem('sessionId', sessionId);
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      navigate("/");
+      // Force a page reload to reset the auth state
+      window.location.href = "/";
     } else if (error) {
+      let errorMessage = error.replace(/_/g, ' ');
+      if (error === 'redirect_uri_mismatch') {
+        errorMessage = 'Redirect URI mismatch. Please check Azure AD configuration.';
+      } else if (error === 'invalid_client_credentials') {
+        errorMessage = 'Invalid client credentials. Please check your Azure AD secret.';
+      } else if (error === 'invalid_authorization_code') {
+        errorMessage = 'Invalid or expired authorization code. Please try again.';
+      }
       toast({
         title: "SSO Login Failed",
-        description: error.replace(/_/g, ' '),
+        description: errorMessage,
         variant: "destructive",
       });
     }

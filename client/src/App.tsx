@@ -10,6 +10,7 @@ import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
 import RateManagement from "@/pages/rate-management";
+import Users from "@/pages/users";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
@@ -55,6 +56,9 @@ function Router() {
       </Route>
       <Route path="/rates">
         {user ? <RateManagement /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/users">
+        {user ? <Users /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />
