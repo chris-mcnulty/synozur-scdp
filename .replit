@@ -39,3 +39,6 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
+
+[run.env]
+AZURE_REDIRECT_URI=https://scdp.synozur.com/api/auth/callback
