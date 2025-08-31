@@ -256,23 +256,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimates", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { name, clientId, projectId, validDays } = req.body;
+      console.log("[DEBUG] Creating estimate with:", { name, clientId, projectId, validDays });
+      
       const validUntil = validDays ? new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : null;
+      
+      // Handle the "none" value from the form
+      const cleanProjectId = projectId === 'none' || projectId === '' ? null : projectId;
       
       const validatedData = insertEstimateSchema.parse({
         name,
         clientId,
-        projectId: projectId || null,
+        projectId: cleanProjectId,
+        version: 1,
         status: "draft",
+        totalHours: null,
+        totalFees: null,
         validUntil,
       });
       
+      console.log("[DEBUG] Validated data:", validatedData);
       const estimate = await storage.createEstimate(validatedData);
+      console.log("[DEBUG] Created estimate:", estimate.id);
       res.status(201).json(estimate);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create estimate:", error);
       if (error instanceof z.ZodError) {
+        console.error("[ERROR] Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid estimate data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create estimate" });
+      res.status(500).json({ 
+        message: "Failed to create estimate",
+        details: error.message || "Unknown error"
+      });
     }
   });
 
