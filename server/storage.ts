@@ -160,9 +160,9 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(projects, eq(estimates.projectId, projects.id))
       .orderBy(desc(estimates.createdAt));
     
-    return rows.map(row => ({
+    return rows.filter(row => row.clients !== null).map(row => ({
       ...row.estimates,
-      client: row.clients!,
+      client: row.clients as Client,
       project: row.projects || undefined
     }));
   }

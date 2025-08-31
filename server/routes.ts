@@ -340,7 +340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Microsoft Entra ID SSO routes
   app.get("/api/auth/sso/login", async (req, res) => {
-    if (!isEntraConfigured) {
+    if (!isEntraConfigured || !msalInstance) {
       return res.status(501).json({ 
         message: "SSO not configured. Please set AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET environment variables." 
       });
@@ -356,7 +356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/auth/callback", async (req, res) => {
-    if (!isEntraConfigured) {
+    if (!isEntraConfigured || !msalInstance) {
       return res.redirect("/login?error=sso_not_configured");
     }
     

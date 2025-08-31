@@ -1,16 +1,21 @@
 import { ConfidentialClientApplication, Configuration } from '@azure/msal-node';
 
+// Check if Azure AD is configured
+const isConfigured = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET);
+
 // Microsoft Entra ID (Azure AD) configuration
 export const msalConfig: Configuration = {
   auth: {
-    clientId: process.env.AZURE_CLIENT_ID || '',
+    clientId: process.env.AZURE_CLIENT_ID || 'placeholder',
     authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || 'common'}`,
-    clientSecret: process.env.AZURE_CLIENT_SECRET || '',
+    clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
   },
   system: {
     loggerOptions: {
       loggerCallback(loglevel: any, message: string) {
-        console.log(message);
+        if (isConfigured) {
+          console.log(message);
+        }
       },
       piiLoggingEnabled: false,
       logLevel: 3,
@@ -22,8 +27,10 @@ export const msalConfig: Configuration = {
 export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || 'http://localhost:5000/api/auth/callback';
 export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || 'http://localhost:5000';
 
-// Create MSAL application instance
-export const msalInstance = new ConfidentialClientApplication(msalConfig);
+// Create MSAL application instance only if configured
+export const msalInstance = isConfigured 
+  ? new ConfidentialClientApplication(msalConfig)
+  : null;
 
 // Authentication request parameters
 export const authCodeRequest = {
