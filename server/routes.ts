@@ -398,16 +398,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.redirect("/login?error=no_account");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error during token acquisition:", error);
-      res.redirect("/login?error=token_acquisition_failed");
+      console.error("Error details:", {
+        message: error.message,
+        errorCode: error.errorCode,
+        errorMessage: error.errorMessage,
+        correlationId: error.correlationId
+      });
+      
+      // Provide more specific error message based on error type
+      let errorParam = "token_acquisition_failed";
+      if (error.errorCode === "invalid_grant") {
+        errorParam = "invalid_authorization_code";
+      } else if (error.errorCode === "invalid_client") {
+        errorParam = "invalid_client_credentials";
+      } else if (error.errorMessage?.includes("redirect")) {
+        errorParam = "redirect_uri_mismatch";
+      }
+      
+      res.redirect(`/login?error=${errorParam}`);
     }
   });
 
   app.get("/api/auth/sso/status", async (req, res) => {
+    const { REDIRECT_URI } = await import("./auth/entra-config");
     res.json({ 
       configured: !!isEntraConfigured,
-      tenantId: process.env.AZURE_TENANT_ID || null
+      tenantId: process.env.AZURE_TENANT_ID || null,
+      redirectUri: REDIRECT_URI,
+      clientId: process.env.AZURE_CLIENT_ID || null
     });
   });
   

@@ -24,8 +24,13 @@ export const msalConfig: Configuration = {
 };
 
 // Scopes for Microsoft Graph API
-export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || 'http://localhost:5000/api/auth/callback';
-export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || 'http://localhost:5000';
+// For Replit deployments, use the Replit app URL
+const replitUrl = process.env.REPL_SLUG && process.env.REPL_OWNER 
+  ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+  : 'http://localhost:5000';
+
+export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || `${replitUrl}/api/auth/callback`;
+export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || replitUrl;
 
 // Create MSAL application instance only if configured
 export const msalInstance = isConfigured 
