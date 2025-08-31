@@ -1,10 +1,11 @@
 import { 
-  users, clients, projects, roles, estimates, estimateEpics, estimateStages, 
+  users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
-  type Estimate, type InsertEstimate, type TimeEntry, type InsertTimeEntry,
+  type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
+  type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense
 } from "@shared/schema";
 import { db } from "./db";
@@ -12,6 +13,7 @@ import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
+  getUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
@@ -42,6 +44,13 @@ export interface IStorage {
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate>;
   
+  // Estimate Line Items
+  getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]>;
+  createEstimateLineItem(lineItem: InsertEstimateLineItem): Promise<EstimateLineItem>;
+  updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
+  deleteEstimateLineItem(id: string): Promise<void>;
+  bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]>;
+  
   // Time entries
   getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   createTimeEntry(timeEntry: InsertTimeEntry): Promise<TimeEntry>;
@@ -62,6 +71,10 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(users.name);
+  }
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -186,6 +199,30 @@ export class DatabaseStorage implements IStorage {
   async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate> {
     const [estimate] = await db.update(estimates).set(updateEstimate).where(eq(estimates.id, id)).returning();
     return estimate;
+  }
+
+  async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {
+    return await db.select().from(estimateLineItems)
+      .where(eq(estimateLineItems.estimateId, estimateId))
+      .orderBy(estimateLineItems.sortOrder);
+  }
+
+  async createEstimateLineItem(insertLineItem: InsertEstimateLineItem): Promise<EstimateLineItem> {
+    const [lineItem] = await db.insert(estimateLineItems).values(insertLineItem).returning();
+    return lineItem;
+  }
+
+  async updateEstimateLineItem(id: string, updateLineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem> {
+    const [lineItem] = await db.update(estimateLineItems).set(updateLineItem).where(eq(estimateLineItems.id, id)).returning();
+    return lineItem;
+  }
+
+  async deleteEstimateLineItem(id: string): Promise<void> {
+    await db.delete(estimateLineItems).where(eq(estimateLineItems.id, id));
+  }
+
+  async bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]> {
+    return await db.insert(estimateLineItems).values(lineItems).returning();
   }
 
   async getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {

@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
 import Estimates from "@/pages/estimates";
+import EstimateDetail from "@/pages/estimate-detail";
 import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
@@ -44,6 +45,9 @@ function Router() {
       </Route>
       <Route path="/estimates">
         {user ? <Estimates /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/estimates/:id">
+        {user ? <EstimateDetail /> : <Redirect to="/login" />}
       </Route>
       <Route path="/time">
         {user ? <TimeTracking /> : <Redirect to="/login" />}

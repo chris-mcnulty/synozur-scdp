@@ -185,7 +185,12 @@ export default function Estimates() {
                       <TableCell>{format(new Date(estimate.validUntil), "MMM d, yyyy")}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
-                          <Button size="sm" variant="ghost" data-testid={`view-estimate-${estimate.id}`}>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            data-testid={`view-estimate-${estimate.id}`}
+                            onClick={() => window.location.href = `/estimates/${estimate.id}`}
+                          >
                             <Eye className="w-4 h-4" />
                           </Button>
                           <Button size="sm" variant="ghost" data-testid={`edit-estimate-${estimate.id}`}>

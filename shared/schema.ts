@@ -58,6 +58,33 @@ export const estimates = pgTable("estimates", {
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
   validUntil: date("valid_until"),
+  // Factor multipliers (centralized values)
+  sizeSmallMultiplier: decimal("size_small_multiplier", { precision: 4, scale: 2 }).default('1.00'),
+  sizeMediumMultiplier: decimal("size_medium_multiplier", { precision: 4, scale: 2 }).default('1.05'),
+  sizeLargeMultiplier: decimal("size_large_multiplier", { precision: 4, scale: 2 }).default('1.10'),
+  complexitySmallMultiplier: decimal("complexity_small_multiplier", { precision: 4, scale: 2 }).default('1.00'),
+  complexityMediumMultiplier: decimal("complexity_medium_multiplier", { precision: 4, scale: 2 }).default('1.05'),
+  complexityLargeMultiplier: decimal("complexity_large_multiplier", { precision: 4, scale: 2 }).default('1.10'),
+  confidenceHighMultiplier: decimal("confidence_high_multiplier", { precision: 4, scale: 2 }).default('1.00'),
+  confidenceMediumMultiplier: decimal("confidence_medium_multiplier", { precision: 4, scale: 2 }).default('1.10'),
+  confidenceLowMultiplier: decimal("confidence_low_multiplier", { precision: 4, scale: 2 }).default('1.20'),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Estimate Line Items with factors
+export const estimateLineItems = pgTable("estimate_line_items", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  description: text("description").notNull(),
+  category: text("category"), // Optional category/phase
+  baseHours: decimal("base_hours", { precision: 10, scale: 2 }).notNull(),
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  size: text("size").notNull().default("small"), // small, medium, large
+  complexity: text("complexity").notNull().default("small"), // small, medium, large
+  confidence: text("confidence").notNull().default("high"), // high, medium, low
+  adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull(), // base_hours * multipliers
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(), // adjusted_hours * rate
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -212,7 +239,19 @@ export const estimatesRelations = relations(estimates, ({ one, many }) => ({
     fields: [estimates.projectId],
     references: [projects.id],
   }),
+  client: one(clients, {
+    fields: [estimates.clientId],
+    references: [clients.id],
+  }),
   epics: many(estimateEpics),
+  lineItems: many(estimateLineItems),
+}));
+
+export const estimateLineItemsRelations = relations(estimateLineItems, ({ one }) => ({
+  estimate: one(estimates, {
+    fields: [estimateLineItems.estimateId],
+    references: [estimates.id],
+  }),
 }));
 
 export const estimateEpicsRelations = relations(estimateEpics, ({ one, many }) => ({
@@ -321,6 +360,11 @@ export const insertEstimateSchema = createInsertSchema(estimates).omit({
   createdAt: true,
 });
 
+export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
@@ -346,6 +390,9 @@ export type InsertRole = z.infer<typeof insertRoleSchema>;
 
 export type Estimate = typeof estimates.$inferSelect;
 export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
+
+export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
+export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
 
 export type EstimateEpic = typeof estimateEpics.$inferSelect;
 export type EstimateStage = typeof estimateStages.$inferSelect;

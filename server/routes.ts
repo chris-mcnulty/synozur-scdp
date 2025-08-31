@@ -169,6 +169,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Estimate line items
+  app.get("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
+    try {
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      res.json(lineItems);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch line items" });
+    }
+  });
+
+  app.post("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
+    try {
+      const { insertEstimateLineItemSchema } = await import("@shared/schema");
+      const validatedData = insertEstimateLineItemSchema.parse({
+        ...req.body,
+        estimateId: req.params.id,
+      });
+      const lineItem = await storage.createEstimateLineItem(validatedData);
+      res.json(lineItem);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid line item data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create line item" });
+    }
+  });
+
+  app.patch("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
+    try {
+      const lineItem = await storage.updateEstimateLineItem(req.params.id, req.body);
+      res.json(lineItem);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update line item" });
+    }
+  });
+
+  app.delete("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEstimateLineItem(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete line item" });
+    }
+  });
+
+  // Excel export template
+  app.get("/api/estimates/:id/export-excel", requireAuth, async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      const estimate = await storage.getEstimate(req.params.id);
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      
+      const worksheetData = [
+        ["Estimate Line Items Template"],
+        [],
+        ["Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Adjusted Hours", "Total Amount"],
+        ...lineItems.map(item => [
+          item.description,
+          item.category || "",
+          Number(item.baseHours),
+          Number(item.rate),
+          item.size,
+          item.complexity,
+          item.confidence,
+          Number(item.adjustedHours),
+          Number(item.totalAmount)
+        ])
+      ];
+
+      // Add empty rows for new items
+      for (let i = 0; i < 20; i++) {
+        worksheetData.push(["", "", "", "", "small", "small", "high", "", ""]);
+      }
+
+      const ws = xlsx.utils.aoa_to_sheet(worksheetData);
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, "Line Items");
+
+      const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="estimate-${req.params.id}.xlsx"`);
+      res.send(buffer);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to export Excel file" });
+    }
+  });
+
+  // Excel import
+  app.post("/api/estimates/:id/import-excel", requireAuth, async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      const { insertEstimateLineItemSchema } = await import("@shared/schema");
+      
+      // Parse base64 file data
+      const fileData = req.body.file;
+      const buffer = Buffer.from(fileData, "base64");
+      
+      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      // Get estimate to calculate multipliers
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+      
+      // Skip header rows and process data
+      const lineItems = [];
+      for (let i = 3; i < data.length; i++) {
+        const row = data[i];
+        if (!row[0] || !row[2] || !row[3]) continue; // Skip if no description, hours, or rate
+        
+        const size = row[4] || "small";
+        const complexity = row[5] || "small";
+        const confidence = row[6] || "high";
+        
+        // Calculate multipliers
+        let sizeMultiplier = 1.0;
+        if (size === "medium") sizeMultiplier = Number(estimate.sizeMediumMultiplier || 1.05);
+        else if (size === "large") sizeMultiplier = Number(estimate.sizeLargeMultiplier || 1.10);
+        
+        let complexityMultiplier = 1.0;
+        if (complexity === "medium") complexityMultiplier = Number(estimate.complexityMediumMultiplier || 1.05);
+        else if (complexity === "large") complexityMultiplier = Number(estimate.complexityLargeMultiplier || 1.10);
+        
+        let confidenceMultiplier = 1.0;
+        if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
+        else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
+        
+        const baseHours = Number(row[2]);
+        const rate = Number(row[3]);
+        const adjustedHours = baseHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+        const totalAmount = adjustedHours * rate;
+        
+        lineItems.push({
+          estimateId: req.params.id,
+          description: row[0],
+          category: row[1] || null,
+          baseHours: baseHours.toString(),
+          rate: rate.toString(),
+          size,
+          complexity,
+          confidence,
+          adjustedHours: adjustedHours.toFixed(2),
+          totalAmount: totalAmount.toFixed(2),
+          sortOrder: i - 3
+        });
+      }
+      
+      // Delete existing line items and insert new ones
+      const existingItems = await storage.getEstimateLineItems(req.params.id);
+      for (const item of existingItems) {
+        await storage.deleteEstimateLineItem(item.id);
+      }
+      
+      const createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
+      res.json({ success: true, itemsCreated: createdItems.length });
+    } catch (error) {
+      console.error("Excel import error:", error);
+      res.status(500).json({ message: "Failed to import Excel file" });
+    }
+  });
+
   // Time entries
   app.get("/api/time-entries", requireAuth, async (req, res) => {
     try {
