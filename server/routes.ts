@@ -502,41 +502,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, password } = req.body;
       
-      // Demo authentication - accept specific demo credentials
-      // In production, this would validate against real user database with hashed passwords
-      if (email === "demo@synozur.com" && password === "demo123") {
-        const sessionId = Math.random().toString(36).substring(7);
-        const user = {
-          id: "demo-user-id",
-          email: "demo@synozur.com",
-          name: "Demo User",
-          role: "admin",
-          isActive: true
-        };
-        
-        sessions.set(sessionId, user);
-        
-        return res.json({
-          ...user,
-          sessionId
+      // Service account and admin logins for development/demo
+      const serviceAccounts: Record<string, string> = {
+        "sarah.chen@synozur.com": "admin123",  // Existing admin
+        "service.admin@synozur.com": "ServiceAdmin2025!",  // Service account
+      };
+      
+      // Check if this is a service account login
+      if (serviceAccounts[email]) {
+        if (serviceAccounts[email] === password) {
+          // Get user from database
+          const user = await storage.getUserByEmail(email);
+          if (!user) {
+            // Create service admin if doesn't exist
+            const newUser = await storage.createUser({
+              email,
+              name: email === "service.admin@synozur.com" ? "Service Admin" : "Sarah Chen",
+              role: "admin",
+              isActive: true
+            });
+            const sessionId = Math.random().toString(36).substring(7);
+            sessions.set(sessionId, newUser);
+            return res.json({
+              ...newUser,
+              sessionId
+            });
+          }
+          
+          const sessionId = Math.random().toString(36).substring(7);
+          sessions.set(sessionId, user);
+          
+          return res.json({
+            ...user,
+            sessionId
+          });
+        } else {
+          return res.status(401).json({ message: "Invalid password" });
+        }
+      }
+      
+      // For regular users, suggest using SSO
+      const user = await storage.getUserByEmail(email);
+      if (user) {
+        return res.status(401).json({ 
+          message: "Please use 'Sign in with Microsoft' for SSO authentication. Service accounts can use password login." 
         });
       }
       
-      // Check if user exists in database
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-      
-      // For demo, accept any password for existing users
-      // In production, you would verify the password hash
-      const sessionId = Math.random().toString(36).substring(7);
-      sessions.set(sessionId, user);
-      
-      res.json({
-        ...user,
-        sessionId
-      });
+      return res.status(401).json({ message: "User not found. Please sign in with Microsoft to create an account." });
     } catch (error) {
       res.status(500).json({ message: "Login failed" });
     }
