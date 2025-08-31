@@ -1,0 +1,300 @@
+import { useState } from "react";
+import { Layout } from "@/components/layout/layout";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
+
+interface Estimate {
+  id: string;
+  name: string;
+  clientId: string;
+  clientName: string;
+  projectId?: string;
+  projectName?: string;
+  status: 'draft' | 'sent' | 'approved' | 'rejected';
+  totalHours: number;
+  totalCost: number;
+  createdAt: string;
+  validUntil: string;
+}
+
+export default function Estimates() {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
+  const { toast } = useToast();
+
+  const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates"],
+  });
+
+  const { data: clients = [] } = useQuery<any[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: projects = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const createEstimate = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/estimates", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      setCreateDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Estimate created successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create estimate",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getStatusBadge = (status: string) => {
+    const styles = {
+      draft: "bg-gray-100 text-gray-700",
+      sent: "bg-blue-100 text-blue-700",
+      approved: "bg-green-100 text-green-700",
+      rejected: "bg-red-100 text-red-700",
+    };
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[status as keyof typeof styles]}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
+  };
+
+  return (
+    <Layout>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold" data-testid="estimates-title">Estimates</h2>
+            <p className="text-muted-foreground" data-testid="estimates-subtitle">
+              Create and manage project estimates for clients
+            </p>
+          </div>
+          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-new-estimate">
+            <Plus className="w-4 h-4 mr-2" />
+            New Estimate
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Estimates</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{estimates.length}</div>
+              <p className="text-xs text-muted-foreground">All time</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending Approval</CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {estimates.filter(e => e.status === 'sent').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Awaiting client response</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Approved</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {estimates.filter(e => e.status === 'approved').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Ready to start</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                ${estimates.reduce((sum, e) => sum + e.totalCost, 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">All estimates</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Estimate List</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading estimates...</div>
+            ) : estimates.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No estimates yet. Create your first estimate to get started.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Estimate Name</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Total Hours</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                    <TableHead>Valid Until</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {estimates.map((estimate) => (
+                    <TableRow key={estimate.id} data-testid={`estimate-row-${estimate.id}`}>
+                      <TableCell className="font-medium">{estimate.name}</TableCell>
+                      <TableCell>{estimate.clientName}</TableCell>
+                      <TableCell>{estimate.projectName || "-"}</TableCell>
+                      <TableCell>{getStatusBadge(estimate.status)}</TableCell>
+                      <TableCell>{estimate.totalHours}</TableCell>
+                      <TableCell>${estimate.totalCost.toLocaleString()}</TableCell>
+                      <TableCell>{format(new Date(estimate.validUntil), "MMM d, yyyy")}</TableCell>
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button size="sm" variant="ghost" data-testid={`view-estimate-${estimate.id}`}>
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" data-testid={`edit-estimate-${estimate.id}`}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          {estimate.status === 'draft' && (
+                            <Button size="sm" variant="ghost" data-testid={`send-estimate-${estimate.id}`}>
+                              <Send className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" data-testid={`download-estimate-${estimate.id}`}>
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Create New Estimate</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              createEstimate.mutate({
+                name: formData.get('name'),
+                clientId: formData.get('clientId'),
+                projectId: formData.get('projectId'),
+                validDays: parseInt(formData.get('validDays') as string) || 30,
+              });
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Estimate Name</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    placeholder="e.g., Q1 2024 Digital Transformation"
+                    required
+                    data-testid="input-estimate-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="clientId">Client</Label>
+                  <Select name="clientId" required>
+                    <SelectTrigger data-testid="select-client">
+                      <SelectValue placeholder="Select a client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map(client => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="projectId">Project (Optional)</Label>
+                  <Select name="projectId">
+                    <SelectTrigger data-testid="select-project">
+                      <SelectValue placeholder="Select a project or leave empty for new" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">No project</SelectItem>
+                      {projects.map(project => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="validDays">Valid For (Days)</Label>
+                  <Input
+                    id="validDays"
+                    name="validDays"
+                    type="number"
+                    defaultValue="30"
+                    min="1"
+                    max="365"
+                    data-testid="input-valid-days"
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createEstimate.isPending} data-testid="button-create-estimate">
+                  {createEstimate.isPending ? "Creating..." : "Create Estimate"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}

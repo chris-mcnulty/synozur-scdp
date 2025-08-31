@@ -50,11 +50,14 @@ export const projects = pgTable("projects", {
 // Estimates
 export const estimates = pgTable("estimates", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  name: text("name").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id),
+  projectId: uuid("project_id").references(() => projects.id), // Optional - can create estimate without project
   version: integer("version").notNull().default(1),
-  status: text("status").notNull().default("draft"), // draft, approved, archived
+  status: text("status").notNull().default("draft"), // draft, sent, approved, rejected
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
+  validUntil: date("valid_until"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

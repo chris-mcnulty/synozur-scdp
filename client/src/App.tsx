@@ -5,22 +5,57 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
+import Estimates from "@/pages/estimates";
 import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
 import RateManagement from "@/pages/rate-management";
+import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
+import { useQuery } from "@tanstack/react-query";
+import { Redirect } from "wouter";
 
 function Router() {
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["/api/auth/user"],
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/projects" component={Projects} />
-      <Route path="/time" component={TimeTracking} />
-      <Route path="/expenses" component={Expenses} />
-      <Route path="/billing" component={Billing} />
-      <Route path="/rates" component={RateManagement} />
+      <Route path="/login" component={Login} />
+      <Route path="/">
+        {user ? <Dashboard /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/dashboard">
+        {user ? <Dashboard /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/projects">
+        {user ? <Projects /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/estimates">
+        {user ? <Estimates /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/time">
+        {user ? <TimeTracking /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/expenses">
+        {user ? <Expenses /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/billing">
+        {user ? <Billing /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/rates">
+        {user ? <RateManagement /> : <Redirect to="/login" />}
+      </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>

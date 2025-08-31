@@ -1,19 +1,74 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Search, Filter, FolderOpen } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
 
 export default function Projects() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
+  const { toast } = useToast();
 
   const { data: projects, isLoading } = useQuery<ProjectWithClient[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: clients = [] } = useQuery<any[]>({
+    queryKey: ["/api/clients"],
+  });
+
+  const createProject = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/projects", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setCreateDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Project created successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create project",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createClient = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/clients", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setCreateClientDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Client created successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create client",
+        variant: "destructive",
+      });
+    },
   });
 
   const filteredProjects = projects?.filter(project => {
@@ -34,10 +89,16 @@ export default function Projects() {
               Manage project estimates, tracking, and delivery
             </p>
           </div>
-          <Button data-testid="button-new-project">
-            <Plus className="w-4 h-4 mr-2" />
-            New Project
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setCreateClientDialogOpen(true)} data-testid="button-new-client">
+              <Plus className="w-4 h-4 mr-2" />
+              New Client
+            </Button>
+            <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-new-project">
+              <Plus className="w-4 h-4 mr-2" />
+              New Project
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -96,7 +157,7 @@ export default function Projects() {
                     <h3 className="text-lg font-medium mb-2">No projects found</h3>
                     <p>Create your first project to get started with SCDP.</p>
                   </div>
-                  <Button className="mt-4" data-testid="button-create-first-project">
+                  <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Project
                   </Button>
@@ -165,6 +226,180 @@ export default function Projects() {
             ))
           )}
         </div>
+
+        {/* Create Project Dialog */}
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Create New Project</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              createProject.mutate({
+                name: formData.get('name'),
+                clientId: formData.get('clientId'),
+                code: formData.get('code'),
+                startDate: formData.get('startDate'),
+                endDate: formData.get('endDate'),
+                commercialScheme: formData.get('commercialScheme'),
+                status: 'active',
+              });
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Project Name</Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    placeholder="e.g., Digital Transformation Phase 1"
+                    required
+                    data-testid="input-project-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="code">Project Code</Label>
+                  <Input
+                    id="code"
+                    name="code"
+                    placeholder="e.g., ACME-2024-001"
+                    required
+                    data-testid="input-project-code"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="clientId">Client</Label>
+                  <Select name="clientId" required>
+                    <SelectTrigger data-testid="select-client">
+                      <SelectValue placeholder="Select a client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map(client => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="commercialScheme">Commercial Scheme</Label>
+                  <Select name="commercialScheme" required>
+                    <SelectTrigger data-testid="select-scheme">
+                      <SelectValue placeholder="Select commercial scheme" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tm">Time & Materials</SelectItem>
+                      <SelectItem value="retainer">Retainer</SelectItem>
+                      <SelectItem value="milestone">Milestone</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="startDate">Start Date</Label>
+                    <Input
+                      id="startDate"
+                      name="startDate"
+                      type="date"
+                      data-testid="input-start-date"
+                    />
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="endDate">End Date</Label>
+                    <Input
+                      id="endDate"
+                      name="endDate"
+                      type="date"
+                      data-testid="input-end-date"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createProject.isPending} data-testid="button-create-project">
+                  {createProject.isPending ? "Creating..." : "Create Project"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Client Dialog */}
+        <Dialog open={createClientDialogOpen} onOpenChange={setCreateClientDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Client</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              createClient.mutate({
+                name: formData.get('name'),
+                currency: formData.get('currency') || 'USD',
+                billingContact: formData.get('billingContact'),
+              });
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="clientName">Client Name</Label>
+                  <Input
+                    id="clientName"
+                    name="name"
+                    placeholder="e.g., Acme Corporation"
+                    required
+                    data-testid="input-client-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="billingContact">Billing Contact Email</Label>
+                  <Input
+                    id="billingContact"
+                    name="billingContact"
+                    type="email"
+                    placeholder="billing@acme.com"
+                    data-testid="input-billing-contact"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="currency">Currency</Label>
+                  <Select name="currency" defaultValue="USD">
+                    <SelectTrigger data-testid="select-currency">
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="GBP">GBP</SelectItem>
+                      <SelectItem value="CAD">CAD</SelectItem>
+                      <SelectItem value="AUD">AUD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateClientDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createClient.isPending} data-testid="button-create-client">
+                  {createClient.isPending ? "Creating..." : "Create Client"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

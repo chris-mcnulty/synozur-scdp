@@ -36,6 +36,7 @@ export interface IStorage {
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
   
   // Estimates
+  getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]>;
   getEstimate(id: string): Promise<Estimate | undefined>;
   getEstimatesByProject(projectId: string): Promise<Estimate[]>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
@@ -151,6 +152,19 @@ export class DatabaseStorage implements IStorage {
   async updateRole(id: string, updateRole: Partial<InsertRole>): Promise<Role> {
     const [role] = await db.update(roles).set(updateRole).where(eq(roles.id, id)).returning();
     return role;
+  }
+
+  async getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]> {
+    const rows = await db.select().from(estimates)
+      .leftJoin(clients, eq(estimates.clientId, clients.id))
+      .leftJoin(projects, eq(estimates.projectId, projects.id))
+      .orderBy(desc(estimates.createdAt));
+    
+    return rows.map(row => ({
+      ...row.estimates,
+      client: row.clients!,
+      project: row.projects || undefined
+    }));
   }
 
   async getEstimate(id: string): Promise<Estimate | undefined> {

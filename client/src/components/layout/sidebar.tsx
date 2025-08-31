@@ -81,6 +81,12 @@ export function Sidebar() {
             label="Projects"
           />
           
+          <SidebarItem
+            href="/estimates"
+            icon={<FileText />}
+            label="Estimates"
+          />
+          
           <SidebarSection title="Operations" />
           
           <SidebarItem
@@ -97,7 +103,7 @@ export function Sidebar() {
           
           <SidebarItem
             href="/billing"
-            icon={<FileText />}
+            icon={<DollarSign />}
             label="Billing"
           />
           
@@ -105,7 +111,7 @@ export function Sidebar() {
           
           <SidebarItem
             href="/rates"
-            icon={<DollarSign />}
+            icon={<Receipt />}
             label="Rate Management"
             badge="Admin"
             requiredRoles={["admin"]}

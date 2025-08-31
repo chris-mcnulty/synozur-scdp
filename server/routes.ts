@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Extend Express Request interface to include user
@@ -20,16 +20,18 @@ declare global {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware (simplified - in production would use proper SSO)
+  // Session storage (in-memory for demo, use Redis in production)
+  const sessions: Map<string, any> = new Map();
+  
+  // Auth middleware
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-    // For demo purposes, set a mock user
-    req.user = {
-      id: "admin-user-id",
-      email: "sarah.chen@synozur.com",
-      name: "Sarah Chen",
-      role: "admin",
-      isActive: true
-    };
+    const sessionId = req.headers['x-session-id'] as string;
+    
+    if (!sessionId || !sessions.has(sessionId)) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    req.user = sessions.get(sessionId);
     next();
   };
 
@@ -211,6 +213,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Estimates
+  app.get("/api/estimates", requireAuth, async (req, res) => {
+    try {
+      const estimates = await storage.getEstimates();
+      // Transform the data to include client and project names
+      const estimatesWithNames = estimates.map(est => ({
+        id: est.id,
+        name: est.name,
+        clientId: est.clientId,
+        clientName: est.client.name,
+        projectId: est.projectId,
+        projectName: est.project?.name,
+        status: est.status,
+        totalHours: est.totalHours ? parseFloat(est.totalHours) : 0,
+        totalCost: est.totalFees ? parseFloat(est.totalFees) : 0,
+        validUntil: est.validUntil,
+        createdAt: est.createdAt,
+      }));
+      res.json(estimatesWithNames);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch estimates" });
+    }
+  });
+
+  app.get("/api/estimates/:id", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch estimate" });
+    }
+  });
+
+  app.post("/api/estimates", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { name, clientId, projectId, validDays } = req.body;
+      const validUntil = validDays ? new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : null;
+      
+      const validatedData = insertEstimateSchema.parse({
+        name,
+        clientId,
+        projectId: projectId || null,
+        status: "draft",
+        validUntil,
+      });
+      
+      const estimate = await storage.createEstimate(validatedData);
+      res.status(201).json(estimate);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid estimate data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create estimate" });
+    }
+  });
+
+  app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const estimate = await storage.updateEstimate(req.params.id, req.body);
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update estimate" });
+    }
+  });
+
+  // Authentication endpoints
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Demo authentication - accept specific demo credentials
+      // In production, this would validate against real user database with hashed passwords
+      if (email === "demo@synozur.com" && password === "demo123") {
+        const sessionId = Math.random().toString(36).substring(7);
+        const user = {
+          id: "demo-user-id",
+          email: "demo@synozur.com",
+          name: "Demo User",
+          role: "admin",
+          isActive: true
+        };
+        
+        sessions.set(sessionId, user);
+        
+        return res.json({
+          ...user,
+          sessionId
+        });
+      }
+      
+      // Check if user exists in database
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      
+      // For demo, accept any password for existing users
+      // In production, you would verify the password hash
+      const sessionId = Math.random().toString(36).substring(7);
+      sessions.set(sessionId, user);
+      
+      res.json({
+        ...user,
+        sessionId
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+  
+  app.post("/api/auth/logout", async (req, res) => {
+    const sessionId = req.headers['x-session-id'] as string;
+    if (sessionId) {
+      sessions.delete(sessionId);
+    }
+    res.json({ message: "Logged out successfully" });
+  });
+  
   // User profile
   app.get("/api/auth/user", requireAuth, async (req, res) => {
     res.json(req.user);

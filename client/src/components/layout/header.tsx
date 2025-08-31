@@ -1,11 +1,30 @@
 import { useAuth } from "@/hooks/use-auth";
 import { SynozurTextLogo } from "@/components/icons/synozur-logo";
 import { getRoleDisplayName } from "@/lib/auth";
-import { Settings } from "lucide-react";
+import { Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLocation } from "wouter";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient, setSessionId } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export function Header() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+
+  const logoutMutation = useMutation({
+    mutationFn: () => apiRequest("/api/auth/logout", { method: "POST" }),
+    onSuccess: () => {
+      setSessionId(null);
+      queryClient.clear();
+      navigate("/login");
+      toast({
+        title: "Logged out",
+        description: "You have been logged out successfully",
+      });
+    },
+  });
 
   const getUserInitials = (name: string) => {
     return name
@@ -72,6 +91,15 @@ export function Header() {
               </div>
             </>
           )}
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => logoutMutation.mutate()}
+            data-testid="button-logout"
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" />
+          </Button>
           <Button variant="ghost" size="sm" data-testid="button-settings">
             <Settings className="w-4 h-4" />
           </Button>
