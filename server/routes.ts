@@ -1,12 +1,27 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
 import { z } from "zod";
 
+// Extend Express Request interface to include user
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        isActive: boolean;
+      };
+    }
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware (simplified - in production would use proper SSO)
-  const requireAuth = (req: any, res: any, next: any) => {
+  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     // For demo purposes, set a mock user
     req.user = {
       id: "admin-user-id",
@@ -18,7 +33,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     next();
   };
 
-  const requireRole = (roles: string[]) => (req: any, res: any, next: any) => {
+  const requireRole = (roles: string[]) => (req: Request, res: Response, next: NextFunction) => {
     if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({ message: "Insufficient permissions" });
     }
