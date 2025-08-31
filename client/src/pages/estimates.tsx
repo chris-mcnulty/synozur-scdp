@@ -217,10 +217,11 @@ export default function Estimates() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const projectId = formData.get('projectId');
               createEstimate.mutate({
                 name: formData.get('name'),
                 clientId: formData.get('clientId'),
-                projectId: formData.get('projectId'),
+                projectId: projectId === 'none' ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
               });
             }}>
@@ -259,7 +260,7 @@ export default function Estimates() {
                       <SelectValue placeholder="Select a project or leave empty for new" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No project</SelectItem>
+                      <SelectItem value="none">No project</SelectItem>
                       {projects.map(project => (
                         <SelectItem key={project.id} value={project.id}>
                           {project.name}
