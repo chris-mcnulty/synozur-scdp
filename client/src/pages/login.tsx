@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Building2, Lock, Mail } from "lucide-react";
 
@@ -13,7 +13,34 @@ export default function Login() {
   const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSSOLoading, setIsSSOLoading] = useState(false);
   const { toast } = useToast();
+
+  // Check SSO configuration status
+  const { data: ssoStatus } = useQuery({
+    queryKey: ["/api/auth/sso/status"],
+    retry: false,
+  });
+
+  // Check for SSO callback parameters
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('sessionId');
+    const error = params.get('error');
+    
+    if (sessionId) {
+      // Store session and redirect
+      localStorage.setItem('sessionId', sessionId);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      navigate("/");
+    } else if (error) {
+      toast({
+        title: "SSO Login Failed",
+        description: error.replace(/_/g, ' '),
+        variant: "destructive",
+      });
+    }
+  }, [navigate, toast]);
 
   const loginMutation = useMutation({
     mutationFn: (credentials: { email: string; password: string }) => 
@@ -125,9 +152,53 @@ export default function Login() {
           >
             Continue with Demo Account
           </Button>
+
+          {ssoStatus?.configured && (
+            <>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
+              
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={async () => {
+                  setIsSSOLoading(true);
+                  try {
+                    const response = await apiRequest("/api/auth/sso/login");
+                    if (response.authUrl) {
+                      window.location.href = response.authUrl;
+                    }
+                  } catch (error) {
+                    toast({
+                      title: "SSO Error",
+                      description: "Failed to initiate SSO login",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsSSOLoading(false);
+                  }
+                }}
+                disabled={isSSOLoading}
+                data-testid="button-sso-login"
+              >
+                <Building2 className="mr-2 h-4 w-4" />
+                {isSSOLoading ? "Redirecting..." : "Sign in with Microsoft"}
+              </Button>
+            </>
+          )}
           
           <p className="text-center text-sm text-muted-foreground mt-4">
-            For production, this would integrate with your SSO provider
+            {ssoStatus?.configured 
+              ? "Use your corporate Microsoft account or demo credentials"
+              : "For production SSO, configure Azure AD environment variables"
+            }
           </p>
         </CardContent>
       </Card>

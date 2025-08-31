@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
 import { z } from "zod";
+import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 
 // Extend Express Request interface to include user
 declare global {
@@ -22,6 +23,9 @@ declare global {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Session storage (in-memory for demo, use Redis in production)
   const sessions: Map<string, any> = new Map();
+  
+  // Check if Entra ID is configured
+  const isEntraConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET;
   
   // Auth middleware
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
@@ -332,6 +336,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       sessions.delete(sessionId);
     }
     res.json({ message: "Logged out successfully" });
+  });
+
+  // Microsoft Entra ID SSO routes
+  app.get("/api/auth/sso/login", async (req, res) => {
+    if (!isEntraConfigured) {
+      return res.status(501).json({ 
+        message: "SSO not configured. Please set AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET environment variables." 
+      });
+    }
+    
+    try {
+      const authUrl = await msalInstance.getAuthCodeUrl(authCodeRequest);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("Error generating auth URL:", error);
+      res.status(500).json({ message: "Failed to initiate SSO login" });
+    }
+  });
+
+  app.get("/api/auth/callback", async (req, res) => {
+    if (!isEntraConfigured) {
+      return res.redirect("/login?error=sso_not_configured");
+    }
+    
+    const { code } = req.query;
+    
+    if (!code) {
+      return res.redirect("/login?error=no_code");
+    }
+    
+    try {
+      const tokenResponse = await msalInstance.acquireTokenByCode({
+        ...tokenRequest,
+        code: code as string,
+      });
+      
+      if (tokenResponse && tokenResponse.account) {
+        // Create or update user in database
+        const email = tokenResponse.account.username;
+        const name = tokenResponse.account.name || email;
+        
+        // Check if user exists, create if not
+        let user = await storage.getUserByEmail(email);
+        if (!user) {
+          // Create new user with default role
+          user = await storage.createUser({
+            email,
+            name,
+            role: "employee", // Default role, can be updated by admin
+            isActive: true,
+          });
+        }
+        
+        // Create session
+        const sessionId = Math.random().toString(36).substring(7);
+        sessions.set(sessionId, user);
+        
+        // Redirect to dashboard with session ID
+        res.redirect(`/?sessionId=${sessionId}`);
+      } else {
+        res.redirect("/login?error=no_account");
+      }
+    } catch (error) {
+      console.error("Error during token acquisition:", error);
+      res.redirect("/login?error=token_acquisition_failed");
+    }
+  });
+
+  app.get("/api/auth/sso/status", async (req, res) => {
+    res.json({ 
+      configured: !!isEntraConfigured,
+      tenantId: process.env.AZURE_TENANT_ID || null
+    });
   });
   
   // User profile
