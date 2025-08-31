@@ -607,11 +607,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Check if user exists, create if not
         let user = await storage.getUserByEmail(email);
         if (!user) {
-          // Create new user with default role
+          // For chris.mcnulty@synozur.com, create as admin
+          const role = email === "chris.mcnulty@synozur.com" ? "admin" : "employee";
           user = await storage.createUser({
             email,
             name,
-            role: "employee", // Default role, can be updated by admin
+            role,
             isActive: true,
           });
         }
