@@ -27,6 +27,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Check if Entra ID is configured
   const isEntraConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET;
   
+  // Health check endpoint
+  app.get("/api/health", async (req, res) => {
+    try {
+      // Test database connection
+      const dbTest = await storage.getUsers();
+      res.json({ 
+        status: "healthy",
+        database: "connected",
+        userCount: dbTest.length,
+        entraConfigured: !!isEntraConfigured,
+        environment: process.env.NODE_ENV || "development"
+      });
+    } catch (error: any) {
+      console.error("[HEALTH] Database connection error:", error);
+      res.status(503).json({ 
+        status: "unhealthy",
+        database: "error",
+        error: error.message || "Database connection failed",
+        environment: process.env.NODE_ENV || "development"
+      });
+    }
+  });
+  
   // Auth middleware
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     const sessionId = req.headers['x-session-id'] as string;
@@ -668,6 +691,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, password } = req.body;
       
+      console.log("[AUTH] Login attempt for:", email);
+      
       // Service account and admin logins for development/demo
       const serviceAccounts: Record<string, string> = {
         "chris.mcnulty@synozur.com": "admin123",  // Chris McNulty - Admin
@@ -679,32 +704,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if this is a service account login
       if (serviceAccounts[email]) {
         if (serviceAccounts[email] === password) {
-          // Get user from database
-          const user = await storage.getUserByEmail(email);
-          if (!user) {
-            // Create service admin if doesn't exist
-            const newUser = await storage.createUser({
-              email,
-              name: email === "service.admin@synozur.com" ? "Service Admin" : "Sarah Chen",
-              role: "admin",
-              isActive: true
-            });
+          try {
+            // Get user from database
+            const user = await storage.getUserByEmail(email);
+            if (!user) {
+              console.log("[AUTH] User not found in DB, creating:", email);
+              // Create service admin if doesn't exist
+              const newUser = await storage.createUser({
+                email,
+                name: email === "service.admin@synozur.com" ? "Service Admin" : 
+                      email === "admin@synozur.com" ? "Admin User" :
+                      email === "chris.mcnulty@synozur.com" ? "Chris McNulty" : "Sarah Chen",
+                role: "admin",
+                isActive: true
+              });
+              const sessionId = Math.random().toString(36).substring(7);
+              sessions.set(sessionId, newUser);
+              console.log("[AUTH] Created new user and session:", sessionId);
+              return res.json({
+                ...newUser,
+                sessionId
+              });
+            }
+            
             const sessionId = Math.random().toString(36).substring(7);
-            sessions.set(sessionId, newUser);
+            sessions.set(sessionId, user);
+            console.log("[AUTH] User found, created session:", sessionId);
+            
             return res.json({
-              ...newUser,
+              ...user,
               sessionId
             });
+          } catch (dbError: any) {
+            console.error("[AUTH] Database error:", dbError);
+            return res.status(500).json({ 
+              message: "Database error during login",
+              error: dbError.message || "Unknown database error"
+            });
           }
-          
-          const sessionId = Math.random().toString(36).substring(7);
-          sessions.set(sessionId, user);
-          
-          return res.json({
-            ...user,
-            sessionId
-          });
         } else {
+          console.log("[AUTH] Invalid password for service account:", email);
           return res.status(401).json({ message: "Invalid password" });
         }
       }
@@ -718,8 +757,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       return res.status(401).json({ message: "User not found. Please sign in with Microsoft to create an account." });
-    } catch (error) {
-      res.status(500).json({ message: "Login failed" });
+    } catch (error: any) {
+      console.error("[AUTH] Login error:", error);
+      res.status(500).json({ 
+        message: "Login failed",
+        error: error.message || "Unknown error"
+      });
     }
   });
   
