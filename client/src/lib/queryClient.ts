@@ -26,9 +26,9 @@ export async function apiRequest(
   url: string,
   options?: RequestInit,
 ): Promise<any> {
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...options?.headers,
+    ...(options?.headers as Record<string, string>),
   };
   
   if (sessionId) {
@@ -58,7 +58,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (sessionId) {
       headers['X-Session-Id'] = sessionId;
     }
