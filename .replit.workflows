@@ -1,0 +1,6 @@
+[
+  {
+    "name": "Start application",
+    "run": "npm run dev"
+  }
+]
