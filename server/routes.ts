@@ -112,14 +112,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
+      console.log("[DEBUG] Creating project with:", req.body);
+      console.log("[DEBUG] User role:", req.user?.role);
       const validatedData = insertProjectSchema.parse(req.body);
+      console.log("[DEBUG] Validated project data:", validatedData);
       const project = await storage.createProject(validatedData);
+      console.log("[DEBUG] Created project:", project.id);
       res.status(201).json(project);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create project:", error);
       if (error instanceof z.ZodError) {
+        console.error("[ERROR] Project validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid project data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create project" });
+      res.status(500).json({ 
+        message: "Failed to create project",
+        details: error.message || "Unknown error"
+      });
     }
   });
 
@@ -135,14 +144,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/clients", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
+      console.log("[DEBUG] Creating client with:", req.body);
+      console.log("[DEBUG] User role:", req.user?.role);
       const validatedData = insertClientSchema.parse(req.body);
+      console.log("[DEBUG] Validated client data:", validatedData);
       const client = await storage.createClient(validatedData);
+      console.log("[DEBUG] Created client:", client.id);
       res.status(201).json(client);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create client:", error);
       if (error instanceof z.ZodError) {
+        console.error("[ERROR] Client validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid client data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create client" });
+      res.status(500).json({ 
+        message: "Failed to create client",
+        details: error.message || "Unknown error"
+      });
     }
   });
 
@@ -661,6 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // User profile
   app.get("/api/auth/user", requireAuth, async (req, res) => {
+    console.log("[DEBUG] Auth user request:", req.user);
     res.json(req.user);
   });
 
