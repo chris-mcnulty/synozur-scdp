@@ -281,23 +281,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const worksheetData = [
         ["Estimate Line Items Template"],
-        ["Instructions: Fill in the rows below with your line item details. Keep the header row intact."],
-        ["Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Adjusted Hours", "Total Amount"],
-        ["Example: Design Mockups", "Design", 20, 150, "small", "small", "high", "", ""],
-        ["Example: Frontend Development", "Development", 80, 175, "medium", "medium", "medium", "", ""],
-        ["Example: Testing & QA", "QA", 40, 125, "small", "large", "low", "", ""],
-        ["", "", "", "", "small", "small", "high", "", ""],
+        ["Instructions: Fill in the rows below with your line item details. Keep the header row intact. Epic and Stage names must match existing values in the estimate."],
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
+        ["Phase 1", "Design", "UX", 1, "Example: Design Mockups", "Design", 20, 150, "small", "small", "high", "Initial mockups", "", ""],
+        ["Phase 1", "Development", "Frontend", 2, "Example: Frontend Development", "Development", 80, 175, "medium", "medium", "medium", "React components", "", ""],
+        ["Phase 1", "Testing", "QA", 3, "Example: Testing & QA", "QA", 40, 125, "small", "large", "low", "End-to-end tests", "", ""],
+        ["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""],
       ];
 
       // Add more empty rows for user input
       for (let i = 0; i < 30; i++) {
-        worksheetData.push(["", "", "", "", "small", "small", "high", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
       
       // Set column widths for better readability
       ws['!cols'] = [
+        { wch: 15 }, // Epic Name
+        { wch: 15 }, // Stage Name
+        { wch: 15 }, // Workstream
+        { wch: 8 },  // Week #
         { wch: 35 }, // Description
         { wch: 15 }, // Category
         { wch: 12 }, // Base Hours
@@ -305,6 +309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { wch: 10 }, // Size
         { wch: 12 }, // Complexity
         { wch: 12 }, // Confidence
+        { wch: 25 }, // Comments
         { wch: 15 }, // Adjusted Hours
         { wch: 15 }, // Total Amount
       ];
@@ -329,12 +334,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const xlsx = await import("xlsx");
       const estimate = await storage.getEstimate(req.params.id);
       const lineItems = await storage.getEstimateLineItems(req.params.id);
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      
+      // Create lookup maps for epic and stage names
+      const epicMap = new Map(epics.map(e => [e.id, e.name]));
+      const stageMap = new Map(stages.map(s => [s.id, s.name]));
       
       const worksheetData = [
-        ["Estimate Line Items Template"],
+        ["Estimate Line Items Export"],
         [],
-        ["Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Adjusted Hours", "Total Amount"],
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
         ...lineItems.map(item => [
+          item.epicId ? (epicMap.get(item.epicId) || "") : "",
+          item.stageId ? (stageMap.get(item.stageId) || "") : "",
+          item.workstream || "",
+          item.week || "",
           item.description,
           item.category || "",
           Number(item.baseHours),
@@ -342,6 +357,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item.size,
           item.complexity,
           item.confidence,
+          item.comments || "",
           Number(item.adjustedHours),
           Number(item.totalAmount)
         ])
@@ -349,10 +365,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Add empty rows for new items
       for (let i = 0; i < 20; i++) {
-        worksheetData.push(["", "", "", "", "small", "small", "high", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability
+      ws['!cols'] = [
+        { wch: 15 }, // Epic Name
+        { wch: 15 }, // Stage Name
+        { wch: 15 }, // Workstream
+        { wch: 8 },  // Week #
+        { wch: 35 }, // Description
+        { wch: 15 }, // Category
+        { wch: 12 }, // Base Hours
+        { wch: 10 }, // Rate
+        { wch: 10 }, // Size
+        { wch: 12 }, // Complexity
+        { wch: 12 }, // Confidence
+        { wch: 25 }, // Comments
+        { wch: 15 }, // Adjusted Hours
+        { wch: 15 }, // Total Amount
+      ];
+      
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Line Items");
 
@@ -386,15 +421,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Estimate not found" });
       }
       
+      // Get epics and stages for lookup
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      
+      // Create lookup maps for epic and stage IDs by name
+      const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
+      const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
+      
       // Skip header rows and process data
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
-        if (!row[0] || !row[2] || !row[3]) continue; // Skip if no description, hours, or rate
+        // Updated column indices for new format
+        // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 6: Base Hours, 7: Rate
+        // 8: Size, 9: Complexity, 10: Confidence, 11: Comments
+        if (!row[4] || !row[6] || !row[7]) continue; // Skip if no description, hours, or rate
         
-        const size = row[4] || "small";
-        const complexity = row[5] || "small";
-        const confidence = row[6] || "high";
+        // Lookup epic and stage IDs from names
+        const epicName = row[0] ? String(row[0]).toLowerCase() : "";
+        const stageName = row[1] ? String(row[1]).toLowerCase() : "";
+        const epicId = epicName ? (epicNameToId.get(epicName) || null) : null;
+        const stageId = stageName ? (stageNameToId.get(stageName) || null) : null;
+        
+        const size = row[8] || "small";
+        const complexity = row[9] || "small";
+        const confidence = row[10] || "high";
         
         // Calculate multipliers
         let sizeMultiplier = 1.0;
@@ -409,20 +461,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
         else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
         
-        const baseHours = Number(row[2]);
-        const rate = Number(row[3]);
+        const baseHours = Number(row[6]);
+        const rate = Number(row[7]);
         const adjustedHours = baseHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
         
         lineItems.push({
           estimateId: req.params.id,
-          description: String(row[0]),
-          category: row[1] ? String(row[1]) : null,
+          epicId,
+          stageId,
+          workstream: row[2] ? String(row[2]) : null,
+          week: row[3] ? Number(row[3]) : null,
+          description: String(row[4]),
+          category: row[5] ? String(row[5]) : null,
           baseHours: baseHours.toString(),
           rate: rate.toString(),
           size,
           complexity,
           confidence,
+          comments: row[11] ? String(row[11]) : null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
           sortOrder: i - 3
