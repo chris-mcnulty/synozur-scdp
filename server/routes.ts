@@ -200,7 +200,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
       console.log("Creating line item for estimate:", req.params.id);
-      console.log("Request body:", req.body);
+      console.log("Request body:", JSON.stringify(req.body, null, 2));
+      
+      // Check if estimate exists first
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
       
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
       const validatedData = insertEstimateLineItemSchema.parse({
@@ -208,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         estimateId: req.params.id,
       });
       
-      console.log("Validated data:", validatedData);
+      console.log("Validated data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.createEstimateLineItem(validatedData);
       console.log("Created line item:", lineItem);
       

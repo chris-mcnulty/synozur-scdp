@@ -82,11 +82,7 @@ function validateEnvironment() {
     // importantly only setup vite in development and after
     // setting up all the other routes so the catch-all route
     // doesn't interfere with the other routes
-    // Check if we're in development mode - either NODE_ENV or in Replit dev environment
-    const isProduction = app.get("env") === "production" && process.env.REPL_SLUG; // REPL_SLUG is set in deployed Repls
-    const isDevelopment = !isProduction;
-    
-    if (isDevelopment) {
+    if (app.get("env") === "development") {
       log('Setting up Vite development server...');
       await setupVite(app, server);
     } else {

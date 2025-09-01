@@ -28,10 +28,14 @@ export default function EstimateDetail() {
     confidence: "high"
   });
 
-  const { data: estimate } = useQuery<Estimate>({
+  const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
     queryKey: [`/api/estimates/${id}`],
     enabled: !!id,
   });
+
+  if (estimateError) {
+    console.error("Error loading estimate:", estimateError);
+  }
 
   const { data: lineItems = [], isLoading } = useQuery<EstimateLineItem[]>({
     queryKey: [`/api/estimates/${id}/line-items`],
@@ -39,11 +43,22 @@ export default function EstimateDetail() {
   });
 
   const createLineItemMutation = useMutation({
-    mutationFn: (data: any) => apiRequest(`/api/estimates/${id}/line-items`, {
-      method: "POST",
-      body: JSON.stringify(data)
-    }),
-    onSuccess: () => {
+    mutationFn: async (data: any) => {
+      console.log("Sending line item creation request:", data);
+      const sessionId = localStorage.getItem("sessionId");
+      console.log("Using sessionId:", sessionId);
+      
+      if (!sessionId) {
+        throw new Error("No session ID found. Please log in again.");
+      }
+      
+      return apiRequest(`/api/estimates/${id}/line-items`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: (response) => {
+      console.log("Line item created successfully:", response);
       queryClient.invalidateQueries({ queryKey: [`/api/estimates/${id}/line-items`] });
       setNewItem({
         description: "",
@@ -57,8 +72,20 @@ export default function EstimateDetail() {
       toast({ title: "Line item added successfully" });
     },
     onError: (error: any) => {
-      console.error("Failed to create line item:", error);
-      const errorMessage = error.details || error.message || "Please check your input and try again";
+      console.error("Failed to create line item - Full error:", error);
+      console.error("Error response:", error.response);
+      console.error("Error details:", error.details);
+      
+      let errorMessage = "Please check your input and try again";
+      
+      if (error.message?.includes("session")) {
+        errorMessage = "Session expired. Please refresh the page and try again.";
+      } else if (error.details) {
+        errorMessage = error.details;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({ 
         title: "Failed to add line item", 
         description: errorMessage,
@@ -113,20 +140,35 @@ export default function EstimateDetail() {
   };
 
   const handleAddItem = () => {
+    console.log("Adding line item with data:", newItem);
+    
     const baseHours = Number(newItem.baseHours);
     const rate = Number(newItem.rate);
+    
+    if (isNaN(baseHours) || isNaN(rate)) {
+      toast({
+        title: "Invalid input",
+        description: "Please enter valid numbers for hours and rate",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     const { adjustedHours, totalAmount } = calculateAdjustedValues(
       baseHours, rate, newItem.size, newItem.complexity, newItem.confidence
     );
     
-    createLineItemMutation.mutate({
+    const lineItemData = {
       ...newItem,
       baseHours: baseHours.toString(),
       rate: rate.toString(),
       adjustedHours: adjustedHours.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
       sortOrder: lineItems?.length || 0
-    });
+    };
+    
+    console.log("Sending line item data:", lineItemData);
+    createLineItemMutation.mutate(lineItemData);
   };
 
   const handleUpdateItem = (item: EstimateLineItem, field: string, value: any) => {
@@ -369,12 +411,19 @@ export default function EstimateDetail() {
           </div>
           <Button
             onClick={handleAddItem}
-            disabled={!newItem.description || !newItem.baseHours || !newItem.rate}
+            disabled={!newItem.description || !newItem.baseHours || !newItem.rate || createLineItemMutation.isPending}
             className="mb-4"
+            variant="default"
+            size="default"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Add Line Item
+            {createLineItemMutation.isPending ? "Adding..." : "Add Line Item"}
           </Button>
+          {!newItem.description && !newItem.baseHours && !newItem.rate && (
+            <p className="text-sm text-muted-foreground mb-2">
+              Fill in Description, Hours, and Rate to add a line item
+            </p>
+          )}
 
           <div className="rounded-md border">
             <Table>
