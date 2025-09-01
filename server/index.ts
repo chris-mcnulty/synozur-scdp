@@ -82,7 +82,10 @@ function validateEnvironment() {
     // importantly only setup vite in development and after
     // setting up all the other routes so the catch-all route
     // doesn't interfere with the other routes
-    if (app.get("env") === "development") {
+    // In Replit, always use Vite for development experience
+    const useVite = process.env.REPLIT_USER ? true : app.get("env") === "development";
+    
+    if (useVite) {
       log('Setting up Vite development server...');
       await setupVite(app, server);
     } else {
