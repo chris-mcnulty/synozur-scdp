@@ -59,15 +59,19 @@ function validateEnvironment() {
     log('Registering routes...');
     const server = await registerRoutes(app);
     
-    // Add database connection health check
+    // Add database connection health check with timeout
     log('Testing database connection...');
     try {
-      const { db } = await import('./db');
-      await db.execute(`SELECT 1 as test`);
+      const dbPromise = import('./db').then(({ db }) => db.execute(`SELECT 1 as test`));
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database connection timeout')), 5000)
+      );
+      
+      await Promise.race([dbPromise, timeoutPromise]);
       log('Database connection successful');
     } catch (dbError: any) {
-      log(`Database connection failed: ${dbError.message}`);
-      // Continue without crashing - the app can still serve static content
+      log(`Database connection check failed: ${dbError.message}`);
+      log('Continuing without database - static content will still be served');
     }
     
     log('Setting up error handling middleware...');

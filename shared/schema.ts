@@ -1,22 +1,25 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Users and Authentication
+// Users and Authentication (Person metadata)
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
+  title: text("title"), // Job title for the person
   role: text("role").notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }), // Default rack rate for this person
+  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }), // Default charge rate for this person
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
 // Clients
 export const clients = pgTable("clients", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   currency: text("currency").notNull().default("USD"),
   billingContact: text("billing_contact"),
@@ -26,7 +29,7 @@ export const clients = pgTable("clients", {
 
 // Roles (for rate management)
 export const roles = pgTable("roles", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -34,8 +37,8 @@ export const roles = pgTable("roles", {
 
 // Projects
 export const projects = pgTable("projects", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: uuid("client_id").notNull().references(() => clients.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id),
   name: text("name").notNull(),
   code: text("code").notNull().unique(),
   startDate: date("start_date"),
@@ -49,15 +52,21 @@ export const projects = pgTable("projects", {
 
 // Estimates
 export const estimates = pgTable("estimates", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
-  clientId: uuid("client_id").notNull().references(() => clients.id),
-  projectId: uuid("project_id").references(() => projects.id), // Optional - can create estimate without project
+  clientId: varchar("client_id").notNull().references(() => clients.id),
+  projectId: varchar("project_id").references(() => projects.id), // Optional - can create estimate without project
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("draft"), // draft, sent, approved, rejected
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
   validUntil: date("valid_until"),
+  // Visible vocabulary customization (client can rename Epic/Stage/Activity)
+  epicLabel: text("epic_label").default("Epic"),
+  stageLabel: text("stage_label").default("Stage"),
+  activityLabel: text("activity_label").default("Activity"),
+  // Rack rate snapshot at time of estimate
+  rackRateSnapshot: jsonb("rack_rate_snapshot"), // Stores rates at time of estimate creation
   // Factor multipliers (centralized values)
   sizeSmallMultiplier: decimal("size_small_multiplier", { precision: 4, scale: 2 }).default('1.00'),
   sizeMediumMultiplier: decimal("size_medium_multiplier", { precision: 4, scale: 2 }).default('1.05'),
@@ -73,10 +82,10 @@ export const estimates = pgTable("estimates", {
 
 // Estimate Line Items with factors
 export const estimateLineItems = pgTable("estimate_line_items", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
-  epicId: uuid("epic_id").references(() => estimateEpics.id), // Optional epic reference
-  stageId: uuid("stage_id").references(() => estimateStages.id), // Optional stage reference
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  epicId: varchar("epic_id").references(() => estimateEpics.id), // Optional epic reference
+  stageId: varchar("stage_id").references(() => estimateStages.id), // Optional stage reference
   description: text("description").notNull(),
   category: text("category"), // Optional category/phase
   workstream: text("workstream"), // Workstream name
@@ -95,61 +104,64 @@ export const estimateLineItems = pgTable("estimate_line_items", {
 
 // Estimate hierarchy: Epic -> Stage -> Activity
 export const estimateEpics = pgTable("estimate_epics", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  estimateId: uuid("estimate_id").notNull().references(() => estimates.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
 export const estimateStages = pgTable("estimate_stages", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  epicId: uuid("epic_id").notNull().references(() => estimateEpics.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  epicId: varchar("epic_id").notNull().references(() => estimateEpics.id),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
 export const estimateActivities = pgTable("estimate_activities", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  stageId: uuid("stage_id").notNull().references(() => estimateStages.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stageId: varchar("stage_id").notNull().references(() => estimateStages.id),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Weekly staffing allocations
+// Weekly staffing allocations (Weekly Staffing Grid)
 export const estimateAllocations = pgTable("estimate_allocations", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  activityId: uuid("activity_id").notNull().references(() => estimateActivities.id),
-  weekStartDate: date("week_start_date").notNull(),
-  roleId: uuid("role_id").references(() => roles.id),
-  personId: uuid("person_id").references(() => users.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  activityId: varchar("activity_id").notNull().references(() => estimateActivities.id),
+  weekNumber: integer("week_number").notNull(), // Week is a number, not a date
+  roleId: varchar("role_id").references(() => roles.id), // Can be either role or person
+  personId: varchar("person_id").references(() => users.id),
+  personEmail: text("person_email"), // Optional email for person
   hours: decimal("hours", { precision: 10, scale: 2 }).notNull(),
-  rackRate: decimal("rack_rate", { precision: 10, scale: 2 }).notNull(),
-  pricingMode: text("pricing_mode").notNull(), // role, person
+  pricingMode: text("pricing_mode").notNull(), // "role" or "person"
+  rackRate: decimal("rack_rate", { precision: 10, scale: 2 }).notNull(), // Snapshot of rate at time of estimate
+  notes: text("notes"), // Additional notes for the allocation
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
 // Rate overrides
 export const rateOverrides = pgTable("rate_overrides", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  scope: text("scope").notNull(), // client, project
-  scopeId: uuid("scope_id").notNull(), // clientId or projectId
-  subjectType: text("subject_type").notNull(), // role, person
-  subjectId: uuid("subject_id").notNull(), // roleId or personId
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scope: text("scope").notNull(), // "client" or "project"
+  scopeId: varchar("scope_id").notNull(), // clientId or projectId
+  subjectType: text("subject_type").notNull(), // "role" or "person"
+  subjectId: varchar("subject_id").notNull(), // roleId or personId
   effectiveStart: date("effective_start").notNull(),
   effectiveEnd: date("effective_end"),
   rackRate: decimal("rack_rate", { precision: 10, scale: 2 }).notNull(),
   chargeRate: decimal("charge_rate", { precision: 10, scale: 2 }),
+  precedence: integer("precedence").notNull().default(0), // Higher number = higher precedence
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
 // Time entries
 export const timeEntries = pgTable("time_entries", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  personId: uuid("person_id").notNull().references(() => users.id),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  personId: varchar("person_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
   date: date("date").notNull(),
   hours: decimal("hours", { precision: 10, scale: 2 }).notNull(),
   phase: text("phase"),
@@ -162,9 +174,9 @@ export const timeEntries = pgTable("time_entries", {
 
 // Expenses
 export const expenses = pgTable("expenses", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  personId: uuid("person_id").notNull().references(() => users.id),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  personId: varchar("person_id").notNull().references(() => users.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
   date: date("date").notNull(),
   category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
@@ -179,8 +191,8 @@ export const expenses = pgTable("expenses", {
 
 // Change orders
 export const changeOrders = pgTable("change_orders", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
   reason: text("reason").notNull(),
   approvedOn: timestamp("approved_on"),
   deltaHours: decimal("delta_hours", { precision: 10, scale: 2 }),
@@ -191,7 +203,7 @@ export const changeOrders = pgTable("change_orders", {
 
 // Invoice batches
 export const invoiceBatches = pgTable("invoice_batches", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   batchId: text("batch_id").notNull().unique(),
   month: date("month").notNull(),
   pricingSnapshotDate: date("pricing_snapshot_date").notNull(),
@@ -205,9 +217,9 @@ export const invoiceBatches = pgTable("invoice_batches", {
 
 // Invoice lines
 export const invoiceLines = pgTable("invoice_lines", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  batchId: uuid("batch_id").notNull().references(() => invoiceBatches.id),
-  projectId: uuid("project_id").notNull().references(() => projects.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId: varchar("batch_id").notNull().references(() => invoiceBatches.id),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
   type: text("type").notNull(), // time, expense, milestone, discount, no-charge
   quantity: decimal("quantity", { precision: 10, scale: 2 }),
   rate: decimal("rate", { precision: 10, scale: 2 }),
