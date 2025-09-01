@@ -16,14 +16,35 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
+import { useEffect, useState } from "react";
+import { setSessionId } from "@/lib/queryClient";
 
 function Router() {
+  const [processingSession, setProcessingSession] = useState(true);
+  
+  // Handle sessionId from SSO callback FIRST
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('sessionId');
+    
+    if (sessionId) {
+      // Store session and reload to clean URL
+      setSessionId(sessionId);
+      localStorage.setItem('sessionId', sessionId);
+      // Clean URL and reload
+      window.location.href = "/";
+    } else {
+      setProcessingSession(false);
+    }
+  }, []);
+  
   const { data: user, isLoading } = useQuery({
     queryKey: ["/api/auth/user"],
     retry: false,
+    enabled: !processingSession, // Only check auth after processing sessionId
   });
 
-  if (isLoading) {
+  if (processingSession || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading...</div>
