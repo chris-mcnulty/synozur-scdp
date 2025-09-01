@@ -199,18 +199,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
+      console.log("Creating line item for estimate:", req.params.id);
+      console.log("Request body:", req.body);
+      
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
       const validatedData = insertEstimateLineItemSchema.parse({
         ...req.body,
         estimateId: req.params.id,
       });
+      
+      console.log("Validated data:", validatedData);
       const lineItem = await storage.createEstimateLineItem(validatedData);
+      console.log("Created line item:", lineItem);
+      
       res.json(lineItem);
     } catch (error) {
+      console.error("Line item creation error:", error);
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid line item data", errors: error.errors });
+        console.error("Validation errors:", error.errors);
+        return res.status(400).json({ 
+          message: "Invalid line item data", 
+          errors: error.errors,
+          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        });
       }
-      res.status(500).json({ message: "Failed to create line item" });
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to create line item",
+        error: String(error)
+      });
     }
   });
 
@@ -229,6 +245,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete line item" });
+    }
+  });
+
+  // Excel template download (empty template for users to fill)
+  app.get("/api/estimates/template-excel", requireAuth, async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      
+      const worksheetData = [
+        ["Estimate Line Items Template"],
+        ["Instructions: Fill in the rows below with your line item details. Keep the header row intact."],
+        ["Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Adjusted Hours", "Total Amount"],
+        ["Example: Design Mockups", "Design", 20, 150, "small", "small", "high", "", ""],
+        ["Example: Frontend Development", "Development", 80, 175, "medium", "medium", "medium", "", ""],
+        ["Example: Testing & QA", "QA", 40, 125, "small", "large", "low", "", ""],
+        ["", "", "", "", "small", "small", "high", "", ""],
+      ];
+
+      // Add more empty rows for user input
+      for (let i = 0; i < 30; i++) {
+        worksheetData.push(["", "", "", "", "small", "small", "high", "", ""]);
+      }
+
+      const ws = xlsx.utils.aoa_to_sheet(worksheetData);
+      
+      // Set column widths for better readability
+      ws['!cols'] = [
+        { wch: 35 }, // Description
+        { wch: 15 }, // Category
+        { wch: 12 }, // Base Hours
+        { wch: 10 }, // Rate
+        { wch: 10 }, // Size
+        { wch: 12 }, // Complexity
+        { wch: 12 }, // Confidence
+        { wch: 15 }, // Adjusted Hours
+        { wch: 15 }, // Total Amount
+      ];
+      
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, "Line Items Template");
+
+      const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", 'attachment; filename="estimate-template.xlsx"');
+      res.send(buffer);
+    } catch (error) {
+      console.error("Failed to generate template:", error);
+      res.status(500).json({ message: "Failed to generate Excel template" });
     }
   });
 

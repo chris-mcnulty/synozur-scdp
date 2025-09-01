@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { EstimateLineItem } from "@shared/schema";
+import type { EstimateLineItem, Estimate } from "@shared/schema";
 
 export default function EstimateDetail() {
   const { id } = useParams();
@@ -28,12 +28,12 @@ export default function EstimateDetail() {
     confidence: "high"
   });
 
-  const { data: estimate } = useQuery({
+  const { data: estimate } = useQuery<Estimate>({
     queryKey: [`/api/estimates/${id}`],
     enabled: !!id,
   });
 
-  const { data: lineItems = [], isLoading } = useQuery({
+  const { data: lineItems = [], isLoading } = useQuery<EstimateLineItem[]>({
     queryKey: [`/api/estimates/${id}/line-items`],
     enabled: !!id,
   });
@@ -55,6 +55,15 @@ export default function EstimateDetail() {
         confidence: "high"
       });
       toast({ title: "Line item added successfully" });
+    },
+    onError: (error: any) => {
+      console.error("Failed to create line item:", error);
+      const errorMessage = error.details || error.message || "Please check your input and try again";
+      toast({ 
+        title: "Failed to add line item", 
+        description: errorMessage,
+        variant: "destructive" 
+      });
     }
   });
 
@@ -116,7 +125,7 @@ export default function EstimateDetail() {
       rate: rate.toString(),
       adjustedHours: adjustedHours.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
-      sortOrder: lineItems.length
+      sortOrder: lineItems?.length || 0
     });
   };
 
@@ -157,6 +166,26 @@ export default function EstimateDetail() {
     }
   };
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch("/api/estimates/template-excel", {
+        headers: {
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        }
+      });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "estimate-template.xlsx";
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Template downloaded successfully" });
+    } catch (error) {
+      toast({ title: "Failed to download template", variant: "destructive" });
+    }
+  };
+
   const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -178,9 +207,9 @@ export default function EstimateDetail() {
     reader.readAsDataURL(file);
   };
 
-  const totalHours = lineItems.reduce((sum: number, item: EstimateLineItem) => 
+  const totalHours = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.adjustedHours), 0);
-  const totalAmount = lineItems.reduce((sum: number, item: EstimateLineItem) => 
+  const totalAmount = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.totalAmount), 0);
 
   return (
@@ -202,6 +231,10 @@ export default function EstimateDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button onClick={handleDownloadTemplate} variant="outline">
+            <FileDown className="h-4 w-4 mr-2" />
+            Download Template
+          </Button>
           <Button onClick={handleExportExcel} variant="outline">
             <Download className="h-4 w-4 mr-2" />
             Export Excel
@@ -366,7 +399,7 @@ export default function EstimateDetail() {
                       Loading...
                     </TableCell>
                   </TableRow>
-                ) : lineItems.length === 0 ? (
+                ) : (lineItems || []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center">
                       No line items yet
