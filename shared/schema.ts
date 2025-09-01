@@ -75,8 +75,12 @@ export const estimates = pgTable("estimates", {
 export const estimateLineItems = pgTable("estimate_line_items", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: uuid("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  epicId: uuid("epic_id").references(() => estimateEpics.id), // Optional epic reference
+  stageId: uuid("stage_id").references(() => estimateStages.id), // Optional stage reference
   description: text("description").notNull(),
   category: text("category"), // Optional category/phase
+  workstream: text("workstream"), // Workstream name
+  week: integer("week"), // Week number
   baseHours: decimal("base_hours", { precision: 10, scale: 2 }).notNull(),
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
   size: text("size").notNull().default("small"), // small, medium, large
@@ -84,6 +88,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   confidence: text("confidence").notNull().default("high"), // high, medium, low
   adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull(), // base_hours * multipliers
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(), // adjusted_hours * rate
+  comments: text("comments"), // Optional comments
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
@@ -251,6 +256,14 @@ export const estimateLineItemsRelations = relations(estimateLineItems, ({ one })
   estimate: one(estimates, {
     fields: [estimateLineItems.estimateId],
     references: [estimates.id],
+  }),
+  epic: one(estimateEpics, {
+    fields: [estimateLineItems.epicId],
+    references: [estimateEpics.id],
+  }),
+  stage: one(estimateStages, {
+    fields: [estimateLineItems.stageId],
+    references: [estimateStages.id],
   }),
 }));
 

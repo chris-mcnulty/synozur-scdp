@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { EstimateLineItem, Estimate } from "@shared/schema";
+import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage } from "@shared/schema";
 
 export default function EstimateDetail() {
   const { id } = useParams();
@@ -21,11 +21,16 @@ export default function EstimateDetail() {
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
+    epicId: "",
+    stageId: "",
+    workstream: "",
+    week: "",
     baseHours: "",
     rate: "",
     size: "small",
     complexity: "small",
-    confidence: "high"
+    confidence: "high",
+    comments: ""
   });
 
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
@@ -39,6 +44,16 @@ export default function EstimateDetail() {
 
   const { data: lineItems = [], isLoading } = useQuery<EstimateLineItem[]>({
     queryKey: [`/api/estimates/${id}/line-items`],
+    enabled: !!id,
+  });
+
+  const { data: epics = [] } = useQuery<EstimateEpic[]>({
+    queryKey: [`/api/estimates/${id}/epics`],
+    enabled: !!id,
+  });
+
+  const { data: stages = [] } = useQuery<EstimateStage[]>({
+    queryKey: [`/api/estimates/${id}/stages`],
     enabled: !!id,
   });
 
@@ -63,11 +78,16 @@ export default function EstimateDetail() {
       setNewItem({
         description: "",
         category: "",
+        epicId: "",
+        stageId: "",
+        workstream: "",
+        week: "",
         baseHours: "",
         rate: "",
         size: "small",
         complexity: "small",
-        confidence: "high"
+        confidence: "high",
+        comments: ""
       });
       toast({ title: "Line item added successfully" });
     },
@@ -343,54 +363,94 @@ export default function EstimateDetail() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="mb-4 grid grid-cols-8 gap-2">
-            <Input
-              placeholder="Description"
-              value={newItem.description}
-              onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-              className="col-span-2"
-            />
-            <Input
-              placeholder="Category"
-              value={newItem.category}
-              onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-            />
-            <Input
-              placeholder="Hours"
-              type="number"
-              value={newItem.baseHours}
-              onChange={(e) => setNewItem({ ...newItem, baseHours: e.target.value })}
-              className="w-full"
-            />
-            <Input
-              placeholder="Rate"
-              type="number"
-              value={newItem.rate}
-              onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
-              className="w-full"
-            />
-            <Select
-              value={newItem.size}
-              onValueChange={(value) => setNewItem({ ...newItem, size: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">Small</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="large">Large</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={newItem.complexity}
-              onValueChange={(value) => setNewItem({ ...newItem, complexity: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">Small</SelectItem>
+          <div className="space-y-4 mb-4">
+            <div className="grid grid-cols-6 gap-2">
+              <Select
+                value={newItem.epicId}
+                onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Epic" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {epics.map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={newItem.stageId}
+                onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {stages.map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Workstream"
+                value={newItem.workstream}
+                onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
+              />
+              <Input
+                placeholder="Week #"
+                type="number"
+                value={newItem.week}
+                onChange={(e) => setNewItem({ ...newItem, week: e.target.value })}
+              />
+              <Input
+                placeholder="Hours"
+                type="number"
+                value={newItem.baseHours}
+                onChange={(e) => setNewItem({ ...newItem, baseHours: e.target.value })}
+              />
+              <Input
+                placeholder="Rate"
+                type="number"
+                value={newItem.rate}
+                onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-6 gap-2">
+              <Input
+                placeholder="Description"
+                value={newItem.description}
+                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                className="col-span-2"
+              />
+              <Input
+                placeholder="Category"
+                value={newItem.category}
+                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+              />
+              <Select
+                value={newItem.size}
+                onValueChange={(value) => setNewItem({ ...newItem, size: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Small</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="large">Large</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={newItem.complexity}
+                onValueChange={(value) => setNewItem({ ...newItem, complexity: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Complexity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Small</SelectItem>
                 <SelectItem value="medium">Medium</SelectItem>
                 <SelectItem value="large">Large</SelectItem>
               </SelectContent>
@@ -409,6 +469,14 @@ export default function EstimateDetail() {
               </SelectContent>
             </Select>
           </div>
+          <div className="grid grid-cols-1 gap-2">
+            <Input
+              placeholder="Comments (optional)"
+              value={newItem.comments}
+              onChange={(e) => setNewItem({ ...newItem, comments: e.target.value })}
+            />
+          </div>
+        </div>
           <Button
             onClick={handleAddItem}
             disabled={!newItem.description || !newItem.baseHours || !newItem.rate || createLineItemMutation.isPending}
@@ -429,15 +497,18 @@ export default function EstimateDetail() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Epic</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Workstream</TableHead>
+                  <TableHead>Week</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Base Hours</TableHead>
+                  <TableHead>Hours</TableHead>
                   <TableHead>Rate</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Complexity</TableHead>
-                  <TableHead>Confidence</TableHead>
+                  <TableHead>Factors</TableHead>
                   <TableHead>Adj. Hours</TableHead>
                   <TableHead>Total</TableHead>
+                  <TableHead>Comments</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -455,8 +526,15 @@ export default function EstimateDetail() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  lineItems.map((item: EstimateLineItem) => (
+                  lineItems.map((item: EstimateLineItem) => {
+                    const epic = epics.find(e => e.id === item.epicId);
+                    const stage = stages.find(s => s.id === item.stageId);
+                    return (
                     <TableRow key={item.id}>
+                      <TableCell>{epic?.name || "-"}</TableCell>
+                      <TableCell>{stage?.name || "-"}</TableCell>
+                      <TableCell>{item.workstream || "-"}</TableCell>
+                      <TableCell>{item.week || "-"}</TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
@@ -474,52 +552,15 @@ export default function EstimateDetail() {
                       <TableCell>{item.baseHours}</TableCell>
                       <TableCell>${item.rate}</TableCell>
                       <TableCell>
-                        <Select
-                          value={item.size}
-                          onValueChange={(value) => handleUpdateItem(item, "size", value)}
-                        >
-                          <SelectTrigger className="w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="small">Small</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="large">Large</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={item.complexity}
-                          onValueChange={(value) => handleUpdateItem(item, "complexity", value)}
-                        >
-                          <SelectTrigger className="w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="small">Small</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="large">Large</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={item.confidence}
-                          onValueChange={(value) => handleUpdateItem(item, "confidence", value)}
-                        >
-                          <SelectTrigger className="w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="high">High</SelectItem>
-                            <SelectItem value="medium">Medium</SelectItem>
-                            <SelectItem value="low">Low</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <div className="text-xs">
+                          S:{item.size[0].toUpperCase()},
+                          C:{item.complexity[0].toUpperCase()},
+                          Cf:{item.confidence[0].toUpperCase()}
+                        </div>
                       </TableCell>
                       <TableCell>{Number(item.adjustedHours).toFixed(2)}</TableCell>
                       <TableCell>${Number(item.totalAmount).toFixed(2)}</TableCell>
+                      <TableCell>{item.comments || "-"}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -530,7 +571,7 @@ export default function EstimateDetail() {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))
+                  )})
                 )}
               </TableBody>
             </Table>

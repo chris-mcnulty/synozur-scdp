@@ -5,6 +5,7 @@ import {
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
+  type EstimateEpic, type EstimateStage,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense
 } from "@shared/schema";
@@ -43,6 +44,12 @@ export interface IStorage {
   getEstimatesByProject(projectId: string): Promise<Estimate[]>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate>;
+  
+  // Estimate Epics
+  getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
+  
+  // Estimate Stages
+  getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
   
   // Estimate Line Items
   getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]>;
@@ -199,6 +206,22 @@ export class DatabaseStorage implements IStorage {
   async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate> {
     const [estimate] = await db.update(estimates).set(updateEstimate).where(eq(estimates.id, id)).returning();
     return estimate;
+  }
+
+  async getEstimateEpics(estimateId: string): Promise<EstimateEpic[]> {
+    return await db.select().from(estimateEpics)
+      .where(eq(estimateEpics.estimateId, estimateId))
+      .orderBy(estimateEpics.order);
+  }
+
+  async getEstimateStages(estimateId: string): Promise<EstimateStage[]> {
+    // Get all stages for all epics in this estimate
+    const epics = await this.getEstimateEpics(estimateId);
+    if (epics.length === 0) return [];
+    
+    return await db.select().from(estimateStages)
+      .where(sql`${estimateStages.epicId} IN ${sql.raw(`(${epics.map(e => `'${e.id}'`).join(',')})`)}`)
+      .orderBy(estimateStages.order);
   }
 
   async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {

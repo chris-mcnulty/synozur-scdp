@@ -187,6 +187,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Estimate epics
+  app.get("/api/estimates/:id/epics", requireAuth, async (req, res) => {
+    try {
+      const epics = await storage.getEstimateEpics(req.params.id);
+      res.json(epics);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch epics" });
+    }
+  });
+
+  // Estimate stages
+  app.get("/api/estimates/:id/stages", requireAuth, async (req, res) => {
+    try {
+      const stages = await storage.getEstimateStages(req.params.id);
+      res.json(stages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch stages" });
+    }
+  });
+
   // Estimate line items
   app.get("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
