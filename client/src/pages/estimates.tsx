@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ interface Estimate {
 export default function Estimates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
+  const [, navigate] = useLocation();
   const { toast } = useToast();
 
   const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
@@ -190,11 +192,16 @@ export default function Estimates() {
                             size="sm" 
                             variant="ghost" 
                             data-testid={`view-estimate-${estimate.id}`}
-                            onClick={() => window.location.href = `/estimates/${estimate.id}`}
+                            onClick={() => navigate(`/estimates/${estimate.id}`)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          <Button size="sm" variant="ghost" data-testid={`edit-estimate-${estimate.id}`}>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            data-testid={`edit-estimate-${estimate.id}`}
+                            onClick={() => navigate(`/estimates/${estimate.id}`)}
+                          >
                             <Edit className="w-4 h-4" />
                           </Button>
                           {estimate.status === 'draft' && (
