@@ -226,7 +226,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
-    let query = db.select().from(timeEntries)
+    const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id));
@@ -237,9 +237,9 @@ export class DatabaseStorage implements IStorage {
     if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const query = conditions.length > 0 
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
 
     const rows = await query.orderBy(desc(timeEntries.date));
     
@@ -264,7 +264,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
-    let query = db.select().from(expenses)
+    const baseQuery = db.select().from(expenses)
       .leftJoin(users, eq(expenses.personId, users.id))
       .leftJoin(projects, eq(expenses.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id));
@@ -275,9 +275,9 @@ export class DatabaseStorage implements IStorage {
     if (filters.startDate) conditions.push(gte(expenses.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(expenses.date, filters.endDate));
 
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions));
-    }
+    const query = conditions.length > 0 
+      ? baseQuery.where(and(...conditions))
+      : baseQuery;
 
     const rows = await query.orderBy(desc(expenses.date));
     

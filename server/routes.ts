@@ -298,7 +298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Skip header rows and process data
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
-        const row = data[i];
+        const row = data[i] as any[];
         if (!row[0] || !row[2] || !row[3]) continue; // Skip if no description, hours, or rate
         
         const size = row[4] || "small";
@@ -325,8 +325,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         lineItems.push({
           estimateId: req.params.id,
-          description: row[0],
-          category: row[1] || null,
+          description: String(row[0]),
+          category: row[1] ? String(row[1]) : null,
           baseHours: baseHours.toString(),
           rate: rate.toString(),
           size,
@@ -359,7 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Non-admin users can only see their own time entries
       const filters: any = {};
-      if (req.user.role === "employee" || req.user.role === "pm") {
+      if (req.user?.role === "employee" || req.user?.role === "pm") {
         filters.personId = req.user.id;
       } else if (personId) {
         filters.personId = personId;
@@ -380,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertTimeEntrySchema.parse({
         ...req.body,
-        personId: req.user.id // Always use the authenticated user
+        personId: req.user!.id // Always use the authenticated user
       });
       const timeEntry = await storage.createTimeEntry(validatedData);
       res.status(201).json(timeEntry);
@@ -399,7 +399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Non-admin users can only see their own expenses
       const filters: any = {};
-      if (req.user.role === "employee" || req.user.role === "pm") {
+      if (req.user?.role === "employee" || req.user?.role === "pm") {
         filters.personId = req.user.id;
       } else if (personId) {
         filters.personId = personId;
@@ -420,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validatedData = insertExpenseSchema.parse({
         ...req.body,
-        personId: req.user.id // Always use the authenticated user
+        personId: req.user!.id // Always use the authenticated user
       });
       const expense = await storage.createExpense(validatedData);
       res.status(201).json(expense);

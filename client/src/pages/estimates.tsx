@@ -57,10 +57,11 @@ export default function Estimates() {
         description: "Estimate created successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Estimate creation error:", error);
       toast({
         title: "Error",
-        description: "Failed to create estimate",
+        description: error.message || "Failed to create estimate. Please check your permissions and try again.",
         variant: "destructive",
       });
     },

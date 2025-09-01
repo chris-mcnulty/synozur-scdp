@@ -40,10 +40,11 @@ export default function Projects() {
         description: "Project created successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Project creation error:", error);
       toast({
         title: "Error",
-        description: "Failed to create project",
+        description: error.message || "Failed to create project. Please check your permissions and try again.",
         variant: "destructive",
       });
     },
@@ -62,10 +63,11 @@ export default function Projects() {
         description: "Client created successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Client creation error:", error);
       toast({
         title: "Error",
-        description: "Failed to create client",
+        description: error.message || "Failed to create client. Please check your permissions and try again.",
         variant: "destructive",
       });
     },
