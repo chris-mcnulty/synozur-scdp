@@ -22,8 +22,8 @@ export default function EstimateDetail() {
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
-    epicId: "",
-    stageId: "",
+    epicId: "none",
+    stageId: "none",
     workstream: "",
     week: "",
     baseHours: "",
@@ -79,8 +79,8 @@ export default function EstimateDetail() {
       setNewItem({
         description: "",
         category: "",
-        epicId: "",
-        stageId: "",
+        epicId: "none",
+        stageId: "none",
         workstream: "",
         week: "",
         baseHours: "",
@@ -181,6 +181,8 @@ export default function EstimateDetail() {
     
     const lineItemData = {
       ...newItem,
+      epicId: newItem.epicId === "none" ? null : newItem.epicId,
+      stageId: newItem.stageId === "none" ? null : newItem.stageId,
       baseHours: baseHours.toString(),
       rate: rate.toString(),
       adjustedHours: adjustedHours.toFixed(2),
@@ -408,7 +410,7 @@ export default function EstimateDetail() {
                   <SelectValue placeholder="Select Epic" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {epics.map((epic) => (
                     <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
                   ))}
@@ -422,7 +424,7 @@ export default function EstimateDetail() {
                   <SelectValue placeholder="Select Stage" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {stages.map((stage) => (
                     <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
                   ))}
