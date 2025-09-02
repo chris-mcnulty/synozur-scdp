@@ -19,9 +19,6 @@ export default function EstimateDetail() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
-  
-  console.log("[EstimateDetail] Component mounted with ID:", id);
-  console.log("[EstimateDetail] SessionId:", localStorage.getItem("sessionId"));
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -43,12 +40,6 @@ export default function EstimateDetail() {
     retry: 1,
   });
 
-  console.log("[EstimateDetail] Estimate query result:", { 
-    loading: estimateLoading, 
-    error: estimateError, 
-    hasData: !!estimate 
-  });
-
   const { data: lineItems = [], isLoading, error: lineItemsError } = useQuery<EstimateLineItem[]>({
     queryKey: ['/api/estimates', id, 'line-items'],
     enabled: !!id && !!estimate,
@@ -66,16 +57,9 @@ export default function EstimateDetail() {
     enabled: !!id && !!estimate,
     retry: 1,
   });
-  
-  // Log all errors
-  if (estimateError) console.error("[EstimateDetail] Estimate error:", estimateError);
-  if (lineItemsError) console.error("[EstimateDetail] Line items error:", lineItemsError);
-  if (epicsError) console.error("[EstimateDetail] Epics error:", epicsError);
-  if (stagesError) console.error("[EstimateDetail] Stages error:", stagesError);
 
   const createLineItemMutation = useMutation({
     mutationFn: async (data: any) => {
-      console.log("Sending line item creation request:", data);
       const sessionId = localStorage.getItem("sessionId");
       console.log("Using sessionId:", sessionId);
       
@@ -89,7 +73,6 @@ export default function EstimateDetail() {
       });
     },
     onSuccess: (response) => {
-      console.log("Line item created successfully:", response);
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setNewItem({
         description: "",
@@ -294,10 +277,8 @@ export default function EstimateDetail() {
   const totalAmount = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.totalAmount), 0);
 
-  // Try-catch wrapper for debugging
-  try {
-    // Show loading state
-    if (estimateLoading) {
+  // Show loading state
+  if (estimateLoading) {
       return (
         <Layout>
           <div className="flex items-center justify-center h-screen">
@@ -307,10 +288,9 @@ export default function EstimateDetail() {
       );
     }
 
-    // Show error state
-    if (estimateError) {
-      const errorMessage = estimateError instanceof Error ? estimateError.message : "Unknown error";
-      console.error("[EstimateDetail] Rendering error state:", errorMessage);
+  // Show error state
+  if (estimateError) {
+    const errorMessage = estimateError instanceof Error ? estimateError.message : "Unknown error";
       return (
         <Layout>
           <div className="container mx-auto py-8 px-4">
@@ -433,7 +413,7 @@ export default function EstimateDetail() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {epics.map((epic) => (
+                  {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
                     <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -447,7 +427,7 @@ export default function EstimateDetail() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {stages.map((stage) => (
+                  {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
                     <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -651,26 +631,4 @@ export default function EstimateDetail() {
     </div>
     </Layout>
   );
-  } catch (error) {
-    console.error("[EstimateDetail] Component render error:", error);
-    return (
-      <Layout>
-        <div className="container mx-auto py-8 px-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <h2 className="text-xl font-semibold mb-2">Unexpected Error</h2>
-                <p className="text-muted-foreground mb-4">Something went wrong while loading this page.</p>
-                <p className="text-sm text-red-500 mb-4">{error instanceof Error ? error.message : "Unknown error"}</p>
-                <Button onClick={() => setLocation("/estimates")}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Estimates
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </Layout>
-    );
-  }
 }
