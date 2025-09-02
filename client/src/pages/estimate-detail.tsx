@@ -60,13 +60,6 @@ export default function EstimateDetail() {
 
   const createLineItemMutation = useMutation({
     mutationFn: async (data: any) => {
-      const sessionId = localStorage.getItem("sessionId");
-      console.log("Using sessionId:", sessionId);
-      
-      if (!sessionId) {
-        throw new Error("No session ID found. Please log in again.");
-      }
-      
       return apiRequest(`/api/estimates/${id}/line-items`, {
         method: "POST",
         body: JSON.stringify(data)
@@ -159,8 +152,6 @@ export default function EstimateDetail() {
   };
 
   const handleAddItem = () => {
-    console.log("Adding line item with data:", newItem);
-    
     const baseHours = Number(newItem.baseHours);
     const rate = Number(newItem.rate);
     
@@ -178,17 +169,23 @@ export default function EstimateDetail() {
     );
     
     const lineItemData = {
-      ...newItem,
+      description: newItem.description,
+      category: newItem.category || "",
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
+      workstream: newItem.workstream || null,
+      week: newItem.week ? Number(newItem.week) : null,
       baseHours: baseHours.toString(),
       rate: rate.toString(),
+      size: newItem.size,
+      complexity: newItem.complexity,
+      confidence: newItem.confidence,
+      comments: newItem.comments || null,
       adjustedHours: adjustedHours.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
       sortOrder: lineItems?.length || 0
     };
     
-    console.log("Sending line item data:", lineItemData);
     createLineItemMutation.mutate(lineItemData);
   };
 
