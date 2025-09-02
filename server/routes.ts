@@ -220,6 +220,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/estimates/:id/epics", requireAuth, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Epic name is required" });
+      }
+      const epic = await storage.createEstimateEpic(req.params.id, { name });
+      res.json(epic);
+    } catch (error) {
+      console.error("Error creating epic:", error);
+      res.status(500).json({ message: "Failed to create epic" });
+    }
+  });
+
   // Estimate stages
   app.get("/api/estimates/:id/stages", requireAuth, async (req, res) => {
     try {
@@ -227,6 +241,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(stages);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch stages" });
+    }
+  });
+
+  app.post("/api/estimates/:id/stages", requireAuth, async (req, res) => {
+    try {
+      const { epicId, name } = req.body;
+      if (!epicId || !name) {
+        return res.status(400).json({ message: "Epic ID and stage name are required" });
+      }
+      const stage = await storage.createEstimateStage(req.params.id, { epicId, name });
+      res.json(stage);
+    } catch (error) {
+      console.error("Error creating stage:", error);
+      res.status(500).json({ message: "Failed to create stage" });
     }
   });
 

@@ -47,9 +47,11 @@ export interface IStorage {
   
   // Estimate Epics
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
+  createEstimateEpic(estimateId: string, epic: { name: string }): Promise<EstimateEpic>;
   
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
+  createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage>;
   
   // Estimate Line Items
   getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]>;
@@ -214,6 +216,19 @@ export class DatabaseStorage implements IStorage {
       .orderBy(estimateEpics.order);
   }
 
+  async createEstimateEpic(estimateId: string, epic: { name: string }): Promise<EstimateEpic> {
+    // Get the max order for existing epics
+    const existingEpics = await this.getEstimateEpics(estimateId);
+    const maxOrder = existingEpics.reduce((max, e) => Math.max(max, e.order || 0), 0);
+    
+    const [newEpic] = await db.insert(estimateEpics).values({
+      estimateId,
+      name: epic.name,
+      order: maxOrder + 1
+    }).returning();
+    return newEpic;
+  }
+
   async getEstimateStages(estimateId: string): Promise<EstimateStage[]> {
     // Get all stages for all epics in this estimate
     const epics = await this.getEstimateEpics(estimateId);
@@ -222,6 +237,21 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(estimateStages)
       .where(sql`${estimateStages.epicId} IN ${sql.raw(`(${epics.map(e => `'${e.id}'`).join(',')})`)}`)
       .orderBy(estimateStages.order);
+  }
+
+  async createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage> {
+    // Get the max order for existing stages in this epic
+    const existingStages = await db.select().from(estimateStages)
+      .where(eq(estimateStages.epicId, stage.epicId))
+      .orderBy(estimateStages.order);
+    const maxOrder = existingStages.reduce((max, s) => Math.max(max, s.order || 0), 0);
+    
+    const [newStage] = await db.insert(estimateStages).values({
+      epicId: stage.epicId,
+      name: stage.name,
+      order: maxOrder + 1
+    }).returning();
+    return newStage;
   }
 
   async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {

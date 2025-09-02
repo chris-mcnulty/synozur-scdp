@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage } from "@shared/schema";
@@ -19,6 +20,11 @@ export default function EstimateDetail() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [showEpicDialog, setShowEpicDialog] = useState(false);
+  const [showStageDialog, setShowStageDialog] = useState(false);
+  const [newEpicName, setNewEpicName] = useState("");
+  const [newStageName, setNewStageName] = useState("");
+  const [selectedEpicForStage, setSelectedEpicForStage] = useState("");
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -56,6 +62,51 @@ export default function EstimateDetail() {
     queryKey: ['/api/estimates', id, 'stages'],
     enabled: !!id && !!estimate,
     retry: 1,
+  });
+
+  const createEpicMutation = useMutation({
+    mutationFn: async (data: { name: string }) => {
+      return apiRequest(`/api/estimates/${id}/epics`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
+      setNewEpicName("");
+      setShowEpicDialog(false);
+      toast({ title: "Epic created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to create epic", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const createStageMutation = useMutation({
+    mutationFn: async (data: { epicId: string; name: string }) => {
+      return apiRequest(`/api/estimates/${id}/stages`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      setNewStageName("");
+      setSelectedEpicForStage("");
+      setShowStageDialog(false);
+      toast({ title: "Stage created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to create stage", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
   });
 
   const createLineItemMutation = useMutation({
@@ -423,34 +474,57 @@ export default function EstimateDetail() {
         <CardContent>
           <div className="space-y-4 mb-4">
             <div className="grid grid-cols-6 gap-2">
-              <Select
-                value={newItem.epicId}
-                onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Epic" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
-                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={newItem.stageId}
-                onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Stage" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
-                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-1">
+                <Select
+                  value={newItem.epicId}
+                  onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
+                  className="flex-1"
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Epic" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
+                      <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowEpicDialog(true)}
+                  title="Add new Epic"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex gap-1">
+                <Select
+                  value={newItem.stageId}
+                  onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
+                  className="flex-1"
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Stage" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
+                      <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowStageDialog(true)}
+                  title="Add new Stage"
+                  disabled={epics.length === 0}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
               <Input
                 placeholder="Workstream"
                 value={newItem.workstream}
@@ -648,6 +722,99 @@ export default function EstimateDetail() {
         </CardContent>
       </Card>
     </div>
+
+    {/* Epic Creation Dialog */}
+    <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Epic</DialogTitle>
+          <DialogDescription>
+            Add a new epic to organize your estimate line items
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="epic-name">Epic Name</Label>
+            <Input
+              id="epic-name"
+              value={newEpicName}
+              onChange={(e) => setNewEpicName(e.target.value)}
+              placeholder="Enter epic name"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowEpicDialog(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => {
+              if (newEpicName.trim()) {
+                createEpicMutation.mutate({ name: newEpicName.trim() });
+              }
+            }}
+            disabled={!newEpicName.trim() || createEpicMutation.isPending}
+          >
+            {createEpicMutation.isPending ? "Creating..." : "Create Epic"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Stage Creation Dialog */}
+    <Dialog open={showStageDialog} onOpenChange={setShowStageDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Stage</DialogTitle>
+          <DialogDescription>
+            Add a new stage to an epic
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="stage-epic">Select Epic</Label>
+            <Select value={selectedEpicForStage} onValueChange={setSelectedEpicForStage}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an epic" />
+              </SelectTrigger>
+              <SelectContent>
+                {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
+                  <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="stage-name">Stage Name</Label>
+            <Input
+              id="stage-name"
+              value={newStageName}
+              onChange={(e) => setNewStageName(e.target.value)}
+              placeholder="Enter stage name"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowStageDialog(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => {
+              if (selectedEpicForStage && newStageName.trim()) {
+                createStageMutation.mutate({ 
+                  epicId: selectedEpicForStage, 
+                  name: newStageName.trim() 
+                });
+              }
+            }}
+            disabled={!selectedEpicForStage || !newStageName.trim() || createStageMutation.isPending}
+          >
+            {createStageMutation.isPending ? "Creating..." : "Create Stage"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     </Layout>
   );
 }
