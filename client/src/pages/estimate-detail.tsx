@@ -38,7 +38,7 @@ export default function EstimateDetail() {
   });
 
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
-    queryKey: [`/api/estimates/${id}`],
+    queryKey: ['/api/estimates', id],
     enabled: !!id,
     retry: 1,
   });
@@ -50,19 +50,19 @@ export default function EstimateDetail() {
   });
 
   const { data: lineItems = [], isLoading, error: lineItemsError } = useQuery<EstimateLineItem[]>({
-    queryKey: [`/api/estimates/${id}/line-items`],
+    queryKey: ['/api/estimates', id, 'line-items'],
     enabled: !!id && !!estimate,
     retry: 1,
   });
 
   const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
-    queryKey: [`/api/estimates/${id}/epics`],
+    queryKey: ['/api/estimates', id, 'epics'],
     enabled: !!id && !!estimate,
     retry: 1,
   });
 
   const { data: stages = [], error: stagesError } = useQuery<EstimateStage[]>({
-    queryKey: [`/api/estimates/${id}/stages`],
+    queryKey: ['/api/estimates', id, 'stages'],
     enabled: !!id && !!estimate,
     retry: 1,
   });
@@ -90,7 +90,7 @@ export default function EstimateDetail() {
     },
     onSuccess: (response) => {
       console.log("Line item created successfully:", response);
-      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${id}/line-items`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setNewItem({
         description: "",
         category: "",
@@ -137,7 +137,7 @@ export default function EstimateDetail() {
         body: JSON.stringify(data)
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${id}/line-items`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setEditingItem(null);
       toast({ title: "Line item updated successfully" });
     }
@@ -149,7 +149,7 @@ export default function EstimateDetail() {
         method: "DELETE"
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/estimates/${id}/line-items`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       toast({ title: "Line item deleted successfully" });
     }
   });
@@ -279,7 +279,9 @@ export default function EstimateDetail() {
           body: JSON.stringify({ file: base64 })
         });
         toast({ title: `Successfully imported ${response.itemsCreated} line items` });
-        queryClient.invalidateQueries({ queryKey: [`/api/estimates/${id}/line-items`] });
+        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
       } catch (error) {
         toast({ title: "Failed to import Excel file", variant: "destructive" });
       }

@@ -58,23 +58,31 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const url = queryKey.join("/") as string;
+    console.log("[QueryClient] Making request to:", url, "with sessionId:", sessionId);
+    
     const headers: Record<string, string> = {};
     if (sessionId) {
       headers['X-Session-Id'] = sessionId;
     }
     
-    const res = await fetch(queryKey.join("/") as string, {
+    const res = await fetch(url, {
       headers,
       credentials: "include",
     });
 
+    console.log("[QueryClient] Response status:", res.status);
+
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+      console.log("[QueryClient] 401 - returning null");
       setSessionId(null);
       return null;
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    const data = await res.json();
+    console.log("[QueryClient] Request successful");
+    return data;
   };
 
 export const queryClient = new QueryClient({
