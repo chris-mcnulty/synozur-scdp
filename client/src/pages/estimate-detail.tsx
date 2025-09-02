@@ -19,6 +19,9 @@ export default function EstimateDetail() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  
+  console.log("[EstimateDetail] Component mounted with ID:", id);
+  console.log("[EstimateDetail] SessionId:", localStorage.getItem("sessionId"));
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -37,26 +40,38 @@ export default function EstimateDetail() {
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
     queryKey: [`/api/estimates/${id}`],
     enabled: !!id,
+    retry: 1,
   });
 
-  if (estimateError) {
-    console.error("Error loading estimate:", estimateError);
-  }
+  console.log("[EstimateDetail] Estimate query result:", { 
+    loading: estimateLoading, 
+    error: estimateError, 
+    hasData: !!estimate 
+  });
 
-  const { data: lineItems = [], isLoading } = useQuery<EstimateLineItem[]>({
+  const { data: lineItems = [], isLoading, error: lineItemsError } = useQuery<EstimateLineItem[]>({
     queryKey: [`/api/estimates/${id}/line-items`],
-    enabled: !!id,
+    enabled: !!id && !!estimate,
+    retry: 1,
   });
 
-  const { data: epics = [] } = useQuery<EstimateEpic[]>({
+  const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
     queryKey: [`/api/estimates/${id}/epics`],
-    enabled: !!id,
+    enabled: !!id && !!estimate,
+    retry: 1,
   });
 
-  const { data: stages = [] } = useQuery<EstimateStage[]>({
+  const { data: stages = [], error: stagesError } = useQuery<EstimateStage[]>({
     queryKey: [`/api/estimates/${id}/stages`],
-    enabled: !!id,
+    enabled: !!id && !!estimate,
+    retry: 1,
   });
+  
+  // Log all errors
+  if (estimateError) console.error("[EstimateDetail] Estimate error:", estimateError);
+  if (lineItemsError) console.error("[EstimateDetail] Line items error:", lineItemsError);
+  if (epicsError) console.error("[EstimateDetail] Epics error:", epicsError);
+  if (stagesError) console.error("[EstimateDetail] Stages error:", stagesError);
 
   const createLineItemMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -277,41 +292,46 @@ export default function EstimateDetail() {
   const totalAmount = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.totalAmount), 0);
 
-  // Show loading state
-  if (estimateLoading) {
+  // Try-catch wrapper for debugging
+  try {
+    // Show loading state
+    if (estimateLoading) {
+      return (
+        <Layout>
+          <div className="flex items-center justify-center h-screen">
+            <div>Loading estimate...</div>
+          </div>
+        </Layout>
+      );
+    }
+
+    // Show error state
+    if (estimateError) {
+      const errorMessage = estimateError instanceof Error ? estimateError.message : "Unknown error";
+      console.error("[EstimateDetail] Rendering error state:", errorMessage);
+      return (
+        <Layout>
+          <div className="container mx-auto py-8 px-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <h2 className="text-xl font-semibold mb-2">Error loading estimate</h2>
+                  <p className="text-muted-foreground mb-4">Unable to load the estimate details.</p>
+                  <p className="text-sm text-red-500 mb-4">{errorMessage}</p>
+                  <Button onClick={() => setLocation("/estimates")}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Estimates
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </Layout>
+      );
+    }
+
     return (
       <Layout>
-        <div className="flex items-center justify-center h-screen">
-          <div>Loading estimate...</div>
-        </div>
-      </Layout>
-    );
-  }
-
-  // Show error state
-  if (estimateError) {
-    return (
-      <Layout>
-        <div className="container mx-auto py-8 px-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <h2 className="text-xl font-semibold mb-2">Error loading estimate</h2>
-                <p className="text-muted-foreground mb-4">Unable to load the estimate details.</p>
-                <Button onClick={() => setLocation("/estimates")}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Estimates
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </Layout>
-    );
-  }
-
-  return (
-    <Layout>
       <div className="container mx-auto py-8 px-4 max-w-7xl">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -629,4 +649,26 @@ export default function EstimateDetail() {
     </div>
     </Layout>
   );
+  } catch (error) {
+    console.error("[EstimateDetail] Component render error:", error);
+    return (
+      <Layout>
+        <div className="container mx-auto py-8 px-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold mb-2">Unexpected Error</h2>
+                <p className="text-muted-foreground mb-4">Something went wrong while loading this page.</p>
+                <p className="text-sm text-red-500 mb-4">{error instanceof Error ? error.message : "Unknown error"}</p>
+                <Button onClick={() => setLocation("/estimates")}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Estimates
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
 }
