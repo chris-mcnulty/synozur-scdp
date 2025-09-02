@@ -279,20 +279,20 @@ export default function EstimateDetail() {
 
   // Show loading state
   if (estimateLoading) {
-      return (
-        <Layout>
-          <div className="flex items-center justify-center h-screen">
-            <div>Loading estimate...</div>
-          </div>
-        </Layout>
-      );
-    }
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <div>Loading estimate...</div>
+        </div>
+      </Layout>
+    );
+  }
 
   // Show error state
   if (estimateError) {
     const errorMessage = estimateError instanceof Error ? estimateError.message : "Unknown error";
-      return (
-        <Layout>
+    return (
+      <Layout>
           <div className="container mx-auto py-8 px-4">
             <Card>
               <CardContent className="pt-6">
@@ -300,6 +300,28 @@ export default function EstimateDetail() {
                   <h2 className="text-xl font-semibold mb-2">Error loading estimate</h2>
                   <p className="text-muted-foreground mb-4">Unable to load the estimate details.</p>
                   <p className="text-sm text-red-500 mb-4">{errorMessage}</p>
+                  <Button onClick={() => setLocation("/estimates")}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Estimates
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </Layout>
+      );
+    }
+
+    // Check if estimate exists
+    if (!estimate) {
+      return (
+        <Layout>
+          <div className="container mx-auto py-8 px-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <h2 className="text-xl font-semibold mb-2">Estimate Not Found</h2>
+                  <p className="text-muted-foreground mb-4">The requested estimate could not be found.</p>
                   <Button onClick={() => setLocation("/estimates")}>
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Estimates
