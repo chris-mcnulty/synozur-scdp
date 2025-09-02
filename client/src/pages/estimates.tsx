@@ -31,7 +31,7 @@ interface Estimate {
 export default function Estimates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
-  const [, navigate] = useLocation();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
@@ -192,7 +192,7 @@ export default function Estimates() {
                             size="sm" 
                             variant="ghost" 
                             data-testid={`view-estimate-${estimate.id}`}
-                            onClick={() => navigate(`/estimates/${estimate.id}`)}
+                            onClick={() => setLocation(`/estimates/${estimate.id}`)}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -200,7 +200,7 @@ export default function Estimates() {
                             size="sm" 
                             variant="ghost" 
                             data-testid={`edit-estimate-${estimate.id}`}
-                            onClick={() => navigate(`/estimates/${estimate.id}`)}
+                            onClick={() => setLocation(`/estimates/${estimate.id}`)}
                           >
                             <Edit className="w-4 h-4" />
                           </Button>

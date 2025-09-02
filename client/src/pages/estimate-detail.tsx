@@ -15,7 +15,7 @@ import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage } from "@s
 
 export default function EstimateDetail() {
   const { id } = useParams();
-  const [, navigate] = useLocation();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
@@ -296,7 +296,7 @@ export default function EstimateDetail() {
               <div className="text-center">
                 <h2 className="text-xl font-semibold mb-2">Error loading estimate</h2>
                 <p className="text-muted-foreground mb-4">Unable to load the estimate details.</p>
-                <Button onClick={() => navigate("/estimates")}>
+                <Button onClick={() => setLocation("/estimates")}>
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back to Estimates
                 </Button>
@@ -316,7 +316,7 @@ export default function EstimateDetail() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/estimates")}
+            onClick={() => setLocation("/estimates")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
