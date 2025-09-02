@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -274,8 +275,42 @@ export default function EstimateDetail() {
   const totalAmount = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.totalAmount), 0);
 
+  // Show loading state
+  if (estimateLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center h-screen">
+          <div>Loading estimate...</div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show error state
+  if (estimateError) {
+    return (
+      <Layout>
+        <div className="container mx-auto py-8 px-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold mb-2">Error loading estimate</h2>
+                <p className="text-muted-foreground mb-4">Unable to load the estimate details.</p>
+                <Button onClick={() => navigate("/estimates")}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Estimates
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
-    <div className="container mx-auto py-8 px-4 max-w-7xl">
+    <Layout>
+      <div className="container mx-auto py-8 px-4 max-w-7xl">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button
@@ -590,5 +625,6 @@ export default function EstimateDetail() {
         </CardContent>
       </Card>
     </div>
+    </Layout>
   );
 }
