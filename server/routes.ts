@@ -325,6 +325,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Estimate milestones
+  app.get("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
+    try {
+      const milestones = await storage.getEstimateMilestones(req.params.id);
+      res.json(milestones);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch milestones" });
+    }
+  });
+
+  app.post("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
+    try {
+      const { insertEstimateMilestoneSchema } = await import("@shared/schema");
+      const validatedData = insertEstimateMilestoneSchema.parse({
+        ...req.body,
+        estimateId: req.params.id,
+      });
+      const milestone = await storage.createEstimateMilestone(validatedData);
+      res.json(milestone);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid milestone data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create milestone" });
+    }
+  });
+
+  app.patch("/api/estimates/:estimateId/milestones/:id", requireAuth, async (req, res) => {
+    try {
+      const milestone = await storage.updateEstimateMilestone(req.params.id, req.body);
+      res.json(milestone);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update milestone" });
+    }
+  });
+
+  app.delete("/api/estimates/:estimateId/milestones/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEstimateMilestone(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete milestone" });
+    }
+  });
+
   // Excel template download (empty template for users to fill)
   app.get("/api/estimates/template-excel", requireAuth, async (req, res) => {
     try {
@@ -333,16 +378,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const worksheetData = [
         ["Estimate Line Items Template"],
         ["Instructions: Fill in the rows below with your line item details. Keep the header row intact. Epic and Stage names must match existing values in the estimate."],
-        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
-        ["Phase 1", "Design", "UX", 1, "Example: Design Mockups", "Design", 20, 150, "small", "small", "high", "Initial mockups", "", ""],
-        ["Phase 1", "Development", "Frontend", 2, "Example: Frontend Development", "Development", 80, 175, "medium", "medium", "medium", "React components", "", ""],
-        ["Phase 1", "Testing", "QA", 3, "Example: Testing & QA", "QA", 40, 125, "small", "large", "low", "End-to-end tests", "", ""],
-        ["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""],
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
+        ["Phase 1", "Design", "UX", 1, "Example: Design Mockups", "Design", 20, 1, 150, "small", "small", "high", "Initial mockups", "", ""],
+        ["Phase 1", "Development", "Frontend", 2, "Example: Frontend Development", "Development", 20, 4, 175, "medium", "medium", "medium", "4 React components", "", ""],
+        ["Phase 1", "Testing", "QA", 3, "Example: Testing & QA", "QA", 40, 1, 125, "small", "large", "low", "End-to-end tests", "", ""],
+        ["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""],
       ];
 
       // Add more empty rows for user input
       for (let i = 0; i < 30; i++) {
-        worksheetData.push(["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
@@ -356,6 +401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { wch: 35 }, // Description
         { wch: 15 }, // Category
         { wch: 12 }, // Base Hours
+        { wch: 10 }, // Factor
         { wch: 10 }, // Rate
         { wch: 10 }, // Size
         { wch: 12 }, // Complexity
@@ -395,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const worksheetData = [
         ["Estimate Line Items Export"],
         [],
-        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
         ...lineItems.map(item => [
           item.epicId ? (epicMap.get(item.epicId) || "") : "",
           item.stageId ? (stageMap.get(item.stageId) || "") : "",
@@ -404,6 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           item.description,
           item.category || "",
           Number(item.baseHours),
+          Number(item.factor || 1),
           Number(item.rate),
           item.size,
           item.complexity,
@@ -416,7 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Add empty rows for new items
       for (let i = 0; i < 20; i++) {
-        worksheetData.push(["", "", "", "", "", "", "", "", "small", "small", "high", "", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
@@ -430,6 +477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { wch: 35 }, // Description
         { wch: 15 }, // Category
         { wch: 12 }, // Base Hours
+        { wch: 10 }, // Factor
         { wch: 10 }, // Rate
         { wch: 10 }, // Size
         { wch: 12 }, // Complexity
@@ -484,10 +532,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
-        // Updated column indices for new format
-        // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 6: Base Hours, 7: Rate
-        // 8: Size, 9: Complexity, 10: Confidence, 11: Comments
-        if (!row[4] || !row[6] || !row[7]) continue; // Skip if no description, hours, or rate
+        // Updated column indices for new format with Factor
+        // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 6: Base Hours, 7: Factor, 8: Rate
+        // 9: Size, 10: Complexity, 11: Confidence, 12: Comments
+        if (!row[4] || !row[6] || !row[8]) continue; // Skip if no description, hours, or rate
         
         // Lookup epic and stage IDs from names
         const epicName = row[0] ? String(row[0]).toLowerCase() : "";
@@ -495,9 +543,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const epicId = epicName ? (epicNameToId.get(epicName) || null) : null;
         const stageId = stageName ? (stageNameToId.get(stageName) || null) : null;
         
-        const size = row[8] || "small";
-        const complexity = row[9] || "small";
-        const confidence = row[10] || "high";
+        const size = row[9] || "small";
+        const complexity = row[10] || "small";
+        const confidence = row[11] || "high";
         
         // Calculate multipliers
         let sizeMultiplier = 1.0;
@@ -513,8 +561,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
         
         const baseHours = Number(row[6]);
-        const rate = Number(row[7]);
-        const adjustedHours = baseHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+        const factor = Number(row[7]) || 1;
+        const rate = Number(row[8]);
+        const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
         
         lineItems.push({
@@ -526,11 +575,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: String(row[4]),
           category: row[5] ? String(row[5]) : null,
           baseHours: baseHours.toString(),
+          factor: factor.toString(),
           rate: rate.toString(),
           size,
           complexity,
           confidence,
-          comments: row[11] ? String(row[11]) : null,
+          comments: row[12] ? String(row[12]) : null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
           sortOrder: i - 3

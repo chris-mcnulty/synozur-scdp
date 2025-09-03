@@ -1,11 +1,11 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
-  estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
+  estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
-  type EstimateEpic, type EstimateStage,
+  type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense
 } from "@shared/schema";
@@ -59,6 +59,12 @@ export interface IStorage {
   updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
   deleteEstimateLineItem(id: string): Promise<void>;
   bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]>;
+  
+  // Estimate Milestones
+  getEstimateMilestones(estimateId: string): Promise<EstimateMilestone[]>;
+  createEstimateMilestone(milestone: InsertEstimateMilestone): Promise<EstimateMilestone>;
+  updateEstimateMilestone(id: string, milestone: Partial<InsertEstimateMilestone>): Promise<EstimateMilestone>;
+  deleteEstimateMilestone(id: string): Promise<void>;
   
   // Time entries
   getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
@@ -276,6 +282,29 @@ export class DatabaseStorage implements IStorage {
 
   async bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]> {
     return await db.insert(estimateLineItems).values(lineItems).returning();
+  }
+
+  async getEstimateMilestones(estimateId: string): Promise<EstimateMilestone[]> {
+    return await db.select().from(estimateMilestones)
+      .where(eq(estimateMilestones.estimateId, estimateId))
+      .orderBy(estimateMilestones.sortOrder);
+  }
+
+  async createEstimateMilestone(milestone: InsertEstimateMilestone): Promise<EstimateMilestone> {
+    const [newMilestone] = await db.insert(estimateMilestones).values(milestone).returning();
+    return newMilestone;
+  }
+
+  async updateEstimateMilestone(id: string, milestone: Partial<InsertEstimateMilestone>): Promise<EstimateMilestone> {
+    const [updatedMilestone] = await db.update(estimateMilestones)
+      .set(milestone)
+      .where(eq(estimateMilestones.id, id))
+      .returning();
+    return updatedMilestone;
+  }
+
+  async deleteEstimateMilestone(id: string): Promise<void> {
+    await db.delete(estimateMilestones).where(eq(estimateMilestones.id, id));
   }
 
   async getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {

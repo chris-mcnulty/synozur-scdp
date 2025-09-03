@@ -60,6 +60,9 @@ export const estimates = pgTable("estimates", {
   status: text("status").notNull().default("draft"), // draft, sent, approved, rejected
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
+  // Output totals (customer-facing)
+  presentedTotal: decimal("presented_total", { precision: 10, scale: 2 }), // Total presented to customer
+  margin: decimal("margin", { precision: 5, scale: 2 }), // Margin percentage
   validUntil: date("valid_until"),
   // Visible vocabulary customization (client can rename Epic/Stage/Activity)
   epicLabel: text("epic_label").default("Epic"),
@@ -80,7 +83,7 @@ export const estimates = pgTable("estimates", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Estimate Line Items with factors
+// Estimate Line Items (inputs) with factors
 export const estimateLineItems = pgTable("estimate_line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
@@ -91,13 +94,27 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   workstream: text("workstream"), // Workstream name
   week: integer("week"), // Week number
   baseHours: decimal("base_hours", { precision: 10, scale: 2 }).notNull(),
-  rate: decimal("rate", { precision: 10, scale: 2 }).notNull(),
+  factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Rate defaults to $0
   size: text("size").notNull().default("small"), // small, medium, large
   complexity: text("complexity").notNull().default("small"), // small, medium, large
   confidence: text("confidence").notNull().default("high"), // high, medium, low
-  adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull(), // base_hours * multipliers
+  adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull(), // base_hours * factor * multipliers
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(), // adjusted_hours * rate
   comments: text("comments"), // Optional comments
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Estimate Milestone Payments (outputs)
+export const estimateMilestones = pgTable("estimate_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(), // e.g., "Phase 1 Delivery", "Project Kickoff"
+  description: text("description"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  dueDate: date("due_date"), // Optional due date
+  percentage: decimal("percentage", { precision: 5, scale: 2 }), // Optional percentage of total
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
@@ -390,6 +407,11 @@ export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems
   createdAt: true,
 });
 
+export const insertEstimateMilestoneSchema = createInsertSchema(estimateMilestones).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
@@ -418,6 +440,9 @@ export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
 
 export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
 export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
+
+export type EstimateMilestone = typeof estimateMilestones.$inferSelect;
+export type InsertEstimateMilestone = z.infer<typeof insertEstimateMilestoneSchema>;
 
 export type EstimateEpic = typeof estimateEpics.$inferSelect;
 export type EstimateStage = typeof estimateStages.$inferSelect;

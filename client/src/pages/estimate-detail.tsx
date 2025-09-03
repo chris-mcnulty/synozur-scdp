@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage } from "@shared/schema";
+import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
 export default function EstimateDetail() {
   const { id } = useParams();
@@ -25,6 +25,16 @@ export default function EstimateDetail() {
   const [newEpicName, setNewEpicName] = useState("");
   const [newStageName, setNewStageName] = useState("");
   const [selectedEpicForStage, setSelectedEpicForStage] = useState("");
+  const [showMilestoneDialog, setShowMilestoneDialog] = useState(false);
+  const [newMilestone, setNewMilestone] = useState({
+    name: "",
+    description: "",
+    amount: "",
+    percentage: "",
+    dueDate: ""
+  });
+  const [presentedTotal, setPresentedTotal] = useState("");
+  const [margin, setMargin] = useState("");
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -33,7 +43,8 @@ export default function EstimateDetail() {
     workstream: "",
     week: "",
     baseHours: "",
-    rate: "",
+    factor: "1",
+    rate: "0",
     size: "small",
     complexity: "small",
     confidence: "high",
@@ -60,6 +71,12 @@ export default function EstimateDetail() {
 
   const { data: stages = [], error: stagesError } = useQuery<EstimateStage[]>({
     queryKey: ['/api/estimates', id, 'stages'],
+    enabled: !!id && !!estimate,
+    retry: 1,
+  });
+
+  const { data: milestones = [] } = useQuery<EstimateMilestone[]>({
+    queryKey: ['/api/estimates', id, 'milestones'],
     enabled: !!id && !!estimate,
     retry: 1,
   });
@@ -126,13 +143,14 @@ export default function EstimateDetail() {
         workstream: "",
         week: "",
         baseHours: "",
-        rate: "",
+        factor: "1",
+        rate: "0",
         size: "small",
         complexity: "small",
         confidence: "high",
         comments: ""
       });
-      toast({ title: "Line item added successfully" });
+      toast({ title: "Input added successfully" });
     },
     onError: (error: any) => {
       console.error("Failed to create line item - Full error:", error);
@@ -181,7 +199,48 @@ export default function EstimateDetail() {
     }
   });
 
-  const calculateAdjustedValues = (baseHours: number, rate: number, size: string, complexity: string, confidence: string) => {
+  const createMilestoneMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest(`/api/estimates/${id}/milestones`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+      setShowMilestoneDialog(false);
+      setNewMilestone({ name: "", description: "", amount: "", percentage: "", dueDate: "" });
+      toast({
+        title: "Success",
+        description: "Milestone created successfully",
+      });
+    },
+  });
+
+  const updateMilestoneMutation = useMutation({
+    mutationFn: ({ milestoneId, data }: { milestoneId: string; data: any }) => 
+      apiRequest(`/api/estimates/${id}/milestones/${milestoneId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data)
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+      toast({ title: "Milestone updated successfully" });
+    }
+  });
+
+  const deleteMilestoneMutation = useMutation({
+    mutationFn: (milestoneId: string) => 
+      apiRequest(`/api/estimates/${id}/milestones/${milestoneId}`, {
+        method: "DELETE"
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'milestones'] });
+      toast({ title: "Milestone deleted successfully" });
+    }
+  });
+
+  const calculateAdjustedValues = (baseHours: number, factor: number, rate: number, size: string, complexity: string, confidence: string) => {
     if (!estimate) return { adjustedHours: 0, totalAmount: 0 };
     
     let sizeMultiplier = 1.0;
@@ -196,7 +255,7 @@ export default function EstimateDetail() {
     if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
     else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
     
-    const adjustedHours = baseHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+    const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
     const totalAmount = adjustedHours * rate;
     
     return { adjustedHours, totalAmount };
@@ -204,19 +263,20 @@ export default function EstimateDetail() {
 
   const handleAddItem = () => {
     const baseHours = Number(newItem.baseHours);
+    const factor = Number(newItem.factor) || 1;
     const rate = Number(newItem.rate);
     
-    if (isNaN(baseHours) || isNaN(rate)) {
+    if (isNaN(baseHours) || isNaN(factor) || isNaN(rate)) {
       toast({
         title: "Invalid input",
-        description: "Please enter valid numbers for hours and rate",
+        description: "Please enter valid numbers for hours, factor, and rate",
         variant: "destructive"
       });
       return;
     }
     
     const { adjustedHours, totalAmount } = calculateAdjustedValues(
-      baseHours, rate, newItem.size, newItem.complexity, newItem.confidence
+      baseHours, factor, rate, newItem.size, newItem.complexity, newItem.confidence
     );
     
     const lineItemData = {
@@ -227,6 +287,7 @@ export default function EstimateDetail() {
       workstream: newItem.workstream || null,
       week: newItem.week ? Number(newItem.week) : null,
       baseHours: baseHours.toString(),
+      factor: factor.toString(),
       rate: rate.toString(),
       size: newItem.size,
       complexity: newItem.complexity,
@@ -243,9 +304,10 @@ export default function EstimateDetail() {
   const handleUpdateItem = (item: EstimateLineItem, field: string, value: any) => {
     const updatedItem = { ...item, [field]: value };
     const baseHours = Number(updatedItem.baseHours);
+    const factor = Number(updatedItem.factor) || 1;
     const rate = Number(updatedItem.rate);
     const { adjustedHours, totalAmount } = calculateAdjustedValues(
-      baseHours, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+      baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
     );
     
     updateLineItemMutation.mutate({
@@ -466,19 +528,18 @@ export default function EstimateDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Line Items</CardTitle>
+          <CardTitle>Estimate Inputs</CardTitle>
           <CardDescription>
-            Add and manage estimate line items with size, complexity, and confidence factors
+            Add and manage estimate inputs with factor multipliers and confidence adjustments
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4 mb-4">
-            <div className="grid grid-cols-6 gap-2">
+            <div className="grid grid-cols-7 gap-2">
               <div className="flex gap-1">
                 <Select
                   value={newItem.epicId}
                   onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
-                  className="flex-1"
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Epic" />
@@ -503,7 +564,6 @@ export default function EstimateDetail() {
                 <Select
                   value={newItem.stageId}
                   onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
-                  className="flex-1"
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Stage" />
@@ -543,7 +603,14 @@ export default function EstimateDetail() {
                 onChange={(e) => setNewItem({ ...newItem, baseHours: e.target.value })}
               />
               <Input
-                placeholder="Rate"
+                placeholder="Factor"
+                type="number"
+                value={newItem.factor}
+                onChange={(e) => setNewItem({ ...newItem, factor: e.target.value })}
+                title="Multiplier (e.g., 4 interviews × 3 hours)"
+              />
+              <Input
+                placeholder="Rate ($)"
                 type="number"
                 value={newItem.rate}
                 onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
@@ -617,7 +684,7 @@ export default function EstimateDetail() {
             size="default"
           >
             <Plus className="h-4 w-4 mr-2" />
-            {createLineItemMutation.isPending ? "Adding..." : "Add Line Item"}
+            {createLineItemMutation.isPending ? "Adding..." : "Add Input"}
           </Button>
           {!newItem.description && !newItem.baseHours && !newItem.rate && (
             <p className="text-sm text-muted-foreground mb-2">
@@ -636,8 +703,9 @@ export default function EstimateDetail() {
                   <TableHead>Description</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Hours</TableHead>
+                  <TableHead>Factor</TableHead>
                   <TableHead>Rate</TableHead>
-                  <TableHead>Factors</TableHead>
+                  <TableHead>Adjustments</TableHead>
                   <TableHead>Adj. Hours</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Comments</TableHead>
@@ -682,6 +750,7 @@ export default function EstimateDetail() {
                       </TableCell>
                       <TableCell>{item.category || "-"}</TableCell>
                       <TableCell>{item.baseHours}</TableCell>
+                      <TableCell>{item.factor || 1}</TableCell>
                       <TableCell>${item.rate}</TableCell>
                       <TableCell>
                         <div className="text-xs">
@@ -718,6 +787,134 @@ export default function EstimateDetail() {
                 Total Amount: ${totalAmount.toFixed(2)}
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Estimate Outputs Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Estimate Outputs</CardTitle>
+          <CardDescription>
+            Customer-facing totals and milestone payment schedule
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Presented Total and Margin */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+            <div>
+              <Label htmlFor="presented-total">Presented Total</Label>
+              <Input
+                id="presented-total"
+                type="number"
+                placeholder="Enter customer-facing total"
+                value={presentedTotal || estimate?.presentedTotal || ""}
+                onChange={(e) => setPresentedTotal(e.target.value)}
+                onBlur={() => {
+                  if (presentedTotal && estimate) {
+                    const calculatedMargin = ((totalAmount - parseFloat(presentedTotal)) / totalAmount * 100).toFixed(2);
+                    setMargin(calculatedMargin);
+                  }
+                }}
+                className="mt-1"
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                Internal Total: ${totalAmount.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="margin">Margin (%)</Label>
+              <Input
+                id="margin"
+                type="number"
+                placeholder="Auto-calculated"
+                value={margin || (estimate?.presentedTotal ? ((totalAmount - estimate.presentedTotal) / totalAmount * 100).toFixed(2) : "")}
+                readOnly
+                className="mt-1 bg-muted"
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                Difference: ${presentedTotal ? (totalAmount - parseFloat(presentedTotal)).toFixed(2) : "N/A"}
+              </p>
+            </div>
+          </div>
+
+          {/* Milestone Payments */}
+          <div>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Milestone Payments</h3>
+              <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Milestone
+              </Button>
+            </div>
+
+            {milestones.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No milestone payments defined. Click "Add Milestone" to create payment milestones.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {milestones.map((milestone) => {
+                  const percentageAmount = milestone.percentage 
+                    ? (parseFloat(presentedTotal || estimate?.presentedTotal || "0") * milestone.percentage / 100).toFixed(2)
+                    : "0.00";
+                  
+                  return (
+                    <div key={milestone.id} className="p-4 border rounded-lg space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium">{milestone.name}</div>
+                          {milestone.description && (
+                            <div className="text-sm text-muted-foreground">{milestone.description}</div>
+                          )}
+                          {milestone.dueDate && (
+                            <div className="text-sm text-muted-foreground">
+                              Due: {new Date(milestone.dueDate).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right ml-4">
+                          <div className="font-semibold">
+                            ${milestone.amount || percentageAmount}
+                          </div>
+                          {milestone.percentage && (
+                            <div className="text-sm text-muted-foreground">
+                              {milestone.percentage}%
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
+                          className="ml-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Milestone Summary */}
+                <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total Milestone Payments:</span>
+                    <span className="font-semibold">
+                      ${milestones.reduce((sum, m) => {
+                        const amount = m.amount || (m.percentage && presentedTotal ? parseFloat(presentedTotal) * m.percentage / 100 : 0);
+                        return sum + amount;
+                      }, 0).toFixed(2)}
+                    </span>
+                  </div>
+                  {presentedTotal && (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      Presented Total: ${presentedTotal}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -810,6 +1007,98 @@ export default function EstimateDetail() {
             disabled={!selectedEpicForStage || !newStageName.trim() || createStageMutation.isPending}
           >
             {createStageMutation.isPending ? "Creating..." : "Create Stage"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Milestone Creation Dialog */}
+    <Dialog open={showMilestoneDialog} onOpenChange={setShowMilestoneDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Milestone Payment</DialogTitle>
+          <DialogDescription>
+            Define a payment milestone for the customer
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="milestone-name">Name</Label>
+            <Input
+              id="milestone-name"
+              placeholder="e.g., Project Kickoff, Phase 1 Completion"
+              value={newMilestone.name}
+              onChange={(e) => setNewMilestone({ ...newMilestone, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="milestone-description">Description</Label>
+            <Input
+              id="milestone-description"
+              placeholder="Optional description"
+              value={newMilestone.description}
+              onChange={(e) => setNewMilestone({ ...newMilestone, description: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="milestone-amount">Fixed Amount ($)</Label>
+              <Input
+                id="milestone-amount"
+                type="number"
+                placeholder="0.00"
+                value={newMilestone.amount}
+                onChange={(e) => setNewMilestone({ ...newMilestone, amount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="milestone-percentage">Or Percentage (%)</Label>
+              <Input
+                id="milestone-percentage"
+                type="number"
+                placeholder="0"
+                value={newMilestone.percentage}
+                onChange={(e) => setNewMilestone({ ...newMilestone, percentage: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="milestone-due">Due Date</Label>
+            <Input
+              id="milestone-due"
+              type="date"
+              value={newMilestone.dueDate}
+              onChange={(e) => setNewMilestone({ ...newMilestone, dueDate: e.target.value })}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              setShowMilestoneDialog(false);
+              setNewMilestone({ name: "", description: "", amount: "", percentage: "", dueDate: "" });
+            }}
+            variant="outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              // Calculate sort order based on existing milestones
+              const sortOrder = milestones.length + 1;
+              
+              createMilestoneMutation.mutate({
+                name: newMilestone.name,
+                description: newMilestone.description || null,
+                amount: newMilestone.amount ? parseFloat(newMilestone.amount) : null,
+                percentage: newMilestone.percentage ? parseFloat(newMilestone.percentage) : null,
+                dueDate: newMilestone.dueDate || null,
+                sortOrder
+              });
+            }}
+            disabled={!newMilestone.name || createMilestoneMutation.isPending}
+          >
+            {createMilestoneMutation.isPending ? "Creating..." : "Add Milestone"}
           </Button>
         </DialogFooter>
       </DialogContent>
