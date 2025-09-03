@@ -1140,7 +1140,7 @@ export default function EstimateDetail() {
                 sortOrder
               });
             }}
-            disabled={!newMilestone.name || (!newMilestone.amount && !newMilestone.percentage) || (newMilestone.amount && newMilestone.percentage) || createMilestoneMutation.isPending}
+            disabled={!newMilestone.name || (!newMilestone.amount && !newMilestone.percentage) || !!(newMilestone.amount && newMilestone.percentage) || createMilestoneMutation.isPending}
           >
             {createMilestoneMutation.isPending ? "Creating..." : "Add Milestone"}
           </Button>
@@ -1233,7 +1233,7 @@ export default function EstimateDetail() {
               setShowMilestoneEditDialog(false);
               setEditingMilestone(null);
             }}
-            disabled={!editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || (editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
+            disabled={!editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || !!(editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
           >
             {updateMilestoneMutation.isPending ? "Updating..." : "Update Milestone"}
           </Button>

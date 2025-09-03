@@ -165,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/clients", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/clients", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       console.log("[DEBUG] Creating client with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);

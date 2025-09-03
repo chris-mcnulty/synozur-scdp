@@ -30,6 +30,7 @@ interface Estimate {
 
 export default function Estimates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -64,6 +65,29 @@ export default function Estimates() {
       toast({
         title: "Error",
         description: error.message || "Failed to create estimate. Please check your permissions and try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createClient = useMutation({
+    mutationFn: (data: any) => apiRequest("/api/clients", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setCreateClientDialogOpen(false);
+      toast({
+        title: "Success",
+        description: "Client created successfully",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Client creation error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create client. Please check your permissions and try again.",
         variant: "destructive",
       });
     },
@@ -251,7 +275,19 @@ export default function Estimates() {
                 </div>
                 
                 <div className="grid gap-2">
-                  <Label htmlFor="clientId">Client</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="clientId">Client</Label>
+                    <Button 
+                      type="button"
+                      variant="link" 
+                      size="sm"
+                      onClick={() => setCreateClientDialogOpen(true)}
+                      className="h-auto p-0 text-sm"
+                      data-testid="button-new-client"
+                    >
+                      + New Client
+                    </Button>
+                  </div>
                   <Select name="clientId" required>
                     <SelectTrigger data-testid="select-client">
                       <SelectValue placeholder="Select a client" />
@@ -303,6 +339,73 @@ export default function Estimates() {
                 </Button>
                 <Button type="submit" disabled={createEstimate.isPending} data-testid="button-create-estimate">
                   {createEstimate.isPending ? "Creating..." : "Create Estimate"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Client Dialog */}
+        <Dialog open={createClientDialogOpen} onOpenChange={setCreateClientDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Client</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              createClient.mutate({
+                name: formData.get('name'),
+                currency: formData.get('currency') || 'USD',
+                billingContact: formData.get('billingContact'),
+              });
+            }}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="clientName">Client Name</Label>
+                  <Input
+                    id="clientName"
+                    name="name"
+                    placeholder="e.g., Acme Corporation"
+                    required
+                    data-testid="input-client-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="billingContact">Billing Contact Email</Label>
+                  <Input
+                    id="billingContact"
+                    name="billingContact"
+                    type="email"
+                    placeholder="billing@acme.com"
+                    data-testid="input-billing-contact"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="currency">Currency</Label>
+                  <Select name="currency" defaultValue="USD">
+                    <SelectTrigger data-testid="select-currency">
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USD">USD</SelectItem>
+                      <SelectItem value="EUR">EUR</SelectItem>
+                      <SelectItem value="GBP">GBP</SelectItem>
+                      <SelectItem value="CAD">CAD</SelectItem>
+                      <SelectItem value="AUD">AUD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setCreateClientDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createClient.isPending} data-testid="button-create-client">
+                  {createClient.isPending ? "Creating..." : "Create Client"}
                 </Button>
               </DialogFooter>
             </form>
