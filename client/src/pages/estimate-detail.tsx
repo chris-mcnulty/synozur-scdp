@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
@@ -33,6 +33,8 @@ export default function EstimateDetail() {
     percentage: "",
     dueDate: ""
   });
+  const [editingMilestone, setEditingMilestone] = useState<any>(null);
+  const [showMilestoneEditDialog, setShowMilestoneEditDialog] = useState(false);
   const [presentedTotal, setPresentedTotal] = useState("");
   const [margin, setMargin] = useState("");
   const [newItem, setNewItem] = useState({
@@ -828,7 +830,7 @@ export default function EstimateDetail() {
                 id="margin"
                 type="number"
                 placeholder="Auto-calculated"
-                value={margin || (estimate?.presentedTotal ? ((totalAmount - estimate.presentedTotal) / totalAmount * 100).toFixed(2) : "")}
+                value={margin || (estimate?.presentedTotal ? ((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100).toFixed(2) : "")}
                 readOnly
                 className="mt-1 bg-muted"
               />
@@ -856,7 +858,7 @@ export default function EstimateDetail() {
               <div className="space-y-2">
                 {milestones.map((milestone) => {
                   const percentageAmount = milestone.percentage 
-                    ? (parseFloat(presentedTotal || estimate?.presentedTotal || "0") * milestone.percentage / 100).toFixed(2)
+                    ? (parseFloat(presentedTotal || estimate?.presentedTotal || "0") * Number(milestone.percentage) / 100).toFixed(2)
                     : "0.00";
                   
                   return (
@@ -875,7 +877,7 @@ export default function EstimateDetail() {
                         </div>
                         <div className="text-right ml-4">
                           <div className="font-semibold">
-                            ${milestone.amount || percentageAmount}
+                            ${Number(milestone.amount) || percentageAmount}
                           </div>
                           {milestone.percentage && (
                             <div className="text-sm text-muted-foreground">
@@ -883,14 +885,34 @@ export default function EstimateDetail() {
                             </div>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
-                          className="ml-2"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1 ml-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setEditingMilestone({
+                                id: milestone.id,
+                                name: milestone.name,
+                                description: milestone.description || "",
+                                amount: milestone.amount?.toString() || "",
+                                percentage: milestone.percentage?.toString() || "",
+                                dueDate: milestone.dueDate || ""
+                              });
+                              setShowMilestoneEditDialog(true);
+                            }}
+                            data-testid={`button-edit-milestone-${milestone.id}`}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
+                            data-testid={`button-delete-milestone-${milestone.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -898,20 +920,42 @@ export default function EstimateDetail() {
 
                 {/* Milestone Summary */}
                 <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">Total Milestone Payments:</span>
-                    <span className="font-semibold">
-                      ${milestones.reduce((sum, m) => {
-                        const amount = m.amount || (m.percentage && presentedTotal ? parseFloat(presentedTotal) * m.percentage / 100 : 0);
-                        return sum + amount;
-                      }, 0).toFixed(2)}
-                    </span>
-                  </div>
-                  {presentedTotal && (
-                    <div className="text-sm text-muted-foreground mt-1">
-                      Presented Total: ${presentedTotal}
-                    </div>
-                  )}
+                  {(() => {
+                    const milestoneTotal = milestones.reduce((sum, m) => {
+                      const amount = Number(m.amount) || (m.percentage && presentedTotal ? parseFloat(presentedTotal) * Number(m.percentage) / 100 : 0);
+                      return sum + Number(amount);
+                    }, 0);
+                    const currentPresentedTotal = parseFloat(presentedTotal || estimate?.presentedTotal || "0");
+                    const difference = milestoneTotal - currentPresentedTotal;
+                    const isBalanced = Math.abs(difference) < 0.01; // Allow for small rounding differences
+                    
+                    return (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium">Total Milestone Payments:</span>
+                          <span className="font-semibold">
+                            ${milestoneTotal.toFixed(2)}
+                          </span>
+                        </div>
+                        {currentPresentedTotal > 0 && (
+                          <div className="space-y-1 mt-2">
+                            <div className="text-sm text-muted-foreground">
+                              Presented Total: ${currentPresentedTotal.toFixed(2)}
+                            </div>
+                            <div className={`text-sm font-medium ${isBalanced ? 'text-green-600 dark:text-green-400' : difference > 0 ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                              {isBalanced ? (
+                                <span data-testid="milestone-validation-balanced">✓ Milestones match presented total</span>
+                              ) : (
+                                <span data-testid="milestone-validation-unbalanced">
+                                  ⚠ {difference > 0 ? 'Over' : 'Under'} by ${Math.abs(difference).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1096,9 +1140,102 @@ export default function EstimateDetail() {
                 sortOrder
               });
             }}
-            disabled={!newMilestone.name || createMilestoneMutation.isPending}
+            disabled={!newMilestone.name || (!newMilestone.amount && !newMilestone.percentage) || (newMilestone.amount && newMilestone.percentage) || createMilestoneMutation.isPending}
           >
             {createMilestoneMutation.isPending ? "Creating..." : "Add Milestone"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Milestone Edit Dialog */}
+    <Dialog open={showMilestoneEditDialog} onOpenChange={setShowMilestoneEditDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Milestone Payment</DialogTitle>
+          <DialogDescription>
+            Update the milestone payment details
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="edit-milestone-name">Name</Label>
+            <Input
+              id="edit-milestone-name"
+              placeholder="e.g., Project Kickoff, Phase 1 Completion"
+              value={editingMilestone?.name || ""}
+              onChange={(e) => setEditingMilestone({ ...editingMilestone, name: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="edit-milestone-description">Description</Label>
+            <Input
+              id="edit-milestone-description"
+              placeholder="Optional description"
+              value={editingMilestone?.description || ""}
+              onChange={(e) => setEditingMilestone({ ...editingMilestone, description: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="edit-milestone-amount">Fixed Amount ($)</Label>
+              <Input
+                id="edit-milestone-amount"
+                type="number"
+                placeholder="0.00"
+                value={editingMilestone?.amount || ""}
+                onChange={(e) => setEditingMilestone({ ...editingMilestone, amount: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-milestone-percentage">Or Percentage (%)</Label>
+              <Input
+                id="edit-milestone-percentage"
+                type="number"
+                placeholder="0"
+                value={editingMilestone?.percentage || ""}
+                onChange={(e) => setEditingMilestone({ ...editingMilestone, percentage: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="edit-milestone-due">Due Date</Label>
+            <Input
+              id="edit-milestone-due"
+              type="date"
+              value={editingMilestone?.dueDate || ""}
+              onChange={(e) => setEditingMilestone({ ...editingMilestone, dueDate: e.target.value })}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              setShowMilestoneEditDialog(false);
+              setEditingMilestone(null);
+            }}
+            variant="outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              updateMilestoneMutation.mutate({
+                milestoneId: editingMilestone.id,
+                data: {
+                  name: editingMilestone.name,
+                  description: editingMilestone.description || null,
+                  amount: editingMilestone.amount ? parseFloat(editingMilestone.amount) : null,
+                  percentage: editingMilestone.percentage ? parseFloat(editingMilestone.percentage) : null,
+                  dueDate: editingMilestone.dueDate || null
+                }
+              });
+              setShowMilestoneEditDialog(false);
+              setEditingMilestone(null);
+            }}
+            disabled={!editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || (editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
+          >
+            {updateMilestoneMutation.isPending ? "Updating..." : "Update Milestone"}
           </Button>
         </DialogFooter>
       </DialogContent>
