@@ -37,6 +37,16 @@ export default function EstimateDetail() {
   const [showMilestoneEditDialog, setShowMilestoneEditDialog] = useState(false);
   const [presentedTotal, setPresentedTotal] = useState("");
   const [margin, setMargin] = useState("");
+  const [editingEstimateName, setEditingEstimateName] = useState("");
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [bulkEditDialog, setBulkEditDialog] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState({
+    size: "",
+    complexity: "",
+    confidence: "",
+    rate: "",
+    category: ""
+  });
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -198,6 +208,53 @@ export default function EstimateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       toast({ title: "Line item deleted successfully" });
+    }
+  });
+
+  const updateEstimateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return apiRequest(`/api/estimates/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      toast({ title: "Estimate updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update estimate", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async ({ itemIds, updates }: { itemIds: string[]; updates: any }) => {
+      // Update each item individually
+      const promises = itemIds.map(itemId => 
+        apiRequest(`/api/estimates/${id}/line-items/${itemId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        })
+      );
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      setSelectedItems(new Set());
+      setBulkEditDialog(false);
+      setBulkEditData({ size: "", complexity: "", confidence: "", rate: "", category: "" });
+      toast({ title: "Bulk update completed successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to bulk update", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
     }
   });
 
@@ -460,8 +517,31 @@ export default function EstimateDetail() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">Estimate Details</h1>
-            <p className="text-muted-foreground">
-              {estimate?.name} - Version {estimate?.version}
+            <p className="text-muted-foreground cursor-pointer" onClick={() => {
+              setEditingItem('estimate-name');
+              setEditingEstimateName(estimate?.name || "");
+            }}>
+              {editingItem === 'estimate-name' ? (
+                <Input
+                  value={editingEstimateName}
+                  onChange={(e) => setEditingEstimateName(e.target.value)}
+                  onBlur={() => {
+                    if (editingEstimateName.trim() && editingEstimateName !== estimate?.name) {
+                      updateEstimateMutation.mutate({ name: editingEstimateName.trim() });
+                    }
+                    setEditingItem(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="text-base"
+                  autoFocus
+                />
+              ) : (
+                `${estimate?.name} - Version ${estimate?.version} (click to edit name)`
+              )}
             </p>
           </div>
         </div>
@@ -694,10 +774,43 @@ export default function EstimateDetail() {
             </p>
           )}
 
+          {selectedItems.size > 0 && (
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{selectedItems.size} items selected</span>
+                <div className="flex gap-2">
+                  <Button onClick={() => setBulkEditDialog(true)} size="sm">
+                    Bulk Edit
+                  </Button>
+                  <Button 
+                    onClick={() => setSelectedItems(new Set())} 
+                    variant="outline" 
+                    size="sm"
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <input
+                      type="checkbox"
+                      checked={lineItems.length > 0 && selectedItems.size === lineItems.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedItems(new Set(lineItems.map(item => item.id)));
+                        } else {
+                          setSelectedItems(new Set());
+                        }
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Epic</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Workstream</TableHead>
@@ -732,7 +845,22 @@ export default function EstimateDetail() {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
                     return (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className={selectedItems.has(item.id) ? "bg-blue-50" : ""}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selectedItems.has(item.id)}
+                          onChange={(e) => {
+                            const newSelected = new Set(selectedItems);
+                            if (e.target.checked) {
+                              newSelected.add(item.id);
+                            } else {
+                              newSelected.delete(item.id);
+                            }
+                            setSelectedItems(newSelected);
+                          }}
+                        />
+                      </TableCell>
                       <TableCell>{epic?.name || "-"}</TableCell>
                       <TableCell>{stage?.name || "-"}</TableCell>
                       <TableCell>{item.workstream || "-"}</TableCell>
@@ -750,20 +878,123 @@ export default function EstimateDetail() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>{item.category || "-"}</TableCell>
-                      <TableCell>{item.baseHours}</TableCell>
-                      <TableCell>{item.factor || 1}</TableCell>
-                      <TableCell>${item.rate}</TableCell>
                       <TableCell>
-                        <div className="text-xs">
-                          S:{item.size[0].toUpperCase()},
-                          C:{item.complexity[0].toUpperCase()},
-                          Cf:{item.confidence[0].toUpperCase()}
-                        </div>
+                        {editingItem === item.id ? (
+                          <Input
+                            value={item.category || ""}
+                            onChange={(e) => handleUpdateItem(item, "category", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            placeholder="Category"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {item.category || "-"}
+                          </span>
+                        )}
                       </TableCell>
-                      <TableCell>{Number(item.adjustedHours).toFixed(2)}</TableCell>
-                      <TableCell>${Number(item.totalAmount).toFixed(2)}</TableCell>
-                      <TableCell>{item.comments || "-"}</TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            type="number"
+                            value={item.baseHours}
+                            onChange={(e) => handleUpdateItem(item, "baseHours", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            className="w-20"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {Math.round(Number(item.baseHours))}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            type="number"
+                            value={item.factor || 1}
+                            onChange={(e) => handleUpdateItem(item, "factor", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            className="w-20"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {Math.round(Number(item.factor || 1))}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            type="number"
+                            value={item.rate}
+                            onChange={(e) => handleUpdateItem(item, "rate", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            className="w-24"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            ${Math.round(Number(item.rate))}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <div className="space-y-1">
+                            <Select value={item.size} onValueChange={(value) => handleUpdateItem(item, "size", value)}>
+                              <SelectTrigger className="w-20">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="small">Small</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="large">Large</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Select value={item.complexity} onValueChange={(value) => handleUpdateItem(item, "complexity", value)}>
+                              <SelectTrigger className="w-20">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="small">Simple</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="large">Complex</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Select value={item.confidence} onValueChange={(value) => handleUpdateItem(item, "confidence", value)}>
+                              <SelectTrigger className="w-20">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="high">High</SelectItem>
+                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="low">Low</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <div className="text-xs cursor-pointer" onClick={() => setEditingItem(item.id)}>
+                            S:{item.size[0].toUpperCase()},
+                            C:{item.complexity[0].toUpperCase()},
+                            Cf:{item.confidence[0].toUpperCase()}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
+                      <TableCell>${Math.round(Number(item.totalAmount))}</TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            value={item.comments || ""}
+                            onChange={(e) => handleUpdateItem(item, "comments", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            placeholder="Comments"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {item.comments || "-"}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -783,10 +1014,10 @@ export default function EstimateDetail() {
           <div className="mt-4 flex justify-end">
             <div className="text-right">
               <div className="text-sm text-muted-foreground">
-                Total Hours: {totalHours.toFixed(2)}
+                Total Hours: {Math.round(totalHours)}
               </div>
               <div className="text-lg font-semibold">
-                Total Amount: ${totalAmount.toFixed(2)}
+                Total Amount: ${Math.round(totalAmount)}
               </div>
             </div>
           </div>
@@ -821,7 +1052,7 @@ export default function EstimateDetail() {
                 className="mt-1"
               />
               <p className="text-sm text-muted-foreground mt-1">
-                Internal Total: ${totalAmount.toFixed(2)}
+                Internal Total: ${Math.round(totalAmount)}
               </p>
             </div>
             <div>
@@ -830,12 +1061,12 @@ export default function EstimateDetail() {
                 id="margin"
                 type="number"
                 placeholder="Auto-calculated"
-                value={margin || (estimate?.presentedTotal ? ((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100).toFixed(2) : "")}
+                value={margin || (estimate?.presentedTotal ? Math.round((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100) : "")}
                 readOnly
                 className="mt-1 bg-muted"
               />
               <p className="text-sm text-muted-foreground mt-1">
-                Difference: ${presentedTotal ? (totalAmount - parseFloat(presentedTotal)).toFixed(2) : "N/A"}
+                Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)) : "N/A"}
               </p>
             </div>
           </div>
@@ -858,8 +1089,8 @@ export default function EstimateDetail() {
               <div className="space-y-2">
                 {milestones.map((milestone) => {
                   const percentageAmount = milestone.percentage 
-                    ? (parseFloat(presentedTotal || estimate?.presentedTotal || "0") * Number(milestone.percentage) / 100).toFixed(2)
-                    : "0.00";
+                    ? Math.round(parseFloat(presentedTotal || estimate?.presentedTotal || "0") * Number(milestone.percentage) / 100)
+                    : 0;
                   
                   return (
                     <div key={milestone.id} className="p-4 border rounded-lg space-y-2">
@@ -877,7 +1108,7 @@ export default function EstimateDetail() {
                         </div>
                         <div className="text-right ml-4">
                           <div className="font-semibold">
-                            ${Number(milestone.amount) || percentageAmount}
+                            ${Math.round(Number(milestone.amount) || percentageAmount)}
                           </div>
                           {milestone.percentage && (
                             <div className="text-sm text-muted-foreground">
@@ -1236,6 +1467,103 @@ export default function EstimateDetail() {
             disabled={!editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || !!(editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
           >
             {updateMilestoneMutation.isPending ? "Updating..." : "Update Milestone"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Bulk Edit Dialog */}
+    <Dialog open={bulkEditDialog} onOpenChange={setBulkEditDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Bulk Edit Line Items</DialogTitle>
+          <DialogDescription>
+            Edit {selectedItems.size} selected line items. Only fields with values will be updated.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="bulk-size">Size</Label>
+            <Select value={bulkEditData.size} onValueChange={(value) => setBulkEditData({...bulkEditData, size: value})}>
+              <SelectTrigger>
+                <SelectValue placeholder="Keep current values" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="small">Small</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="large">Large</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="bulk-complexity">Complexity</Label>
+            <Select value={bulkEditData.complexity} onValueChange={(value) => setBulkEditData({...bulkEditData, complexity: value})}>
+              <SelectTrigger>
+                <SelectValue placeholder="Keep current values" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="small">Simple</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="large">Complex</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="bulk-confidence">Confidence</Label>
+            <Select value={bulkEditData.confidence} onValueChange={(value) => setBulkEditData({...bulkEditData, confidence: value})}>
+              <SelectTrigger>
+                <SelectValue placeholder="Keep current values" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="bulk-rate">Rate ($)</Label>
+            <Input
+              id="bulk-rate"
+              type="number"
+              placeholder="Keep current values"
+              value={bulkEditData.rate}
+              onChange={(e) => setBulkEditData({...bulkEditData, rate: e.target.value})}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="bulk-category">Category</Label>
+            <Input
+              id="bulk-category"
+              placeholder="Keep current values"
+              value={bulkEditData.category}
+              onChange={(e) => setBulkEditData({...bulkEditData, category: e.target.value})}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setBulkEditDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              const updates: any = {};
+              if (bulkEditData.size) updates.size = bulkEditData.size;
+              if (bulkEditData.complexity) updates.complexity = bulkEditData.complexity;
+              if (bulkEditData.confidence) updates.confidence = bulkEditData.confidence;
+              if (bulkEditData.rate) updates.rate = bulkEditData.rate;
+              if (bulkEditData.category) updates.category = bulkEditData.category;
+              
+              if (Object.keys(updates).length > 0) {
+                bulkUpdateMutation.mutate({
+                  itemIds: Array.from(selectedItems),
+                  updates
+                });
+              }
+            }}
+            disabled={bulkUpdateMutation.isPending || Object.values(bulkEditData).every(v => !v)}
+          >
+            {bulkUpdateMutation.isPending ? "Updating..." : "Update Selected"}
           </Button>
         </DialogFooter>
       </DialogContent>
