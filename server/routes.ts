@@ -735,7 +735,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "draft",
         totalHours: null,
         totalFees: null,
+        presentedTotal: null,
+        margin: null,
         validUntil,
+        epicLabel: "Epic",
+        stageLabel: "Stage", 
+        activityLabel: "Activity",
+        rackRateSnapshot: null,
+        sizeSmallMultiplier: "1.00",
+        sizeMediumMultiplier: "1.05",
+        sizeLargeMultiplier: "1.10",
+        complexitySmallMultiplier: "1.00",
+        complexityMediumMultiplier: "1.05",
+        complexityLargeMultiplier: "1.10",
+        confidenceHighMultiplier: "1.00",
+        confidenceMediumMultiplier: "1.10",
+        confidenceLowMultiplier: "1.20"
       });
       
       console.log("[DEBUG] Validated data:", validatedData);
