@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
@@ -41,6 +42,10 @@ export default function EstimateDetail() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [bulkEditDialog, setBulkEditDialog] = useState(false);
   const [bulkEditData, setBulkEditData] = useState({
+    epicId: "",
+    stageId: "",
+    workstream: "",
+    week: "",
     size: "",
     complexity: "",
     confidence: "",
@@ -252,7 +257,7 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setSelectedItems(new Set());
       setBulkEditDialog(false);
-      setBulkEditData({ size: "", complexity: "", confidence: "", rate: "", category: "" });
+      setBulkEditData({ epicId: "", stageId: "", workstream: "", week: "", size: "", complexity: "", confidence: "", rate: "", category: "" });
       toast({ title: "Bulk update completed successfully" });
     },
     onError: (error: any) => {
@@ -512,6 +517,7 @@ export default function EstimateDetail() {
     return (
       <Layout>
       <div className="container mx-auto py-8 px-4 max-w-7xl">
+      <div className="space-y-6">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button
@@ -577,115 +583,185 @@ export default function EstimateDetail() {
         </div>
       </div>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Factor Multipliers</CardTitle>
-          <CardDescription>
-            Configure the multipliers for size, complexity, and confidence factors
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <h4 className="font-semibold mb-2">Size</h4>
-              <div className="space-y-1 text-sm">
-                <div>Small: {estimate?.sizeSmallMultiplier || "1.00"}x</div>
-                <div>Medium: {estimate?.sizeMediumMultiplier || "1.05"}x</div>
-                <div>Large: {estimate?.sizeLargeMultiplier || "1.10"}x</div>
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-2">Complexity</h4>
-              <div className="space-y-1 text-sm">
-                <div>Small: {estimate?.complexitySmallMultiplier || "1.00"}x</div>
-                <div>Medium: {estimate?.complexityMediumMultiplier || "1.05"}x</div>
-                <div>Large: {estimate?.complexityLargeMultiplier || "1.10"}x</div>
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-2">Confidence</h4>
-              <div className="space-y-1 text-sm">
-                <div>High: {estimate?.confidenceHighMultiplier || "1.00"}x</div>
-                <div>Medium: {estimate?.confidenceMediumMultiplier || "1.10"}x</div>
-                <div>Low: {estimate?.confidenceLowMultiplier || "1.20"}x</div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="outputs" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="outputs">Outputs</TabsTrigger>
+          <TabsTrigger value="inputs">Inputs</TabsTrigger>
+          <TabsTrigger value="factors">Factors</TabsTrigger>
+        </TabsList>
 
-      {/* Epic and Stage Management */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Epics
-              <Button onClick={() => setShowEpicDialog(true)} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Epic
-              </Button>
-            </CardTitle>
-            <CardDescription>
-              Manage estimate epics to organize your work structure
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {epics.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No epics created yet</p>
-            ) : (
-              <div className="space-y-2">
-                {epics.map((epic, index) => (
-                  <div key={epic.id} className="flex items-center justify-between p-2 border rounded">
-                    <span className="font-medium">{epic.name}</span>
-                    <span className="text-xs text-muted-foreground">#{index + 1}</span>
+        <TabsContent value="outputs" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Summary & Milestones</CardTitle>
+              <CardDescription>
+                Estimate totals, milestones, and project overview
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-semibold mb-2">Estimate Totals</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>Total Hours: {lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) || 0), 0).toFixed(0)}</div>
+                    <div>Total Amount: ${lineItems.reduce((sum, item) => sum + (parseFloat(item.totalAmount) || 0), 0).toFixed(0)}</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              Stages
-              <Button onClick={() => setShowStageDialog(true)} size="sm" disabled={epics.length === 0}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Stage
-              </Button>
-            </CardTitle>
-            <CardDescription>
-              Manage stages within epics for detailed project phases
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {stages.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                {epics.length === 0 ? "Create an epic first to add stages" : "No stages created yet"}
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {stages.map((stage, index) => {
-                  const epic = epics.find(e => e.id === stage.epicId);
-                  return (
-                    <div key={stage.id} className="flex items-center justify-between p-2 border rounded">
-                      <div>
-                        <span className="font-medium">{stage.name}</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          (Epic: {epic?.name || 'Unknown'})
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-semibold">Milestones</h4>
+                    <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Milestone
+                    </Button>
+                  </div>
+                  {milestones.length === 0 ? (
+                    <p className="text-muted-foreground text-sm">No milestones created yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {milestones.map((milestone) => (
+                        <div key={milestone.id} className="flex items-center justify-between p-2 border rounded text-sm">
+                          <div>
+                            <span className="font-medium">{milestone.name}</span>
+                            {milestone.amount ? (
+                              <span className="text-muted-foreground ml-2">${milestone.amount}</span>
+                            ) : milestone.percentage ? (
+                              <span className="text-muted-foreground ml-2">{milestone.percentage}%</span>
+                            ) : null}
+                          </div>
+                          <Button
+                            onClick={() => {
+                              setEditingMilestone(milestone);
+                              setShowMilestoneEditDialog(true);
+                            }}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  )}
+                </div>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <Card>
+        <TabsContent value="factors" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Factor Multipliers</CardTitle>
+              <CardDescription>
+                Configure the multipliers for size, complexity, and confidence factors
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Size</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>Small: {estimate?.sizeSmallMultiplier || "1.00"}x</div>
+                    <div>Medium: {estimate?.sizeMediumMultiplier || "1.05"}x</div>
+                    <div>Large: {estimate?.sizeLargeMultiplier || "1.10"}x</div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Complexity</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>Small: {estimate?.complexitySmallMultiplier || "1.00"}x</div>
+                    <div>Medium: {estimate?.complexityMediumMultiplier || "1.05"}x</div>
+                    <div>Large: {estimate?.complexityLargeMultiplier || "1.10"}x</div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Confidence</h4>
+                  <div className="space-y-1 text-sm">
+                    <div>High: {estimate?.confidenceHighMultiplier || "1.00"}x</div>
+                    <div>Medium: {estimate?.confidenceMediumMultiplier || "1.10"}x</div>
+                    <div>Low: {estimate?.confidenceLowMultiplier || "1.20"}x</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inputs" className="space-y-6">
+
+          {/* Epic and Stage Management */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Epics
+                  <Button onClick={() => setShowEpicDialog(true)} size="sm">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Epic
+                  </Button>
+                </CardTitle>
+                <CardDescription>
+                  Manage estimate epics to organize your work structure
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {epics.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No epics created yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {epics.map((epic, index) => (
+                      <div key={epic.id} className="flex items-center justify-between p-2 border rounded">
+                        <span className="font-medium">{epic.name}</span>
+                        <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  Stages
+                  <Button onClick={() => setShowStageDialog(true)} size="sm" disabled={epics.length === 0}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Stage
+                  </Button>
+                </CardTitle>
+                <CardDescription>
+                  Manage stages within epics for detailed project phases
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {stages.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    {epics.length === 0 ? "Create an epic first to add stages" : "No stages created yet"}
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {stages.map((stage, index) => {
+                      const epic = epics.find(e => e.id === stage.epicId);
+                      return (
+                        <div key={stage.id} className="flex items-center justify-between p-2 border rounded">
+                          <div>
+                            <span className="font-medium">{stage.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              (Epic: {epic?.name || 'Unknown'})
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
         <CardHeader>
           <CardTitle>Estimate Inputs</CardTitle>
           <CardDescription>
@@ -1354,7 +1430,8 @@ export default function EstimateDetail() {
           </div>
         </CardContent>
       </Card>
-    </div>
+        </TabsContent>
+      </Tabs>
 
     {/* Epic Creation Dialog */}
     <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>
@@ -1643,63 +1720,118 @@ export default function EstimateDetail() {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="bulk-size">Size</Label>
-            <Select value={bulkEditData.size} onValueChange={(value) => setBulkEditData({...bulkEditData, size: value})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Keep current values" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">Small</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="large">Large</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-epic">Epic</Label>
+              <Select value={bulkEditData.epicId} onValueChange={(value) => setBulkEditData({...bulkEditData, epicId: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keep current values" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Epic</SelectItem>
+                  {epics.map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-stage">Stage</Label>
+              <Select value={bulkEditData.stageId} onValueChange={(value) => setBulkEditData({...bulkEditData, stageId: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keep current values" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Stage</SelectItem>
+                  {stages.map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="bulk-complexity">Complexity</Label>
-            <Select value={bulkEditData.complexity} onValueChange={(value) => setBulkEditData({...bulkEditData, complexity: value})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Keep current values" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">Simple</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="large">Complex</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-workstream">Workstream</Label>
+              <Input
+                id="bulk-workstream"
+                placeholder="Keep current values"
+                value={bulkEditData.workstream}
+                onChange={(e) => setBulkEditData({...bulkEditData, workstream: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-week">Week</Label>
+              <Input
+                id="bulk-week"
+                type="number"
+                placeholder="Keep current values"
+                value={bulkEditData.week}
+                onChange={(e) => setBulkEditData({...bulkEditData, week: e.target.value})}
+              />
+            </div>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="bulk-confidence">Confidence</Label>
-            <Select value={bulkEditData.confidence} onValueChange={(value) => setBulkEditData({...bulkEditData, confidence: value})}>
-              <SelectTrigger>
-                <SelectValue placeholder="Keep current values" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-size">Size</Label>
+              <Select value={bulkEditData.size} onValueChange={(value) => setBulkEditData({...bulkEditData, size: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keep current values" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Small</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="large">Large</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-complexity">Complexity</Label>
+              <Select value={bulkEditData.complexity} onValueChange={(value) => setBulkEditData({...bulkEditData, complexity: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keep current values" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Simple</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="large">Complex</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-confidence">Confidence</Label>
+              <Select value={bulkEditData.confidence} onValueChange={(value) => setBulkEditData({...bulkEditData, confidence: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Keep current values" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="bulk-rate">Rate ($)</Label>
-            <Input
-              id="bulk-rate"
-              type="number"
-              placeholder="Keep current values"
-              value={bulkEditData.rate}
-              onChange={(e) => setBulkEditData({...bulkEditData, rate: e.target.value})}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="bulk-category">Category</Label>
-            <Input
-              id="bulk-category"
-              placeholder="Keep current values"
-              value={bulkEditData.category}
-              onChange={(e) => setBulkEditData({...bulkEditData, category: e.target.value})}
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-rate">Rate ($)</Label>
+              <Input
+                id="bulk-rate"
+                type="number"
+                placeholder="Keep current values"
+                value={bulkEditData.rate}
+                onChange={(e) => setBulkEditData({...bulkEditData, rate: e.target.value})}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bulk-category">Category</Label>
+              <Input
+                id="bulk-category"
+                placeholder="Keep current values"
+                value={bulkEditData.category}
+                onChange={(e) => setBulkEditData({...bulkEditData, category: e.target.value})}
+              />
+            </div>
           </div>
         </div>
         <DialogFooter>
@@ -1709,6 +1841,14 @@ export default function EstimateDetail() {
           <Button
             onClick={() => {
               const updates: any = {};
+              if (bulkEditData.epicId) {
+                updates.epicId = bulkEditData.epicId === "none" ? null : bulkEditData.epicId;
+              }
+              if (bulkEditData.stageId) {
+                updates.stageId = bulkEditData.stageId === "none" ? null : bulkEditData.stageId;
+              }
+              if (bulkEditData.workstream) updates.workstream = bulkEditData.workstream;
+              if (bulkEditData.week) updates.week = parseInt(bulkEditData.week);
               if (bulkEditData.size) updates.size = bulkEditData.size;
               if (bulkEditData.complexity) updates.complexity = bulkEditData.complexity;
               if (bulkEditData.confidence) updates.confidence = bulkEditData.confidence;
@@ -1730,6 +1870,8 @@ export default function EstimateDetail() {
       </DialogContent>
     </Dialog>
 
+    </div>
+    </div>
     </Layout>
   );
 }
