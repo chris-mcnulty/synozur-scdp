@@ -255,9 +255,27 @@ export default function Estimates() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const projectId = formData.get('projectId');
+              const clientId = formData.get('clientId');
+              
+              console.log('Form submission data:', {
+                name: formData.get('name'),
+                clientId,
+                projectId,
+                validDays: formData.get('validDays')
+              });
+              
+              if (!clientId) {
+                toast({
+                  title: "Error",
+                  description: "Please select a client",
+                  variant: "destructive",
+                });
+                return;
+              }
+              
               createEstimate.mutate({
                 name: formData.get('name'),
-                clientId: formData.get('clientId'),
+                clientId,
                 projectId: projectId === 'none' ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
               });
