@@ -47,6 +47,12 @@ export default function EstimateDetail() {
     rate: "",
     category: ""
   });
+  const [filterText, setFilterText] = useState("");
+  const [filterEpic, setFilterEpic] = useState("all");
+  const [filterStage, setFilterStage] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [showEpicManagement, setShowEpicManagement] = useState(false);
+  const [showStageManagement, setShowStageManagement] = useState(false);
   const [newItem, setNewItem] = useState({
     description: "",
     category: "",
@@ -608,6 +614,77 @@ export default function EstimateDetail() {
         </CardContent>
       </Card>
 
+      {/* Epic and Stage Management */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              Epics
+              <Button onClick={() => setShowEpicDialog(true)} size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Epic
+              </Button>
+            </CardTitle>
+            <CardDescription>
+              Manage estimate epics to organize your work structure
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {epics.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No epics created yet</p>
+            ) : (
+              <div className="space-y-2">
+                {epics.map((epic, index) => (
+                  <div key={epic.id} className="flex items-center justify-between p-2 border rounded">
+                    <span className="font-medium">{epic.name}</span>
+                    <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              Stages
+              <Button onClick={() => setShowStageDialog(true)} size="sm" disabled={epics.length === 0}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Stage
+              </Button>
+            </CardTitle>
+            <CardDescription>
+              Manage stages within epics for detailed project phases
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {stages.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {epics.length === 0 ? "Create an epic first to add stages" : "No stages created yet"}
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {stages.map((stage, index) => {
+                  const epic = epics.find(e => e.id === stage.epicId);
+                  return (
+                    <div key={stage.id} className="flex items-center justify-between p-2 border rounded">
+                      <div>
+                        <span className="font-medium">{stage.name}</span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          (Epic: {epic?.name || 'Unknown'})
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>Estimate Inputs</CardTitle>
@@ -774,6 +851,77 @@ export default function EstimateDetail() {
             </p>
           )}
 
+          {/* Filter Controls */}
+          <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
+            <h4 className="font-medium mb-3">Filter Line Items</h4>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <Label htmlFor="filter-text">Description</Label>
+                <Input
+                  id="filter-text"
+                  placeholder="Search descriptions..."
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="filter-epic">Epic</Label>
+                <Select value={filterEpic} onValueChange={setFilterEpic}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Epics" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Epics</SelectItem>
+                    <SelectItem value="none">No Epic</SelectItem>
+                    {epics.map((epic) => (
+                      <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="filter-stage">Stage</Label>
+                <Select value={filterStage} onValueChange={setFilterStage}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Stages" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Stages</SelectItem>
+                    <SelectItem value="none">No Stage</SelectItem>
+                    {stages.map((stage) => (
+                      <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="filter-category">Category</Label>
+                <Input
+                  id="filter-category"
+                  placeholder="Filter by category..."
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                />
+              </div>
+            </div>
+            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterCategory) && (
+              <div className="mt-3">
+                <Button
+                  onClick={() => {
+                    setFilterText("");
+                    setFilterEpic("all");
+                    setFilterStage("all");
+                    setFilterCategory("");
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  Clear All Filters
+                </Button>
+              </div>
+            )}
+          </div>
+
           {selectedItems.size > 0 && (
             <div className="mb-4 p-4 bg-blue-50 rounded-lg border">
               <div className="flex items-center justify-between">
@@ -841,7 +989,20 @@ export default function EstimateDetail() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  lineItems.map((item: EstimateLineItem) => {
+                  // Filter line items based on current filters
+                  lineItems.filter((item: EstimateLineItem) => {
+                    const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
+                    const matchesEpic = filterEpic === "all" || 
+                      (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
+                      item.epicId === filterEpic;
+                    const matchesStage = filterStage === "all" || 
+                      (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
+                      item.stageId === filterStage;
+                    const matchesCategory = !filterCategory || 
+                      (item.category && item.category.toLowerCase().includes(filterCategory.toLowerCase()));
+                    
+                    return matchesText && matchesEpic && matchesStage && matchesCategory;
+                  }).map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
                     return (
