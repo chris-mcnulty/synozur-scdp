@@ -727,6 +727,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle the "none" value from the form
       const cleanProjectId = projectId === 'none' || projectId === '' ? null : projectId;
       
+      console.log("[DEBUG] About to parse estimate schema...");
       const validatedData = insertEstimateSchema.parse({
         name,
         clientId,
@@ -754,6 +755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       console.log("[DEBUG] Validated data:", validatedData);
+      console.log("[DEBUG] About to call storage.createEstimate...");
       const estimate = await storage.createEstimate(validatedData);
       console.log("[DEBUG] Created estimate:", estimate.id);
       res.status(201).json(estimate);
