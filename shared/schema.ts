@@ -116,12 +116,18 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   week: integer("week"), // Week number
   baseHours: decimal("base_hours", { precision: 10, scale: 2 }).notNull(),
   factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
-  rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Rate defaults to $0
+  rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate (internal cost)
+  staffId: varchar("staff_id").references(() => staff.id), // Staff member assigned
+  resourceName: text("resource_name"), // Name of assigned resource (denormalized for display)
   size: text("size").notNull().default("small"), // small, medium, large
   complexity: text("complexity").notNull().default("small"), // small, medium, large
   confidence: text("confidence").notNull().default("high"), // high, medium, low
   adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull(), // base_hours * factor * multipliers
-  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(), // adjusted_hours * rate
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(), // adjusted_hours * rate (charge amount)
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }), // adjusted_hours * costRate (internal cost)
+  margin: decimal("margin", { precision: 10, scale: 2 }), // totalAmount - totalCost
+  marginPercent: decimal("margin_percent", { precision: 5, scale: 2 }), // (margin / totalAmount) * 100
   comments: text("comments"), // Optional comments
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),

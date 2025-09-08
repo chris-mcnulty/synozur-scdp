@@ -58,6 +58,8 @@ export default function EstimateDetail() {
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
   const [filterWorkstream, setFilterWorkstream] = useState("");
+  const [filterUnresourced, setFilterUnresourced] = useState(false);
+  const [showResourceSummary, setShowResourceSummary] = useState(false);
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -90,6 +92,10 @@ export default function EstimateDetail() {
 
   const { data: staff = [] } = useQuery<any[]>({
     queryKey: ["/api/staff"],
+  });
+
+  const { data: user } = useQuery<any>({
+    queryKey: ["/api/auth/me"],
   });
 
   const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
@@ -1185,7 +1191,27 @@ export default function EstimateDetail() {
                 />
               </div>
             </div>
-            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream) && (
+            <div className="flex items-center gap-4 mt-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="filter-unresourced"
+                  checked={filterUnresourced}
+                  onChange={(e) => setFilterUnresourced(e.target.checked)}
+                />
+                <Label htmlFor="filter-unresourced">Show Unresourced Only</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="show-resource-summary"
+                  checked={showResourceSummary}
+                  onChange={(e) => setShowResourceSummary(e.target.checked)}
+                />
+                <Label htmlFor="show-resource-summary">Show Resource Summary</Label>
+              </div>
+            </div>
+            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterUnresourced) && (
               <div className="mt-3">
                 <Button
                   onClick={() => {
@@ -1193,6 +1219,7 @@ export default function EstimateDetail() {
                     setFilterEpic("all");
                     setFilterStage("all");
                     setFilterWorkstream("");
+                    setFilterUnresourced(false);
                   }}
                   variant="outline"
                   size="sm"
@@ -1202,6 +1229,72 @@ export default function EstimateDetail() {
               </div>
             )}
           </div>
+
+          {showResourceSummary && (
+            <Card className="mb-4">
+              <CardHeader>
+                <CardTitle>Resource Summary</CardTitle>
+                <CardDescription>Total hours and costs by resource</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {(() => {
+                    const resourceSummary = lineItems.reduce((acc: any, item) => {
+                      const resource = item.resourceName || "Unassigned";
+                      if (!acc[resource]) {
+                        acc[resource] = {
+                          hours: 0,
+                          chargeAmount: 0,
+                          costAmount: 0,
+                          margin: 0,
+                          count: 0
+                        };
+                      }
+                      acc[resource].hours += Number(item.adjustedHours || 0);
+                      acc[resource].chargeAmount += Number(item.totalAmount || 0);
+                      acc[resource].costAmount += Number(item.totalCost || 0);
+                      acc[resource].margin += Number(item.margin || 0);
+                      acc[resource].count += 1;
+                      return acc;
+                    }, {});
+
+                    return Object.entries(resourceSummary).map(([resource, data]: [string, any]) => (
+                      <div key={resource} className="flex items-center justify-between p-3 border rounded">
+                        <div>
+                          <div className="font-medium">{resource}</div>
+                          <div className="text-sm text-muted-foreground">{data.count} items</div>
+                        </div>
+                        <div className="flex gap-6 text-sm">
+                          <div>
+                            <div className="text-muted-foreground">Hours</div>
+                            <div className="font-medium">{data.hours.toFixed(1)}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground">Charge</div>
+                            <div className="font-medium">${data.chargeAmount.toFixed(0)}</div>
+                          </div>
+                          {user?.role === "admin" || user?.role === "executive" ? (
+                            <>
+                              <div>
+                                <div className="text-muted-foreground">Cost</div>
+                                <div className="font-medium">${data.costAmount.toFixed(0)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Margin</div>
+                                <div className="font-medium text-green-600">
+                                  ${data.margin.toFixed(0)} ({data.chargeAmount > 0 ? ((data.margin / data.chargeAmount) * 100).toFixed(1) : 0}%)
+                                </div>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {selectedItems.size > 0 && (
             <div className="mb-4 p-4 bg-blue-50 rounded-lg border">
@@ -1251,10 +1344,13 @@ export default function EstimateDetail() {
                   <TableHead>Workstream</TableHead>
                   <TableHead>Hours</TableHead>
                   <TableHead>Factor</TableHead>
+                  <TableHead>Resource</TableHead>
                   <TableHead>Rate</TableHead>
+                  <TableHead>Cost</TableHead>
                   <TableHead>Adjustments</TableHead>
                   <TableHead>Adj. Hours</TableHead>
                   <TableHead>Total</TableHead>
+                  <TableHead>Margin</TableHead>
                   <TableHead>Comments</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -1262,13 +1358,13 @@ export default function EstimateDetail() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center">
+                    <TableCell colSpan={17} className="text-center">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : (lineItems || []).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center">
+                    <TableCell colSpan={17} className="text-center">
                       No line items yet
                     </TableCell>
                   </TableRow>
@@ -1284,8 +1380,9 @@ export default function EstimateDetail() {
                       item.stageId === filterStage;
                     const matchesWorkstream = !filterWorkstream || 
                       (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
+                    const matchesUnresourced = !filterUnresourced || !item.staffId;
                     
-                    return matchesText && matchesEpic && matchesStage && matchesWorkstream;
+                    return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesUnresourced;
                   }).map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
@@ -1368,6 +1465,11 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
+                        <span className={!item.staffId ? "text-orange-500 font-medium" : ""}>
+                          {item.resourceName || "Unassigned"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         {editingItem === item.id ? (
                           <Input
                             type="number"
@@ -1380,6 +1482,15 @@ export default function EstimateDetail() {
                           <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
                             ${Math.round(Number(item.rate))}
                           </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {(user?.role === "admin" || user?.role === "executive") && item.costRate ? (
+                          <span className="text-muted-foreground">
+                            ${Math.round(Number(item.costRate))}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -1426,6 +1537,15 @@ export default function EstimateDetail() {
                       </TableCell>
                       <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
                       <TableCell>${Math.round(Number(item.totalAmount))}</TableCell>
+                      <TableCell>
+                        {(user?.role === "admin" || user?.role === "executive") && item.margin ? (
+                          <span className={Number(item.marginPercent) > 0 ? "text-green-600" : "text-red-600"}>
+                            ${Math.round(Number(item.margin))} ({Number(item.marginPercent).toFixed(1)}%)
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
@@ -1947,7 +2067,12 @@ export default function EstimateDetail() {
                 if (selectedStaff) {
                   bulkUpdateMutation.mutate({
                     itemIds: Array.from(selectedItems),
-                    updates: { rate: selectedStaff.defaultChargeRate }
+                    updates: { 
+                      rate: selectedStaff.defaultChargeRate,
+                      costRate: selectedStaff.defaultCostRate,
+                      staffId: selectedStaff.id,
+                      resourceName: selectedStaff.name
+                    }
                   });
                   setApplyStaffRatesDialog(false);
                   setSelectedStaffId("");

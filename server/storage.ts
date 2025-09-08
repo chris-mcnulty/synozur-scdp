@@ -367,12 +367,59 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEstimateLineItem(insertLineItem: InsertEstimateLineItem): Promise<EstimateLineItem> {
-    const [lineItem] = await db.insert(estimateLineItems).values(insertLineItem).returning();
+    // Calculate margin if both rate and costRate are provided
+    let marginData: any = {};
+    if (insertLineItem.rate && insertLineItem.costRate && insertLineItem.adjustedHours) {
+      const totalAmount = Number(insertLineItem.adjustedHours) * Number(insertLineItem.rate);
+      const totalCost = Number(insertLineItem.adjustedHours) * Number(insertLineItem.costRate);
+      const margin = totalAmount - totalCost;
+      const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+      
+      marginData = {
+        totalCost: totalCost.toString(),
+        margin: margin.toString(),
+        marginPercent: marginPercent.toFixed(2)
+      };
+    }
+    
+    const [lineItem] = await db.insert(estimateLineItems).values({
+      ...insertLineItem,
+      ...marginData
+    }).returning();
     return lineItem;
   }
 
   async updateEstimateLineItem(id: string, updateLineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem> {
-    const [lineItem] = await db.update(estimateLineItems).set(updateLineItem).where(eq(estimateLineItems.id, id)).returning();
+    // Get current line item to merge data
+    const [currentItem] = await db.select().from(estimateLineItems).where(eq(estimateLineItems.id, id));
+    
+    // Calculate margin if we have all necessary fields
+    let marginData: any = {};
+    const rate = updateLineItem.rate !== undefined ? updateLineItem.rate : currentItem.rate;
+    const costRate = updateLineItem.costRate !== undefined ? updateLineItem.costRate : currentItem.costRate;
+    const adjustedHours = updateLineItem.adjustedHours !== undefined ? updateLineItem.adjustedHours : currentItem.adjustedHours;
+    const totalAmount = updateLineItem.totalAmount !== undefined ? updateLineItem.totalAmount : currentItem.totalAmount;
+    
+    if (rate && costRate && adjustedHours) {
+      const calcTotalAmount = Number(adjustedHours) * Number(rate);
+      const totalCost = Number(adjustedHours) * Number(costRate);
+      const margin = calcTotalAmount - totalCost;
+      const marginPercent = calcTotalAmount > 0 ? (margin / calcTotalAmount) * 100 : 0;
+      
+      marginData = {
+        totalCost: totalCost.toString(),
+        margin: margin.toString(),
+        marginPercent: marginPercent.toFixed(2)
+      };
+    }
+    
+    const [lineItem] = await db.update(estimateLineItems)
+      .set({
+        ...updateLineItem,
+        ...marginData
+      })
+      .where(eq(estimateLineItems.id, id))
+      .returning();
     return lineItem;
   }
 
