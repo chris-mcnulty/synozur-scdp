@@ -13,6 +13,9 @@ import { useToast } from "@/hooks/use-toast";
 
 interface StaffMember {
   id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
   name: string;
   initials: string;
   role: string;
@@ -88,8 +91,13 @@ export default function Staff() {
   const handleCreateSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const firstName = formData.get("firstName") as string;
+    const lastName = formData.get("lastName") as string;
     createMutation.mutate({
-      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      firstName: firstName,
+      lastName: lastName,
+      name: `${firstName} ${lastName}`,
       initials: formData.get("initials") as string,
       role: formData.get("role") as string,
       defaultChargeRate: formData.get("defaultChargeRate") as string,
@@ -102,9 +110,14 @@ export default function Staff() {
     if (!selectedStaff) return;
     
     const formData = new FormData(e.currentTarget);
+    const firstName = formData.get("firstName") as string;
+    const lastName = formData.get("lastName") as string;
     updateMutation.mutate({
       id: selectedStaff.id,
-      name: formData.get("name") as string,
+      email: formData.get("email") as string,
+      firstName: firstName,
+      lastName: lastName,
+      name: `${firstName} ${lastName}`,
       initials: formData.get("initials") as string,
       role: formData.get("role") as string,
       defaultChargeRate: formData.get("defaultChargeRate") as string,
@@ -136,6 +149,7 @@ export default function Staff() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
                   <TableHead>Initials</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Charge Rate</TableHead>
@@ -147,6 +161,7 @@ export default function Staff() {
                 {staff.map((member) => (
                   <TableRow key={member.id} data-testid={`staff-row-${member.id}`}>
                     <TableCell className="font-medium">{member.name}</TableCell>
+                    <TableCell>{member.email}</TableCell>
                     <TableCell>{member.initials}</TableCell>
                     <TableCell>{member.role}</TableCell>
                     <TableCell>${member.defaultChargeRate}/hr</TableCell>
@@ -197,12 +212,31 @@ export default function Staff() {
           </DialogHeader>
           <form onSubmit={handleCreateSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="name">Name</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="name"
-                name="name"
+                id="email"
+                name="email"
+                type="email"
                 required
-                data-testid="input-name"
+                data-testid="input-email"
+              />
+            </div>
+            <div>
+              <Label htmlFor="firstName">First Name</Label>
+              <Input
+                id="firstName"
+                name="firstName"
+                required
+                data-testid="input-first-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="lastName">Last Name</Label>
+              <Input
+                id="lastName"
+                name="lastName"
+                required
+                data-testid="input-last-name"
               />
             </div>
             <div>
@@ -267,13 +301,34 @@ export default function Staff() {
           {selectedStaff && (
             <form onSubmit={handleEditSubmit} className="space-y-4">
               <div>
-                <Label htmlFor="edit-name">Name</Label>
+                <Label htmlFor="edit-email">Email</Label>
                 <Input
-                  id="edit-name"
-                  name="name"
-                  defaultValue={selectedStaff.name}
+                  id="edit-email"
+                  name="email"
+                  type="email"
+                  defaultValue={selectedStaff.email}
                   required
-                  data-testid="input-edit-name"
+                  data-testid="input-edit-email"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-firstName">First Name</Label>
+                <Input
+                  id="edit-firstName"
+                  name="firstName"
+                  defaultValue={selectedStaff.firstName}
+                  required
+                  data-testid="input-edit-first-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-lastName">Last Name</Label>
+                <Input
+                  id="edit-lastName"
+                  name="lastName"
+                  defaultValue={selectedStaff.lastName}
+                  required
+                  data-testid="input-edit-last-name"
                 />
               </div>
               <div>

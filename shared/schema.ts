@@ -38,6 +38,9 @@ export const roles = pgTable("roles", {
 // Staff (employee rate management)
 export const staff = pgTable("staff", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
   name: text("name").notNull(),
   initials: text("initials").notNull(),
   role: text("role").notNull(), // Developer, Designer, PM, etc.
