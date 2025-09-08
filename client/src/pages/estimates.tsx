@@ -35,6 +35,7 @@ export default function Estimates() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<Estimate | null>(null);
+  const [estimateType, setEstimateType] = useState<string>('detailed');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -302,12 +303,16 @@ export default function Estimates() {
               const formData = new FormData(e.currentTarget);
               const projectId = formData.get('projectId');
               const clientId = formData.get('clientId');
+              const selectedEstimateType = formData.get('estimateType') || 'detailed';
               
               console.log('Form submission data:', {
                 name: formData.get('name'),
                 clientId,
                 projectId,
-                validDays: formData.get('validDays')
+                validDays: formData.get('validDays'),
+                estimateType: selectedEstimateType,
+                blockHours: formData.get('blockHours'),
+                blockDollars: formData.get('blockDollars')
               });
               
               if (!clientId) {
@@ -319,13 +324,26 @@ export default function Estimates() {
                 return;
               }
               
-              createEstimate.mutate({
+              const estimateData: any = {
                 name: formData.get('name'),
                 clientId,
                 projectId: projectId === 'none' ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
-                estimateType: formData.get('estimateType') || 'detailed',
-              });
+                estimateType: selectedEstimateType,
+              };
+              
+              // Add block estimate fields if block type
+              if (selectedEstimateType === 'block') {
+                const blockHours = formData.get('blockHours') as string;
+                const blockDollars = formData.get('blockDollars') as string;
+                const blockDescription = formData.get('blockDescription') as string;
+                
+                if (blockHours) estimateData.blockHours = parseFloat(blockHours);
+                if (blockDollars) estimateData.blockDollars = parseFloat(blockDollars);
+                if (blockDescription) estimateData.blockDescription = blockDescription;
+              }
+              
+              createEstimate.mutate(estimateData);
             }}>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
@@ -386,7 +404,7 @@ export default function Estimates() {
 
                 <div className="grid gap-2">
                   <Label htmlFor="estimateType">Estimate Type</Label>
-                  <Select name="estimateType" defaultValue="detailed">
+                  <Select name="estimateType" defaultValue="detailed" onValueChange={setEstimateType}>
                     <SelectTrigger data-testid="select-estimate-type">
                       <SelectValue placeholder="Select estimate type" />
                     </SelectTrigger>
@@ -399,6 +417,43 @@ export default function Estimates() {
                     Block estimates are ideal for retainer projects with fixed hours/dollars
                   </p>
                 </div>
+
+                {estimateType === 'block' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="blockHours">Total Hours</Label>
+                        <Input
+                          id="blockHours"
+                          name="blockHours"
+                          type="number"
+                          placeholder="e.g., 100"
+                          data-testid="input-block-hours"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="blockDollars">Total Amount ($)</Label>
+                        <Input
+                          id="blockDollars"
+                          name="blockDollars"
+                          type="number"
+                          placeholder="e.g., 40000"
+                          data-testid="input-block-dollars"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="blockDescription">Description</Label>
+                      <textarea
+                        id="blockDescription"
+                        name="blockDescription"
+                        placeholder="Describe the work covered by this block estimate..."
+                        className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="textarea-block-description"
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="grid gap-2">
                   <Label htmlFor="validDays">Valid For (Days)</Label>
