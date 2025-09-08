@@ -351,7 +351,6 @@ export default function EstimateDetail() {
     
     const lineItemData = {
       description: newItem.description,
-      workstream: newItem.workstream || "",
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
       workstream: newItem.workstream || null,
@@ -591,60 +590,189 @@ export default function EstimateDetail() {
         </TabsList>
 
         <TabsContent value="outputs" className="space-y-6">
+          {/* Estimate Outputs */}
           <Card>
             <CardHeader>
-              <CardTitle>Summary & Milestones</CardTitle>
-              <CardDescription>
-                Estimate totals, milestones, and project overview
-              </CardDescription>
+              <CardTitle>Estimate Outputs</CardTitle>
+              <CardDescription>Customer-facing pricing and margins</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-6">
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <h4 className="font-semibold mb-2">Estimate Totals</h4>
-                  <div className="space-y-1 text-sm">
-                    <div>Total Hours: {lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) || 0), 0).toFixed(0)}</div>
-                    <div>Total Amount: ${lineItems.reduce((sum, item) => sum + (parseFloat(item.totalAmount) || 0), 0).toFixed(0)}</div>
-                  </div>
+                  <Label htmlFor="presented-total">Presented Total ($)</Label>
+                  <Input
+                    id="presented-total"
+                    type="number"
+                    placeholder="Enter customer-facing total"
+                    value={presentedTotal || estimate?.presentedTotal || ""}
+                    onChange={(e) => setPresentedTotal(e.target.value)}
+                    onBlur={() => {
+                      if (presentedTotal && estimate) {
+                        const calculatedMargin = ((totalAmount - parseFloat(presentedTotal)) / totalAmount * 100).toFixed(2);
+                        setMargin(calculatedMargin);
+                        updateEstimateMutation.mutate({ 
+                          presentedTotal: presentedTotal,
+                          margin: calculatedMargin
+                        });
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Internal Total: ${Math.round(totalAmount)}
+                  </p>
                 </div>
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold">Milestones</h4>
-                    <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Milestone
-                    </Button>
-                  </div>
-                  {milestones.length === 0 ? (
-                    <p className="text-muted-foreground text-sm">No milestones created yet</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {milestones.map((milestone) => (
-                        <div key={milestone.id} className="flex items-center justify-between p-2 border rounded text-sm">
-                          <div>
-                            <span className="font-medium">{milestone.name}</span>
-                            {milestone.amount ? (
-                              <span className="text-muted-foreground ml-2">${milestone.amount}</span>
-                            ) : milestone.percentage ? (
-                              <span className="text-muted-foreground ml-2">{milestone.percentage}%</span>
-                            ) : null}
-                          </div>
-                          <Button
-                            onClick={() => {
-                              setEditingMilestone(milestone);
-                              setShowMilestoneEditDialog(true);
-                            }}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <Label htmlFor="margin">Margin (%)</Label>
+                  <Input
+                    id="margin"
+                    type="number"
+                    placeholder="Auto-calculated"
+                    value={margin || (estimate?.presentedTotal ? Math.round((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100) : "")}
+                    readOnly
+                    className="mt-1 bg-muted"
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)) : "N/A"}
+                  </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Summary by Phase and Workstream */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Summary by Phase & Workstream</CardTitle>
+              <CardDescription>Effort and billing breakdown</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                // Group by phase (epic) and workstream
+                const grouped = lineItems?.reduce((acc: any, item) => {
+                  const phase = item.epicId ? (epics?.find(e => e.id === item.epicId)?.name || "Unassigned") : "Unassigned";
+                  const workstream = item.workstream || "Unassigned";
+                  
+                  if (!acc[phase]) acc[phase] = {};
+                  if (!acc[phase][workstream]) {
+                    acc[phase][workstream] = { hours: 0, amount: 0 };
+                  }
+                  
+                  acc[phase][workstream].hours += Number(item.adjustedHours);
+                  acc[phase][workstream].amount += Number(item.totalAmount);
+                  
+                  return acc;
+                }, {});
+
+                return (
+                  <div className="space-y-4">
+                    {Object.entries(grouped || {}).map(([phase, workstreams]: [string, any]) => (
+                      <div key={phase} className="border rounded-lg p-4">
+                        <h4 className="font-semibold mb-3">{phase}</h4>
+                        <div className="space-y-2">
+                          {Object.entries(workstreams).map(([workstream, data]: [string, any]) => (
+                            <div key={workstream} className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">{workstream}</span>
+                              <div className="flex gap-6">
+                                <span>{data.hours.toFixed(1)} hrs</span>
+                                <span className="font-medium">${data.amount.toFixed(0)}</span>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="border-t pt-2 mt-2">
+                            <div className="flex justify-between font-medium">
+                              <span>Phase Total</span>
+                              <div className="flex gap-6">
+                                <span>
+                                  {Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.hours, 0).toFixed(1)} hrs
+                                </span>
+                                <span>
+                                  ${Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.amount, 0).toFixed(0)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="border-t pt-4">
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span>Grand Total</span>
+                        <div className="flex gap-6">
+                          <span>{totalHours.toFixed(1)} hrs</span>
+                          <span>${totalAmount.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Milestones */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Milestone Payments</CardTitle>
+                  <CardDescription>Customer payment schedule</CardDescription>
+                </div>
+                <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Milestone
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {milestones.length === 0 ? (
+                <p className="text-muted-foreground text-sm">No milestones created yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {milestones.map((milestone) => (
+                    <div key={milestone.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">{milestone.name}</div>
+                        {milestone.description && (
+                          <div className="text-sm text-muted-foreground">{milestone.description}</div>
+                        )}
+                        <div className="text-sm mt-1">
+                          {milestone.amount ? (
+                            <span className="font-medium">${milestone.amount}</span>
+                          ) : milestone.percentage ? (
+                            <span className="font-medium">{milestone.percentage}% of total</span>
+                          ) : null}
+                          {milestone.dueDate && (
+                            <span className="text-muted-foreground ml-2">
+                              Due: {new Date(milestone.dueDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => {
+                            setEditingMilestone(milestone);
+                            setShowMilestoneEditDialog(true);
+                          }}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -987,7 +1115,7 @@ export default function EstimateDetail() {
                     setFilterText("");
                     setFilterEpic("all");
                     setFilterStage("all");
-                    setFilterCategory("");
+                    setFilterWorkstream("");
                   }}
                   variant="outline"
                   size="sm"
@@ -1257,176 +1385,6 @@ export default function EstimateDetail() {
                 Total Amount: ${Math.round(totalAmount)}
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Estimate Outputs Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Estimate Outputs</CardTitle>
-          <CardDescription>
-            Customer-facing totals and milestone payment schedule
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Presented Total and Margin */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
-            <div>
-              <Label htmlFor="presented-total">Presented Total</Label>
-              <Input
-                id="presented-total"
-                type="number"
-                placeholder="Enter customer-facing total"
-                value={presentedTotal || estimate?.presentedTotal || ""}
-                onChange={(e) => setPresentedTotal(e.target.value)}
-                onBlur={() => {
-                  if (presentedTotal && estimate) {
-                    const calculatedMargin = ((totalAmount - parseFloat(presentedTotal)) / totalAmount * 100).toFixed(2);
-                    setMargin(calculatedMargin);
-                  }
-                }}
-                className="mt-1"
-              />
-              <p className="text-sm text-muted-foreground mt-1">
-                Internal Total: ${Math.round(totalAmount)}
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="margin">Margin (%)</Label>
-              <Input
-                id="margin"
-                type="number"
-                placeholder="Auto-calculated"
-                value={margin || (estimate?.presentedTotal ? Math.round((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100) : "")}
-                readOnly
-                className="mt-1 bg-muted"
-              />
-              <p className="text-sm text-muted-foreground mt-1">
-                Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)) : "N/A"}
-              </p>
-            </div>
-          </div>
-
-          {/* Milestone Payments */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Milestone Payments</h3>
-              <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Milestone
-              </Button>
-            </div>
-
-            {milestones.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No milestone payments defined. Click "Add Milestone" to create payment milestones.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {milestones.map((milestone) => {
-                  const percentageAmount = milestone.percentage 
-                    ? Math.round(parseFloat(presentedTotal || estimate?.presentedTotal || "0") * Number(milestone.percentage) / 100)
-                    : 0;
-                  
-                  return (
-                    <div key={milestone.id} className="p-4 border rounded-lg space-y-2">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="font-medium">{milestone.name}</div>
-                          {milestone.description && (
-                            <div className="text-sm text-muted-foreground">{milestone.description}</div>
-                          )}
-                          {milestone.dueDate && (
-                            <div className="text-sm text-muted-foreground">
-                              Due: {new Date(milestone.dueDate).toLocaleDateString()}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right ml-4">
-                          <div className="font-semibold">
-                            ${Math.round(Number(milestone.amount) || percentageAmount)}
-                          </div>
-                          {milestone.percentage && (
-                            <div className="text-sm text-muted-foreground">
-                              {milestone.percentage}%
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex gap-1 ml-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setEditingMilestone({
-                                id: milestone.id,
-                                name: milestone.name,
-                                description: milestone.description || "",
-                                amount: milestone.amount?.toString() || "",
-                                percentage: milestone.percentage?.toString() || "",
-                                dueDate: milestone.dueDate || ""
-                              });
-                              setShowMilestoneEditDialog(true);
-                            }}
-                            data-testid={`button-edit-milestone-${milestone.id}`}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
-                            data-testid={`button-delete-milestone-${milestone.id}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Milestone Summary */}
-                <div className="mt-4 p-4 bg-muted/50 rounded-lg">
-                  {(() => {
-                    const milestoneTotal = milestones.reduce((sum, m) => {
-                      const amount = Number(m.amount) || (m.percentage && presentedTotal ? parseFloat(presentedTotal) * Number(m.percentage) / 100 : 0);
-                      return sum + Number(amount);
-                    }, 0);
-                    const currentPresentedTotal = parseFloat(presentedTotal || estimate?.presentedTotal || "0");
-                    const difference = milestoneTotal - currentPresentedTotal;
-                    const isBalanced = Math.abs(difference) < 0.01; // Allow for small rounding differences
-                    
-                    return (
-                      <>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Total Milestone Payments:</span>
-                          <span className="font-semibold">
-                            ${milestoneTotal.toFixed(2)}
-                          </span>
-                        </div>
-                        {currentPresentedTotal > 0 && (
-                          <div className="space-y-1 mt-2">
-                            <div className="text-sm text-muted-foreground">
-                              Presented Total: ${currentPresentedTotal.toFixed(2)}
-                            </div>
-                            <div className={`text-sm font-medium ${isBalanced ? 'text-green-600 dark:text-green-400' : difference > 0 ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`}>
-                              {isBalanced ? (
-                                <span data-testid="milestone-validation-balanced">✓ Milestones match presented total</span>
-                              ) : (
-                                <span data-testid="milestone-validation-unbalanced">
-                                  ⚠ {difference > 0 ? 'Over' : 'Under'} by ${Math.abs(difference).toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
           </div>
         </CardContent>
       </Card>
