@@ -42,10 +42,14 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   code: text("code").notNull().unique(),
   startDate: date("start_date"),
-  endDate: date("end_date"),
+  endDate: date("end_date"), // Can be null for open-ended projects
   commercialScheme: text("commercial_scheme").notNull(), // retainer, milestone, tm
-  retainerBalance: decimal("retainer_balance", { precision: 10, scale: 2 }),
+  retainerBalance: decimal("retainer_balance", { precision: 10, scale: 2 }), // Current retainer balance
+  retainerTotal: decimal("retainer_total", { precision: 10, scale: 2 }), // Total retainer value
   baselineBudget: decimal("baseline_budget", { precision: 10, scale: 2 }),
+  sowValue: decimal("sow_value", { precision: 10, scale: 2 }), // SOW total value
+  sowDate: date("sow_date"), // Date SOW was signed
+  hasSow: boolean("has_sow").notNull().default(false), // Track if SOW exists
   status: text("status").notNull().default("active"), // active, on-hold, completed
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });

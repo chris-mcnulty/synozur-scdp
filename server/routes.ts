@@ -155,6 +155,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.updateProject(req.params.id, req.body);
+      res.json(project);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update project" });
+    }
+  });
+
+  app.delete("/api/projects/:id", requireAuth, async (req, res) => {
+    try {
+      // Get the project first to check permissions
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Check if user is admin or pm
+      const user = req.user!;
+      if (user.role !== "admin" && user.role !== "billing-admin" && user.role !== "pm") {
+        return res.status(403).json({ message: "You don't have permission to delete this project" });
+      }
+
+      // Delete the project and all related data
+      await storage.deleteProject(req.params.id);
+      res.json({ message: "Project deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      res.status(500).json({ message: "Failed to delete project" });
+    }
+  });
+
+  // Get project progress (hours vs estimate)
+  app.get("/api/projects/:id/progress", requireAuth, async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Get actual hours from time entries
+      const timeEntries = await storage.getTimeEntries({ projectId });
+      const actualHours = timeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours), 0);
+      
+      // Get estimated hours from project estimates
+      const projectEstimates = await storage.getEstimatesByProject(projectId);
+      let estimatedHours = 0;
+      
+      if (projectEstimates.length > 0) {
+        // Use the latest approved estimate, or the latest draft if no approved
+        const approvedEstimate = projectEstimates.find(e => e.status === 'approved');
+        const estimate = approvedEstimate || projectEstimates[0];
+        
+        if (estimate) {
+          const lineItems = await storage.getEstimateLineItems(estimate.id);
+          estimatedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
+        }
+      }
+      
+      // Get project budget info
+      const project = await storage.getProject(projectId);
+      
+      res.json({
+        actualHours,
+        estimatedHours,
+        percentComplete: estimatedHours > 0 ? Math.round((actualHours / estimatedHours) * 100) : 0,
+        remainingHours: Math.max(0, estimatedHours - actualHours),
+        budget: project?.baselineBudget,
+        retainerBalance: project?.retainerBalance,
+        retainerTotal: project?.retainerTotal
+      });
+    } catch (error) {
+      console.error("Error getting project progress:", error);
+      res.status(500).json({ message: "Failed to get project progress" });
+    }
+  });
+
   // Clients
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {

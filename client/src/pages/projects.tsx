@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Search, Filter, FolderOpen } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, TrendingUp, FileText, DollarSign } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
@@ -17,6 +17,9 @@ export default function Projects() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectWithClient | null>(null);
+  const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
 
   const { data: projects, isLoading } = useQuery<ProjectWithClient[]>({
@@ -45,6 +48,29 @@ export default function Projects() {
       toast({
         title: "Error",
         description: error.message || "Failed to create project. Please check your permissions and try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteProject = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/projects/${id}`, {
+      method: "DELETE",
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setDeleteDialogOpen(false);
+      setProjectToDelete(null);
+      toast({
+        title: "Success",
+        description: "Project deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Project deletion error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete project. You may not have permission.",
         variant: "destructive",
       });
     },
@@ -196,12 +222,28 @@ export default function Projects() {
                     </p>
                   </div>
                   
-                  {project.startDate && project.endDate && (
+                  {project.startDate && (
                     <div>
                       <p className="text-sm text-muted-foreground">Timeline</p>
                       <p className="text-sm" data-testid={`project-timeline-${project.id}`}>
-                        {new Date(project.startDate).toLocaleDateString()} - {new Date(project.endDate).toLocaleDateString()}
+                        {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}
                       </p>
+                    </div>
+                  )}
+                  
+                  {project.commercialScheme === 'retainer' && project.retainerTotal && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Retainer Value</p>
+                      <p className="font-medium text-sm">
+                        ${Number(project.retainerTotal).toLocaleString()}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {project.hasSow && (
+                    <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                      <FileText className="h-3 w-3" />
+                      <span className="text-xs font-medium">SOW Signed</span>
                     </div>
                   )}
                   
@@ -220,7 +262,19 @@ export default function Projects() {
                       onClick={() => console.log('Edit project:', project.id)}
                       data-testid={`button-edit-project-${project.id}`}
                     >
-                      Edit
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        setProjectToDelete(project);
+                        setDeleteDialogOpen(true);
+                      }}
+                      data-testid={`button-delete-project-${project.id}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
                 </CardContent>
@@ -318,8 +372,48 @@ export default function Projects() {
                       id="endDate"
                       name="endDate"
                       type="date"
+                      placeholder="Leave blank for open-ended"
                       data-testid="input-end-date"
                     />
+                    <p className="text-xs text-muted-foreground">Leave blank for open-ended projects</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4 border-t pt-4">
+                  <h4 className="font-medium">SOW Tracking</h4>
+                  <div className="grid gap-2">
+                    <Label htmlFor="hasSow">Has SOW?</Label>
+                    <Select name="hasSow" defaultValue="false">
+                      <SelectTrigger data-testid="select-has-sow">
+                        <SelectValue placeholder="Select SOW status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="false">No SOW</SelectItem>
+                        <SelectItem value="true">SOW Signed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="sowDate">SOW Date</Label>
+                      <Input
+                        id="sowDate"
+                        name="sowDate"
+                        type="date"
+                        data-testid="input-sow-date"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="sowValue">SOW Value ($)</Label>
+                      <Input
+                        id="sowValue"
+                        name="sowValue"
+                        type="number"
+                        placeholder="SOW amount"
+                        data-testid="input-sow-value"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -400,6 +494,44 @@ export default function Projects() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Project Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Project</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p>Are you sure you want to delete the project "{projectToDelete?.name}"?</p>
+              <p className="text-sm text-muted-foreground">
+                This action cannot be undone. All related data including time entries, expenses, and estimates will be permanently deleted.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setProjectToDelete(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => {
+                  if (projectToDelete) {
+                    deleteProject.mutate(projectToDelete.id);
+                  }
+                }}
+                disabled={deleteProject.isPending}
+                data-testid="confirm-delete-project"
+              >
+                {deleteProject.isPending ? "Deleting..." : "Delete Project"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

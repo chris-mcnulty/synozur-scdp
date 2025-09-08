@@ -12,7 +12,13 @@ export interface ProjectWithClient {
   status: string;
   startDate: string | null;
   endDate: string | null;
+  commercialScheme: string;
+  retainerBalance: string | null;
+  retainerTotal: string | null;
   baselineBudget: string | null;
+  sowValue: string | null;
+  sowDate: string | null;
+  hasSow: boolean;
   client: {
     id: string;
     name: string;

@@ -31,6 +31,7 @@ export interface IStorage {
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
+  deleteProject(id: string): Promise<void>;
   
   // Roles
   getRoles(): Promise<Role[]>;
@@ -162,6 +163,27 @@ export class DatabaseStorage implements IStorage {
   async updateProject(id: string, updateProject: Partial<InsertProject>): Promise<Project> {
     const [project] = await db.update(projects).set(updateProject).where(eq(projects.id, id)).returning();
     return project;
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    // Delete all related data first (cascade delete)
+    // Delete time entries
+    await db.delete(timeEntries).where(eq(timeEntries.projectId, id));
+    
+    // Delete expenses
+    await db.delete(expenses).where(eq(expenses.projectId, id));
+    
+    // Delete change orders
+    await db.delete(changeOrders).where(eq(changeOrders.projectId, id));
+    
+    // Delete estimates for this project
+    const projectEstimates = await db.select().from(estimates).where(eq(estimates.projectId, id));
+    for (const estimate of projectEstimates) {
+      await this.deleteEstimate(estimate.id);
+    }
+    
+    // Finally delete the project itself
+    await db.delete(projects).where(eq(projects.id, id));
   }
 
   async getRoles(): Promise<Role[]> {
