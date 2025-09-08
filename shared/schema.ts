@@ -35,6 +35,18 @@ export const roles = pgTable("roles", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Staff (employee rate management)
+export const staff = pgTable("staff", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  initials: text("initials").notNull(),
+  role: text("role").notNull(), // Developer, Designer, PM, etc.
+  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }).notNull(),
+  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 // Projects
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -436,6 +448,11 @@ export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
   createdAt: true,
 });
 
+export const insertStaffSchema = createInsertSchema(staff).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -448,6 +465,9 @@ export type InsertProject = z.infer<typeof insertProjectSchema>;
 
 export type Role = typeof roles.$inferSelect;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
+
+export type Staff = typeof staff.$inferSelect;
+export type InsertStaff = z.infer<typeof insertStaffSchema>;
 
 export type Estimate = typeof estimates.$inferSelect;
 export type InsertEstimate = z.infer<typeof insertEstimateSchema>;

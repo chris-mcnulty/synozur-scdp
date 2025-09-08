@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema } from "@shared/schema";
 import { z } from "zod";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 
@@ -98,6 +98,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(user);
     } catch (error) {
       res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/users/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.deleteUser(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete user" });
     }
   });
 
@@ -329,6 +338,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid role data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create role" });
+    }
+  });
+
+  // Staff management
+  app.get("/api/staff", requireAuth, async (req, res) => {
+    try {
+      const staffMembers = await storage.getStaff();
+      // Filter cost rates for non-admin/executive users
+      if (req.user && !['admin', 'executive'].includes(req.user.role)) {
+        const filteredStaff = staffMembers.map(s => ({
+          ...s,
+          defaultCostRate: undefined
+        }));
+        res.json(filteredStaff);
+      } else {
+        res.json(staffMembers);
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch staff" });
+    }
+  });
+
+  app.post("/api/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = insertStaffSchema.parse(req.body);
+      const staffMember = await storage.createStaffMember(validatedData);
+      res.status(201).json(staffMember);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid staff data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create staff member" });
+    }
+  });
+
+  app.patch("/api/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const staffMember = await storage.updateStaffMember(req.params.id, req.body);
+      res.json(staffMember);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update staff member" });
+    }
+  });
+
+  app.delete("/api/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.deleteStaffMember(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete staff member" });
+    }
+  });
+
+  app.post("/api/estimates/:estimateId/apply-staff-rates/:staffId", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.applyStaffRatesToLineItems(req.params.estimateId, req.params.staffId);
+      res.json({ message: "Staff rates applied successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to apply staff rates" });
     }
   });
 

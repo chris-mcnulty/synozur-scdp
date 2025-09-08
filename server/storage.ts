@@ -1,13 +1,15 @@
 import { 
-  users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
+  users, clients, projects, roles, staff, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
+  type Staff, type InsertStaff,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
-  type Expense, type InsertExpense
+  type Expense, type InsertExpense,
+  type ChangeOrder, type InsertChangeOrder
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -19,6 +21,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
+  deleteUser(id: string): Promise<void>;
   
   // Clients
   getClients(): Promise<Client[]>;
@@ -38,6 +41,14 @@ export interface IStorage {
   getRole(id: string): Promise<Role | undefined>;
   createRole(role: InsertRole): Promise<Role>;
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
+  
+  // Staff
+  getStaff(): Promise<Staff[]>;
+  getStaffMember(id: string): Promise<Staff | undefined>;
+  createStaffMember(staffMember: InsertStaff): Promise<Staff>;
+  updateStaffMember(id: string, staffMember: Partial<InsertStaff>): Promise<Staff>;
+  deleteStaffMember(id: string): Promise<void>;
+  applyStaffRatesToLineItems(estimateId: string, staffId: string): Promise<void>;
   
   // Estimates
   getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]>;
@@ -116,6 +127,11 @@ export class DatabaseStorage implements IStorage {
   async updateUser(id: string, updateUser: Partial<InsertUser>): Promise<User> {
     const [user] = await db.update(users).set(updateUser).where(eq(users.id, id)).returning();
     return user;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    // Soft delete by marking as inactive
+    await db.update(users).set({ isActive: false }).where(eq(users.id, id));
   }
 
   async getClients(): Promise<Client[]> {
@@ -209,6 +225,42 @@ export class DatabaseStorage implements IStorage {
   async updateRole(id: string, updateRole: Partial<InsertRole>): Promise<Role> {
     const [role] = await db.update(roles).set(updateRole).where(eq(roles.id, id)).returning();
     return role;
+  }
+
+  async getStaff(): Promise<Staff[]> {
+    return await db.select().from(staff).where(eq(staff.isActive, true)).orderBy(staff.name);
+  }
+
+  async getStaffMember(id: string): Promise<Staff | undefined> {
+    const [staffMember] = await db.select().from(staff).where(eq(staff.id, id));
+    return staffMember || undefined;
+  }
+
+  async createStaffMember(insertStaff: InsertStaff): Promise<Staff> {
+    const [staffMember] = await db.insert(staff).values(insertStaff).returning();
+    return staffMember;
+  }
+
+  async updateStaffMember(id: string, updateStaff: Partial<InsertStaff>): Promise<Staff> {
+    const [staffMember] = await db.update(staff).set(updateStaff).where(eq(staff.id, id)).returning();
+    return staffMember;
+  }
+
+  async deleteStaffMember(id: string): Promise<void> {
+    await db.update(staff).set({ isActive: false }).where(eq(staff.id, id));
+  }
+
+  async applyStaffRatesToLineItems(estimateId: string, staffId: string): Promise<void> {
+    const [staffMember] = await db.select().from(staff).where(eq(staff.id, staffId));
+    if (!staffMember) return;
+
+    // Update all line items for this estimate with the staff member's default charge rate
+    await db.update(estimateLineItems)
+      .set({ 
+        rate: staffMember.defaultChargeRate,
+        totalAmount: sql`adjusted_hours * ${staffMember.defaultChargeRate}`
+      })
+      .where(eq(estimateLineItems.estimateId, estimateId));
   }
 
   async getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]> {
