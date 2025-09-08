@@ -22,6 +22,7 @@ interface Estimate {
   projectId?: string;
   projectName?: string;
   status: 'draft' | 'sent' | 'approved' | 'rejected';
+  estimateType?: 'detailed' | 'block';
   totalHours: number;
   totalCost: number;
   createdAt: string;
