@@ -229,6 +229,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Change Orders
+  app.get("/api/projects/:id/change-orders", requireAuth, async (req, res) => {
+    try {
+      const changeOrders = await storage.getChangeOrders(req.params.id);
+      res.json(changeOrders);
+    } catch (error) {
+      console.error("Error fetching change orders:", error);
+      res.status(500).json({ message: "Failed to fetch change orders" });
+    }
+  });
+
+  app.post("/api/projects/:id/change-orders", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const insertData = insertChangeOrderSchema.parse({
+        ...req.body,
+        projectId: req.params.id
+      });
+      const changeOrder = await storage.createChangeOrder(insertData);
+      res.status(201).json(changeOrder);
+    } catch (error: any) {
+      console.error("Error creating change order:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid change order data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create change order" });
+    }
+  });
+
+  app.patch("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const changeOrder = await storage.updateChangeOrder(req.params.id, req.body);
+      res.json(changeOrder);
+    } catch (error) {
+      console.error("Error updating change order:", error);
+      res.status(500).json({ message: "Failed to update change order" });
+    }
+  });
+
+  app.delete("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteChangeOrder(req.params.id);
+      res.json({ message: "Change order deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting change order:", error);
+      res.status(500).json({ message: "Failed to delete change order" });
+    }
+  });
+
   // Clients
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {

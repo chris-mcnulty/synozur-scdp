@@ -78,6 +78,12 @@ export interface IStorage {
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
   
+  // Change Orders
+  getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
+  createChangeOrder(changeOrder: InsertChangeOrder): Promise<ChangeOrder>;
+  updateChangeOrder(id: string, changeOrder: Partial<InsertChangeOrder>): Promise<ChangeOrder>;
+  deleteChangeOrder(id: string): Promise<void>;
+  
   // Dashboard metrics
   getDashboardMetrics(): Promise<{
     activeProjects: number;
@@ -423,6 +429,25 @@ export class DatabaseStorage implements IStorage {
   async updateExpense(id: string, updateExpense: Partial<InsertExpense>): Promise<Expense> {
     const [expense] = await db.update(expenses).set(updateExpense).where(eq(expenses.id, id)).returning();
     return expense;
+  }
+
+  // Change Orders
+  async getChangeOrders(projectId: string): Promise<ChangeOrder[]> {
+    return await db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
+  }
+
+  async createChangeOrder(changeOrder: InsertChangeOrder): Promise<ChangeOrder> {
+    const [created] = await db.insert(changeOrders).values(changeOrder).returning();
+    return created;
+  }
+
+  async updateChangeOrder(id: string, updateChangeOrder: Partial<InsertChangeOrder>): Promise<ChangeOrder> {
+    const [updated] = await db.update(changeOrders).set(updateChangeOrder).where(eq(changeOrders.id, id)).returning();
+    return updated;
+  }
+
+  async deleteChangeOrder(id: string): Promise<void> {
+    await db.delete(changeOrders).where(eq(changeOrders.id, id));
   }
 
   async getDashboardMetrics(): Promise<{
