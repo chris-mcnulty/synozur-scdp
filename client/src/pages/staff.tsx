@@ -6,10 +6,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+
+interface Role {
+  id: string;
+  name: string;
+  defaultRackRate: string;
+}
 
 interface StaffMember {
   id: string;
@@ -18,7 +26,10 @@ interface StaffMember {
   lastName: string;
   name: string;
   initials: string;
-  role: string;
+  role: string; // Legacy field
+  roleId?: string;
+  customRole?: string;
+  standardRole?: Role;
   defaultChargeRate: string;
   defaultCostRate?: string;
   isActive: boolean;
@@ -29,10 +40,18 @@ export default function Staff() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const [roleType, setRoleType] = useState<'standard' | 'custom'>('standard');
+  const [editRoleType, setEditRoleType] = useState<'standard' | 'custom'>('standard');
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
+  const [editSelectedRoleId, setEditSelectedRoleId] = useState<string>('');
   const { toast } = useToast();
 
   const { data: staff = [], isLoading } = useQuery<StaffMember[]>({
     queryKey: ["/api/staff"],
+  });
+
+  const { data: roles = [] } = useQuery<Role[]>({
+    queryKey: ["/api/roles"],
   });
 
   const { data: user } = useQuery<{ role: string }>({
@@ -93,16 +112,28 @@ export default function Staff() {
     const formData = new FormData(e.currentTarget);
     const firstName = formData.get("firstName") as string;
     const lastName = formData.get("lastName") as string;
-    createMutation.mutate({
+    
+    const data: any = {
       email: formData.get("email") as string,
       firstName: firstName,
       lastName: lastName,
       name: `${firstName} ${lastName}`,
       initials: formData.get("initials") as string,
-      role: formData.get("role") as string,
       defaultChargeRate: formData.get("defaultChargeRate") as string,
       defaultCostRate: formData.get("defaultCostRate") as string,
-    });
+    };
+    
+    if (roleType === 'standard' && selectedRoleId) {
+      data.roleId = selectedRoleId;
+      // Find the selected role to get its name
+      const selectedRole = roles.find(r => r.id === selectedRoleId);
+      data.role = selectedRole?.name || ''; // Keep legacy field for compatibility
+    } else {
+      data.customRole = formData.get("customRole") as string;
+      data.role = data.customRole; // Keep legacy field for compatibility
+    }
+    
+    createMutation.mutate(data);
   };
 
   const handleEditSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -112,17 +143,30 @@ export default function Staff() {
     const formData = new FormData(e.currentTarget);
     const firstName = formData.get("firstName") as string;
     const lastName = formData.get("lastName") as string;
-    updateMutation.mutate({
+    
+    const data: any = {
       id: selectedStaff.id,
       email: formData.get("email") as string,
       firstName: firstName,
       lastName: lastName,
       name: `${firstName} ${lastName}`,
       initials: formData.get("initials") as string,
-      role: formData.get("role") as string,
       defaultChargeRate: formData.get("defaultChargeRate") as string,
       defaultCostRate: formData.get("defaultCostRate") as string,
-    });
+    };
+    
+    if (editRoleType === 'standard' && editSelectedRoleId) {
+      data.roleId = editSelectedRoleId;
+      const selectedRole = roles.find(r => r.id === editSelectedRoleId);
+      data.role = selectedRole?.name || '';
+      data.customRole = null;
+    } else {
+      data.customRole = formData.get("customRole") as string;
+      data.role = data.customRole;
+      data.roleId = null;
+    }
+    
+    updateMutation.mutate(data);
   };
 
   return (
@@ -163,7 +207,7 @@ export default function Staff() {
                     <TableCell className="font-medium">{member.name}</TableCell>
                     <TableCell>{member.email}</TableCell>
                     <TableCell>{member.initials}</TableCell>
-                    <TableCell>{member.role}</TableCell>
+                    <TableCell>{member.standardRole?.name || member.customRole || member.role}</TableCell>
                     <TableCell>${member.defaultChargeRate}/hr</TableCell>
                     {isAuthorized && (
                       <TableCell>${member.defaultCostRate}/hr</TableCell>
@@ -177,6 +221,14 @@ export default function Staff() {
                             data-testid={`button-edit-${member.id}`}
                             onClick={() => {
                               setSelectedStaff(member);
+                              // Set initial values for edit form
+                              if (member.roleId) {
+                                setEditRoleType('standard');
+                                setEditSelectedRoleId(member.roleId);
+                              } else {
+                                setEditRoleType('custom');
+                                setEditSelectedRoleId('');
+                              }
                               setEditDialogOpen(true);
                             }}
                           >
@@ -250,14 +302,59 @@ export default function Staff() {
               />
             </div>
             <div>
-              <Label htmlFor="role">Role</Label>
-              <Input
-                id="role"
-                name="role"
-                required
-                placeholder="e.g., Developer, Designer, PM"
-                data-testid="input-role"
-              />
+              <Label>Role Assignment</Label>
+              <RadioGroup 
+                value={roleType} 
+                onValueChange={(value: 'standard' | 'custom') => {
+                  setRoleType(value);
+                  setSelectedRoleId('');
+                }}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="standard" id="standard" />
+                  <Label htmlFor="standard">Standard Role</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="custom" id="custom" />
+                  <Label htmlFor="custom">Custom Role</Label>
+                </div>
+              </RadioGroup>
+              
+              {roleType === 'standard' ? (
+                <Select 
+                  value={selectedRoleId} 
+                  onValueChange={(value) => {
+                    setSelectedRoleId(value);
+                    // Pre-fill charge rate from selected role
+                    const role = roles.find(r => r.id === value);
+                    if (role) {
+                      const chargeInput = document.getElementById('defaultChargeRate') as HTMLInputElement;
+                      if (chargeInput) {
+                        chargeInput.value = role.defaultRackRate;
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger className="mt-2" data-testid="select-standard-role">
+                    <SelectValue placeholder="Select a role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map(role => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name} (Default: ${role.defaultRackRate}/hr)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  className="mt-2"
+                  name="customRole"
+                  placeholder="e.g., Technical Architect"
+                  required={roleType === 'custom'}
+                  data-testid="input-custom-role"
+                />
+              )}
             </div>
             <div>
               <Label htmlFor="defaultChargeRate">Default Charge Rate ($/hr)</Label>
@@ -343,14 +440,60 @@ export default function Staff() {
                 />
               </div>
               <div>
-                <Label htmlFor="edit-role">Role</Label>
-                <Input
-                  id="edit-role"
-                  name="role"
-                  defaultValue={selectedStaff.role}
-                  required
-                  data-testid="input-edit-role"
-                />
+                <Label>Role Assignment</Label>
+                <RadioGroup 
+                  value={editRoleType} 
+                  onValueChange={(value: 'standard' | 'custom') => {
+                    setEditRoleType(value);
+                    setEditSelectedRoleId('');
+                  }}
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="standard" id="edit-standard" />
+                    <Label htmlFor="edit-standard">Standard Role</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="custom" id="edit-custom" />
+                    <Label htmlFor="edit-custom">Custom Role</Label>
+                  </div>
+                </RadioGroup>
+                
+                {editRoleType === 'standard' ? (
+                  <Select 
+                    value={editSelectedRoleId} 
+                    onValueChange={(value) => {
+                      setEditSelectedRoleId(value);
+                      // Pre-fill charge rate from selected role
+                      const role = roles.find(r => r.id === value);
+                      if (role) {
+                        const chargeInput = document.getElementById('edit-defaultChargeRate') as HTMLInputElement;
+                        if (chargeInput) {
+                          chargeInput.value = role.defaultRackRate;
+                        }
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="mt-2" data-testid="edit-select-standard-role">
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roles.map(role => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name} (Default: ${role.defaultRackRate}/hr)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    className="mt-2"
+                    name="customRole"
+                    defaultValue={selectedStaff.customRole || selectedStaff.role}
+                    placeholder="e.g., Technical Architect"
+                    required={editRoleType === 'custom'}
+                    data-testid="input-edit-custom-role"
+                  />
+                )}
               </div>
               <div>
                 <Label htmlFor="edit-defaultChargeRate">Default Charge Rate ($/hr)</Label>
