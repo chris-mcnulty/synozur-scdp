@@ -7,7 +7,8 @@ import {
   Receipt, 
   FileText, 
   DollarSign, 
-  Users, 
+  Users,
+  UsersRound,
   Palette 
 } from "lucide-react";
 
@@ -114,6 +115,13 @@ export function Sidebar() {
             icon={<Receipt />}
             label="Rate Management"
             badge="Admin"
+            requiredRoles={["admin"]}
+          />
+          
+          <SidebarItem
+            href="/staff"
+            icon={<UsersRound />}
+            label="Staff Management"
             requiredRoles={["admin"]}
           />
           

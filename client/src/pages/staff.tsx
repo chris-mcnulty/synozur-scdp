@@ -1,0 +1,359 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Plus, Edit, Trash2 } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+
+interface StaffMember {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+  defaultChargeRate: string;
+  defaultCostRate?: string;
+  isActive: boolean;
+}
+
+export default function Staff() {
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null);
+  const { toast } = useToast();
+
+  const { data: staff = [], isLoading } = useQuery<StaffMember[]>({
+    queryKey: ["/api/staff"],
+  });
+
+  const { data: user } = useQuery<{ role: string }>({
+    queryKey: ["/api/auth/me"],
+  });
+
+  const isAuthorized = user?.role === 'admin' || user?.role === 'executive';
+
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<StaffMember>) => apiRequest("/api/staff", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      setCreateDialogOpen(false);
+      toast({ title: "Staff member created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create staff member", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: Partial<StaffMember> & { id: string }) => 
+      apiRequest(`/api/staff/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      setEditDialogOpen(false);
+      setSelectedStaff(null);
+      toast({ title: "Staff member updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update staff member", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/staff/${id}`, {
+      method: "DELETE",
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+      setDeleteDialogOpen(false);
+      setSelectedStaff(null);
+      toast({ title: "Staff member deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete staff member", variant: "destructive" });
+    },
+  });
+
+  const handleCreateSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    createMutation.mutate({
+      name: formData.get("name") as string,
+      initials: formData.get("initials") as string,
+      role: formData.get("role") as string,
+      defaultChargeRate: formData.get("defaultChargeRate") as string,
+      defaultCostRate: formData.get("defaultCostRate") as string,
+    });
+  };
+
+  const handleEditSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!selectedStaff) return;
+    
+    const formData = new FormData(e.currentTarget);
+    updateMutation.mutate({
+      id: selectedStaff.id,
+      name: formData.get("name") as string,
+      initials: formData.get("initials") as string,
+      role: formData.get("role") as string,
+      defaultChargeRate: formData.get("defaultChargeRate") as string,
+      defaultCostRate: formData.get("defaultCostRate") as string,
+    });
+  };
+
+  return (
+    <div className="p-8">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-2xl font-bold">Staff Management</CardTitle>
+          {user?.role === 'admin' && (
+            <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-add-staff">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Staff Member
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div>Loading staff members...</div>
+          ) : staff.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No staff members yet. Add your first staff member to get started.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Initials</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Charge Rate</TableHead>
+                  {isAuthorized && <TableHead>Cost Rate</TableHead>}
+                  {user?.role === 'admin' && <TableHead>Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {staff.map((member) => (
+                  <TableRow key={member.id} data-testid={`staff-row-${member.id}`}>
+                    <TableCell className="font-medium">{member.name}</TableCell>
+                    <TableCell>{member.initials}</TableCell>
+                    <TableCell>{member.role}</TableCell>
+                    <TableCell>${member.defaultChargeRate}/hr</TableCell>
+                    {isAuthorized && (
+                      <TableCell>${member.defaultCostRate}/hr</TableCell>
+                    )}
+                    {user?.role === 'admin' && (
+                      <TableCell>
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            data-testid={`button-edit-${member.id}`}
+                            onClick={() => {
+                              setSelectedStaff(member);
+                              setEditDialogOpen(true);
+                            }}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            data-testid={`button-delete-${member.id}`}
+                            onClick={() => {
+                              setSelectedStaff(member);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Staff Member</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                name="name"
+                required
+                data-testid="input-name"
+              />
+            </div>
+            <div>
+              <Label htmlFor="initials">Initials</Label>
+              <Input
+                id="initials"
+                name="initials"
+                required
+                maxLength={5}
+                data-testid="input-initials"
+              />
+            </div>
+            <div>
+              <Label htmlFor="role">Role</Label>
+              <Input
+                id="role"
+                name="role"
+                required
+                placeholder="e.g., Developer, Designer, PM"
+                data-testid="input-role"
+              />
+            </div>
+            <div>
+              <Label htmlFor="defaultChargeRate">Default Charge Rate ($/hr)</Label>
+              <Input
+                id="defaultChargeRate"
+                name="defaultChargeRate"
+                type="number"
+                step="0.01"
+                required
+                data-testid="input-charge-rate"
+              />
+            </div>
+            <div>
+              <Label htmlFor="defaultCostRate">Default Cost Rate ($/hr)</Label>
+              <Input
+                id="defaultCostRate"
+                name="defaultCostRate"
+                type="number"
+                step="0.01"
+                required
+                data-testid="input-cost-rate"
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-create">
+                {createMutation.isPending ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Staff Member</DialogTitle>
+          </DialogHeader>
+          {selectedStaff && (
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <Label htmlFor="edit-name">Name</Label>
+                <Input
+                  id="edit-name"
+                  name="name"
+                  defaultValue={selectedStaff.name}
+                  required
+                  data-testid="input-edit-name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-initials">Initials</Label>
+                <Input
+                  id="edit-initials"
+                  name="initials"
+                  defaultValue={selectedStaff.initials}
+                  required
+                  maxLength={5}
+                  data-testid="input-edit-initials"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-role">Role</Label>
+                <Input
+                  id="edit-role"
+                  name="role"
+                  defaultValue={selectedStaff.role}
+                  required
+                  data-testid="input-edit-role"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-defaultChargeRate">Default Charge Rate ($/hr)</Label>
+                <Input
+                  id="edit-defaultChargeRate"
+                  name="defaultChargeRate"
+                  type="number"
+                  step="0.01"
+                  defaultValue={selectedStaff.defaultChargeRate}
+                  required
+                  data-testid="input-edit-charge-rate"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-defaultCostRate">Default Cost Rate ($/hr)</Label>
+                <Input
+                  id="edit-defaultCostRate"
+                  name="defaultCostRate"
+                  type="number"
+                  step="0.01"
+                  defaultValue={selectedStaff.defaultCostRate}
+                  required
+                  data-testid="input-edit-cost-rate"
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateMutation.isPending} data-testid="button-submit-edit">
+                  {updateMutation.isPending ? "Updating..." : "Update"}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Staff Member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedStaff?.name}? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedStaff && deleteMutation.mutate(selectedStaff.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

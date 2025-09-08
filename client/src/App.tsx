@@ -11,6 +11,7 @@ import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
 import RateManagement from "@/pages/rate-management";
+import Staff from "@/pages/staff";
 import Users from "@/pages/users";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
@@ -81,6 +82,9 @@ function Router() {
       </Route>
       <Route path="/rates">
         {user ? <RateManagement /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/staff">
+        {user ? <Staff /> : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}
