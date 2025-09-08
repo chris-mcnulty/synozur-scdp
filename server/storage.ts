@@ -44,6 +44,7 @@ export interface IStorage {
   getEstimatesByProject(projectId: string): Promise<Estimate[]>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate>;
+  deleteEstimate(id: string): Promise<void>;
   
   // Estimate Epics
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
@@ -214,6 +215,25 @@ export class DatabaseStorage implements IStorage {
   async updateEstimate(id: string, updateEstimate: Partial<InsertEstimate>): Promise<Estimate> {
     const [estimate] = await db.update(estimates).set(updateEstimate).where(eq(estimates.id, id)).returning();
     return estimate;
+  }
+
+  async deleteEstimate(id: string): Promise<void> {
+    // Delete all related data first (cascade delete)
+    // Delete milestones
+    await db.delete(estimateMilestones).where(eq(estimateMilestones.estimateId, id));
+    
+    // Delete line items
+    await db.delete(estimateLineItems).where(eq(estimateLineItems.estimateId, id));
+    
+    // Delete stages and epics
+    const epics = await this.getEstimateEpics(id);
+    for (const epic of epics) {
+      await db.delete(estimateStages).where(eq(estimateStages.epicId, epic.id));
+    }
+    await db.delete(estimateEpics).where(eq(estimateEpics.estimateId, id));
+    
+    // Finally delete the estimate itself
+    await db.delete(estimates).where(eq(estimates.id, id));
   }
 
   async getEstimateEpics(estimateId: string): Promise<EstimateEpic[]> {

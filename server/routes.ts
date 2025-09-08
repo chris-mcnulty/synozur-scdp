@@ -797,6 +797,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
+    try {
+      // Get the estimate first to check ownership
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Check if user is admin or the estimate creator
+      const user = req.user!;
+      if (user.role !== "admin" && user.role !== "billing-admin") {
+        // If not admin, check if they created the estimate
+        // For now, we'll allow pm role to delete as well since we don't track creators
+        if (user.role !== "pm") {
+          return res.status(403).json({ message: "You don't have permission to delete this estimate" });
+        }
+      }
+
+      // Delete the estimate and all related data
+      await storage.deleteEstimate(req.params.id);
+      res.json({ message: "Estimate deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting estimate:", error);
+      res.status(500).json({ message: "Failed to delete estimate" });
+    }
+  });
+
   // Authentication endpoints
   app.post("/api/auth/login", async (req, res) => {
     try {
