@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign } from "lucide-react";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2 } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +32,8 @@ export default function Estimates() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [estimateToDelete, setEstimateToDelete] = useState<Estimate | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -65,6 +67,29 @@ export default function Estimates() {
       toast({
         title: "Error",
         description: error.message || "Failed to create estimate. Please check your permissions and try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteEstimate = useMutation({
+    mutationFn: (id: string) => apiRequest(`/api/estimates/${id}`, {
+      method: "DELETE",
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      setDeleteDialogOpen(false);
+      setEstimateToDelete(null);
+      toast({
+        title: "Success",
+        description: "Estimate deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Estimate deletion error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete estimate. You may not have permission.",
         variant: "destructive",
       });
     },
@@ -235,6 +260,18 @@ export default function Estimates() {
                           )}
                           <Button size="sm" variant="ghost" data-testid={`download-estimate-${estimate.id}`}>
                             <Download className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="text-destructive hover:text-destructive"
+                            data-testid={`delete-estimate-${estimate.id}`}
+                            onClick={() => {
+                              setEstimateToDelete(estimate);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -427,6 +464,44 @@ export default function Estimates() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Estimate</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p>Are you sure you want to delete the estimate "{estimateToDelete?.name}"?</p>
+              <p className="text-sm text-muted-foreground">
+                This action cannot be undone. All related data including line items, milestones, epics, and stages will be permanently deleted.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setEstimateToDelete(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => {
+                  if (estimateToDelete) {
+                    deleteEstimate.mutate(estimateToDelete.id);
+                  }
+                }}
+                disabled={deleteEstimate.isPending}
+                data-testid="confirm-delete-estimate"
+              >
+                {deleteEstimate.isPending ? "Deleting..." : "Delete Estimate"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
