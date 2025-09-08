@@ -52,6 +52,8 @@ export default function EstimateDetail() {
     rate: "",
     category: ""
   });
+  const [applyStaffRatesDialog, setApplyStaffRatesDialog] = useState(false);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
   const [filterText, setFilterText] = useState("");
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
@@ -84,6 +86,10 @@ export default function EstimateDetail() {
     queryKey: ['/api/estimates', id, 'line-items'],
     enabled: !!id && !!estimate,
     retry: 1,
+  });
+
+  const { data: staff = [] } = useQuery<any[]>({
+    queryKey: ["/api/staff"],
   });
 
   const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
@@ -1205,6 +1211,9 @@ export default function EstimateDetail() {
                   <Button onClick={() => setBulkEditDialog(true)} size="sm">
                     Bulk Edit
                   </Button>
+                  <Button onClick={() => setApplyStaffRatesDialog(true)} size="sm" variant="outline">
+                    Apply Staff Rates
+                  </Button>
                   <Button 
                     onClick={() => setSelectedItems(new Set())} 
                     variant="outline" 
@@ -1896,6 +1905,58 @@ export default function EstimateDetail() {
             disabled={bulkUpdateMutation.isPending || Object.values(bulkEditData).every(v => !v)}
           >
             {bulkUpdateMutation.isPending ? "Updating..." : "Update Selected"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Apply Staff Rates Dialog */}
+    <Dialog open={applyStaffRatesDialog} onOpenChange={setApplyStaffRatesDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Apply Staff Rates</DialogTitle>
+          <DialogDescription>
+            Select a staff member to apply their default charge rate to {selectedItems.size} selected line items.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="staff-member">Staff Member</Label>
+            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a staff member" />
+              </SelectTrigger>
+              <SelectContent>
+                {staff.map((member: any) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    {member.name} - {member.role} (${member.defaultChargeRate}/hr)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setApplyStaffRatesDialog(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (selectedStaffId) {
+                const selectedStaff = staff.find((s: any) => s.id === selectedStaffId);
+                if (selectedStaff) {
+                  bulkUpdateMutation.mutate({
+                    itemIds: Array.from(selectedItems),
+                    updates: { rate: selectedStaff.defaultChargeRate }
+                  });
+                  setApplyStaffRatesDialog(false);
+                  setSelectedStaffId("");
+                }
+              }
+            }}
+            disabled={!selectedStaffId || bulkUpdateMutation.isPending}
+          >
+            {bulkUpdateMutation.isPending ? "Applying..." : "Apply Rates"}
           </Button>
         </DialogFooter>
       </DialogContent>
