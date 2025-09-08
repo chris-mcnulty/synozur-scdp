@@ -685,22 +685,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/estimates", requireAuth, async (req, res) => {
     try {
       const estimates = await storage.getEstimates();
-      // Transform the data to include client and project names
-      const estimatesWithNames = estimates.map(est => ({
-        id: est.id,
-        name: est.name,
-        clientId: est.clientId,
-        clientName: est.client.name,
-        projectId: est.projectId,
-        projectName: est.project?.name,
-        status: est.status,
-        totalHours: est.totalHours ? parseFloat(est.totalHours) : 0,
-        totalCost: est.totalFees ? parseFloat(est.totalFees) : 0,
-        validUntil: est.validUntil,
-        createdAt: est.createdAt,
+      
+      // Calculate totals from line items for each estimate
+      const estimatesWithTotals = await Promise.all(estimates.map(async (est) => {
+        const lineItems = await storage.getEstimateLineItems(est.id);
+        
+        // Calculate total hours and cost from line items
+        const totalHours = lineItems.reduce((sum, item) => {
+          return sum + (parseFloat(item.adjustedHours) || 0);
+        }, 0);
+        
+        const totalCost = lineItems.reduce((sum, item) => {
+          return sum + (parseFloat(item.totalAmount) || 0);
+        }, 0);
+        
+        return {
+          id: est.id,
+          name: est.name,
+          clientId: est.clientId,
+          clientName: est.client.name,
+          projectId: est.projectId,
+          projectName: est.project?.name,
+          status: est.status,
+          totalHours: totalHours,
+          totalCost: totalCost,
+          validUntil: est.validUntil,
+          createdAt: est.createdAt,
+        };
       }));
-      res.json(estimatesWithNames);
+      
+      res.json(estimatesWithTotals);
     } catch (error) {
+      console.error("Error fetching estimates:", error);
       res.status(500).json({ message: "Failed to fetch estimates" });
     }
   });
