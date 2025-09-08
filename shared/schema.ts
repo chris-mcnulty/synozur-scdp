@@ -62,8 +62,13 @@ export const estimates = pgTable("estimates", {
   projectId: varchar("project_id").references(() => projects.id), // Optional - can create estimate without project
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("draft"), // draft, sent, approved, rejected
+  estimateType: text("estimate_type").notNull().default("detailed"), // detailed or block
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
+  // Block estimate fields (for retainer/simple estimates)
+  blockHours: decimal("block_hours", { precision: 10, scale: 2 }),
+  blockDollars: decimal("block_dollars", { precision: 10, scale: 2 }),
+  blockDescription: text("block_description"),
   // Output totals (customer-facing)
   presentedTotal: decimal("presented_total", { precision: 10, scale: 2 }), // Total presented to customer
   margin: decimal("margin", { precision: 5, scale: 2 }), // Margin percentage
@@ -426,6 +431,11 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({
   createdAt: true,
 });
 
+export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -460,6 +470,7 @@ export type Expense = typeof expenses.$inferSelect;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
+export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
 export type InvoiceBatch = typeof invoiceBatches.$inferSelect;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type RateOverride = typeof rateOverrides.$inferSelect;
