@@ -43,8 +43,8 @@ export interface IStorage {
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
   
   // Staff
-  getStaff(): Promise<Staff[]>;
-  getStaffMember(id: string): Promise<Staff | undefined>;
+  getStaff(): Promise<(Staff & { standardRole?: Role })[]>;
+  getStaffMember(id: string): Promise<(Staff & { standardRole?: Role }) | undefined>;
   createStaffMember(staffMember: InsertStaff): Promise<Staff>;
   updateStaffMember(id: string, staffMember: Partial<InsertStaff>): Promise<Staff>;
   deleteStaffMember(id: string): Promise<void>;
@@ -227,13 +227,37 @@ export class DatabaseStorage implements IStorage {
     return role;
   }
 
-  async getStaff(): Promise<Staff[]> {
-    return await db.select().from(staff).where(eq(staff.isActive, true)).orderBy(staff.name);
+  async getStaff(): Promise<(Staff & { standardRole?: Role })[]> {
+    const result = await db.select({
+      staff: staff,
+      role: roles,
+    })
+    .from(staff)
+    .leftJoin(roles, eq(staff.roleId, roles.id))
+    .where(eq(staff.isActive, true))
+    .orderBy(staff.name);
+    
+    return result.map(r => ({
+      ...r.staff,
+      standardRole: r.role || undefined,
+    }));
   }
 
-  async getStaffMember(id: string): Promise<Staff | undefined> {
-    const [staffMember] = await db.select().from(staff).where(eq(staff.id, id));
-    return staffMember || undefined;
+  async getStaffMember(id: string): Promise<(Staff & { standardRole?: Role }) | undefined> {
+    const [result] = await db.select({
+      staff: staff,
+      role: roles,
+    })
+    .from(staff)
+    .leftJoin(roles, eq(staff.roleId, roles.id))
+    .where(eq(staff.id, id));
+    
+    if (!result) return undefined;
+    
+    return {
+      ...result.staff,
+      standardRole: result.role || undefined,
+    };
   }
 
   async createStaffMember(insertStaff: InsertStaff): Promise<Staff> {

@@ -43,7 +43,9 @@ export const staff = pgTable("staff", {
   lastName: text("last_name").notNull(),
   name: text("name").notNull(),
   initials: text("initials").notNull(),
-  role: text("role").notNull(), // Developer, Designer, PM, etc.
+  role: text("role").notNull(), // Legacy field - to be removed after migration
+  roleId: uuid("role_id").references(() => roles.id), // Optional reference to standard role
+  customRole: text("custom_role"), // For non-standard roles
   defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }).notNull(),
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }).notNull(),
   isActive: boolean("is_active").notNull().default(true),
@@ -352,6 +354,7 @@ export const estimateActivitiesRelations = relations(estimateActivities, ({ one,
 
 export const rolesRelations = relations(roles, ({ many }) => ({
   allocations: many(estimateAllocations),
+  staff: many(staff),
 }));
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
@@ -403,6 +406,13 @@ export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
   project: one(projects, {
     fields: [invoiceLines.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const staffRelations = relations(staff, ({ one }) => ({
+  role: one(roles, {
+    fields: [staff.roleId],
+    references: [roles.id],
   }),
 }));
 
