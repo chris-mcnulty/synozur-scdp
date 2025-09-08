@@ -292,12 +292,13 @@ export default function Projects() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const endDateValue = formData.get('endDate') as string;
               createProject.mutate({
                 name: formData.get('name'),
                 clientId: formData.get('clientId'),
                 code: formData.get('code'),
-                startDate: formData.get('startDate'),
-                endDate: formData.get('endDate'),
+                startDate: formData.get('startDate') || undefined,
+                endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
                 commercialScheme: formData.get('commercialScheme'),
                 status: 'active',
               });

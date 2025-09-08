@@ -611,9 +611,12 @@ export default function EstimateDetail() {
                   placeholder="Enter total hours"
                   value={estimate?.blockHours || ""}
                   onChange={(e) => {
-                    updateEstimateMutation.mutate({ 
-                      blockHours: e.target.value
-                    });
+                    const value = e.target.value;
+                    if (value === '' || !isNaN(parseFloat(value))) {
+                      updateEstimateMutation.mutate({ 
+                        blockHours: value === '' ? null : parseFloat(value)
+                      });
+                    }
                   }}
                   className="mt-1"
                   data-testid="input-block-hours"
@@ -627,9 +630,12 @@ export default function EstimateDetail() {
                   placeholder="Enter total dollar amount"
                   value={estimate?.blockDollars || ""}
                   onChange={(e) => {
-                    updateEstimateMutation.mutate({ 
-                      blockDollars: e.target.value
-                    });
+                    const value = e.target.value;
+                    if (value === '' || !isNaN(parseFloat(value))) {
+                      updateEstimateMutation.mutate({ 
+                        blockDollars: value === '' ? null : parseFloat(value)
+                      });
+                    }
                   }}
                   className="mt-1"
                   data-testid="input-block-dollars"
