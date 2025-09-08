@@ -55,7 +55,7 @@ export default function EstimateDetail() {
   const [filterText, setFilterText] = useState("");
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
-  const [filterCategory, setFilterCategory] = useState("");
+  const [filterWorkstream, setFilterWorkstream] = useState("");
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -351,7 +351,7 @@ export default function EstimateDetail() {
     
     const lineItemData = {
       description: newItem.description,
-      category: newItem.category || "",
+      workstream: newItem.workstream || "",
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
       workstream: newItem.workstream || null,
@@ -859,9 +859,9 @@ export default function EstimateDetail() {
                 className="col-span-2"
               />
               <Input
-                placeholder="Category"
-                value={newItem.category}
-                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+                placeholder="Workstream"
+                value={newItem.workstream}
+                onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
               />
               <Select
                 value={newItem.size}
@@ -974,13 +974,13 @@ export default function EstimateDetail() {
                 <Label htmlFor="filter-category">Category</Label>
                 <Input
                   id="filter-category"
-                  placeholder="Filter by category..."
-                  value={filterCategory}
-                  onChange={(e) => setFilterCategory(e.target.value)}
+                  placeholder="Filter by workstream..."
+                  value={filterWorkstream}
+                  onChange={(e) => setFilterWorkstream(e.target.value)}
                 />
               </div>
             </div>
-            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterCategory) && (
+            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream) && (
               <div className="mt-3">
                 <Button
                   onClick={() => {
@@ -1040,7 +1040,7 @@ export default function EstimateDetail() {
                   <TableHead>Workstream</TableHead>
                   <TableHead>Week</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>Workstream</TableHead>
                   <TableHead>Hours</TableHead>
                   <TableHead>Factor</TableHead>
                   <TableHead>Rate</TableHead>
@@ -1074,10 +1074,10 @@ export default function EstimateDetail() {
                     const matchesStage = filterStage === "all" || 
                       (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
                       item.stageId === filterStage;
-                    const matchesCategory = !filterCategory || 
-                      (item.category && item.category.toLowerCase().includes(filterCategory.toLowerCase()));
+                    const matchesWorkstream = !filterWorkstream || 
+                      (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
                     
-                    return matchesText && matchesEpic && matchesStage && matchesCategory;
+                    return matchesText && matchesEpic && matchesStage && matchesWorkstream;
                   }).map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
@@ -1118,14 +1118,14 @@ export default function EstimateDetail() {
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
-                            value={item.category || ""}
-                            onChange={(e) => handleUpdateItem(item, "category", e.target.value)}
+                            value={item.workstream || ""}
+                            onChange={(e) => handleUpdateItem(item, "workstream", e.target.value)}
                             onBlur={() => setEditingItem(null)}
                             placeholder="Category"
                           />
                         ) : (
                           <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            {item.category || "-"}
+                            {item.workstream || "-"}
                           </span>
                         )}
                       </TableCell>
@@ -1824,12 +1824,13 @@ export default function EstimateDetail() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="bulk-category">Category</Label>
+              {/* Category field hidden per requirements */}
+              <Label htmlFor="bulk-workstream">Workstream</Label>
               <Input
-                id="bulk-category"
+                id="bulk-workstream"
                 placeholder="Keep current values"
-                value={bulkEditData.category}
-                onChange={(e) => setBulkEditData({...bulkEditData, category: e.target.value})}
+                value={bulkEditData.workstream}
+                onChange={(e) => setBulkEditData({...bulkEditData, workstream: e.target.value})}
               />
             </div>
           </div>
@@ -1853,7 +1854,7 @@ export default function EstimateDetail() {
               if (bulkEditData.complexity) updates.complexity = bulkEditData.complexity;
               if (bulkEditData.confidence) updates.confidence = bulkEditData.confidence;
               if (bulkEditData.rate) updates.rate = bulkEditData.rate;
-              if (bulkEditData.category) updates.category = bulkEditData.category;
+              // Category field hidden per requirements
               
               if (Object.keys(updates).length > 0) {
                 bulkUpdateMutation.mutate({
