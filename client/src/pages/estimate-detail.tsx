@@ -582,6 +582,77 @@ export default function EstimateDetail() {
         </div>
       </div>
 
+      {/* Show block estimate UI for block type estimates */}
+      {estimate?.estimateType === 'block' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Block Estimate</CardTitle>
+            <CardDescription>Simple hours and dollars estimate for retainer projects</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <Label htmlFor="block-hours">Total Hours</Label>
+                <Input
+                  id="block-hours"
+                  type="number"
+                  placeholder="Enter total hours"
+                  value={estimate?.blockHours || ""}
+                  onChange={(e) => {
+                    updateEstimateMutation.mutate({ 
+                      blockHours: e.target.value
+                    });
+                  }}
+                  className="mt-1"
+                  data-testid="input-block-hours"
+                />
+              </div>
+              <div>
+                <Label htmlFor="block-dollars">Total Dollars ($)</Label>
+                <Input
+                  id="block-dollars"
+                  type="number"
+                  placeholder="Enter total dollar amount"
+                  value={estimate?.blockDollars || ""}
+                  onChange={(e) => {
+                    updateEstimateMutation.mutate({ 
+                      blockDollars: e.target.value
+                    });
+                  }}
+                  className="mt-1"
+                  data-testid="input-block-dollars"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="block-description">Description</Label>
+              <textarea
+                id="block-description"
+                placeholder="Describe the work to be done..."
+                value={estimate?.blockDescription || ""}
+                onChange={(e) => {
+                  updateEstimateMutation.mutate({ 
+                    blockDescription: e.target.value
+                  });
+                }}
+                className="mt-1 w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                data-testid="textarea-block-description"
+              />
+            </div>
+            <div className="border-t pt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-sm">
+                  <span className="font-medium">Status:</span> {estimate?.status || 'draft'}
+                </div>
+                <div className="text-sm">
+                  <span className="font-medium">Valid Until:</span> {estimate?.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : 'Not set'}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+      /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="outputs">Outputs</TabsTrigger>
@@ -1390,6 +1461,7 @@ export default function EstimateDetail() {
       </Card>
         </TabsContent>
       </Tabs>
+      )}
 
     {/* Epic Creation Dialog */}
     <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>

@@ -810,16 +810,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Calculate totals from line items for each estimate
       const estimatesWithTotals = await Promise.all(estimates.map(async (est) => {
-        const lineItems = await storage.getEstimateLineItems(est.id);
+        let totalHours = 0;
+        let totalCost = 0;
         
-        // Calculate total hours and cost from line items
-        const totalHours = lineItems.reduce((sum, item) => {
-          return sum + (parseFloat(item.adjustedHours) || 0);
-        }, 0);
-        
-        const totalCost = lineItems.reduce((sum, item) => {
-          return sum + (parseFloat(item.totalAmount) || 0);
-        }, 0);
+        // For block estimates, use the block values directly
+        if (est.estimateType === 'block') {
+          totalHours = parseFloat(est.blockHours || '0');
+          totalCost = parseFloat(est.blockDollars || '0');
+        } else {
+          // For detailed estimates, calculate from line items
+          const lineItems = await storage.getEstimateLineItems(est.id);
+          
+          totalHours = lineItems.reduce((sum, item) => {
+            return sum + (parseFloat(item.adjustedHours) || 0);
+          }, 0);
+          
+          totalCost = lineItems.reduce((sum, item) => {
+            return sum + (parseFloat(item.totalAmount) || 0);
+          }, 0);
+        }
         
         return {
           id: est.id,
@@ -829,6 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           projectId: est.projectId,
           projectName: est.project?.name,
           status: est.status,
+          estimateType: est.estimateType || 'detailed',
           totalHours: totalHours,
           totalCost: totalCost,
           validUntil: est.validUntil,

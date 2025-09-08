@@ -218,6 +218,7 @@ export default function Estimates() {
                     <TableHead>Estimate Name</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Project</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Total Hours</TableHead>
                     <TableHead>Total Cost</TableHead>
@@ -231,6 +232,13 @@ export default function Estimates() {
                       <TableCell className="font-medium">{estimate.name}</TableCell>
                       <TableCell>{estimate.clientName}</TableCell>
                       <TableCell>{estimate.projectName || "-"}</TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          estimate.estimateType === 'block' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {estimate.estimateType === 'block' ? 'Block' : 'Detailed'}
+                        </span>
+                      </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
                       <TableCell>{estimate.totalHours}</TableCell>
                       <TableCell>${estimate.totalCost.toLocaleString()}</TableCell>
@@ -315,6 +323,7 @@ export default function Estimates() {
                 clientId,
                 projectId: projectId === 'none' ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
+                estimateType: formData.get('estimateType') || 'detailed',
               });
             }}>
               <div className="grid gap-4 py-4">
@@ -372,6 +381,22 @@ export default function Estimates() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="estimateType">Estimate Type</Label>
+                  <Select name="estimateType" defaultValue="detailed">
+                    <SelectTrigger data-testid="select-estimate-type">
+                      <SelectValue placeholder="Select estimate type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="detailed">Detailed (with line items)</SelectItem>
+                      <SelectItem value="block">Block (simple hours/dollars)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Block estimates are ideal for retainer projects with fixed hours/dollars
+                  </p>
                 </div>
 
                 <div className="grid gap-2">
