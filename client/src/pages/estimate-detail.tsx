@@ -1704,7 +1704,7 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
-                      <TableCell>${Math.round(Number(item.totalAmount))}</TableCell>
+                      <TableCell>${Math.round(Number(item.totalAmount)).toLocaleString()}</TableCell>
                       <TableCell>
                         {(user?.role === "admin" || user?.role === "executive") && item.margin ? (
                           <span className={Number(item.marginPercent) > 0 ? "text-green-600" : "text-red-600"}>
@@ -1750,7 +1750,7 @@ export default function EstimateDetail() {
                 Total Hours: {Math.round(totalHours)}
               </div>
               <div className="text-lg font-semibold">
-                Total Amount: ${Math.round(totalAmount)}
+                Total Amount: ${Math.round(totalAmount).toLocaleString()}
               </div>
             </div>
           </div>
