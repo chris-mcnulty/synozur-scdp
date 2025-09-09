@@ -1529,13 +1529,55 @@ export default function EstimateDetail() {
                             onValueChange={(value) => {
                               const selectedStaff = staff.find((s: any) => s.id === value);
                               if (value === "unassigned") {
-                                handleUpdateItem(item, "staffId", null);
-                                handleUpdateItem(item, "resourceName", "");
+                                // Update all fields at once to avoid race conditions
+                                const updatedItem = { 
+                                  ...item, 
+                                  staffId: null, 
+                                  resourceName: "" 
+                                };
+                                const baseHours = Number(updatedItem.baseHours);
+                                const factor = Number(updatedItem.factor) || 1;
+                                const rate = Number(updatedItem.rate);
+                                const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                  baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+                                );
+                                
+                                updateLineItemMutation.mutate({
+                                  itemId: item.id,
+                                  data: {
+                                    staffId: null,
+                                    resourceName: "",
+                                    adjustedHours: adjustedHours.toFixed(2),
+                                    totalAmount: totalAmount.toFixed(2)
+                                  }
+                                });
                               } else if (selectedStaff) {
-                                handleUpdateItem(item, "staffId", selectedStaff.id);
-                                handleUpdateItem(item, "resourceName", selectedStaff.name);
-                                handleUpdateItem(item, "rate", selectedStaff.defaultChargeRate);
-                                handleUpdateItem(item, "costRate", selectedStaff.defaultCostRate);
+                                // Update all fields at once to avoid race conditions
+                                const updatedItem = { 
+                                  ...item, 
+                                  staffId: selectedStaff.id, 
+                                  resourceName: selectedStaff.name,
+                                  rate: selectedStaff.defaultChargeRate,
+                                  costRate: selectedStaff.defaultCostRate
+                                };
+                                const baseHours = Number(updatedItem.baseHours);
+                                const factor = Number(updatedItem.factor) || 1;
+                                const rate = Number(selectedStaff.defaultChargeRate);
+                                const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                  baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+                                );
+                                
+                                updateLineItemMutation.mutate({
+                                  itemId: item.id,
+                                  data: {
+                                    staffId: selectedStaff.id,
+                                    resourceName: selectedStaff.name,
+                                    rate: selectedStaff.defaultChargeRate,
+                                    costRate: selectedStaff.defaultCostRate,
+                                    adjustedHours: adjustedHours.toFixed(2),
+                                    totalAmount: totalAmount.toFixed(2)
+                                  }
+                                });
                               }
                             }}
                           >
