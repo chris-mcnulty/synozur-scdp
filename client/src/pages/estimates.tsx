@@ -330,6 +330,7 @@ export default function Estimates() {
                 projectId: projectId === 'none' ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
                 estimateType: selectedEstimateType,
+                estimateDate: formData.get('estimateDate') as string || undefined,
               };
               
               // Add block estimate fields if block type
@@ -455,17 +456,32 @@ export default function Estimates() {
                   </>
                 )}
 
-                <div className="grid gap-2">
-                  <Label htmlFor="validDays">Valid For (Days)</Label>
-                  <Input
-                    id="validDays"
-                    name="validDays"
-                    type="number"
-                    defaultValue="30"
-                    min="1"
-                    max="365"
-                    data-testid="input-valid-days"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="estimateDate">Estimate Date</Label>
+                    <Input
+                      id="estimateDate"
+                      name="estimateDate"
+                      type="date"
+                      defaultValue={new Date().toISOString().split('T')[0]}
+                      data-testid="input-estimate-date"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Date when estimate was created/sent
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="validDays">Valid For (Days)</Label>
+                    <Input
+                      id="validDays"
+                      name="validDays"
+                      type="number"
+                      defaultValue="30"
+                      min="1"
+                      max="365"
+                      data-testid="input-valid-days"
+                    />
+                  </div>
                 </div>
               </div>
 
