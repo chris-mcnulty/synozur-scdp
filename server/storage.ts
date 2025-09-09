@@ -293,9 +293,17 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(projects, eq(estimates.projectId, projects.id))
       .orderBy(desc(estimates.createdAt));
     
-    return rows.filter(row => row.clients !== null).map(row => ({
+    // Only filter out rows where estimates is null (not clients)
+    return rows.filter(row => row.estimates !== null).map(row => ({
       ...row.estimates,
-      client: row.clients as Client,
+      client: row.clients || { 
+        id: '', 
+        name: 'Unknown Client', 
+        currency: 'USD',
+        billingContact: null,
+        vocabularyOverrides: null,
+        createdAt: new Date()
+      },
       project: row.projects || undefined
     }));
   }

@@ -679,10 +679,10 @@ export default function EstimateDetail() {
         </TabsList>
 
         <TabsContent value="outputs" className="space-y-6">
-          {/* Estimate Outputs */}
+          {/* Quotes */}
           <Card>
             <CardHeader>
-              <CardTitle>Estimate Outputs</CardTitle>
+              <CardTitle>Quotes</CardTitle>
               <CardDescription>Customer-facing pricing and margins</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
