@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
@@ -63,6 +63,9 @@ export default function EstimateDetail() {
   const [showResourceSummary, setShowResourceSummary] = useState(false);
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
+  const [splittingItem, setSplittingItem] = useState<EstimateLineItem | null>(null);
+  const [splitHours, setSplitHours] = useState({ first: "", second: "" });
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -1820,13 +1823,27 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteLineItemMutation.mutate(item.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSplittingItem(item);
+                              setSplitHours({ first: Math.floor(Number(item.adjustedHours || item.baseHours || 0) / 2).toString(), second: Math.ceil(Number(item.adjustedHours || item.baseHours || 0) / 2).toString() });
+                              setShowSplitDialog(true);
+                            }}
+                            title="Split this line item"
+                          >
+                            <Split className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => deleteLineItemMutation.mutate(item.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )})
