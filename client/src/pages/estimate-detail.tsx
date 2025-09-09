@@ -1175,7 +1175,7 @@ export default function EstimateDetail() {
             <Select
               value={newItem.staffId || "unassigned"}
               onValueChange={(value) => {
-                const selectedStaff = staff.find((s: any) => s.id === value);
+                const selectedStaff = users.find((s: any) => s.id === value);
                 if (value === "unassigned") {
                   setNewItem({ ...newItem, staffId: "", resourceName: "", rate: "0", costRate: "0" });
                 } else if (selectedStaff) {
@@ -1194,7 +1194,7 @@ export default function EstimateDetail() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
-                {staff.map((member: any) => (
+                {users.filter((user: any) => user.isAssignable).map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
                     {member.name} - ${member.defaultChargeRate}/hr
                   </SelectItem>
@@ -1466,7 +1466,7 @@ export default function EstimateDetail() {
                       item.stageId === filterStage;
                     const matchesWorkstream = !filterWorkstream || 
                       (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
-                    const matchesUnresourced = !filterUnresourced || !item.staffId;
+                    const matchesUnresourced = !filterUnresourced || !item.assignedUserId;
                     
                     return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesUnresourced;
                   }).map((item: EstimateLineItem) => {
@@ -1680,7 +1680,7 @@ export default function EstimateDetail() {
                           </Select>
                         ) : (
                           <span 
-                            className={!item.staffId ? "text-orange-500 font-medium cursor-pointer" : "cursor-pointer"}
+                            className={!item.assignedUserId ? "text-orange-500 font-medium cursor-pointer" : "cursor-pointer"}
                             onClick={() => setEditingItem(item.id)}
                           >
                             {item.resourceName || "Unassigned"}
@@ -2265,7 +2265,7 @@ export default function EstimateDetail() {
                 <SelectValue placeholder="Select a staff member" />
               </SelectTrigger>
               <SelectContent>
-                {staff.map((member: any) => (
+                {users.filter((user: any) => user.isAssignable).map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
                     {member.name} - {member.role} (${member.defaultChargeRate}/hr)
                   </SelectItem>
@@ -2281,7 +2281,7 @@ export default function EstimateDetail() {
           <Button
             onClick={() => {
               if (selectedStaffId) {
-                const selectedStaff = staff.find((s: any) => s.id === selectedStaffId);
+                const selectedStaff = users.find((s: any) => s.id === selectedStaffId);
                 if (selectedStaff) {
                   bulkUpdateMutation.mutate({
                     itemIds: Array.from(selectedItems),

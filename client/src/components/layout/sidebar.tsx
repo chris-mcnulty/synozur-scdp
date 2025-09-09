@@ -32,23 +32,22 @@ function SidebarItem({ href, icon, label, badge, requiredRoles }: SidebarItemPro
   }
 
   return (
-    <Link href={href}>
-      <a 
-        className={`flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
-          isActive 
-            ? 'bg-accent text-accent-foreground' 
-            : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-        }`}
-        data-testid={`link-${label.toLowerCase().replace(' ', '-')}`}
-      >
-        <div className="w-5 h-5">{icon}</div>
-        <span>{label}</span>
-        {badge && (
-          <span className="ml-auto text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </a>
+    <Link 
+      href={href}
+      className={`flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
+        isActive 
+          ? 'bg-accent text-accent-foreground' 
+          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+      }`}
+      data-testid={`link-${label.toLowerCase().replace(' ', '-')}`}
+    >
+      <div className="w-5 h-5">{icon}</div>
+      <span>{label}</span>
+      {badge && (
+        <span className="ml-auto text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }
