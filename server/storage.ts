@@ -133,25 +133,33 @@ export class DatabaseStorage implements IStorage {
 
   async deleteUser(id: string): Promise<void> {
     // Check if user has dependencies
-    const [timeEntriesCount] = await db
-      .select({ count: sql<number>`count(*)` })
+    const timeEntriesResult = await db
+      .select({ count: sql<number>`count(*)::int` })
       .from(timeEntries)
       .where(eq(timeEntries.personId, id));
     
-    const [expensesCount] = await db
-      .select({ count: sql<number>`count(*)` })
+    const expensesResult = await db
+      .select({ count: sql<number>`count(*)::int` })
       .from(expenses)
       .where(eq(expenses.personId, id));
     
     // Check for staff assignments
-    const [staffCount] = await db
-      .select({ count: sql<number>`count(*)` })
+    const staffResult = await db
+      .select({ count: sql<number>`count(*)::int` })
       .from(estimateLineItems)
       .where(eq(estimateLineItems.staffId, id));
     
-    if (timeEntriesCount?.count > 0 || expensesCount?.count > 0 || staffCount?.count > 0) {
+    const hasTimeEntries = timeEntriesResult[0]?.count > 0;
+    const hasExpenses = expensesResult[0]?.count > 0;
+    const hasStaffAssignments = staffResult[0]?.count > 0;
+    
+    if (hasTimeEntries || hasExpenses || hasStaffAssignments) {
       // User has dependencies, prevent deletion
-      throw new Error('Cannot delete user with existing time entries, expenses, or staff assignments');
+      const dependencies = [];
+      if (hasTimeEntries) dependencies.push('time entries');
+      if (hasExpenses) dependencies.push('expenses');
+      if (hasStaffAssignments) dependencies.push('staff assignments');
+      throw new Error(`Cannot delete user with existing ${dependencies.join(', ')}`);
     } else {
       // No dependencies, perform hard delete
       await db.delete(users).where(eq(users.id, id));
