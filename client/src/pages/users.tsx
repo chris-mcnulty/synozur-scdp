@@ -152,7 +152,9 @@ export default function Users() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
+                    <TableHead>System Role</TableHead>
+                    <TableHead>Assignable</TableHead>
+                    <TableHead>Charge Rate</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -167,6 +169,16 @@ export default function Users() {
                           <Shield className="w-3 h-3 mr-1" />
                           {user.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.isAssignable ? (
+                          <span className="text-green-600">✓ Yes</span>
+                        ) : (
+                          <span className="text-muted-foreground">No</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {user.defaultChargeRate ? `$${user.defaultChargeRate}` : '-'}
                       </TableCell>
                       <TableCell>
                         <Badge 
@@ -217,37 +229,69 @@ export default function Users() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const firstName = formData.get('firstName') as string;
+              const lastName = formData.get('lastName') as string;
               createUser.mutate({
-                name: formData.get('name'),
+                name: `${firstName} ${lastName}`,
+                firstName,
+                lastName,
+                initials: formData.get('initials'),
                 email: formData.get('email'),
                 role: formData.get('role'),
+                isAssignable: formData.get('isAssignable') === 'true',
+                defaultChargeRate: formData.get('defaultChargeRate'),
+                defaultCostRate: formData.get('defaultCostRate'),
                 isActive: true,
               });
             }}>
               <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    placeholder="John Doe"
-                    required
-                    data-testid="input-user-name"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      name="firstName"
+                      placeholder="John"
+                      required
+                      data-testid="input-user-firstname"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      name="lastName"
+                      placeholder="Doe"
+                      required
+                      data-testid="input-user-lastname"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      placeholder="john@example.com"
+                      required
+                      data-testid="input-user-email"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="initials">Initials</Label>
+                    <Input
+                      id="initials"
+                      name="initials"
+                      placeholder="JD"
+                      maxLength={3}
+                      data-testid="input-user-initials"
+                    />
+                  </div>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="john@example.com"
-                    required
-                    data-testid="input-user-email"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="role">Role</Label>
+                  <Label htmlFor="role">System Role</Label>
                   <Select name="role" required>
                     <SelectTrigger data-testid="select-role">
                       <SelectValue placeholder="Select a role" />
@@ -260,6 +304,44 @@ export default function Users() {
                       <SelectItem value="executive">Executive</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="isAssignable">Assignable Resource</Label>
+                  <Select name="isAssignable" defaultValue="true">
+                    <SelectTrigger data-testid="select-assignable">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes - Can be assigned to projects</SelectItem>
+                      <SelectItem value="false">No - Admin/System user only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="defaultChargeRate">Default Charge Rate</Label>
+                    <Input
+                      id="defaultChargeRate"
+                      name="defaultChargeRate"
+                      type="number"
+                      placeholder="150"
+                      min="0"
+                      step="0.01"
+                      data-testid="input-charge-rate"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="defaultCostRate">Default Cost Rate</Label>
+                    <Input
+                      id="defaultCostRate"
+                      name="defaultCostRate"
+                      type="number"
+                      placeholder="75"
+                      min="0"
+                      step="0.01"
+                      data-testid="input-cost-rate"
+                    />
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -284,38 +366,68 @@ export default function Users() {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
+                const firstName = formData.get('firstName') as string;
+                const lastName = formData.get('lastName') as string;
                 updateUser.mutate({
                   id: editingUser.id,
                   data: {
-                    name: formData.get('name'),
+                    name: `${firstName} ${lastName}`,
+                    firstName,
+                    lastName,
+                    initials: formData.get('initials'),
                     email: formData.get('email'),
                     role: formData.get('role'),
+                    isAssignable: formData.get('isAssignable') === 'true',
+                    defaultChargeRate: formData.get('defaultChargeRate'),
+                    defaultCostRate: formData.get('defaultCostRate'),
                     isActive: formData.get('isActive') === 'on',
                   }
                 });
               }}>
                 <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-name">Name</Label>
-                    <Input
-                      id="edit-name"
-                      name="name"
-                      defaultValue={editingUser.name}
-                      required
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-firstName">First Name</Label>
+                      <Input
+                        id="edit-firstName"
+                        name="firstName"
+                        defaultValue={editingUser.firstName || editingUser.name?.split(' ')[0]}
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-lastName">Last Name</Label>
+                      <Input
+                        id="edit-lastName"
+                        name="lastName"
+                        defaultValue={editingUser.lastName || editingUser.name?.split(' ').slice(1).join(' ')}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-email">Email</Label>
+                      <Input
+                        id="edit-email"
+                        name="email"
+                        type="email"
+                        defaultValue={editingUser.email}
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-initials">Initials</Label>
+                      <Input
+                        id="edit-initials"
+                        name="initials"
+                        defaultValue={editingUser.initials}
+                        maxLength={3}
+                      />
+                    </div>
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="edit-email">Email</Label>
-                    <Input
-                      id="edit-email"
-                      name="email"
-                      type="email"
-                      defaultValue={editingUser.email}
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-role">Role</Label>
+                    <Label htmlFor="edit-role">System Role</Label>
                     <Select name="role" defaultValue={editingUser.role}>
                       <SelectTrigger>
                         <SelectValue />
@@ -328,6 +440,42 @@ export default function Users() {
                         <SelectItem value="executive">Executive</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-isAssignable">Assignable Resource</Label>
+                    <Select name="isAssignable" defaultValue={editingUser.isAssignable ? "true" : "false"}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">Yes - Can be assigned to projects</SelectItem>
+                        <SelectItem value="false">No - Admin/System user only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-defaultChargeRate">Default Charge Rate</Label>
+                      <Input
+                        id="edit-defaultChargeRate"
+                        name="defaultChargeRate"
+                        type="number"
+                        defaultValue={editingUser.defaultChargeRate}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-defaultCostRate">Default Cost Rate</Label>
+                      <Input
+                        id="edit-defaultCostRate"
+                        name="defaultCostRate"
+                        type="number"
+                        defaultValue={editingUser.defaultCostRate}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Switch

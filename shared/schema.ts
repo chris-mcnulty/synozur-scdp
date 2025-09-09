@@ -6,13 +6,20 @@ import { z } from "zod";
 
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  initials: text("initials"),
   title: text("title"), // Job title for the person
   role: text("role").notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  isAssignable: boolean("is_assignable").notNull().default(true), // Can be assigned to projects/estimates
+  roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
+  customRole: text("custom_role"), // For non-standard roles
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }), // Default rack rate for this person
-  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }), // Default charge rate for this person
+  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }), // Default charge rate for this person  
+  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate (internal)
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
@@ -124,8 +131,8 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate (internal cost)
-  staffId: varchar("staff_id").references(() => staff.id), // Staff member assigned
-  roleId: varchar("role_id").references(() => roles.id), // Generic role assigned (alternative to staff)
+  assignedUserId: uuid("assigned_user_id").references(() => users.id), // User assigned to this line item
+  roleId: varchar("role_id").references(() => roles.id), // Generic role assigned (alternative to specific user)
   resourceName: text("resource_name"), // Name of assigned resource (denormalized for display)
   size: text("size").notNull().default("small"), // small, medium, large
   complexity: text("complexity").notNull().default("small"), // small, medium, large

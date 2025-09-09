@@ -93,9 +93,11 @@ export default function EstimateDetail() {
     retry: 1,
   });
 
-  const { data: staff = [] } = useQuery<any[]>({
-    queryKey: ["/api/staff"],
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
   });
+
+  const assignableUsers = users.filter((u: any) => u.isAssignable && u.isActive);
 
   const { data: roles = [] } = useQuery<any[]>({
     queryKey: ["/api/roles"],
@@ -1564,13 +1566,13 @@ export default function EstimateDetail() {
                       <TableCell>
                         {editingItem === item.id ? (
                           <Select 
-                            value={item.staffId || item.roleId ? `role-${item.roleId}` : "unassigned"} 
+                            value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
                             onValueChange={(value) => {
                               if (value === "unassigned") {
                                 // Clear assignment
                                 const updatedItem = { 
                                   ...item, 
-                                  staffId: null,
+                                  assignedUserId: null,
                                   roleId: null,
                                   resourceName: "" 
                                 };
@@ -1584,7 +1586,7 @@ export default function EstimateDetail() {
                                 updateLineItemMutation.mutate({
                                   itemId: item.id,
                                   data: {
-                                    staffId: null,
+                                    assignedUserId: null,
                                     roleId: null,
                                     resourceName: "",
                                     adjustedHours: adjustedHours.toFixed(2),
@@ -1598,7 +1600,7 @@ export default function EstimateDetail() {
                                 if (selectedRole) {
                                   const updatedItem = { 
                                     ...item, 
-                                    staffId: null,
+                                    assignedUserId: null,
                                     roleId: selectedRole.id, 
                                     resourceName: selectedRole.name,
                                     rate: selectedRole.defaultRackRate
@@ -1613,7 +1615,7 @@ export default function EstimateDetail() {
                                   updateLineItemMutation.mutate({
                                     itemId: item.id,
                                     data: {
-                                      staffId: null,
+                                      assignedUserId: null,
                                       roleId: selectedRole.id,
                                       resourceName: selectedRole.name,
                                       rate: selectedRole.defaultRackRate,
@@ -1623,20 +1625,20 @@ export default function EstimateDetail() {
                                   });
                                 }
                               } else {
-                                // Specific staff selected
-                                const selectedStaff = staff.find((s: any) => s.id === value);
-                                if (selectedStaff) {
+                                // Specific user selected
+                                const selectedUser = assignableUsers.find((u: any) => u.id === value);
+                                if (selectedUser) {
                                   const updatedItem = { 
                                     ...item, 
-                                    staffId: selectedStaff.id,
+                                    assignedUserId: selectedUser.id,
                                     roleId: null,
-                                    resourceName: selectedStaff.name,
-                                    rate: selectedStaff.defaultChargeRate,
-                                    costRate: selectedStaff.defaultCostRate
+                                    resourceName: selectedUser.name,
+                                    rate: selectedUser.defaultChargeRate,
+                                    costRate: selectedUser.defaultCostRate
                                   };
                                   const baseHours = Number(updatedItem.baseHours);
                                   const factor = Number(updatedItem.factor) || 1;
-                                  const rate = Number(selectedStaff.defaultChargeRate);
+                                  const rate = Number(selectedUser.defaultChargeRate);
                                   const { adjustedHours, totalAmount } = calculateAdjustedValues(
                                     baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
                                   );
@@ -1644,11 +1646,11 @@ export default function EstimateDetail() {
                                   updateLineItemMutation.mutate({
                                     itemId: item.id,
                                     data: {
-                                      staffId: selectedStaff.id,
+                                      assignedUserId: selectedUser.id,
                                       roleId: null,
-                                      resourceName: selectedStaff.name,
-                                      rate: selectedStaff.defaultChargeRate,
-                                      costRate: selectedStaff.defaultCostRate,
+                                      resourceName: selectedUser.name,
+                                      rate: selectedUser.defaultChargeRate,
+                                      costRate: selectedUser.defaultCostRate,
                                       adjustedHours: adjustedHours.toFixed(2),
                                       totalAmount: totalAmount.toFixed(2)
                                     }
@@ -1669,7 +1671,7 @@ export default function EstimateDetail() {
                                 </SelectItem>
                               ))}
                               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
-                              {staff.map((member: any) => (
+                              {assignableUsers.map((member: any) => (
                                 <SelectItem key={member.id} value={member.id}>
                                   {member.name}
                                 </SelectItem>

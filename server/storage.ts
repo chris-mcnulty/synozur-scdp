@@ -133,13 +133,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
-    // Delete all related data first to avoid foreign key constraints
-    await db.delete(timeEntries).where(eq(timeEntries.personId, id));
-    await db.delete(expenses).where(eq(expenses.personId, id));
-    await db.delete(estimateLineItems).where(eq(estimateLineItems.staffId, id));
+    // Check if user has any dependencies
+    const [timeEntriesCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(timeEntries)
+      .where(eq(timeEntries.personId, id));
     
-    // Now delete the user
-    await db.delete(users).where(eq(users.id, id));
+    const [expensesCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(expenses)
+      .where(eq(expenses.personId, id));
+    
+    const [lineItemsCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(estimateLineItems)
+      .where(eq(estimateLineItems.assignedUserId, id));
+    
+    const hasDependencies = 
+      timeEntriesCount?.count > 0 || 
+      expensesCount?.count > 0 || 
+      lineItemsCount?.count > 0;
+    
+    if (hasDependencies) {
+      // If user has dependencies, just mark as inactive instead of deleting
+      await db.update(users)
+        .set({ isActive: false })
+        .where(eq(users.id, id));
+    } else {
+      // No dependencies, safe to delete
+      await db.delete(users).where(eq(users.id, id));
+    }
   }
 
   async getClients(): Promise<Client[]> {
