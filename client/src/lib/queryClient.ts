@@ -42,6 +42,12 @@ export async function apiRequest(
   });
 
   await throwIfResNotOk(res);
+  
+  // Handle responses with no content (like 204 status)
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return null;
+  }
+  
   const data = await res.json();
   
   // Store session ID if returned in login response
