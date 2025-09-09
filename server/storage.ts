@@ -106,7 +106,10 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   async getUsers(): Promise<User[]> {
-    return await db.select().from(users).orderBy(users.name);
+    return await db.select()
+      .from(users)
+      .where(eq(users.isActive, true))
+      .orderBy(users.name);
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -130,8 +133,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
-    // Soft delete by marking as inactive
-    await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+    // Check if user has dependencies
+    const [timeEntriesCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(timeEntries)
+      .where(eq(timeEntries.personId, id));
+    
+    const [expensesCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(expenses)
+      .where(eq(expenses.personId, id));
+    
+    if (timeEntriesCount?.count > 0 || expensesCount?.count > 0) {
+      // User has dependencies, soft delete only
+      await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+    } else {
+      // No dependencies, can do hard delete if needed, but we'll stick with soft delete for consistency
+      await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+    }
   }
 
   async getClients(): Promise<Client[]> {
