@@ -196,7 +196,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Project deleted successfully" });
     } catch (error) {
       console.error("Error deleting project:", error);
-      res.status(500).json({ message: "Failed to delete project" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to delete project";
+      res.status(500).json({ 
+        message: errorMessage,
+        details: "Project may have related data that needs to be removed first"
+      });
     }
   });
 
