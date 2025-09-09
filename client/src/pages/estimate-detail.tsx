@@ -1438,7 +1438,7 @@ export default function EstimateDetail() {
                     Bulk Edit
                   </Button>
                   <Button onClick={() => setApplyStaffRatesDialog(true)} size="sm" variant="outline">
-                    Apply Staff Rates
+                    Assign Roles/Staff
                   </Button>
                   <Button 
                     onClick={() => setSelectedItems(new Set())} 
@@ -2342,23 +2342,31 @@ export default function EstimateDetail() {
       </DialogContent>
     </Dialog>
 
-    {/* Apply Staff Rates Dialog */}
+    {/* Assign Roles/Staff Dialog */}
     <Dialog open={applyStaffRatesDialog} onOpenChange={setApplyStaffRatesDialog}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Apply Staff Rates</DialogTitle>
+          <DialogTitle>Assign Roles/Staff</DialogTitle>
           <DialogDescription>
-            Select a staff member to apply their default charge rate to {selectedItems.size} selected line items.
+            Select a role or staff member to assign to {selectedItems.size} selected line items.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="staff-member">Staff Member</Label>
+            <Label htmlFor="resource">Resource Assignment</Label>
             <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a staff member" />
+                <SelectValue placeholder="Select role or staff member" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
+                {roles.map((role: any) => (
+                  <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
+                    {role.name} (${role.defaultChargeRate}/hr)
+                  </SelectItem>
+                ))}
+                <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
                 {users.filter((user: any) => user.isAssignable).map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
                     {member.name} - {member.role} (${member.defaultChargeRate}/hr)
@@ -2375,16 +2383,45 @@ export default function EstimateDetail() {
           <Button
             onClick={() => {
               if (selectedStaffId) {
-                const selectedStaff = users.find((s: any) => s.id === selectedStaffId);
-                if (selectedStaff) {
+                let updates: any = {};
+                
+                if (selectedStaffId === "unassigned") {
+                  updates = {
+                    assignedUserId: null,
+                    roleId: null,
+                    resourceName: null,
+                    rate: "0",
+                    costRate: "0"
+                  };
+                } else if (selectedStaffId.startsWith("role-")) {
+                  const roleId = selectedStaffId.substring(5);
+                  const selectedRole = roles.find((r: any) => r.id === roleId);
+                  if (selectedRole) {
+                    updates = {
+                      assignedUserId: null,
+                      roleId: selectedRole.id,
+                      resourceName: selectedRole.name,
+                      rate: selectedRole.defaultChargeRate?.toString() || "0",
+                      costRate: selectedRole.defaultCostRate?.toString() || "0"
+                    };
+                  }
+                } else {
+                  const selectedStaff = users.find((s: any) => s.id === selectedStaffId);
+                  if (selectedStaff) {
+                    updates = {
+                      assignedUserId: selectedStaff.id,
+                      roleId: null,
+                      resourceName: selectedStaff.name,
+                      rate: selectedStaff.defaultChargeRate?.toString() || "0",
+                      costRate: selectedStaff.defaultCostRate?.toString() || "0"
+                    };
+                  }
+                }
+                
+                if (Object.keys(updates).length > 0) {
                   bulkUpdateMutation.mutate({
                     itemIds: Array.from(selectedItems),
-                    updates: { 
-                      rate: selectedStaff.defaultChargeRate,
-                      costRate: selectedStaff.defaultCostRate,
-                      staffId: selectedStaff.id,
-                      resourceName: selectedStaff.name
-                    }
+                    updates
                   });
                   setApplyStaffRatesDialog(false);
                   setSelectedStaffId("");
@@ -2393,7 +2430,7 @@ export default function EstimateDetail() {
             }}
             disabled={!selectedStaffId || bulkUpdateMutation.isPending}
           >
-            {bulkUpdateMutation.isPending ? "Applying..." : "Apply Rates"}
+            {bulkUpdateMutation.isPending ? "Assigning..." : "Assign"}
           </Button>
         </DialogFooter>
       </DialogContent>
