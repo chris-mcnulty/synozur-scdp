@@ -308,6 +308,14 @@ export default function EstimateDetail() {
         description: "Milestone created successfully",
       });
     },
+    onError: (error: any) => {
+      console.error("Failed to create milestone - Full error:", error);
+      toast({ 
+        title: "Failed to create milestone", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    },
   });
 
   const updateMilestoneMutation = useMutation({
@@ -1513,7 +1521,7 @@ export default function EstimateDetail() {
                     const matchesWorkstream = !filterWorkstream || 
                       (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
                     const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
-                    const matchesUnresourced = !filterUnresourced || !item.assignedUserId;
+                    const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
                     
                     return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
                   }).map((item: EstimateLineItem) => {
@@ -1840,7 +1848,7 @@ export default function EstimateDetail() {
               const matchesWorkstream = !filterWorkstream || 
                 (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
               const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
-              const matchesUnresourced = !filterUnresourced || !item.assignedUserId;
+              const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
               
               return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
             }).reduce((acc: any, item) => {
