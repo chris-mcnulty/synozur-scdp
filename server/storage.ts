@@ -41,6 +41,7 @@ export interface IStorage {
   getRole(id: string): Promise<Role | undefined>;
   createRole(role: InsertRole): Promise<Role>;
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
+  deleteRole(id: string): Promise<void>;
   
   // Staff
   getStaff(): Promise<(Staff & { standardRole?: Role })[]>;
@@ -256,6 +257,10 @@ export class DatabaseStorage implements IStorage {
   async updateRole(id: string, updateRole: Partial<InsertRole>): Promise<Role> {
     const [role] = await db.update(roles).set(updateRole).where(eq(roles.id, id)).returning();
     return role;
+  }
+
+  async deleteRole(id: string): Promise<void> {
+    await db.delete(roles).where(eq(roles.id, id));
   }
 
   async getStaff(): Promise<(Staff & { standardRole?: Role })[]> {

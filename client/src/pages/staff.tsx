@@ -178,10 +178,6 @@ export default function Staff() {
           Dashboard
         </Link>
         <span>/</span>
-        <Link href="/admin" className="hover:text-foreground transition-colors" data-testid="link-admin">
-          Admin
-        </Link>
-        <span>/</span>
         <span className="text-foreground">Staff Management</span>
       </div>
       

@@ -348,6 +348,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/roles/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const role = await storage.updateRole(req.params.id, req.body);
+      res.json(role);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update role" });
+    }
+  });
+
+  app.delete("/api/roles/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      // Check if role is being used in staff or estimate line items
+      const staff = await storage.getStaff();
+      const roleInUse = staff.some(s => s.standardRoleId === req.params.id);
+      
+      if (roleInUse) {
+        return res.status(400).json({ 
+          message: "Cannot delete role that is assigned to staff members" 
+        });
+      }
+      
+      // Delete the role
+      await storage.deleteRole(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete role" });
+    }
+  });
+
   // Staff management
   app.get("/api/staff", requireAuth, async (req, res) => {
     try {
