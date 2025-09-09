@@ -2080,7 +2080,12 @@ export default function EstimateDetail() {
                 sortOrder
               });
             }}
-            disabled={!newMilestone.name || (!newMilestone.amount && !newMilestone.percentage) || !!(newMilestone.amount && newMilestone.percentage) || createMilestoneMutation.isPending}
+            disabled={
+              !newMilestone.name?.trim() || 
+              ((!newMilestone.amount?.trim()) && (!newMilestone.percentage?.trim())) || 
+              (!!newMilestone.amount?.trim() && !!newMilestone.percentage?.trim()) || 
+              createMilestoneMutation.isPending
+            }
           >
             {createMilestoneMutation.isPending ? "Creating..." : "Add Milestone"}
           </Button>
