@@ -683,29 +683,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const worksheetData = [
         ["Estimate Line Items Export"],
         [],
-        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
-        ...lineItems.map(item => [
-          item.epicId ? (epicMap.get(item.epicId) || "") : "",
-          item.stageId ? (stageMap.get(item.stageId) || "") : "",
-          item.workstream || "",
-          item.week || "",
-          item.description,
-          item.category || "",
-          Number(item.baseHours),
-          Number(item.factor || 1),
-          Number(item.rate),
-          item.size,
-          item.complexity,
-          item.confidence,
-          item.comments || "",
-          Number(item.adjustedHours),
-          Number(item.totalAmount)
-        ])
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Cost Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount", "Total Cost", "Margin", "Margin %"],
+        ...lineItems.map(item => {
+          const totalCost = Number(item.costRate || 0) * Number(item.adjustedHours || 0);
+          const margin = Number(item.margin || 0);
+          const marginPercent = Number(item.marginPercent || 0);
+          
+          return [
+            item.epicId ? (epicMap.get(item.epicId) || "") : "",
+            item.stageId ? (stageMap.get(item.stageId) || "") : "",
+            item.workstream || "",
+            item.week || "",
+            item.description,
+            item.category || "",
+            item.resourceName || "",
+            Number(item.baseHours),
+            Number(item.factor || 1),
+            Number(item.rate),
+            Number(item.costRate || 0),
+            item.size,
+            item.complexity,
+            item.confidence,
+            item.comments || "",
+            Number(item.adjustedHours),
+            Number(item.totalAmount),
+            totalCost,
+            margin,
+            marginPercent
+          ];
+        })
       ];
 
       // Add empty rows for new items
       for (let i = 0; i < 20; i++) {
-        worksheetData.push(["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", "", 1, 0, 0, "small", "small", "high", "", "", "", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
@@ -718,15 +729,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { wch: 8 },  // Week #
         { wch: 35 }, // Description
         { wch: 15 }, // Category
+        { wch: 20 }, // Resource
         { wch: 12 }, // Base Hours
         { wch: 10 }, // Factor
         { wch: 10 }, // Rate
+        { wch: 10 }, // Cost Rate
         { wch: 10 }, // Size
         { wch: 12 }, // Complexity
         { wch: 12 }, // Confidence
         { wch: 25 }, // Comments
         { wch: 15 }, // Adjusted Hours
         { wch: 15 }, // Total Amount
+        { wch: 15 }, // Total Cost
+        { wch: 12 }, // Margin
+        { wch: 10 }, // Margin %
       ];
       
       const wb = xlsx.utils.book_new();
