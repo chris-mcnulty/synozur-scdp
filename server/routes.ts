@@ -1256,6 +1256,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
   
+  // Debug endpoint to test database field mapping
+  app.get("/api/debug/test-user", async (req, res) => {
+    try {
+      const user = await storage.getUserByEmail("admin@synozur.com");
+      res.json({
+        success: true,
+        userExists: !!user,
+        canLogin: user?.canLogin,
+        fields: user ? Object.keys(user) : [],
+        user: user
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  });
+  
   // User profile
   app.get("/api/auth/user", requireAuth, async (req, res) => {
     console.log("[DEBUG] Auth user request:", req.user);
