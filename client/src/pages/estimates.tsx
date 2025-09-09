@@ -327,7 +327,7 @@ export default function Estimates() {
               const estimateData: any = {
                 name: formData.get('name'),
                 clientId,
-                projectId: projectId === 'none' ? null : projectId,
+                projectId: (!projectId || projectId === 'none' || projectId === '') ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
                 estimateType: selectedEstimateType,
                 estimateDate: formData.get('estimateDate') as string || undefined,

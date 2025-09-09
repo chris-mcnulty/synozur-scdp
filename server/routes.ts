@@ -948,8 +948,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validUntil = validDays ? new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : null;
       
-      // Handle the "none" value from the form
-      const cleanProjectId = projectId === 'none' || projectId === '' ? null : projectId;
+      // Handle the "none" value from the form or undefined/empty
+      const cleanProjectId = !projectId || projectId === 'none' || projectId === '' ? null : projectId;
       
       console.log("[DEBUG] About to parse estimate schema...");
       const validatedData = insertEstimateSchema.parse({
@@ -963,6 +963,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         presentedTotal: null,
         margin: null,
         validUntil,
+        estimateDate: req.body.estimateDate || new Date().toISOString().split('T')[0],
         epicLabel: "Epic",
         stageLabel: "Stage", 
         activityLabel: "Activity",
