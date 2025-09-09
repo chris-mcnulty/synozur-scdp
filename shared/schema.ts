@@ -7,13 +7,14 @@ import { z } from "zod";
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").notNull().unique(),
+  email: text("email").unique(), // Now optional for contractors
   name: text("name").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
   initials: text("initials"),
   title: text("title"), // Job title for the person
   role: text("role").notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  canLogin: boolean("can_login").notNull().default(false), // Controls authentication access
   isAssignable: boolean("is_assignable").notNull().default(true), // Can be assigned to projects/estimates
   roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
   customRole: text("custom_role"), // For non-standard roles
@@ -429,6 +430,8 @@ export const staffRelations = relations(staff, ({ one }) => ({
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
+}).extend({
+  email: z.string().email().optional().nullable(), // Email is now optional
 });
 
 export const insertClientSchema = createInsertSchema(clients).omit({

@@ -153,6 +153,7 @@ export default function Users() {
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>System Role</TableHead>
+                    <TableHead>Can Login</TableHead>
                     <TableHead>Assignable</TableHead>
                     <TableHead>Charge Rate</TableHead>
                     <TableHead>Status</TableHead>
@@ -163,12 +164,19 @@ export default function Users() {
                   {filteredUsers.map((user) => (
                     <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                       <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.email || <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell>
                         <Badge variant={getRoleBadgeColor(user.role)}>
                           <Shield className="w-3 h-3 mr-1" />
                           {user.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.canLogin ? (
+                          <span className="text-green-600">✓ Yes</span>
+                        ) : (
+                          <span className="text-muted-foreground">No</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {user.isAssignable ? (
@@ -231,13 +239,15 @@ export default function Users() {
               const formData = new FormData(e.currentTarget);
               const firstName = formData.get('firstName') as string;
               const lastName = formData.get('lastName') as string;
+              const email = formData.get('email') as string;
               createUser.mutate({
                 name: `${firstName} ${lastName}`,
                 firstName,
                 lastName,
                 initials: formData.get('initials'),
-                email: formData.get('email'),
+                email: email || null,
                 role: formData.get('role'),
+                canLogin: formData.get('canLogin') === 'on',
                 isAssignable: formData.get('isAssignable') === 'true',
                 defaultChargeRate: formData.get('defaultChargeRate'),
                 defaultCostRate: formData.get('defaultCostRate'),
@@ -269,13 +279,12 @@ export default function Users() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">Email (Optional)</Label>
                     <Input
                       id="email"
                       name="email"
                       type="email"
                       placeholder="john@example.com"
-                      required
                       data-testid="input-user-email"
                     />
                   </div>
@@ -304,6 +313,14 @@ export default function Users() {
                       <SelectItem value="executive">Executive</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="canLogin"
+                    name="canLogin"
+                    defaultChecked={false}
+                  />
+                  <Label htmlFor="canLogin">Can Login (Enable authentication access)</Label>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="isAssignable">Assignable Resource</Label>
@@ -368,6 +385,7 @@ export default function Users() {
                 const formData = new FormData(e.currentTarget);
                 const firstName = formData.get('firstName') as string;
                 const lastName = formData.get('lastName') as string;
+                const email = formData.get('email') as string;
                 updateUser.mutate({
                   id: editingUser.id,
                   data: {
@@ -375,8 +393,9 @@ export default function Users() {
                     firstName,
                     lastName,
                     initials: formData.get('initials'),
-                    email: formData.get('email'),
+                    email: email || null,
                     role: formData.get('role'),
+                    canLogin: formData.get('canLogin') === 'on',
                     isAssignable: formData.get('isAssignable') === 'true',
                     defaultChargeRate: formData.get('defaultChargeRate'),
                     defaultCostRate: formData.get('defaultCostRate'),
@@ -407,13 +426,12 @@ export default function Users() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="edit-email">Email</Label>
+                      <Label htmlFor="edit-email">Email (Optional)</Label>
                       <Input
                         id="edit-email"
                         name="email"
                         type="email"
                         defaultValue={editingUser.email}
-                        required
                       />
                     </div>
                     <div className="grid gap-2">
@@ -440,6 +458,14 @@ export default function Users() {
                         <SelectItem value="executive">Executive</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="edit-canLogin"
+                      name="canLogin"
+                      defaultChecked={editingUser.canLogin}
+                    />
+                    <Label htmlFor="edit-canLogin">Can Login (Enable authentication access)</Label>
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="edit-isAssignable">Assignable Resource</Label>

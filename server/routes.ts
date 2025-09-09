@@ -1091,6 +1091,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       email === "admin@synozur.com" ? "Admin User" :
                       email === "chris.mcnulty@synozur.com" ? "Chris McNulty" : "Sarah Chen",
                 role: "admin",
+                canLogin: true, // Service accounts can login
                 isActive: true
               });
               const sessionId = Math.random().toString(36).substring(7);
@@ -1100,6 +1101,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 ...newUser,
                 sessionId
               });
+            }
+            
+            // Check if user can login
+            if (!user.canLogin) {
+              console.log("[AUTH] User not allowed to login:", email);
+              return res.status(403).json({ message: "This account is not authorized for login" });
             }
             
             const sessionId = Math.random().toString(36).substring(7);
@@ -1197,8 +1204,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             email,
             name,
             role,
+            canLogin: true, // SSO users can login by default
             isActive: true,
           });
+        }
+        
+        // Check if user can login
+        if (!user.canLogin) {
+          return res.redirect("/login?error=not_authorized");
         }
         
         // Create session

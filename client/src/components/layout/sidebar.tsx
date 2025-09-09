@@ -119,13 +119,6 @@ export function Sidebar() {
           />
           
           <SidebarItem
-            href="/staff"
-            icon={<UsersRound />}
-            label="Staff Management"
-            requiredRoles={["admin"]}
-          />
-          
-          <SidebarItem
             href="/users"
             icon={<Users />}
             label="User Management"
