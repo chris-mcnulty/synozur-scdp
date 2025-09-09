@@ -58,13 +58,13 @@ export default function EstimateDetail() {
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
   const [filterWorkstream, setFilterWorkstream] = useState("");
+  const [filterWeek, setFilterWeek] = useState("all");
   const [filterUnresourced, setFilterUnresourced] = useState(false);
   const [showResourceSummary, setShowResourceSummary] = useState(false);
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
   const [newItem, setNewItem] = useState({
     description: "",
-    category: "",
     epicId: "none",
     stageId: "none",
     workstream: "",
@@ -181,7 +181,6 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setNewItem({
         description: "",
-        category: "",
         epicId: "none",
         stageId: "none",
         workstream: "",
@@ -375,7 +374,6 @@ export default function EstimateDetail() {
     
     const lineItemData = {
       description: newItem.description,
-      category: newItem.category || null,
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
       workstream: newItem.workstream || null,
@@ -745,73 +743,107 @@ export default function EstimateDetail() {
             </CardContent>
           </Card>
 
-          {/* Summary by Phase and Workstream */}
+          {/* Summary by Workstream and Stage */}
           <Card>
             <CardHeader>
-              <CardTitle>Summary by Phase & Workstream</CardTitle>
+              <CardTitle>Summary by Workstream & Stage</CardTitle>
               <CardDescription>Effort and billing breakdown</CardDescription>
             </CardHeader>
             <CardContent>
-              {(() => {
-                // Group by phase (epic) and workstream
-                const grouped = lineItems?.reduce((acc: any, item) => {
-                  const phase = item.epicId ? (epics?.find(e => e.id === item.epicId)?.name || "Unassigned") : "Unassigned";
-                  const workstream = item.workstream || "Unassigned";
-                  
-                  if (!acc[phase]) acc[phase] = {};
-                  if (!acc[phase][workstream]) {
-                    acc[phase][workstream] = { hours: 0, amount: 0 };
-                  }
-                  
-                  acc[phase][workstream].hours += Number(item.adjustedHours);
-                  acc[phase][workstream].amount += Number(item.totalAmount);
-                  
-                  return acc;
-                }, {});
+              <Tabs defaultValue="workstream">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="workstream">By Workstream</TabsTrigger>
+                  <TabsTrigger value="stage">By Stage</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="workstream">
+                  {(() => {
+                    // Group by workstream
+                    const workstreamTotals = lineItems?.reduce((acc: any, item) => {
+                      const workstream = item.workstream || "Unassigned";
+                      if (!acc[workstream]) {
+                        acc[workstream] = { hours: 0, amount: 0, count: 0 };
+                      }
+                      acc[workstream].hours += Number(item.adjustedHours);
+                      acc[workstream].amount += Number(item.totalAmount);
+                      acc[workstream].count += 1;
+                      return acc;
+                    }, {});
 
-                return (
-                  <div className="space-y-4">
-                    {Object.entries(grouped || {}).map(([phase, workstreams]: [string, any]) => (
-                      <div key={phase} className="border rounded-lg p-4">
-                        <h4 className="font-semibold mb-3">{phase}</h4>
-                        <div className="space-y-2">
-                          {Object.entries(workstreams).map(([workstream, data]: [string, any]) => (
-                            <div key={workstream} className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">{workstream}</span>
-                              <div className="flex gap-6">
-                                <span>{data.hours.toFixed(1)} hrs</span>
-                                <span className="font-medium">${Math.round(data.amount).toLocaleString()}</span>
-                              </div>
+                    return (
+                      <div className="space-y-3">
+                        {Object.entries(workstreamTotals || {}).sort(([a], [b]) => a.localeCompare(b)).map(([workstream, data]: [string, any]) => (
+                          <div key={workstream} className="flex justify-between p-3 bg-gray-50 rounded-lg">
+                            <div>
+                              <span className="font-medium">{workstream}</span>
+                              <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
-                          ))}
-                          <div className="border-t pt-2 mt-2">
-                            <div className="flex justify-between font-medium">
-                              <span>Phase Total</span>
-                              <div className="flex gap-6">
-                                <span>
-                                  {Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.hours, 0).toFixed(1)} hrs
-                                </span>
-                                <span>
-                                  ${Math.round(Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.amount, 0)).toLocaleString()}
-                                </span>
-                              </div>
+                            <div className="flex gap-6">
+                              <span className="text-muted-foreground">{Math.round(data.hours)} hrs</span>
+                              <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t pt-3">
+                          <div className="flex justify-between text-lg font-semibold">
+                            <span>Total</span>
+                            <div className="flex gap-6">
+                              <span>{Math.round(totalHours)} hrs</span>
+                              <span>${Math.round(totalAmount).toLocaleString()}</span>
                             </div>
                           </div>
                         </div>
                       </div>
-                    ))}
-                    <div className="border-t pt-4">
-                      <div className="flex justify-between text-lg font-semibold">
-                        <span>Grand Total</span>
-                        <div className="flex gap-6">
-                          <span>{totalHours.toFixed(1)} hrs</span>
-                          <span>${Math.round(totalAmount).toLocaleString()}</span>
+                    );
+                  })()}
+                </TabsContent>
+                
+                <TabsContent value="stage">
+                  {(() => {
+                    // Group by stage
+                    const stageTotals = lineItems?.reduce((acc: any, item) => {
+                      const stage = item.stageId ? (stages?.find(s => s.id === item.stageId)?.name || "Unassigned") : "Unassigned";
+                      if (!acc[stage]) {
+                        acc[stage] = { hours: 0, amount: 0, count: 0 };
+                      }
+                      acc[stage].hours += Number(item.adjustedHours);
+                      acc[stage].amount += Number(item.totalAmount);
+                      acc[stage].count += 1;
+                      return acc;
+                    }, {});
+
+                    return (
+                      <div className="space-y-3">
+                        {Object.entries(stageTotals || {}).sort(([a], [b]) => {
+                          if (a === "Unassigned") return 1;
+                          if (b === "Unassigned") return -1;
+                          return a.localeCompare(b);
+                        }).map(([stage, data]: [string, any]) => (
+                          <div key={stage} className="flex justify-between p-3 bg-gray-50 rounded-lg">
+                            <div>
+                              <span className="font-medium">{stage}</span>
+                              <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
+                            </div>
+                            <div className="flex gap-6">
+                              <span className="text-muted-foreground">{Math.round(data.hours)} hrs</span>
+                              <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t pt-3">
+                          <div className="flex justify-between text-lg font-semibold">
+                            <span>Total</span>
+                            <div className="flex gap-6">
+                              <span>{Math.round(totalHours)} hrs</span>
+                              <span>${Math.round(totalAmount).toLocaleString()}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                );
-              })()}
+                    );
+                  })()}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
@@ -1126,11 +1158,6 @@ export default function EstimateDetail() {
                 onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
                 className="col-span-2"
               />
-              <Input
-                placeholder="Phase/Category"
-                value={newItem.category}
-                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-              />
               <Select
                 value={newItem.size}
                 onValueChange={(value) => setNewItem({ ...newItem, size: value })}
@@ -1268,13 +1295,32 @@ export default function EstimateDetail() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="filter-category">Category</Label>
+                <Label htmlFor="filter-workstream">Workstream</Label>
                 <Input
-                  id="filter-category"
+                  id="filter-workstream"
                   placeholder="Filter by workstream..."
                   value={filterWorkstream}
                   onChange={(e) => setFilterWorkstream(e.target.value)}
                 />
+              </div>
+              <div>
+                <Label htmlFor="filter-week">Week</Label>
+                <Select value={filterWeek} onValueChange={setFilterWeek}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Weeks" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Weeks</SelectItem>
+                    {(() => {
+                      const weeks = Array.from(new Set(lineItems.map((item: EstimateLineItem) => item.week).filter(w => w != null))).sort((a, b) => Number(a) - Number(b));
+                      return weeks.map((week) => (
+                        <SelectItem key={week} value={week?.toString() || ""}>
+                          Week {week}
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="flex items-center gap-4 mt-3">
@@ -1297,7 +1343,7 @@ export default function EstimateDetail() {
                 <Label htmlFor="show-resource-summary">Show Resource Summary</Label>
               </div>
             </div>
-            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterUnresourced) && (
+            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterWeek !== "all" || filterUnresourced) && (
               <div className="mt-3">
                 <Button
                   onClick={() => {
@@ -1305,6 +1351,7 @@ export default function EstimateDetail() {
                     setFilterEpic("all");
                     setFilterStage("all");
                     setFilterWorkstream("");
+                    setFilterWeek("all");
                     setFilterUnresourced(false);
                   }}
                   variant="outline"
@@ -1425,7 +1472,6 @@ export default function EstimateDetail() {
                   <TableHead>Epic</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Workstream</TableHead>
-                  <TableHead>Phase</TableHead>
                   <TableHead>Week</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Hours</TableHead>
@@ -1444,13 +1490,13 @@ export default function EstimateDetail() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={17} className="text-center">
+                    <TableCell colSpan={16} className="text-center">
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : (lineItems || []).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={17} className="text-center">
+                    <TableCell colSpan={16} className="text-center">
                       No line items yet
                     </TableCell>
                   </TableRow>
@@ -1466,9 +1512,10 @@ export default function EstimateDetail() {
                       item.stageId === filterStage;
                     const matchesWorkstream = !filterWorkstream || 
                       (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
+                    const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
                     const matchesUnresourced = !filterUnresourced || !item.assignedUserId;
                     
-                    return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesUnresourced;
+                    return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
                   }).map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
@@ -1502,20 +1549,6 @@ export default function EstimateDetail() {
                         ) : (
                           <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
                             {item.workstream || "-"}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingItem === item.id ? (
-                          <Input
-                            value={item.category || ""}
-                            onChange={(e) => handleUpdateItem(item, "category", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
-                            placeholder="Phase"
-                          />
-                        ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            {item.category || "-"}
                           </span>
                         )}
                       </TableCell>
@@ -1793,6 +1826,67 @@ export default function EstimateDetail() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Week Subtotals */}
+          {(() => {
+            const weekTotals = lineItems.filter((item: EstimateLineItem) => {
+              const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
+              const matchesEpic = filterEpic === "all" || 
+                (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
+                item.epicId === filterEpic;
+              const matchesStage = filterStage === "all" || 
+                (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
+                item.stageId === filterStage;
+              const matchesWorkstream = !filterWorkstream || 
+                (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
+              const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
+              const matchesUnresourced = !filterUnresourced || !item.assignedUserId;
+              
+              return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
+            }).reduce((acc: any, item) => {
+              const week = item.week || "Unassigned";
+              if (!acc[week]) {
+                acc[week] = { hours: 0, amount: 0, count: 0 };
+              }
+              acc[week].hours += Number(item.adjustedHours);
+              acc[week].amount += Number(item.totalAmount);
+              acc[week].count += 1;
+              return acc;
+            }, {});
+
+            const sortedWeeks = Object.entries(weekTotals)
+              .sort(([a], [b]) => {
+                if (a === "Unassigned") return 1;
+                if (b === "Unassigned") return -1;
+                return Number(a) - Number(b);
+              });
+
+            if (sortedWeeks.length > 1 || (sortedWeeks.length === 1 && filterWeek === "all")) {
+              return (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-semibold mb-2">Subtotals by Week</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {sortedWeeks.map(([week, data]: [string, any]) => (
+                      <div key={week} className="flex justify-between p-2 bg-white rounded border">
+                        <span className="font-medium">
+                          {week === "Unassigned" ? "No Week" : `Week ${week}`}
+                        </span>
+                        <div className="text-right">
+                          <div className="text-sm text-muted-foreground">
+                            {Math.round(data.hours)} hrs ({data.count} items)
+                          </div>
+                          <div className="font-semibold">
+                            ${Math.round(data.amount).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div className="mt-4 flex justify-end">
             <div className="text-right">
