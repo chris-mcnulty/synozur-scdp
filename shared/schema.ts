@@ -6,7 +6,7 @@ import { z } from "zod";
 
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   name: text("name").notNull(),
   firstName: text("first_name"),
@@ -131,7 +131,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate (internal cost)
-  assignedUserId: uuid("assigned_user_id").references(() => users.id), // User assigned to this line item
+  assignedUserId: varchar("assigned_user_id").references(() => users.id), // User assigned to this line item
   roleId: varchar("role_id").references(() => roles.id), // Generic role assigned (alternative to specific user)
   resourceName: text("resource_name"), // Name of assigned resource (denormalized for display)
   size: text("size").notNull().default("small"), // small, medium, large

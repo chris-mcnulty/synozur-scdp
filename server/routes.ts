@@ -361,7 +361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Check if role is being used in staff or estimate line items
       const staff = await storage.getStaff();
-      const roleInUse = staff.some(s => s.standardRoleId === req.params.id);
+      const roleInUse = staff.some(s => s.roleId === req.params.id);
       
       if (roleInUse) {
         return res.status(400).json({ 
