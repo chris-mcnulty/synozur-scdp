@@ -55,7 +55,7 @@ export default function Staff() {
   });
 
   const { data: user } = useQuery<{ role: string }>({
-    queryKey: ["/api/auth/me"],
+    queryKey: ["/api/auth/user"],
   });
 
   const isAuthorized = user?.role === 'admin' || user?.role === 'executive';
@@ -174,12 +174,10 @@ export default function Staff() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-2xl font-bold">Staff Management</CardTitle>
-          {user?.role === 'admin' && (
-            <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-add-staff">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Staff Member
-            </Button>
-          )}
+          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-add-staff">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Staff Member
+          </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (

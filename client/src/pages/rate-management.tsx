@@ -135,18 +135,20 @@ export default function RateManagement() {
     },
   });
 
-  const { data: roles, isLoading: rolesLoading } = useQuery({
+  const { data: roles = [], isLoading: rolesLoading } = useQuery<Role[]>({
     queryKey: ["/api/roles"],
   });
 
-  const { data: projects } = useQuery({
+  const { data: projects = [] } = useQuery<any[]>({
     queryKey: ["/api/projects"],
   });
 
   const createRoleMutation = useMutation({
     mutationFn: async (data: RoleFormData) => {
-      const response = await apiRequest("POST", "/api/roles", data);
-      return response.json();
+      return apiRequest("/api/roles", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
@@ -180,11 +182,53 @@ export default function RateManagement() {
     setNewOverrideOpen(false);
   };
 
+  const deleteRoleMutation = useMutation({
+    mutationFn: async (roleId: string) => {
+      return apiRequest(`/api/roles/${roleId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      toast({
+        title: "Role deleted",
+        description: "Role has been deleted successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete role. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: RoleFormData }) => {
+      return apiRequest(`/api/roles/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      toast({
+        title: "Role updated",
+        description: "Role has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update role. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteRole = (roleId: string) => {
-    toast({
-      title: "Role deleted",
-      description: "Role has been deleted successfully.",
-    });
+    deleteRoleMutation.mutate(roleId);
   };
 
   const handleDeleteOverride = (overrideId: string) => {
