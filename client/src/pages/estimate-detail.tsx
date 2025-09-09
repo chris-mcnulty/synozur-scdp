@@ -72,10 +72,13 @@ export default function EstimateDetail() {
     baseHours: "",
     factor: "1",
     rate: "0",
+    costRate: "0",
     size: "small",
     complexity: "small",
     confidence: "high",
-    comments: ""
+    comments: "",
+    staffId: "",
+    resourceName: ""
   });
 
   const { data: estimate, isLoading: estimateLoading, error: estimateError } = useQuery<Estimate>({
@@ -180,10 +183,13 @@ export default function EstimateDetail() {
         baseHours: "",
         factor: "1",
         rate: "0",
+        costRate: "0",
         size: "small",
         complexity: "small",
         confidence: "high",
-        comments: ""
+        comments: "",
+        staffId: "",
+        resourceName: ""
       });
       toast({ title: "Input added successfully" });
     },
@@ -363,6 +369,7 @@ export default function EstimateDetail() {
     
     const lineItemData = {
       description: newItem.description,
+      category: newItem.category || null,
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
       workstream: newItem.workstream || null,
@@ -370,10 +377,13 @@ export default function EstimateDetail() {
       baseHours: baseHours.toString(),
       factor: factor.toString(),
       rate: rate.toString(),
+      costRate: newItem.costRate || "0",
       size: newItem.size,
       complexity: newItem.complexity,
       confidence: newItem.confidence,
       comments: newItem.comments || null,
+      staffId: newItem.staffId || null,
+      resourceName: newItem.resourceName || null,
       adjustedHours: adjustedHours.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
       sortOrder: lineItems?.length || 0
@@ -1076,9 +1086,9 @@ export default function EstimateDetail() {
                 className="col-span-2"
               />
               <Input
-                placeholder="Workstream"
-                value={newItem.workstream}
-                onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
+                placeholder="Phase/Category"
+                value={newItem.category}
+                onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
               />
               <Select
                 value={newItem.size}
@@ -1120,7 +1130,36 @@ export default function EstimateDetail() {
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Select
+              value={newItem.staffId || "unassigned"}
+              onValueChange={(value) => {
+                const selectedStaff = staff.find((s: any) => s.id === value);
+                if (value === "unassigned") {
+                  setNewItem({ ...newItem, staffId: "", resourceName: "", rate: "0", costRate: "0" });
+                } else if (selectedStaff) {
+                  setNewItem({ 
+                    ...newItem, 
+                    staffId: selectedStaff.id, 
+                    resourceName: selectedStaff.name,
+                    rate: selectedStaff.defaultChargeRate?.toString() || "0",
+                    costRate: selectedStaff.defaultCostRate?.toString() || "0"
+                  });
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Resource" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {staff.map((member: any) => (
+                  <SelectItem key={member.id} value={member.id}>
+                    {member.name} - ${member.defaultChargeRate}/hr
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               placeholder="Comments (optional)"
               value={newItem.comments}
@@ -1345,9 +1384,9 @@ export default function EstimateDetail() {
                   <TableHead>Epic</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Workstream</TableHead>
+                  <TableHead>Phase</TableHead>
                   <TableHead>Week</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead>Workstream</TableHead>
                   <TableHead>Hours</TableHead>
                   <TableHead>Factor</TableHead>
                   <TableHead>Resource</TableHead>
@@ -1411,7 +1450,34 @@ export default function EstimateDetail() {
                       </TableCell>
                       <TableCell>{epic?.name || "-"}</TableCell>
                       <TableCell>{stage?.name || "-"}</TableCell>
-                      <TableCell>{item.workstream || "-"}</TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            value={item.workstream || ""}
+                            onChange={(e) => handleUpdateItem(item, "workstream", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            placeholder="Workstream"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {item.workstream || "-"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {editingItem === item.id ? (
+                          <Input
+                            value={item.category || ""}
+                            onChange={(e) => handleUpdateItem(item, "category", e.target.value)}
+                            onBlur={() => setEditingItem(null)}
+                            placeholder="Phase"
+                          />
+                        ) : (
+                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                            {item.category || "-"}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>{item.week || "-"}</TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
@@ -1423,20 +1489,6 @@ export default function EstimateDetail() {
                         ) : (
                           <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
                             {item.description}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingItem === item.id ? (
-                          <Input
-                            value={item.workstream || ""}
-                            onChange={(e) => handleUpdateItem(item, "workstream", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
-                            placeholder="Category"
-                          />
-                        ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            {item.workstream || "-"}
                           </span>
                         )}
                       </TableCell>
@@ -1471,9 +1523,42 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className={!item.staffId ? "text-orange-500 font-medium" : ""}>
-                          {item.resourceName || "Unassigned"}
-                        </span>
+                        {editingItem === item.id ? (
+                          <Select 
+                            value={item.staffId || "unassigned"} 
+                            onValueChange={(value) => {
+                              const selectedStaff = staff.find((s: any) => s.id === value);
+                              if (value === "unassigned") {
+                                handleUpdateItem(item, "staffId", null);
+                                handleUpdateItem(item, "resourceName", "");
+                              } else if (selectedStaff) {
+                                handleUpdateItem(item, "staffId", selectedStaff.id);
+                                handleUpdateItem(item, "resourceName", selectedStaff.name);
+                                handleUpdateItem(item, "rate", selectedStaff.defaultChargeRate);
+                                handleUpdateItem(item, "costRate", selectedStaff.defaultCostRate);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              {staff.map((member: any) => (
+                                <SelectItem key={member.id} value={member.id}>
+                                  {member.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span 
+                            className={!item.staffId ? "text-orange-500 font-medium cursor-pointer" : "cursor-pointer"}
+                            onClick={() => setEditingItem(item.id)}
+                          >
+                            {item.resourceName || "Unassigned"}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
