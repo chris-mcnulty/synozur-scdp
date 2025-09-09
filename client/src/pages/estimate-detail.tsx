@@ -2488,6 +2488,87 @@ export default function EstimateDetail() {
       </DialogContent>
     </Dialog>
 
+    {/* Split Line Item Dialog */}
+    <Dialog open={showSplitDialog} onOpenChange={setShowSplitDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Split Line Item</DialogTitle>
+          <DialogDescription>
+            Split "{splittingItem?.description}" into two separate line items with different hour allocations
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-4 bg-gray-50 rounded-lg">
+            <div className="text-sm text-muted-foreground mb-2">Original Item:</div>
+            <div className="font-medium">{splittingItem?.description}</div>
+            <div className="text-sm">Total Hours: {Number(splittingItem?.adjustedHours || splittingItem?.baseHours || 0)}</div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="first-hours">First Item Hours</Label>
+              <Input
+                id="first-hours"
+                type="number"
+                step="0.5"
+                min="0"
+                value={splitHours.first}
+                onChange={(e) => setSplitHours({...splitHours, first: e.target.value})}
+                placeholder="Hours for first item"
+              />
+            </div>
+            <div>
+              <Label htmlFor="second-hours">Second Item Hours</Label>
+              <Input
+                id="second-hours"
+                type="number"
+                step="0.5"
+                min="0"
+                value={splitHours.second}
+                onChange={(e) => setSplitHours({...splitHours, second: e.target.value})}
+                placeholder="Hours for second item"
+              />
+            </div>
+          </div>
+          
+          <div className="text-sm text-muted-foreground">
+            Total allocated: {Number(splitHours.first || 0) + Number(splitHours.second || 0)} hours
+            {Number(splitHours.first || 0) + Number(splitHours.second || 0) !== Number(splittingItem?.adjustedHours || splittingItem?.baseHours || 0) && (
+              <span className="text-amber-600 ml-2">
+                (differs from original {Number(splittingItem?.adjustedHours || splittingItem?.baseHours || 0)} hours)
+              </span>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              setShowSplitDialog(false);
+              setSplittingItem(null);
+              setSplitHours({ first: "", second: "" });
+            }}
+            variant="outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (splittingItem && splitHours.first && splitHours.second) {
+                splitLineItemMutation.mutate({
+                  itemId: splittingItem.id,
+                  firstHours: Number(splitHours.first),
+                  secondHours: Number(splitHours.second)
+                });
+              }
+            }}
+            disabled={!splitHours.first || !splitHours.second || splitLineItemMutation.isPending}
+          >
+            {splitLineItemMutation.isPending ? "Splitting..." : "Split Item"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     </div>
     </div>
     </Layout>
