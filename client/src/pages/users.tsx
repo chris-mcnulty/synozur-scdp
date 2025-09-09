@@ -81,13 +81,13 @@ export default function Users() {
       setUserToDelete(null);
       toast({
         title: "Success",
-        description: "User has been deactivated successfully",
+        description: "User has been deleted successfully",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to delete user",
+        title: "Delete Failed",
+        description: error.message || "Cannot delete user with existing time entries, expenses, or staff assignments",
         variant: "destructive",
       });
     },
@@ -355,9 +355,9 @@ export default function Users() {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Deactivate User</AlertDialogTitle>
+              <AlertDialogTitle>Delete User</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to deactivate {userToDelete?.name}? This will mark their account as inactive. They will no longer be able to access the system, but their data (time entries, expenses, etc.) will be preserved.
+                Are you sure you want to permanently delete {userToDelete?.name}? This action cannot be undone. Note: Users with existing time entries, expenses, or staff assignments cannot be deleted.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -367,7 +367,7 @@ export default function Users() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 data-testid="button-confirm-delete-user"
               >
-                Deactivate
+                Delete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

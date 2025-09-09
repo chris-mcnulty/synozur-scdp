@@ -143,12 +143,18 @@ export class DatabaseStorage implements IStorage {
       .from(expenses)
       .where(eq(expenses.personId, id));
     
-    if (timeEntriesCount?.count > 0 || expensesCount?.count > 0) {
-      // User has dependencies, soft delete only
-      await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+    // Check for staff assignments
+    const [staffCount] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(estimateLineItems)
+      .where(eq(estimateLineItems.staffId, id));
+    
+    if (timeEntriesCount?.count > 0 || expensesCount?.count > 0 || staffCount?.count > 0) {
+      // User has dependencies, prevent deletion
+      throw new Error('Cannot delete user with existing time entries, expenses, or staff assignments');
     } else {
-      // No dependencies, can do hard delete if needed, but we'll stick with soft delete for consistency
-      await db.update(users).set({ isActive: false }).where(eq(users.id, id));
+      // No dependencies, perform hard delete
+      await db.delete(users).where(eq(users.id, id));
     }
   }
 
