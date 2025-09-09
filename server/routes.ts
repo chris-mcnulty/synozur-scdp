@@ -596,6 +596,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Split line item
+  app.post("/api/estimates/:estimateId/line-items/:id/split", requireAuth, async (req, res) => {
+    try {
+      const { firstHours, secondHours } = req.body;
+      
+      if (!firstHours || !secondHours || firstHours <= 0 || secondHours <= 0) {
+        return res.status(400).json({ message: "Both hour values must be positive numbers" });
+      }
+
+      const newItems = await storage.splitEstimateLineItem(req.params.id, firstHours, secondHours);
+      res.json(newItems);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to split line item" });
+    }
+  });
+
   // Excel template download (empty template for users to fill)
   app.get("/api/estimates/template-excel", requireAuth, async (req, res) => {
     try {
