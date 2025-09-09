@@ -344,6 +344,28 @@ export default function EstimateDetail() {
     }
   });
 
+  const splitLineItemMutation = useMutation({
+    mutationFn: ({ itemId, firstHours, secondHours }: { itemId: string; firstHours: number; secondHours: number }) => 
+      apiRequest(`/api/estimates/${id}/line-items/${itemId}/split`, {
+        method: "POST",
+        body: JSON.stringify({ firstHours, secondHours })
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      setShowSplitDialog(false);
+      setSplittingItem(null);
+      setSplitHours({ first: "", second: "" });
+      toast({ title: "Line item split successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to split line item", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
   const calculateAdjustedValues = (baseHours: number, factor: number, rate: number, size: string, complexity: string, confidence: string) => {
     if (!estimate) return { adjustedHours: 0, totalAmount: 0 };
     
