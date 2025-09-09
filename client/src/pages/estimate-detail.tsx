@@ -97,6 +97,10 @@ export default function EstimateDetail() {
     queryKey: ["/api/staff"],
   });
 
+  const { data: roles = [] } = useQuery<any[]>({
+    queryKey: ["/api/roles"],
+  });
+
   const { data: user } = useQuery<any>({
     queryKey: ["/api/auth/me"],
   });
@@ -1560,14 +1564,14 @@ export default function EstimateDetail() {
                       <TableCell>
                         {editingItem === item.id ? (
                           <Select 
-                            value={item.staffId || "unassigned"} 
+                            value={item.staffId || item.roleId ? `role-${item.roleId}` : "unassigned"} 
                             onValueChange={(value) => {
-                              const selectedStaff = staff.find((s: any) => s.id === value);
                               if (value === "unassigned") {
-                                // Update all fields at once to avoid race conditions
+                                // Clear assignment
                                 const updatedItem = { 
                                   ...item, 
-                                  staffId: null, 
+                                  staffId: null,
+                                  roleId: null,
                                   resourceName: "" 
                                 };
                                 const baseHours = Number(updatedItem.baseHours);
@@ -1581,38 +1585,75 @@ export default function EstimateDetail() {
                                   itemId: item.id,
                                   data: {
                                     staffId: null,
+                                    roleId: null,
                                     resourceName: "",
                                     adjustedHours: adjustedHours.toFixed(2),
                                     totalAmount: totalAmount.toFixed(2)
                                   }
                                 });
-                              } else if (selectedStaff) {
-                                // Update all fields at once to avoid race conditions
-                                const updatedItem = { 
-                                  ...item, 
-                                  staffId: selectedStaff.id, 
-                                  resourceName: selectedStaff.name,
-                                  rate: selectedStaff.defaultChargeRate,
-                                  costRate: selectedStaff.defaultCostRate
-                                };
-                                const baseHours = Number(updatedItem.baseHours);
-                                const factor = Number(updatedItem.factor) || 1;
-                                const rate = Number(selectedStaff.defaultChargeRate);
-                                const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                  baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
-                                );
-                                
-                                updateLineItemMutation.mutate({
-                                  itemId: item.id,
-                                  data: {
+                              } else if (value.startsWith("role-")) {
+                                // Generic role selected
+                                const roleId = value.substring(5);
+                                const selectedRole = roles.find((r: any) => r.id === roleId);
+                                if (selectedRole) {
+                                  const updatedItem = { 
+                                    ...item, 
+                                    staffId: null,
+                                    roleId: selectedRole.id, 
+                                    resourceName: selectedRole.name,
+                                    rate: selectedRole.defaultRackRate
+                                  };
+                                  const baseHours = Number(updatedItem.baseHours);
+                                  const factor = Number(updatedItem.factor) || 1;
+                                  const rate = Number(selectedRole.defaultRackRate);
+                                  const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                    baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+                                  );
+                                  
+                                  updateLineItemMutation.mutate({
+                                    itemId: item.id,
+                                    data: {
+                                      staffId: null,
+                                      roleId: selectedRole.id,
+                                      resourceName: selectedRole.name,
+                                      rate: selectedRole.defaultRackRate,
+                                      adjustedHours: adjustedHours.toFixed(2),
+                                      totalAmount: totalAmount.toFixed(2)
+                                    }
+                                  });
+                                }
+                              } else {
+                                // Specific staff selected
+                                const selectedStaff = staff.find((s: any) => s.id === value);
+                                if (selectedStaff) {
+                                  const updatedItem = { 
+                                    ...item, 
                                     staffId: selectedStaff.id,
+                                    roleId: null,
                                     resourceName: selectedStaff.name,
                                     rate: selectedStaff.defaultChargeRate,
-                                    costRate: selectedStaff.defaultCostRate,
-                                    adjustedHours: adjustedHours.toFixed(2),
-                                    totalAmount: totalAmount.toFixed(2)
-                                  }
-                                });
+                                    costRate: selectedStaff.defaultCostRate
+                                  };
+                                  const baseHours = Number(updatedItem.baseHours);
+                                  const factor = Number(updatedItem.factor) || 1;
+                                  const rate = Number(selectedStaff.defaultChargeRate);
+                                  const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                    baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+                                  );
+                                  
+                                  updateLineItemMutation.mutate({
+                                    itemId: item.id,
+                                    data: {
+                                      staffId: selectedStaff.id,
+                                      roleId: null,
+                                      resourceName: selectedStaff.name,
+                                      rate: selectedStaff.defaultChargeRate,
+                                      costRate: selectedStaff.defaultCostRate,
+                                      adjustedHours: adjustedHours.toFixed(2),
+                                      totalAmount: totalAmount.toFixed(2)
+                                    }
+                                  });
+                                }
                               }
                             }}
                           >
@@ -1621,6 +1662,13 @@ export default function EstimateDetail() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="unassigned">Unassigned</SelectItem>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
+                              {roles.map((role: any) => (
+                                <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
+                                  {role.name} (Role)
+                                </SelectItem>
+                              ))}
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
                               {staff.map((member: any) => (
                                 <SelectItem key={member.id} value={member.id}>
                                   {member.name}

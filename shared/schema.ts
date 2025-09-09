@@ -125,6 +125,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate (internal cost)
   staffId: varchar("staff_id").references(() => staff.id), // Staff member assigned
+  roleId: varchar("role_id").references(() => roles.id), // Generic role assigned (alternative to staff)
   resourceName: text("resource_name"), // Name of assigned resource (denormalized for display)
   size: text("size").notNull().default("small"), // small, medium, large
   complexity: text("complexity").notNull().default("small"), // small, medium, large
