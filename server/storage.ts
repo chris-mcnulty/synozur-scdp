@@ -73,6 +73,7 @@ export interface IStorage {
   updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
   deleteEstimateLineItem(id: string): Promise<void>;
   bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]>;
+  splitEstimateLineItem(id: string, firstHours: number, secondHours: number): Promise<EstimateLineItem[]>;
   
   // Estimate Milestones
   getEstimateMilestones(estimateId: string): Promise<EstimateMilestone[]>;
@@ -521,6 +522,109 @@ export class DatabaseStorage implements IStorage {
 
   async bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]> {
     return await db.insert(estimateLineItems).values(lineItems).returning();
+  }
+
+  async splitEstimateLineItem(id: string, firstHours: number, secondHours: number): Promise<EstimateLineItem[]> {
+    // Get the original line item
+    const [originalItem] = await db.select().from(estimateLineItems).where(eq(estimateLineItems.id, id));
+    
+    if (!originalItem) {
+      throw new Error("Line item not found");
+    }
+
+    // Calculate adjusted hours and total amounts for each new item
+    const calculateAdjustedValues = (baseHours: number) => {
+      const factor = Number(originalItem.factor) || 1;
+      const rate = Number(originalItem.rate) || 0;
+      
+      // Apply the same multipliers as the original
+      let sizeMultiplier = 1.0;
+      if (originalItem.size === "medium") sizeMultiplier = 1.05;
+      else if (originalItem.size === "large") sizeMultiplier = 1.10;
+      
+      let complexityMultiplier = 1.0;
+      if (originalItem.complexity === "medium") complexityMultiplier = 1.05;
+      else if (originalItem.complexity === "large") complexityMultiplier = 1.10;
+      
+      let confidenceMultiplier = 1.0;
+      if (originalItem.confidence === "medium") confidenceMultiplier = 1.10;
+      else if (originalItem.confidence === "low") confidenceMultiplier = 1.20;
+      
+      const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+      const totalAmount = adjustedHours * rate;
+      
+      return { adjustedHours, totalAmount };
+    };
+
+    const firstItemValues = calculateAdjustedValues(firstHours);
+    const secondItemValues = calculateAdjustedValues(secondHours);
+
+    // Create the two new line items
+    const newItems: InsertEstimateLineItem[] = [
+      {
+        estimateId: originalItem.estimateId,
+        epicId: originalItem.epicId,
+        stageId: originalItem.stageId,
+        category: originalItem.category,
+        workstream: originalItem.workstream,
+        week: originalItem.week,
+        description: `${originalItem.description} (Part 1)`,
+        baseHours: firstHours.toString(),
+        factor: originalItem.factor,
+        rate: originalItem.rate,
+        costRate: originalItem.costRate,
+        assignedUserId: originalItem.assignedUserId,
+        roleId: originalItem.roleId,
+        resourceName: originalItem.resourceName,
+        size: originalItem.size,
+        complexity: originalItem.complexity,
+        confidence: originalItem.confidence,
+        comments: originalItem.comments,
+        adjustedHours: firstItemValues.adjustedHours.toString(),
+        totalAmount: firstItemValues.totalAmount.toString(),
+        margin: originalItem.margin,
+        marginPercent: originalItem.marginPercent,
+        sortOrder: originalItem.sortOrder,
+      },
+      {
+        estimateId: originalItem.estimateId,
+        epicId: originalItem.epicId,
+        stageId: originalItem.stageId,
+        category: originalItem.category,
+        workstream: originalItem.workstream,
+        week: originalItem.week,
+        description: `${originalItem.description} (Part 2)`,
+        baseHours: secondHours.toString(),
+        factor: originalItem.factor,
+        rate: originalItem.rate,
+        costRate: originalItem.costRate,
+        assignedUserId: originalItem.assignedUserId,
+        roleId: originalItem.roleId,
+        resourceName: originalItem.resourceName,
+        size: originalItem.size,
+        complexity: originalItem.complexity,
+        confidence: originalItem.confidence,
+        comments: originalItem.comments,
+        adjustedHours: secondItemValues.adjustedHours.toString(),
+        totalAmount: secondItemValues.totalAmount.toString(),
+        margin: originalItem.margin,
+        marginPercent: originalItem.marginPercent,
+        sortOrder: originalItem.sortOrder,
+      }
+    ];
+
+    // Insert the new items and delete the original in a transaction
+    const result = await db.transaction(async (tx) => {
+      // Insert new items
+      const insertedItems = await tx.insert(estimateLineItems).values(newItems).returning();
+      
+      // Delete original item
+      await tx.delete(estimateLineItems).where(eq(estimateLineItems.id, id));
+      
+      return insertedItems;
+    });
+
+    return result;
   }
 
   async getEstimateMilestones(estimateId: string): Promise<EstimateMilestone[]> {
