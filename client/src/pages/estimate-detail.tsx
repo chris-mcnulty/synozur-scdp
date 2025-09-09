@@ -514,6 +514,8 @@ export default function EstimateDetail() {
     sum + Number(item.adjustedHours), 0);
   const totalAmount = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
     sum + Number(item.totalAmount), 0);
+  const totalCost = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
+    sum + (Number(item.costRate || 0) * Number(item.adjustedHours || 0)), 0);
 
   // Show loading state
   if (estimateLoading) {
@@ -744,7 +746,10 @@ export default function EstimateDetail() {
                     onChange={(e) => setPresentedTotal(e.target.value)}
                     onBlur={() => {
                       if (presentedTotal && estimate) {
-                        const calculatedMargin = ((totalAmount - parseFloat(presentedTotal)) / totalAmount * 100).toFixed(2);
+                        // Calculate profit margin: (Quote - Cost) / Quote * 100
+                        const quote = parseFloat(presentedTotal);
+                        const profit = quote - totalCost;
+                        const calculatedMargin = quote > 0 ? ((profit / quote) * 100).toFixed(2) : "0";
                         setMargin(calculatedMargin);
                         updateEstimateMutation.mutate({ 
                           presentedTotal: presentedTotal,
@@ -764,12 +769,14 @@ export default function EstimateDetail() {
                     id="margin"
                     type="number"
                     placeholder="Auto-calculated"
-                    value={margin || (estimate?.presentedTotal ? Math.round((totalAmount - Number(estimate.presentedTotal)) / totalAmount * 100) : "")}
+                    value={margin || (estimate?.presentedTotal && Number(estimate.presentedTotal) > 0 ? 
+                      ((Number(estimate.presentedTotal) - totalCost) / Number(estimate.presentedTotal) * 100).toFixed(1) : "")}
                     readOnly
                     className="mt-1 bg-muted"
                   />
                   <p className="text-sm text-muted-foreground mt-1">
-                    Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)).toLocaleString() : "N/A"}
+                    Total Cost: ${Math.round(totalCost).toLocaleString()} | 
+                    Profit: ${estimate?.presentedTotal ? Math.round(Number(estimate.presentedTotal) - totalCost).toLocaleString() : "N/A"}
                   </p>
                 </div>
               </div>

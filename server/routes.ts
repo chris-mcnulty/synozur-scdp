@@ -563,18 +563,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
     try {
+      console.log("Creating milestone with data:", req.body);
       const { insertEstimateMilestoneSchema } = await import("@shared/schema");
       const validatedData = insertEstimateMilestoneSchema.parse({
         ...req.body,
         estimateId: req.params.id,
       });
+      console.log("Validated milestone data:", validatedData);
       const milestone = await storage.createEstimateMilestone(validatedData);
+      console.log("Created milestone:", milestone);
       res.json(milestone);
     } catch (error) {
+      console.error("Error creating milestone:", error);
       if (error instanceof z.ZodError) {
+        console.error("Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid milestone data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create milestone" });
+      res.status(500).json({ message: "Failed to create milestone", error: (error as Error).message });
     }
   });
 
