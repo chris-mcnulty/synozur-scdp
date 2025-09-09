@@ -501,13 +501,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEstimateMilestone(milestone: InsertEstimateMilestone): Promise<EstimateMilestone> {
-    const [newMilestone] = await db.insert(estimateMilestones).values(milestone).returning();
+    // If only percentage is provided, set amount to 0 to satisfy NOT NULL constraint
+    const milestoneData = {
+      ...milestone,
+      amount: milestone.amount || "0"
+    };
+    const [newMilestone] = await db.insert(estimateMilestones).values(milestoneData).returning();
     return newMilestone;
   }
 
   async updateEstimateMilestone(id: string, milestone: Partial<InsertEstimateMilestone>): Promise<EstimateMilestone> {
+    // If amount is being set to null but percentage is provided, set amount to 0
+    const milestoneData = {
+      ...milestone,
+      amount: milestone.amount !== undefined ? (milestone.amount || "0") : undefined
+    };
     const [updatedMilestone] = await db.update(estimateMilestones)
-      .set(milestone)
+      .set(milestoneData)
       .where(eq(estimateMilestones.id, id))
       .returning();
     return updatedMilestone;

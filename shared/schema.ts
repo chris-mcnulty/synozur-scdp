@@ -145,7 +145,7 @@ export const estimateMilestones = pgTable("estimate_milestones", {
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
   name: text("name").notNull(), // e.g., "Phase 1 Delivery", "Project Kickoff"
   description: text("description"),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }), // Optional fixed amount
   dueDate: date("due_date"), // Optional due date
   percentage: decimal("percentage", { precision: 5, scale: 2 }), // Optional percentage of total
   sortOrder: integer("sort_order").notNull().default(0),
