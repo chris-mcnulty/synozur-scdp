@@ -81,7 +81,7 @@ export default function Users() {
       setUserToDelete(null);
       toast({
         title: "Success",
-        description: "User deleted successfully",
+        description: "User has been deactivated successfully",
       });
     },
     onError: () => {
@@ -169,7 +169,10 @@ export default function Users() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={user.isActive ? "default" : "secondary"}>
+                        <Badge 
+                          variant={user.isActive ? "default" : "destructive"}
+                          className={user.isActive ? "" : "opacity-75"}
+                        >
                           {user.isActive ? "Active" : "Inactive"}
                         </Badge>
                       </TableCell>
@@ -352,9 +355,9 @@ export default function Users() {
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete User</AlertDialogTitle>
+              <AlertDialogTitle>Deactivate User</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete {userToDelete?.name}? This will deactivate their account and they will no longer be able to access the system.
+                Are you sure you want to deactivate {userToDelete?.name}? This will mark their account as inactive. They will no longer be able to access the system, but their data (time entries, expenses, etc.) will be preserved.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -364,7 +367,7 @@ export default function Users() {
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 data-testid="button-confirm-delete-user"
               >
-                Delete
+                Deactivate
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

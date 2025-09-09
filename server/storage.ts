@@ -108,7 +108,6 @@ export class DatabaseStorage implements IStorage {
   async getUsers(): Promise<User[]> {
     return await db.select()
       .from(users)
-      .where(eq(users.isActive, true))
       .orderBy(users.name);
   }
 
