@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -100,7 +101,7 @@ export default function Staff() {
       queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
       setDeleteDialogOpen(false);
       setSelectedStaff(null);
-      toast({ title: "Staff member deleted successfully" });
+      toast({ title: "Staff member deactivated successfully" });
     },
     onError: () => {
       toast({ title: "Failed to delete staff member", variant: "destructive" });
@@ -171,6 +172,19 @@ export default function Staff() {
 
   return (
     <div className="p-8">
+      {/* Navigation Breadcrumb */}
+      <div className="mb-6 flex items-center space-x-2 text-sm text-muted-foreground">
+        <Link href="/" className="hover:text-foreground transition-colors" data-testid="link-dashboard">
+          Dashboard
+        </Link>
+        <span>/</span>
+        <Link href="/admin" className="hover:text-foreground transition-colors" data-testid="link-admin">
+          Admin
+        </Link>
+        <span>/</span>
+        <span className="text-foreground">Staff Management</span>
+      </div>
+      
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-2xl font-bold">Staff Management</CardTitle>
@@ -533,9 +547,9 @@ export default function Staff() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Staff Member</AlertDialogTitle>
+            <AlertDialogTitle>Deactivate Staff Member</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete {selectedStaff?.name}? This action cannot be undone.
+              Are you sure you want to deactivate {selectedStaff?.name}? They will no longer appear in active staff lists but their data will be preserved.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
