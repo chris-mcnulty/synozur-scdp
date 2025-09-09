@@ -683,7 +683,7 @@ export default function EstimateDetail() {
       /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="outputs">Outputs</TabsTrigger>
+          <TabsTrigger value="outputs">Quotes</TabsTrigger>
           <TabsTrigger value="inputs">Inputs</TabsTrigger>
           <TabsTrigger value="factors">Factors</TabsTrigger>
         </TabsList>
@@ -718,7 +718,7 @@ export default function EstimateDetail() {
                     className="mt-1"
                   />
                   <p className="text-sm text-muted-foreground mt-1">
-                    Internal Total: ${Math.round(totalAmount)}
+                    Internal Total: ${Math.round(totalAmount).toLocaleString()}
                   </p>
                 </div>
                 <div>
@@ -732,7 +732,7 @@ export default function EstimateDetail() {
                     className="mt-1 bg-muted"
                   />
                   <p className="text-sm text-muted-foreground mt-1">
-                    Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)) : "N/A"}
+                    Difference: ${presentedTotal ? Math.round(totalAmount - parseFloat(presentedTotal)).toLocaleString() : "N/A"}
                   </p>
                 </div>
               </div>
@@ -774,7 +774,7 @@ export default function EstimateDetail() {
                               <span className="text-muted-foreground">{workstream}</span>
                               <div className="flex gap-6">
                                 <span>{data.hours.toFixed(1)} hrs</span>
-                                <span className="font-medium">${data.amount.toFixed(0)}</span>
+                                <span className="font-medium">${Math.round(data.amount).toLocaleString()}</span>
                               </div>
                             </div>
                           ))}
@@ -786,7 +786,7 @@ export default function EstimateDetail() {
                                   {Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.hours, 0).toFixed(1)} hrs
                                 </span>
                                 <span>
-                                  ${Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.amount, 0).toFixed(0)}
+                                  ${Math.round(Object.values(workstreams).reduce((sum: number, ws: any) => sum + ws.amount, 0)).toLocaleString()}
                                 </span>
                               </div>
                             </div>
@@ -799,7 +799,7 @@ export default function EstimateDetail() {
                         <span>Grand Total</span>
                         <div className="flex gap-6">
                           <span>{totalHours.toFixed(1)} hrs</span>
-                          <span>${totalAmount.toFixed(0)}</span>
+                          <span>${Math.round(totalAmount).toLocaleString()}</span>
                         </div>
                       </div>
                     </div>
@@ -827,7 +827,41 @@ export default function EstimateDetail() {
               {milestones.length === 0 ? (
                 <p className="text-muted-foreground text-sm">No milestones created yet</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
+                  {/* Milestone total indicator */}
+                  {(() => {
+                    const milestoneTotal = milestones.reduce((sum, m) => {
+                      if (m.amount) {
+                        return sum + Number(m.amount);
+                      } else if (m.percentage && estimate?.presentedTotal) {
+                        return sum + (Number(estimate.presentedTotal) * Number(m.percentage) / 100);
+                      }
+                      return sum;
+                    }, 0);
+                    const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
+                    const difference = quoteTotal - milestoneTotal;
+                    const isMatching = Math.abs(difference) < 1;
+                    
+                    return (
+                      <div className={`p-3 rounded-lg border ${isMatching ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium">
+                            Milestone Total: ${milestoneTotal.toLocaleString()}
+                          </span>
+                          <span className={`text-sm ${isMatching ? 'text-green-600' : 'text-orange-600'}`}>
+                            {isMatching ? (
+                              '✓ Matches quote total'
+                            ) : (
+                              `${difference > 0 ? 'Under' : 'Over'} by $${Math.abs(difference).toLocaleString()}`
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  
+                  {/* Milestone list */}
+                  <div className="space-y-2">
                   {milestones.map((milestone) => (
                     <div key={milestone.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div className="flex-1">
@@ -837,7 +871,7 @@ export default function EstimateDetail() {
                         )}
                         <div className="text-sm mt-1">
                           {milestone.amount ? (
-                            <span className="font-medium">${milestone.amount}</span>
+                            <span className="font-medium">${Number(milestone.amount).toLocaleString()}</span>
                           ) : milestone.percentage ? (
                             <span className="font-medium">{milestone.percentage}% of total</span>
                           ) : null}
@@ -870,6 +904,7 @@ export default function EstimateDetail() {
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
               )}
             </CardContent>
