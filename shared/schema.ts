@@ -51,7 +51,7 @@ export const staff = pgTable("staff", {
   name: text("name").notNull(),
   initials: text("initials").notNull(),
   role: text("role").notNull(), // Legacy field - to be removed after migration
-  roleId: uuid("role_id").references(() => roles.id), // Optional reference to standard role
+  roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
   customRole: text("custom_role"), // For non-standard roles
   defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }).notNull(),
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }).notNull(),
