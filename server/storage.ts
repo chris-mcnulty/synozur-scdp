@@ -348,14 +348,52 @@ export class DatabaseStorage implements IStorage {
     return client;
   }
 
-  async getProjects(): Promise<(Project & { client: Client })[]> {
-    return await db.select().from(projects)
+  async getProjects(): Promise<(Project & { client: Client; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
+    const projectRows = await db.select().from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .orderBy(desc(projects.createdAt))
-      .then(rows => rows.map(row => ({
-        ...row.projects,
-        client: row.clients!
-      })));
+      .orderBy(desc(projects.createdAt));
+    
+    // Get budget, burned, and utilization for each project
+    const projectsWithBillableInfo = await Promise.all(
+      projectRows.map(async (row) => {
+        const project = row.projects;
+        const client = row.clients!;
+        
+        // Get total budget from approved SOWs
+        const totalBudget = await this.getProjectTotalBudget(project.id);
+        
+        // Get burned amount from billed time entries
+        const burnedData = await db.select({
+          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${timeEntries.rate} AS NUMERIC), 150)), 0)`
+        })
+        .from(timeEntries)
+        .where(and(
+          eq(timeEntries.projectId, project.id),
+          eq(timeEntries.billable, true)
+        ));
+        
+        const burnedAmount = Math.round(Number(burnedData[0]?.totalBurned || 0));
+        
+        // Calculate utilization rate
+        const utilizationRate = totalBudget > 0 
+          ? Math.round((burnedAmount / totalBudget) * 100)
+          : 0;
+        
+        return {
+          ...project,
+          client,
+          totalBudget,
+          burnedAmount,
+          utilizationRate
+        };
+      })
+    );
+    
+    // Filter to only show active projects (those with approved SOWs)
+    // Note: We return all projects but include the budget info
+    // The frontend can filter based on having totalBudget > 0 if needed
+    // This maintains backward compatibility while providing the budget info
+    return projectsWithBillableInfo;
   }
 
   async getProject(id: string): Promise<(Project & { client: Client }) | undefined> {
@@ -1039,10 +1077,17 @@ export class DatabaseStorage implements IStorage {
     monthlyRevenue: number;
     unbilledHours: number;
   }> {
-    // Get active projects count
-    const [projectCount] = await db.select({ count: sql<number>`count(*)::int` })
+    // Get active projects count (only those with approved SOWs)
+    const activeProjects = await db.select({ projectId: projects.id })
       .from(projects)
-      .where(eq(projects.status, 'active'));
+      .innerJoin(sows, eq(projects.id, sows.projectId))
+      .where(and(
+        eq(projects.status, 'active'),
+        eq(sows.status, 'approved')
+      ))
+      .groupBy(projects.id);
+    
+    const projectCount = { count: activeProjects.length };
 
     // Get current month start and end dates
     const now = new Date();

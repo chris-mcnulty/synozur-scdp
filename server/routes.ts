@@ -314,6 +314,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/projects/:id/estimates", requireAuth, async (req, res) => {
+    try {
+      const estimates = await storage.getEstimatesByProject(req.params.id);
+      res.json(estimates);
+    } catch (error) {
+      console.error("Error fetching project estimates:", error);
+      res.status(500).json({ message: "Failed to fetch project estimates" });
+    }
+  });
+
   app.get("/api/projects/:id/analytics", requireAuth, async (req, res) => {
     try {
       // Verify project exists

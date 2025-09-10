@@ -13,6 +13,12 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
 
+interface ProjectWithBillableInfo extends ProjectWithClient {
+  totalBudget?: number;
+  burnedAmount?: number;
+  utilizationRate?: number;
+}
+
 export default function Projects() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -20,17 +26,21 @@ export default function Projects() {
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [projectToDelete, setProjectToDelete] = useState<ProjectWithClient | null>(null);
-  const [projectToEdit, setProjectToEdit] = useState<ProjectWithClient | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectWithBillableInfo | null>(null);
+  const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
 
-  const { data: projects, isLoading } = useQuery<ProjectWithClient[]>({
+  const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
     queryKey: ["/api/projects"],
   });
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
+  });
+
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
   });
 
   const createProject = useMutation({
@@ -133,12 +143,12 @@ export default function Projects() {
     return matchesSearch && matchesStatus;
   }) || [];
 
-  const handleEditProject = (project: ProjectWithClient) => {
+  const handleEditProject = (project: ProjectWithBillableInfo) => {
     setProjectToEdit(project);
     setEditDialogOpen(true);
   };
 
-  const handleDeleteProject = (project: ProjectWithClient) => {
+  const handleDeleteProject = (project: ProjectWithBillableInfo) => {
     setProjectToDelete(project);
     setDeleteDialogOpen(true);
   };
@@ -284,6 +294,32 @@ export default function Projects() {
                     </div>
                   )}
                   
+                  {/* Billable Information */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Budget</span>
+                      <span className="font-medium" data-testid={`project-budget-${project.id}`}>
+                        ${(project.totalBudget || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Burned</span>
+                      <span className="font-medium" data-testid={`project-burned-${project.id}`}>
+                        ${(project.burnedAmount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Utilization</span>
+                      <span className={`font-medium ${
+                        project.utilizationRate > 90 ? 'text-red-600 dark:text-red-400' : 
+                        project.utilizationRate > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                        'text-green-600 dark:text-green-400'
+                      }`} data-testid={`project-utilization-${project.id}`}>
+                        {project.utilizationRate || 0}%
+                      </span>
+                    </div>
+                  </div>
+                  
                   <div className="flex space-x-2 pt-2">
                     <Link href={`/projects/${project.id}`} className="flex-1">
                       <Button 
@@ -329,10 +365,12 @@ export default function Projects() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const endDateValue = formData.get('endDate') as string;
+              const pmValue = formData.get('pm') as string;
               createProject.mutate({
                 name: formData.get('name'),
                 clientId: formData.get('clientId'),
                 code: formData.get('code'),
+                pm: pmValue === 'none' ? null : pmValue || null,
                 startDate: formData.get('startDate') || undefined,
                 endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
                 commercialScheme: formData.get('commercialScheme'),
@@ -388,6 +426,23 @@ export default function Projects() {
                       <SelectItem value="tm">Time & Materials</SelectItem>
                       <SelectItem value="retainer">Retainer</SelectItem>
                       <SelectItem value="milestone">Milestone</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="pm">Project Manager</Label>
+                  <Select name="pm">
+                    <SelectTrigger id="pm" data-testid="select-pm">
+                      <SelectValue placeholder="Select project manager (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No PM Assigned</SelectItem>
+                      {users.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -555,7 +610,7 @@ export default function Projects() {
                     endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
                     commercialScheme: formData.get('commercialScheme'),
                     status: formData.get('status'),
-                    pm: formData.get('pm'),
+                    pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
                   }
@@ -619,12 +674,19 @@ export default function Projects() {
 
                   <div className="grid gap-2">
                     <Label htmlFor="edit-pm">Project Manager</Label>
-                    <Input
-                      id="edit-pm"
-                      name="pm"
-                      defaultValue={projectToEdit.pm || ""}
-                      data-testid="input-edit-pm"
-                    />
+                    <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
+                      <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
+                        <SelectValue placeholder="Select project manager" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No PM Assigned</SelectItem>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="grid gap-2">
