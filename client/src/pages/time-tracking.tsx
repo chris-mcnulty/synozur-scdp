@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,13 @@ type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
 
 export default function TimeTracking() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState({
+    projectId: "",
+    clientId: "",
+    startDate: "",
+    endDate: ""
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -46,9 +53,30 @@ export default function TimeTracking() {
   const { data: projects } = useQuery({
     queryKey: ["/api/projects"],
   });
+  
+  const { data: clients } = useQuery({
+    queryKey: ["/api/clients"],
+  });
+  
+  const { data: currentUser } = useQuery({
+    queryKey: ["/api/auth/me"],
+  });
 
   const { data: timeEntries, isLoading } = useQuery({
-    queryKey: ["/api/time-entries"],
+    queryKey: ["/api/time-entries", filters],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.projectId) params.append('projectId', filters.projectId);
+      if (filters.clientId) params.append('clientId', filters.clientId);
+      if (filters.startDate) params.append('startDate', filters.startDate);
+      if (filters.endDate) params.append('endDate', filters.endDate);
+      const response = await fetch(`/api/time-entries?${params.toString()}`, {
+        credentials: 'include',
+        headers: localStorage.getItem('sessionId') ? { 'X-Session-Id': localStorage.getItem('sessionId')! } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch time entries');
+      return response.json();
+    }
   });
 
   const createTimeEntryMutation = useMutation({

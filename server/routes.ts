@@ -258,6 +258,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get project progress (hours vs estimate)
   app.get("/api/projects/:id/progress", requireAuth, async (req, res) => {
     try {
+      // Only PM, admin, billing-admin, and executive can see full project progress
+      if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view project progress" });
+      }
+      
       const projectId = req.params.id;
       
       // Get actual hours from time entries
@@ -919,17 +924,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Time entries
   app.get("/api/time-entries", requireAuth, async (req, res) => {
     try {
-      const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
+      const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
       
-      // Non-admin users can only see their own time entries
+      // Build filters based on user role and query params
       const filters: any = {};
-      if (req.user?.role === "employee" || req.user?.role === "pm") {
+      
+      // SECURITY: Regular employees can only see their own time entries
+      // Managers and above can see all entries
+      if (req.user?.role === "employee") {
         filters.personId = req.user.id;
       } else if (personId) {
+        // Admin, billing-admin, pm, executive can filter by specific person
         filters.personId = personId;
+      } else if (!personId && !["admin", "billing-admin", "executive"].includes(req.user!.role)) {
+        // PMs default to seeing their own entries unless they specify a person
+        if (req.user?.role === "pm") {
+          filters.personId = req.user.id;
+        }
       }
       
+      // Add optional filters
       if (projectId) filters.projectId = projectId;
+      if (clientId) filters.clientId = clientId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
 
@@ -966,14 +982,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/time-entries/:id", requireAuth, async (req, res) => {
     try {
-      // Get the existing time entry first
-      const existingEntries = await storage.getTimeEntries({ personId: req.user!.id });
-      const existingEntry = existingEntries.find(e => e.id === req.params.id);
+      // Get the specific time entry
+      const existingEntry = await storage.getTimeEntry(req.params.id);
+      
+      if (!existingEntry) {
+        return res.status(404).json({ message: "Time entry not found" });
+      }
       
       // Check permissions
       if (req.user?.role === "employee") {
         // Regular employees can only edit their own entries
-        if (!existingEntry || existingEntry.personId !== req.user.id) {
+        if (existingEntry.personId !== req.user.id) {
           return res.status(403).json({ message: "You can only edit your own time entries" });
         }
       } else if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
@@ -996,14 +1015,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
     try {
-      // Get the existing time entry first
-      const existingEntries = await storage.getTimeEntries({ personId: req.user!.id });
-      const existingEntry = existingEntries.find(e => e.id === req.params.id);
+      // Get the specific time entry
+      const existingEntry = await storage.getTimeEntry(req.params.id);
+      
+      if (!existingEntry) {
+        return res.status(404).json({ message: "Time entry not found" });
+      }
       
       // Check permissions
       if (req.user?.role === "employee") {
         // Regular employees can only delete their own entries
-        if (!existingEntry || existingEntry.personId !== req.user.id) {
+        if (existingEntry.personId !== req.user.id) {
           return res.status(403).json({ message: "You can only delete your own time entries" });
         }
       } else if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
@@ -1011,9 +1033,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Insufficient permissions to delete time entries" });
       }
       
-      // Note: You need to add deleteTimeEntry to storage if it doesn't exist
-      // For now, we can use update to mark as deleted or handle differently
-      res.status(501).json({ message: "Delete functionality not yet implemented in storage layer" });
+      // Delete the time entry
+      await storage.deleteTimeEntry(req.params.id);
+      res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete time entry" });
     }

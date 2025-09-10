@@ -86,9 +86,11 @@ export interface IStorage {
   deleteEstimateMilestone(id: string): Promise<void>;
   
   // Time entries
-  getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
+  getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
+  getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined>;
   createTimeEntry(timeEntry: InsertTimeEntry): Promise<TimeEntry>;
   updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
+  deleteTimeEntry(id: string): Promise<void>;
   
   // Expenses
   getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
@@ -674,7 +676,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(estimateMilestones).where(eq(estimateMilestones.id, id));
   }
 
-  async getTimeEntries(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
+  async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
@@ -683,6 +685,7 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     if (filters.personId) conditions.push(eq(timeEntries.personId, filters.personId));
     if (filters.projectId) conditions.push(eq(timeEntries.projectId, filters.projectId));
+    if (filters.clientId) conditions.push(eq(projects.clientId, filters.clientId));
     if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
 
@@ -702,6 +705,26 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined> {
+    const rows = await db.select().from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(eq(timeEntries.id, id));
+    
+    if (rows.length === 0) return undefined;
+    
+    const row = rows[0];
+    return {
+      ...row.time_entries,
+      person: row.users!,
+      project: {
+        ...row.projects!,
+        client: row.clients!
+      }
+    };
+  }
+
   async createTimeEntry(insertTimeEntry: InsertTimeEntry): Promise<TimeEntry> {
     const [timeEntry] = await db.insert(timeEntries).values(insertTimeEntry).returning();
     return timeEntry;
@@ -710,6 +733,10 @@ export class DatabaseStorage implements IStorage {
   async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry> {
     const [timeEntry] = await db.update(timeEntries).set(updateTimeEntry).where(eq(timeEntries.id, id)).returning();
     return timeEntry;
+  }
+
+  async deleteTimeEntry(id: string): Promise<void> {
+    await db.delete(timeEntries).where(eq(timeEntries.id, id));
   }
 
   async getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
