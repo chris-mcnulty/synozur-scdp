@@ -2128,8 +2128,8 @@ export default function EstimateDetail() {
               createMilestoneMutation.mutate({
                 name: newMilestone.name,
                 description: newMilestone.description || null,
-                amount: newMilestone.amount ? parseFloat(newMilestone.amount) : null,
-                percentage: newMilestone.percentage ? parseFloat(newMilestone.percentage) : null,
+                amount: newMilestone.amount || null,
+                percentage: newMilestone.percentage || null,
                 dueDate: newMilestone.dueDate || null,
                 sortOrder
               });
