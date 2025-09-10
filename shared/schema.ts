@@ -66,6 +66,7 @@ export const projects = pgTable("projects", {
   clientId: varchar("client_id").notNull().references(() => clients.id),
   name: text("name").notNull(),
   code: text("code").notNull().unique(),
+  pm: varchar("pm").references(() => users.id), // Project Manager - reference to users table
   startDate: date("start_date"),
   endDate: date("end_date"), // Can be null for open-ended projects
   commercialScheme: text("commercial_scheme").notNull(), // retainer, milestone, tm
@@ -181,6 +182,39 @@ export const estimateStages = pgTable("estimate_stages", {
 export const estimateActivities = pgTable("estimate_activities", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   stageId: varchar("stage_id").notNull().references(() => estimateStages.id),
+  name: text("name").notNull(),
+  order: integer("order").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Project Structure (copied from estimates when approved)
+export const projectEpics = pgTable("project_epics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  order: integer("order").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const projectStages = pgTable("project_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  epicId: varchar("epic_id").notNull().references(() => projectEpics.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  order: integer("order").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const projectActivities = pgTable("project_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stageId: varchar("stage_id").notNull().references(() => projectStages.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  order: integer("order").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const projectWorkstreams = pgTable("project_workstreams", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -303,11 +337,17 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.clientId],
     references: [clients.id],
   }),
+  pm: one(users, {
+    fields: [projects.pm],
+    references: [users.id],
+  }),
   estimates: many(estimates),
   timeEntries: many(timeEntries),
   expenses: many(expenses),
   changeOrders: many(changeOrders),
   invoiceLines: many(invoiceLines),
+  epics: many(projectEpics),
+  workstreams: many(projectWorkstreams),
 }));
 
 export const estimatesRelations = relations(estimates, ({ one, many }) => ({
@@ -360,6 +400,37 @@ export const estimateActivitiesRelations = relations(estimateActivities, ({ one,
     references: [estimateStages.id],
   }),
   allocations: many(estimateAllocations),
+}));
+
+// Project structure relations
+export const projectEpicsRelations = relations(projectEpics, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [projectEpics.projectId],
+    references: [projects.id],
+  }),
+  stages: many(projectStages),
+}));
+
+export const projectStagesRelations = relations(projectStages, ({ one, many }) => ({
+  epic: one(projectEpics, {
+    fields: [projectStages.epicId],
+    references: [projectEpics.id],
+  }),
+  activities: many(projectActivities),
+}));
+
+export const projectActivitiesRelations = relations(projectActivities, ({ one }) => ({
+  stage: one(projectStages, {
+    fields: [projectActivities.stageId],
+    references: [projectStages.id],
+  }),
+}));
+
+export const projectWorkstreamsRelations = relations(projectWorkstreams, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectWorkstreams.projectId],
+    references: [projects.id],
+  }),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -444,6 +515,27 @@ export const insertProjectSchema = createInsertSchema(projects).omit({
   createdAt: true,
 });
 
+// Project structure insert schemas
+export const insertProjectEpicSchema = createInsertSchema(projectEpics).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertProjectStageSchema = createInsertSchema(projectStages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertProjectActivitySchema = createInsertSchema(projectActivities).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertProjectWorkstreamSchema = createInsertSchema(projectWorkstreams).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertRoleSchema = createInsertSchema(roles).omit({
   id: true,
   createdAt: true,
@@ -513,6 +605,15 @@ export type EstimateEpic = typeof estimateEpics.$inferSelect;
 export type EstimateStage = typeof estimateStages.$inferSelect;
 export type EstimateActivity = typeof estimateActivities.$inferSelect;
 export type EstimateAllocation = typeof estimateAllocations.$inferSelect;
+
+export type ProjectEpic = typeof projectEpics.$inferSelect;
+export type InsertProjectEpic = z.infer<typeof insertProjectEpicSchema>;
+export type ProjectStage = typeof projectStages.$inferSelect;
+export type InsertProjectStage = z.infer<typeof insertProjectStageSchema>;
+export type ProjectActivity = typeof projectActivities.$inferSelect;
+export type InsertProjectActivity = z.infer<typeof insertProjectActivitySchema>;
+export type ProjectWorkstream = typeof projectWorkstreams.$inferSelect;
+export type InsertProjectWorkstream = z.infer<typeof insertProjectWorkstreamSchema>;
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
