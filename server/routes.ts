@@ -1202,6 +1202,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Track unique missing projects and resources for summary
           const missingProjects = new Set<string>();
           const missingResources = new Set<string>();
+          
+          // Debug: Log what we found in the database
+          console.log(`Import Debug - Found ${projects.length} projects in database`);
+          console.log(`Import Debug - Found ${users.length} users in database`);
+          console.log(`Import Debug - Processing ${data.length} rows from Excel`);
 
           for (let i = 0; i < data.length; i++) {
             const row = data[i] as any;
@@ -1213,21 +1218,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Convert date format
               const formattedDate = excelDateToYYYYMMDD(row.Date);
               
-              // Find project by name
-              const projectName = row["Project Name"]?.trim();
-              const projectId = projectMap.get(projectName?.toLowerCase());
+              // Find project by name - try multiple matching strategies
+              const projectName = row["Project Name"]?.toString().trim();
+              let projectId = projectMap.get(projectName?.toLowerCase());
+              
+              // If exact match fails, try fuzzy matching
+              if (!projectId && projectName) {
+                // Try without extra spaces
+                const normalizedName = projectName.replace(/\s+/g, ' ').toLowerCase();
+                projectId = projectMap.get(normalizedName);
+                
+                // Try to find partial matches
+                if (!projectId) {
+                  for (const [key, id] of projectMap.entries()) {
+                    if (key.includes(normalizedName) || normalizedName.includes(key)) {
+                      projectId = id;
+                      console.log(`Import Debug - Fuzzy matched project "${projectName}" to "${key}"`);
+                      break;
+                    }
+                  }
+                }
+              }
+              
               if (!projectId) {
                 missingProjects.add(projectName);
-                errors.push(`Row ${i + 3}: Project "${projectName}" not found.`);
+                errors.push(`Row ${i + 3}: Project "${projectName}" not found. Available projects: ${Array.from(projectMap.keys()).slice(0, 5).join(', ')}${projectMap.size > 5 ? '...' : ''}`);
                 continue;
               }
               
-              // Find resource/person by name
+              // Find resource/person by name - try multiple matching strategies
               let personId = req.user!.id; // Default to current user
-              const resourceName = row["Resource Name"]?.trim();
+              const resourceName = row["Resource Name"]?.toString().trim();
               
               if (resourceName) {
-                const foundPersonId = userMap.get(resourceName.toLowerCase());
+                let foundPersonId = userMap.get(resourceName.toLowerCase());
+                
+                // If exact match fails, try other strategies
+                if (!foundPersonId) {
+                  // Try without spaces
+                  foundPersonId = userMap.get(resourceName.replace(/\s+/g, '').toLowerCase());
+                  
+                  // Try with normalized spaces
+                  if (!foundPersonId) {
+                    const normalizedName = resourceName.replace(/\s+/g, ' ').toLowerCase();
+                    foundPersonId = userMap.get(normalizedName);
+                  }
+                  
+                  // Try to match by parts (first name, last name)
+                  if (!foundPersonId) {
+                    const nameParts = resourceName.toLowerCase().split(/\s+/);
+                    for (const part of nameParts) {
+                      if (userMap.has(part)) {
+                        foundPersonId = userMap.get(part);
+                        console.log(`Import Debug - Partial matched user "${resourceName}" by part "${part}"`);
+                        break;
+                      }
+                    }
+                  }
+                }
                 
                 if (foundPersonId) {
                   // Check permissions: only admin, billing-admin, pm, and executive can assign to others
@@ -1240,15 +1288,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     personId = foundPersonId;
                   }
                 } else {
-                  // Resource not found
+                  // Resource not found - provide helpful info
                   missingResources.add(resourceName);
-                  if (["admin", "billing-admin"].includes(req.user!.role)) {
-                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you.`);
-                    personId = req.user!.id;
-                  } else {
-                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you.`);
-                    personId = req.user!.id;
-                  }
+                  const availableUsers = Array.from(userMap.keys()).filter(k => !k.includes('@')).slice(0, 3).join(', ');
+                  warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Available users include: ${availableUsers}${userMap.size > 3 ? '...' : ''}. Entry assigned to you.`);
+                  personId = req.user!.id;
                 }
               }
               
