@@ -706,6 +706,42 @@ export default function EstimateDetail() {
                 data-testid="textarea-block-description"
               />
             </div>
+            {/* Cost Analysis for Block Estimates */}
+            {estimate?.blockHours && estimate?.blockDollars && (
+              <div className="border-t pt-4 space-y-4">
+                <h4 className="font-medium">Cost Analysis</h4>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-sm">
+                    <span className="font-medium">Quote Rate:</span><br />
+                    ${(Number(estimate.blockDollars) / Number(estimate.blockHours)).toFixed(0)}/hour
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-medium">Est. Cost Rate:</span><br />
+                    ${totalCost > 0 ? (totalCost / Number(estimate.blockHours)).toFixed(0) : '0'}/hour
+                  </div>
+                  <div className="text-sm">
+                    <span className="font-medium">Profit Margin:</span><br />
+                    {Number(estimate.blockDollars) > 0 ? 
+                      (((Number(estimate.blockDollars) - totalCost) / Number(estimate.blockDollars)) * 100).toFixed(1) 
+                      : '0'}%
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="font-medium">Customer Quote:</span> ${Number(estimate.blockDollars).toLocaleString()}
+                    </div>
+                    <div>
+                      <span className="font-medium">Estimated Cost:</span> ${Math.round(totalCost).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="mt-2">
+                    <span className="font-medium">Estimated Profit:</span> ${Math.round(Number(estimate.blockDollars) - totalCost).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="border-t pt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-sm">
