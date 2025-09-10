@@ -147,6 +147,116 @@ export interface IStorage {
     totalHours: number;
     revenue: number;
   }[]>;
+  
+  // Portfolio Reporting Methods
+  getPortfolioMetrics(filters?: { 
+    startDate?: string; 
+    endDate?: string; 
+    clientId?: string;
+    status?: string;
+  }): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    status: string;
+    startDate: Date | null;
+    endDate: Date | null;
+    estimatedHours: number;
+    actualHours: number;
+    estimatedCost: number;
+    actualCost: number;
+    revenue: number;
+    profitMargin: number;
+    completionPercentage: number;
+    healthScore: string;
+  }[]>;
+  
+  getEstimateAccuracy(filters?: {
+    startDate?: string;
+    endDate?: string;
+    clientId?: string;
+  }): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    originalEstimateHours: number;
+    currentEstimateHours: number;
+    actualHours: number;
+    hoursVariance: number;
+    hoursVariancePercentage: number;
+    originalEstimateCost: number;
+    currentEstimateCost: number;
+    actualCost: number;
+    costVariance: number;
+    costVariancePercentage: number;
+    changeOrderCount: number;
+    changeOrderValue: number;
+  }[]>;
+  
+  getRevenueMetrics(filters?: {
+    startDate?: string;
+    endDate?: string;
+    clientId?: string;
+  }): Promise<{
+    summary: {
+      totalRevenue: number;
+      billedRevenue: number;
+      unbilledRevenue: number;
+      quotedRevenue: number;
+      pipelineRevenue: number;
+      realizationRate: number;
+    };
+    monthly: {
+      month: string;
+      revenue: number;
+      billedAmount: number;
+      unbilledAmount: number;
+      newContracts: number;
+      contractValue: number;
+    }[];
+    byClient: {
+      clientId: string;
+      clientName: string;
+      revenue: number;
+      billedAmount: number;
+      unbilledAmount: number;
+      projectCount: number;
+    }[];
+  }>;
+  
+  getResourceUtilization(filters?: {
+    startDate?: string;
+    endDate?: string;
+    roleId?: string;
+  }): Promise<{
+    byPerson: {
+      personId: string;
+      personName: string;
+      role: string;
+      targetUtilization: number;
+      actualUtilization: number;
+      billableHours: number;
+      nonBillableHours: number;
+      totalCapacity: number;
+      revenue: number;
+      averageRate: number;
+    }[];
+    byRole: {
+      roleId: string;
+      roleName: string;
+      targetUtilization: number;
+      actualUtilization: number;
+      billableHours: number;
+      nonBillableHours: number;
+      totalCapacity: number;
+      headcount: number;
+    }[];
+    trends: {
+      week: string;
+      averageUtilization: number;
+      billablePercentage: number;
+    }[];
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1419,6 +1529,644 @@ export class DatabaseStorage implements IStorage {
       totalHours: Number(metric.totalHours) || 0,
       revenue: Number(metric.revenue) || 0
     }));
+  }
+
+  async getPortfolioMetrics(filters?: { 
+    startDate?: string; 
+    endDate?: string; 
+    clientId?: string;
+    status?: string;
+  }): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    status: string;
+    startDate: Date | null;
+    endDate: Date | null;
+    estimatedHours: number;
+    actualHours: number;
+    estimatedCost: number;
+    actualCost: number;
+    revenue: number;
+    profitMargin: number;
+    completionPercentage: number;
+    healthScore: string;
+  }[]> {
+    let query = db.select({
+      project: projects,
+      client: clients,
+      actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
+      actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+        CAST(${users.costRate} AS NUMERIC),
+        100
+      )), 0)::float`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`
+    })
+    .from(projects)
+    .leftJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(timeEntries, eq(timeEntries.projectId, projects.id))
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .groupBy(projects.id, clients.id);
+
+    // Apply filters
+    if (filters?.clientId) {
+      query = query.where(eq(projects.clientId, filters.clientId));
+    }
+    if (filters?.status) {
+      query = query.where(eq(projects.status, filters.status));
+    }
+
+    const results = await query;
+
+    // Process each project to calculate additional metrics
+    const processedResults = await Promise.all(results.map(async (row) => {
+      // Get estimated hours from latest estimate
+      const projectEstimates = await this.getEstimatesByProject(row.project.id);
+      let estimatedHours = 0;
+      let estimatedCost = 0;
+      
+      if (projectEstimates.length > 0) {
+        const approvedEstimate = projectEstimates.find(e => e.status === 'approved');
+        const estimate = approvedEstimate || projectEstimates[0];
+        
+        if (estimate) {
+          const lineItems = await this.getEstimateLineItems(estimate.id);
+          estimatedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
+          estimatedCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+        }
+      }
+
+      const actualHours = Number(row.actualHours) || 0;
+      const actualCost = Number(row.actualCost) || 0;
+      const revenue = Number(row.revenue) || 0;
+      const profitMargin = revenue > 0 ? ((revenue - actualCost) / revenue) * 100 : 0;
+      const completionPercentage = estimatedHours > 0 ? Math.min(100, (actualHours / estimatedHours) * 100) : 0;
+      
+      // Calculate health score based on budget and timeline
+      let healthScore: string;
+      if (completionPercentage < 50) {
+        healthScore = actualHours / estimatedHours < 0.6 ? 'green' : 'yellow';
+      } else if (completionPercentage < 80) {
+        healthScore = actualHours / estimatedHours < 0.85 ? 'yellow' : 'red';
+      } else {
+        healthScore = actualHours / estimatedHours <= 1.1 ? 'yellow' : 'red';
+      }
+
+      return {
+        projectId: row.project.id,
+        projectName: row.project.name,
+        clientName: row.client?.name || '',
+        status: row.project.status,
+        startDate: row.project.startDate,
+        endDate: row.project.endDate,
+        estimatedHours,
+        actualHours,
+        estimatedCost,
+        actualCost,
+        revenue,
+        profitMargin,
+        completionPercentage,
+        healthScore
+      };
+    }));
+
+    // Apply date filters if provided
+    if (filters?.startDate || filters?.endDate) {
+      return processedResults.filter(project => {
+        if (filters.startDate && project.startDate && project.startDate < new Date(filters.startDate)) {
+          return false;
+        }
+        if (filters.endDate && project.endDate && project.endDate > new Date(filters.endDate)) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    return processedResults;
+  }
+
+  async getEstimateAccuracy(filters?: {
+    startDate?: string;
+    endDate?: string;
+    clientId?: string;
+  }): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    originalEstimateHours: number;
+    currentEstimateHours: number;
+    actualHours: number;
+    hoursVariance: number;
+    hoursVariancePercentage: number;
+    originalEstimateCost: number;
+    currentEstimateCost: number;
+    actualCost: number;
+    costVariance: number;
+    costVariancePercentage: number;
+    changeOrderCount: number;
+    changeOrderValue: number;
+  }[]> {
+    let projectQuery = db.select()
+      .from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id));
+
+    if (filters?.clientId) {
+      projectQuery = projectQuery.where(eq(projects.clientId, filters.clientId));
+    }
+
+    const projectResults = await projectQuery;
+
+    const accuracyMetrics = await Promise.all(projectResults.map(async (row) => {
+      if (!row.projects) return null;
+
+      const project = row.projects;
+      const client = row.clients;
+
+      // Get all estimates for this project
+      const projectEstimates = await this.getEstimatesByProject(project.id);
+      
+      // Get original estimate (first one)
+      const originalEstimate = projectEstimates[projectEstimates.length - 1];
+      let originalEstimateHours = 0;
+      let originalEstimateCost = 0;
+      
+      if (originalEstimate) {
+        const lineItems = await this.getEstimateLineItems(originalEstimate.id);
+        originalEstimateHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
+        originalEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+      }
+      
+      // Get current estimate (latest approved or latest)
+      const currentEstimate = projectEstimates.find(e => e.status === 'approved') || projectEstimates[0];
+      let currentEstimateHours = 0;
+      let currentEstimateCost = 0;
+      
+      if (currentEstimate) {
+        const lineItems = await this.getEstimateLineItems(currentEstimate.id);
+        currentEstimateHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
+        currentEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+      }
+
+      // Get actual hours and costs
+      const actualMetrics = await db.select({
+        actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
+        actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+          (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${project.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+          CAST(${users.costRate} AS NUMERIC),
+          100
+        )), 0)::float`
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .where(eq(timeEntries.projectId, project.id));
+
+      const actualHours = Number(actualMetrics[0]?.actualHours) || 0;
+      const actualCost = Number(actualMetrics[0]?.actualCost) || 0;
+
+      // Get change orders
+      const changeOrdersData = await this.getChangeOrders(project.id);
+      const changeOrderCount = changeOrdersData.length;
+      const changeOrderValue = changeOrdersData
+        .filter(co => co.status === 'approved')
+        .reduce((sum, co) => sum + parseFloat(co.amount), 0);
+
+      // Calculate variances
+      const hoursVariance = actualHours - currentEstimateHours;
+      const hoursVariancePercentage = currentEstimateHours > 0 
+        ? ((hoursVariance / currentEstimateHours) * 100) 
+        : 0;
+      
+      const costVariance = actualCost - currentEstimateCost;
+      const costVariancePercentage = currentEstimateCost > 0 
+        ? ((costVariance / currentEstimateCost) * 100) 
+        : 0;
+
+      return {
+        projectId: project.id,
+        projectName: project.name,
+        clientName: client?.name || '',
+        originalEstimateHours,
+        currentEstimateHours,
+        actualHours,
+        hoursVariance,
+        hoursVariancePercentage,
+        originalEstimateCost,
+        currentEstimateCost,
+        actualCost,
+        costVariance,
+        costVariancePercentage,
+        changeOrderCount,
+        changeOrderValue
+      };
+    }));
+
+    return accuracyMetrics.filter(metric => metric !== null) as any[];
+  }
+
+  async getRevenueMetrics(filters?: {
+    startDate?: string;
+    endDate?: string;
+    clientId?: string;
+  }): Promise<{
+    summary: {
+      totalRevenue: number;
+      billedRevenue: number;
+      unbilledRevenue: number;
+      quotedRevenue: number;
+      pipelineRevenue: number;
+      realizationRate: number;
+    };
+    monthly: {
+      month: string;
+      revenue: number;
+      billedAmount: number;
+      unbilledAmount: number;
+      newContracts: number;
+      contractValue: number;
+    }[];
+    byClient: {
+      clientId: string;
+      clientName: string;
+      revenue: number;
+      billedAmount: number;
+      unbilledAmount: number;
+      projectCount: number;
+    }[];
+  }> {
+    // Build base query
+    let baseConditions = [];
+    if (filters?.startDate) {
+      baseConditions.push(gte(timeEntries.date, filters.startDate));
+    }
+    if (filters?.endDate) {
+      baseConditions.push(lte(timeEntries.date, filters.endDate));
+    }
+    
+    // Get summary metrics
+    const summaryQuery = db.select({
+      totalRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      billedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      unbilledRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`
+    })
+    .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .leftJoin(projects, eq(timeEntries.projectId, projects.id));
+
+    if (filters?.clientId) {
+      summaryQuery.where(and(eq(projects.clientId, filters.clientId), ...baseConditions));
+    } else if (baseConditions.length > 0) {
+      summaryQuery.where(and(...baseConditions));
+    }
+
+    const summaryResults = await summaryQuery;
+    
+    // Get quoted revenue from estimates
+    const estimateQuery = db.select({
+      quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.adjustedRate} AS NUMERIC)), 0)::float`
+    })
+    .from(estimates)
+    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+    .where(eq(estimates.status, 'approved'));
+
+    if (filters?.clientId) {
+      estimateQuery.where(eq(estimates.clientId, filters.clientId));
+    }
+
+    const estimateResults = await estimateQuery;
+    
+    // Get pipeline revenue (draft estimates)
+    const pipelineQuery = db.select({
+      pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.adjustedRate} AS NUMERIC)), 0)::float`
+    })
+    .from(estimates)
+    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+    .where(eq(estimates.status, 'draft'));
+
+    if (filters?.clientId) {
+      pipelineQuery.where(eq(estimates.clientId, filters.clientId));
+    }
+
+    const pipelineResults = await pipelineQuery;
+
+    const totalRevenue = Number(summaryResults[0]?.totalRevenue) || 0;
+    const billedRevenue = Number(summaryResults[0]?.billedRevenue) || 0;
+    const unbilledRevenue = Number(summaryResults[0]?.unbilledRevenue) || 0;
+    const quotedRevenue = Number(estimateResults[0]?.quotedRevenue) || 0;
+    const pipelineRevenue = Number(pipelineResults[0]?.pipelineRevenue) || 0;
+    const realizationRate = quotedRevenue > 0 ? (totalRevenue / quotedRevenue) * 100 : 0;
+
+    // Get monthly metrics
+    const monthlyQuery = db.select({
+      month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`
+    })
+    .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+    .groupBy(sql`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`)
+    .orderBy(sql`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`);
+
+    if (filters?.clientId) {
+      monthlyQuery.where(and(eq(projects.clientId, filters.clientId), ...baseConditions));
+    } else if (baseConditions.length > 0) {
+      monthlyQuery.where(and(...baseConditions));
+    }
+
+    const monthlyResults = await monthlyQuery;
+
+    // Get new contracts by month
+    const contractsQuery = db.select({
+      month: sql<string>`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`,
+      newContracts: sql<number>`COUNT(*)::int`,
+      contractValue: sql<number>`COALESCE(SUM(CAST(${projects.baselineBudget} AS NUMERIC)), 0)::float`
+    })
+    .from(projects)
+    .groupBy(sql`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`)
+    .orderBy(sql`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`);
+
+    if (filters?.clientId) {
+      contractsQuery.where(eq(projects.clientId, filters.clientId));
+    }
+
+    const contractsResults = await contractsQuery;
+
+    // Merge monthly data
+    const monthlyMap = new Map();
+    monthlyResults.forEach(row => {
+      monthlyMap.set(row.month, {
+        month: row.month,
+        revenue: Number(row.revenue) || 0,
+        billedAmount: Number(row.billedAmount) || 0,
+        unbilledAmount: Number(row.unbilledAmount) || 0,
+        newContracts: 0,
+        contractValue: 0
+      });
+    });
+
+    contractsResults.forEach(row => {
+      const existing = monthlyMap.get(row.month) || {
+        month: row.month,
+        revenue: 0,
+        billedAmount: 0,
+        unbilledAmount: 0,
+        newContracts: 0,
+        contractValue: 0
+      };
+      existing.newContracts = Number(row.newContracts) || 0;
+      existing.contractValue = Number(row.contractValue) || 0;
+      monthlyMap.set(row.month, existing);
+    });
+
+    const monthly = Array.from(monthlyMap.values());
+
+    // Get metrics by client
+    const clientQuery = db.select({
+      clientId: clients.id,
+      clientName: clients.name,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`,
+      projectCount: sql<number>`COUNT(DISTINCT ${projects.id})::int`
+    })
+    .from(clients)
+    .leftJoin(projects, eq(projects.clientId, clients.id))
+    .leftJoin(timeEntries, eq(timeEntries.projectId, projects.id))
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .groupBy(clients.id, clients.name)
+    .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${users.defaultRate} AS NUMERIC), 150) ELSE 0 END) DESC`);
+
+    if (filters?.clientId) {
+      clientQuery.where(eq(clients.id, filters.clientId));
+    }
+
+    const clientResults = await clientQuery;
+
+    const byClient = clientResults.map(row => ({
+      clientId: row.clientId,
+      clientName: row.clientName,
+      revenue: Number(row.revenue) || 0,
+      billedAmount: Number(row.billedAmount) || 0,
+      unbilledAmount: Number(row.unbilledAmount) || 0,
+      projectCount: Number(row.projectCount) || 0
+    }));
+
+    return {
+      summary: {
+        totalRevenue,
+        billedRevenue,
+        unbilledRevenue,
+        quotedRevenue,
+        pipelineRevenue,
+        realizationRate
+      },
+      monthly,
+      byClient
+    };
+  }
+
+  async getResourceUtilization(filters?: {
+    startDate?: string;
+    endDate?: string;
+    roleId?: string;
+  }): Promise<{
+    byPerson: {
+      personId: string;
+      personName: string;
+      role: string;
+      targetUtilization: number;
+      actualUtilization: number;
+      billableHours: number;
+      nonBillableHours: number;
+      totalCapacity: number;
+      revenue: number;
+      averageRate: number;
+    }[];
+    byRole: {
+      roleId: string;
+      roleName: string;
+      targetUtilization: number;
+      actualUtilization: number;
+      billableHours: number;
+      nonBillableHours: number;
+      totalCapacity: number;
+      headcount: number;
+    }[];
+    trends: {
+      week: string;
+      averageUtilization: number;
+      billablePercentage: number;
+    }[];
+  }> {
+    // Calculate date range for capacity calculations
+    const startDate = filters?.startDate ? new Date(filters.startDate) : new Date(new Date().setMonth(new Date().getMonth() - 3));
+    const endDate = filters?.endDate ? new Date(filters.endDate) : new Date();
+    const workDays = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) * (5/7); // Approximate work days
+    const hoursPerDay = 8;
+    const totalCapacity = workDays * hoursPerDay;
+
+    // Get utilization by person
+    let personQuery = db.select({
+      personId: users.id,
+      personName: users.name,
+      role: users.role,
+      targetUtilization: users.targetUtilization,
+      billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
+      nonBillableHours: sql<number>`COALESCE(SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultRate} AS NUMERIC),
+        150
+      ) ELSE 0 END), 0)::float`
+    })
+    .from(users)
+    .leftJoin(timeEntries, eq(timeEntries.personId, users.id))
+    .where(eq(users.isActive, true))
+    .groupBy(users.id, users.name, users.role, users.targetUtilization);
+
+    if (filters?.startDate) {
+      personQuery = personQuery.where(gte(timeEntries.date, filters.startDate));
+    }
+    if (filters?.endDate) {
+      personQuery = personQuery.where(lte(timeEntries.date, filters.endDate));
+    }
+
+    const personResults = await personQuery;
+
+    const byPerson = personResults.map(row => {
+      const billableHours = Number(row.billableHours) || 0;
+      const nonBillableHours = Number(row.nonBillableHours) || 0;
+      const totalHours = billableHours + nonBillableHours;
+      const actualUtilization = totalCapacity > 0 ? (totalHours / totalCapacity) * 100 : 0;
+      const revenue = Number(row.revenue) || 0;
+      const averageRate = billableHours > 0 ? revenue / billableHours : 0;
+
+      return {
+        personId: row.personId,
+        personName: row.personName,
+        role: row.role,
+        targetUtilization: Number(row.targetUtilization) || 80,
+        actualUtilization,
+        billableHours,
+        nonBillableHours,
+        totalCapacity,
+        revenue,
+        averageRate
+      };
+    });
+
+    // Get utilization by role
+    const roleQuery = db.select({
+      role: users.role,
+      targetUtilization: sql<number>`AVG(${users.targetUtilization})::float`,
+      billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
+      nonBillableHours: sql<number>`COALESCE(SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
+      headcount: sql<number>`COUNT(DISTINCT ${users.id})::int`
+    })
+    .from(users)
+    .leftJoin(timeEntries, eq(timeEntries.personId, users.id))
+    .where(eq(users.isActive, true))
+    .groupBy(users.role);
+
+    if (filters?.roleId) {
+      roleQuery.where(eq(users.role, filters.roleId));
+    }
+
+    const roleResults = await roleQuery;
+
+    const byRole = roleResults.map(row => {
+      const billableHours = Number(row.billableHours) || 0;
+      const nonBillableHours = Number(row.nonBillableHours) || 0;
+      const headcount = Number(row.headcount) || 1;
+      const roleTotalCapacity = totalCapacity * headcount;
+      const totalHours = billableHours + nonBillableHours;
+      const actualUtilization = roleTotalCapacity > 0 ? (totalHours / roleTotalCapacity) * 100 : 0;
+
+      return {
+        roleId: row.role,
+        roleName: row.role,
+        targetUtilization: Number(row.targetUtilization) || 80,
+        actualUtilization,
+        billableHours,
+        nonBillableHours,
+        totalCapacity: roleTotalCapacity,
+        headcount
+      };
+    });
+
+    // Get weekly trends
+    const trendQuery = db.select({
+      week: sql<string>`TO_CHAR(DATE_TRUNC('week', ${timeEntries.date}::date), 'YYYY-MM-DD')`,
+      totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
+      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
+      personCount: sql<number>`COUNT(DISTINCT ${timeEntries.personId})::int`
+    })
+    .from(timeEntries)
+    .groupBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`)
+    .orderBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`);
+
+    if (filters?.startDate) {
+      trendQuery.where(gte(timeEntries.date, filters.startDate));
+    }
+    if (filters?.endDate) {
+      trendQuery.where(lte(timeEntries.date, filters.endDate));
+    }
+
+    const trendResults = await trendQuery;
+
+    const trends = trendResults.map(row => {
+      const totalHours = Number(row.totalHours) || 0;
+      const billableHours = Number(row.billableHours) || 0;
+      const personCount = Number(row.personCount) || 1;
+      const weeklyCapacity = 40 * personCount; // 40 hours per week per person
+      const averageUtilization = weeklyCapacity > 0 ? (totalHours / weeklyCapacity) * 100 : 0;
+      const billablePercentage = totalHours > 0 ? (billableHours / totalHours) * 100 : 0;
+
+      return {
+        week: row.week,
+        averageUtilization,
+        billablePercentage
+      };
+    });
+
+    return {
+      byPerson,
+      byRole,
+      trends
+    };
   }
 }
 

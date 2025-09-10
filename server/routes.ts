@@ -123,6 +123,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Portfolio Reporting Endpoints
+  app.get("/api/reports/portfolio", requireAuth, async (req, res) => {
+    try {
+      // Only executives, admins, billing-admins and PMs can view portfolio reports
+      if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view portfolio reports" });
+      }
+      
+      const filters = {
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        clientId: req.query.clientId as string | undefined,
+        status: req.query.status as string | undefined
+      };
+      
+      const metrics = await storage.getPortfolioMetrics(filters);
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching portfolio metrics:", error);
+      res.status(500).json({ message: "Failed to fetch portfolio metrics" });
+    }
+  });
+
+  app.get("/api/reports/estimate-accuracy", requireAuth, async (req, res) => {
+    try {
+      // Only executives, admins, billing-admins and PMs can view estimate accuracy reports
+      if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view estimate accuracy reports" });
+      }
+      
+      const filters = {
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        clientId: req.query.clientId as string | undefined
+      };
+      
+      const accuracy = await storage.getEstimateAccuracy(filters);
+      res.json(accuracy);
+    } catch (error) {
+      console.error("Error fetching estimate accuracy:", error);
+      res.status(500).json({ message: "Failed to fetch estimate accuracy" });
+    }
+  });
+
+  app.get("/api/reports/revenue", requireAuth, async (req, res) => {
+    try {
+      // Only executives, admins, and billing-admins can view revenue reports
+      if (!["admin", "billing-admin", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view revenue reports" });
+      }
+      
+      const filters = {
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        clientId: req.query.clientId as string | undefined
+      };
+      
+      const revenue = await storage.getRevenueMetrics(filters);
+      res.json(revenue);
+    } catch (error) {
+      console.error("Error fetching revenue metrics:", error);
+      res.status(500).json({ message: "Failed to fetch revenue metrics" });
+    }
+  });
+
+  app.get("/api/reports/utilization", requireAuth, async (req, res) => {
+    try {
+      // Only executives, admins, billing-admins and PMs can view utilization reports
+      if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view utilization reports" });
+      }
+      
+      const filters = {
+        startDate: req.query.startDate as string | undefined,
+        endDate: req.query.endDate as string | undefined,
+        roleId: req.query.roleId as string | undefined
+      };
+      
+      const utilization = await storage.getResourceUtilization(filters);
+      res.json(utilization);
+    } catch (error) {
+      console.error("Error fetching utilization metrics:", error);
+      res.status(500).json({ message: "Failed to fetch utilization metrics" });
+    }
+  });
+
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
@@ -982,18 +1068,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Build filters based on user role and query params
       const filters: any = {};
       
-      // SECURITY: Regular employees can only see their own time entries
-      // Managers and above can see all entries
-      if (req.user?.role === "employee") {
-        filters.personId = req.user.id;
-      } else if (personId) {
-        // Admin, billing-admin, pm, executive can filter by specific person
-        filters.personId = personId;
-      } else if (!personId && !["admin", "billing-admin", "executive"].includes(req.user!.role)) {
-        // PMs default to seeing their own entries unless they specify a person
-        if (req.user?.role === "pm") {
+      // DEFAULT BEHAVIOR: Everyone sees their own entries in time tracking screen
+      // The ability to see others' entries is only used when explicitly requested
+      // (e.g., in project context with personId parameter)
+      
+      if (personId) {
+        // If a specific person is requested, check permissions
+        if (req.user?.role === "employee") {
+          // Employees can only see their own entries, ignore the personId parameter
           filters.personId = req.user.id;
+        } else {
+          // Admin, billing-admin, pm, executive can see the requested person's entries
+          filters.personId = personId;
         }
+      } else {
+        // No personId specified = default to current user's entries for EVERYONE
+        // This makes the time tracking screen personal for all users
+        filters.personId = req.user!.id;
       }
       
       // Add optional filters

@@ -9,7 +9,8 @@ import {
   DollarSign, 
   Users,
   UsersRound,
-  Palette 
+  Palette,
+  BarChart3 
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -85,6 +86,13 @@ export function Sidebar() {
             href="/estimates"
             icon={<FileText />}
             label="Estimates"
+          />
+          
+          <SidebarItem
+            href="/reports"
+            icon={<BarChart3 />}
+            label="Reports"
+            requiredRoles={["admin", "billing-admin", "pm", "executive"]}
           />
           
           <SidebarSection title="Operations" />
