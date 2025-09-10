@@ -2,6 +2,7 @@ import {
   users, clients, projects, roles, staff, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides,
+  projectEpics, projectStages, projectActivities, projectWorkstreams,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Staff, type InsertStaff,
@@ -35,6 +36,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
+  copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void>;
   
   // Roles
   getRoles(): Promise<Role[]>;
@@ -783,6 +785,70 @@ export class DatabaseStorage implements IStorage {
       monthlyRevenue,
       unbilledHours: Number(unbilledHours.total)
     };
+  }
+
+  async copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void> {
+    try {
+      await db.transaction(async (tx) => {
+        // Get all epics from the estimate
+        const epics = await tx.select().from(estimateEpics).where(eq(estimateEpics.estimateId, estimateId)).orderBy(estimateEpics.order);
+        
+        for (const epic of epics) {
+          // Create project epic
+          const [projectEpic] = await tx.insert(projectEpics).values({
+            projectId,
+            name: epic.name,
+            order: epic.order,
+          }).returning();
+          
+          // Get all stages for this epic
+          const stages = await tx.select().from(estimateStages).where(eq(estimateStages.epicId, epic.id)).orderBy(estimateStages.order);
+          
+          for (const stage of stages) {
+            // Create project stage
+            const [projectStage] = await tx.insert(projectStages).values({
+              epicId: projectEpic.id,
+              name: stage.name,
+              order: stage.order,
+            }).returning();
+            
+            // Get all activities for this stage
+            const activities = await tx.select().from(estimateActivities).where(eq(estimateActivities.stageId, stage.id)).orderBy(estimateActivities.order);
+            
+            for (const activity of activities) {
+              // Create project activity
+              await tx.insert(projectActivities).values({
+                stageId: projectStage.id,
+                name: activity.name,
+                order: activity.order,
+              });
+            }
+          }
+        }
+        
+        // Get all unique workstreams from estimate line items
+        const workstreams = await tx.select({
+          workstream: estimateLineItems.workstream
+        })
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, estimateId))
+        .groupBy(estimateLineItems.workstream);
+        
+        let workstreamOrder = 1;
+        for (const { workstream } of workstreams) {
+          if (workstream) {
+            await tx.insert(projectWorkstreams).values({
+              projectId,
+              name: workstream,
+              order: workstreamOrder++,
+            });
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error copying estimate structure to project:", error);
+      throw new Error(`Failed to copy estimate structure: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 }
 

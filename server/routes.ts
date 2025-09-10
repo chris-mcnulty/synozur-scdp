@@ -194,6 +194,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { estimateId } = req.body;
+      if (!estimateId) {
+        return res.status(400).json({ message: "Estimate ID is required" });
+      }
+
+      // Verify project exists
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Verify estimate exists and is approved
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+      
+      if (estimate.status !== 'approved') {
+        return res.status(400).json({ message: "Only approved estimates can be copied to projects" });
+      }
+
+      await storage.copyEstimateStructureToProject(estimateId, req.params.id);
+      res.json({ message: "Estimate structure copied to project successfully" });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to copy estimate structure:", error);
+      res.status(500).json({ 
+        message: "Failed to copy estimate structure", 
+        error: error.message 
+      });
+    }
+  });
+
   app.delete("/api/projects/:id", requireAuth, async (req, res) => {
     try {
       // Get the project first to check permissions
