@@ -1,7 +1,7 @@
 import { 
   users, clients, projects, roles, staff, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
-  invoiceBatches, invoiceLines, rateOverrides,
+  invoiceBatches, invoiceLines, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -12,7 +12,8 @@ import {
   type Expense, type InsertExpense,
   type ChangeOrder, type InsertChangeOrder,
   type InvoiceBatch, type InsertInvoiceBatch,
-  type InvoiceLine, type InsertInvoiceLine
+  type InvoiceLine, type InsertInvoiceLine,
+  type Sow, type InsertSow
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -103,6 +104,14 @@ export interface IStorage {
   createChangeOrder(changeOrder: InsertChangeOrder): Promise<ChangeOrder>;
   updateChangeOrder(id: string, changeOrder: Partial<InsertChangeOrder>): Promise<ChangeOrder>;
   deleteChangeOrder(id: string): Promise<void>;
+  
+  // SOWs (Statements of Work)
+  getSows(projectId: string): Promise<Sow[]>;
+  getSow(id: string): Promise<Sow | undefined>;
+  createSow(sow: InsertSow): Promise<Sow>;
+  updateSow(id: string, sow: Partial<InsertSow>): Promise<Sow>;
+  deleteSow(id: string): Promise<void>;
+  getProjectTotalBudget(projectId: string): Promise<number>;
   
   // Dashboard metrics
   getDashboardMetrics(): Promise<{
@@ -931,6 +940,97 @@ export class DatabaseStorage implements IStorage {
 
   async deleteChangeOrder(id: string): Promise<void> {
     await db.delete(changeOrders).where(eq(changeOrders.id, id));
+  }
+
+  // SOWs (Statements of Work)
+  async getSows(projectId: string): Promise<Sow[]> {
+    return await db.select()
+      .from(sows)
+      .where(eq(sows.projectId, projectId))
+      .orderBy(desc(sows.effectiveDate));
+  }
+
+  async getSow(id: string): Promise<Sow | undefined> {
+    const [sow] = await db.select()
+      .from(sows)
+      .where(eq(sows.id, id));
+    return sow || undefined;
+  }
+
+  async createSow(sow: InsertSow): Promise<Sow> {
+    const [created] = await db.insert(sows).values(sow).returning();
+    
+    // If this is an approved initial SOW, update the project's SOW value and date
+    if (created.type === 'initial' && created.status === 'approved') {
+      await db.update(projects)
+        .set({ 
+          sowValue: created.value,
+          sowDate: created.signedDate || created.effectiveDate,
+          hasSow: true
+        })
+        .where(eq(projects.id, created.projectId));
+    }
+    
+    return created;
+  }
+
+  async updateSow(id: string, updateSow: Partial<InsertSow>): Promise<Sow> {
+    const [updated] = await db.update(sows)
+      .set({
+        ...updateSow,
+        updatedAt: new Date()
+      })
+      .where(eq(sows.id, id))
+      .returning();
+    
+    // If status changed to approved, update project budget
+    if (updated.status === 'approved') {
+      const totalBudget = await this.getProjectTotalBudget(updated.projectId);
+      
+      // Update project with new total budget
+      await db.update(projects)
+        .set({ 
+          sowValue: totalBudget.toString(),
+          hasSow: true,
+          sowDate: updated.type === 'initial' ? (updated.signedDate || updated.effectiveDate) : undefined
+        })
+        .where(eq(projects.id, updated.projectId));
+    }
+    
+    return updated;
+  }
+
+  async deleteSow(id: string): Promise<void> {
+    // Get the SOW before deleting to update project if needed
+    const [sow] = await db.select().from(sows).where(eq(sows.id, id));
+    
+    if (sow) {
+      await db.delete(sows).where(eq(sows.id, id));
+      
+      // Recalculate project budget after deletion
+      const totalBudget = await this.getProjectTotalBudget(sow.projectId);
+      
+      await db.update(projects)
+        .set({ 
+          sowValue: totalBudget > 0 ? totalBudget.toString() : null,
+          hasSow: totalBudget > 0
+        })
+        .where(eq(projects.id, sow.projectId));
+    }
+  }
+
+  async getProjectTotalBudget(projectId: string): Promise<number> {
+    const approvedSows = await db.select()
+      .from(sows)
+      .where(and(
+        eq(sows.projectId, projectId),
+        eq(sows.status, 'approved')
+      ));
+    
+    return approvedSows.reduce((total, sow) => {
+      const value = parseFloat(sow.value || '0');
+      return total + value;
+    }, 0);
   }
 
   async getDashboardMetrics(): Promise<{

@@ -282,7 +282,29 @@ export const expenses = pgTable("expenses", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Change orders
+// SOWs (Statements of Work) - One-to-many relationship with projects
+export const sows = pgTable("sows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  type: text("type").notNull().default("initial"), // "initial" or "change_order"
+  name: text("name").notNull(), // e.g., "Initial SOW", "Change Order #1"
+  description: text("description"),
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(), // Dollar value
+  hours: decimal("hours", { precision: 10, scale: 2 }), // Optional hour budget
+  documentUrl: text("document_url"), // Link to uploaded document
+  documentName: text("document_name"), // Original filename
+  signedDate: date("signed_date"),
+  effectiveDate: date("effective_date").notNull(),
+  expirationDate: date("expiration_date"),
+  status: text("status").notNull().default("draft"), // draft, pending, approved, rejected, expired
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+// Keep change orders for backward compatibility but it will be replaced by SOWs with type="change_order"
 export const changeOrders = pgTable("change_orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id),
@@ -566,6 +588,12 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({
   createdAt: true,
 });
 
+export const insertSowSchema = createInsertSchema(sows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
   id: true,
   createdAt: true,
@@ -623,6 +651,9 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
+
+export type Sow = typeof sows.$inferSelect;
+export type InsertSow = z.infer<typeof insertSowSchema>;
 export type InvoiceBatch = typeof invoiceBatches.$inferSelect;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type RateOverride = typeof rateOverrides.$inferSelect;

@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema } from "@shared/schema";
 import { z } from "zod";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 
@@ -486,6 +486,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting change order:", error);
       res.status(500).json({ message: "Failed to delete change order" });
+    }
+  });
+
+  // SOWs (Statements of Work)
+  app.get("/api/projects/:id/sows", requireAuth, async (req, res) => {
+    try {
+      const sows = await storage.getSows(req.params.id);
+      res.json(sows);
+    } catch (error) {
+      console.error("Error fetching SOWs:", error);
+      res.status(500).json({ message: "Failed to fetch SOWs" });
+    }
+  });
+
+  app.get("/api/sows/:id", requireAuth, async (req, res) => {
+    try {
+      const sow = await storage.getSow(req.params.id);
+      if (!sow) {
+        return res.status(404).json({ message: "SOW not found" });
+      }
+      res.json(sow);
+    } catch (error) {
+      console.error("Error fetching SOW:", error);
+      res.status(500).json({ message: "Failed to fetch SOW" });
+    }
+  });
+
+  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const insertData = insertSowSchema.parse({
+        ...req.body,
+        projectId: req.params.id
+      });
+      const sow = await storage.createSow(insertData);
+      res.status(201).json(sow);
+    } catch (error: any) {
+      console.error("Error creating SOW:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid SOW data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create SOW" });
+    }
+  });
+
+  app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const sow = await storage.updateSow(req.params.id, req.body);
+      res.json(sow);
+    } catch (error) {
+      console.error("Error updating SOW:", error);
+      res.status(500).json({ message: "Failed to update SOW" });
+    }
+  });
+
+  app.delete("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteSow(req.params.id);
+      res.json({ message: "SOW deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting SOW:", error);
+      res.status(500).json({ message: "Failed to delete SOW" });
+    }
+  });
+
+  app.post("/api/sows/:id/approve", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const sow = await storage.updateSow(req.params.id, { 
+        status: "approved",
+        approvedBy: req.user?.id,
+        approvedAt: new Date()
+      });
+      res.json(sow);
+    } catch (error) {
+      console.error("Error approving SOW:", error);
+      res.status(500).json({ message: "Failed to approve SOW" });
     }
   });
 
