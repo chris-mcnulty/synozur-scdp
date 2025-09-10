@@ -101,30 +101,86 @@ export default function TimeTracking() {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
         
-        // Show success with any warnings
-        if (data.warnings && data.warnings.length > 0) {
+        // Handle complete failure (all rows failed)
+        if (data.errors && data.errors.length > 0 && data.imported === 0) {
+          // Create detailed error report
+          const errorDetails = [];
+          
+          // Add missing projects/resources summary
+          if (data.summary?.missingProjects?.length > 0) {
+            errorDetails.push(`❌ Missing Projects: ${data.summary.missingProjects.join(', ')}`);
+          }
+          if (data.summary?.missingResources?.length > 0) {
+            errorDetails.push(`❌ Missing Users: ${data.summary.missingResources.join(', ')}`);
+          }
+          
+          // Show first few specific row errors
+          const firstErrors = data.errors.filter((e: string) => !e.startsWith('MISSING')).slice(0, 3);
+          if (firstErrors.length > 0) {
+            errorDetails.push('', 'Sample errors:');
+            firstErrors.forEach((err: string) => errorDetails.push(`• ${err}`));
+          }
+          
+          // Create downloadable error report
+          const fullErrorReport = [
+            `Import Error Report - ${new Date().toLocaleString()}`,
+            `================================`,
+            `Total Rows: ${data.summary?.totalRows || data.errors.length}`,
+            `Successfully Imported: ${data.imported}`,
+            `Failed: ${data.errors.length}`,
+            '',
+            'Missing Data:',
+            ...data.summary?.missingProjects?.map((p: string) => `  - Project: ${p}`) || [],
+            ...data.summary?.missingResources?.map((r: string) => `  - User: ${r}`) || [],
+            '',
+            'All Errors:',
+            ...data.errors
+          ].join('\n');
+          
+          // Create download link
+          const blob = new Blob([fullErrorReport], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          
+          toast({
+            title: "Import Failed - All Rows Had Errors",
+            description: (
+              <div className="space-y-2 text-sm">
+                <div>{errorDetails.join('\n')}</div>
+                <a 
+                  href={url}
+                  download={`import-errors-${Date.now()}.txt`}
+                  className="inline-flex items-center justify-center rounded-md bg-secondary px-3 py-1 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary/80 mt-2"
+                >
+                  📥 Download Full Error Report
+                </a>
+              </div>
+            ),
+            variant: "destructive",
+            duration: 15000, // Show for 15 seconds
+          });
+        }
+        // Handle partial success
+        else if (data.errors && data.errors.length > 0) {
+          toast({
+            title: "Import Partially Successful",
+            description: `✅ ${data.imported} entries imported, ❌ ${data.errors.length} failed. Missing: ${data.summary?.missingProjects?.join(', ') || 'none'}`,
+            variant: "destructive",
+            duration: 10000,
+          });
+        }
+        // Handle warnings
+        else if (data.warnings && data.warnings.length > 0) {
           toast({
             title: "Import completed with warnings",
-            description: `${data.message}. Check console for details.`,
+            description: `${data.message}. ${data.warnings[0]}`,
           });
-          console.log('Import warnings:', data.warnings);
-        } else {
+        }
+        // Complete success
+        else {
           toast({
             title: "Import completed successfully",
             description: data.message,
           });
-        }
-        
-        // Show errors if any
-        if (data.errors && data.errors.length > 0) {
-          console.error('Import errors:', data.errors);
-          setTimeout(() => {
-            toast({
-              title: `${data.errors.length} rows had errors`,
-              description: "Check console for details. Common issues: unknown projects or resources.",
-              variant: "destructive",
-            });
-          }, 500);
         }
       },
       onError: (error: any) => {
