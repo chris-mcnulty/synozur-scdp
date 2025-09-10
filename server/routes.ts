@@ -1176,12 +1176,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const users = await storage.getUsers();
           const userMap = new Map();
           users.forEach(u => {
-            // Map by full name and email
-            if (u.name) userMap.set(u.name.toLowerCase(), u.id);
-            if (u.email) userMap.set(u.email.toLowerCase(), u.id);
+            // Map by full name (from name field)
+            if (u.name) {
+              userMap.set(u.name.toLowerCase(), u.id);
+              // Also map by just the name without spaces in case of formatting differences
+              userMap.set(u.name.replace(/\s+/g, '').toLowerCase(), u.id);
+            }
+            // Map by email
+            if (u.email) {
+              userMap.set(u.email.toLowerCase(), u.id);
+              // Also map by email prefix (before @)
+              const emailPrefix = u.email.split('@')[0];
+              userMap.set(emailPrefix.toLowerCase(), u.id);
+            }
+            // Map by firstName + lastName if both exist
             if (u.firstName && u.lastName) {
               userMap.set(`${u.firstName} ${u.lastName}`.toLowerCase(), u.id);
+              userMap.set(`${u.firstName}.${u.lastName}`.toLowerCase(), u.id);
             }
+            // Map by just firstName or lastName if they exist
+            if (u.firstName) userMap.set(u.firstName.toLowerCase(), u.id);
+            if (u.lastName) userMap.set(u.lastName.toLowerCase(), u.id);
           });
 
           // Track unique missing projects and resources for summary
