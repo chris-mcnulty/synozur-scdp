@@ -20,54 +20,6 @@ import {
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient } from "@/lib/types";
 
-// Mock project data for demo
-const mockProjects = [
-  {
-    id: "1",
-    name: "AI Strategy Implementation",
-    code: "PRJ-2024-001",
-    status: "On Track",
-    startDate: "2024-01-15",
-    endDate: "2024-03-15",
-    baselineBudget: "125000",
-    client: { id: "1", name: "TechCorp Inc" },
-    pm: "Maria Rodriguez",
-    budget: "$125,000",
-    burned: "$87,500",
-    burnPercentage: 70,
-    dueDate: "Mar 15, 2024"
-  },
-  {
-    id: "2",
-    name: "Digital Transformation",
-    code: "PRJ-2024-002",
-    status: "At Risk",
-    startDate: "2024-02-01",
-    endDate: "2024-04-30",
-    baselineBudget: "890000",
-    client: { id: "2", name: "Global Manufacturing" },
-    pm: "David Kim",
-    budget: "$890,000",
-    burned: "$445,000",
-    burnPercentage: 50,
-    dueDate: "Apr 30, 2024"
-  },
-  {
-    id: "3",
-    name: "Market Analysis",
-    code: "PRJ-2024-003",
-    status: "On Track",
-    startDate: "2024-01-01",
-    endDate: "2024-02-28",
-    baselineBudget: "65000",
-    client: { id: "3", name: "FinServ Partners" },
-    pm: "Jennifer Walsh",
-    budget: "$65,000",
-    burned: "$52,000",
-    burnPercentage: 80,
-    dueDate: "Feb 28, 2024"
-  }
-];
 
 export default function Dashboard() {
   const [estimationModalOpen, setEstimationModalOpen] = useState(false);
@@ -91,7 +43,7 @@ export default function Dashboard() {
     console.log("Edit project:", projectId);
   };
 
-  const selectedProjectData = mockProjects.find(p => p.id === selectedProject);
+  const selectedProjectData = projects?.find(p => p.id === selectedProject);
 
   return (
     <Layout>
@@ -201,14 +153,37 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {mockProjects.map((project, index) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      onView={handleViewProject}
-                      onEdit={handleEditProject}
-                    />
-                  ))}
+                  {projectsLoading ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-4 text-center text-muted-foreground">
+                        Loading projects...
+                      </td>
+                    </tr>
+                  ) : projects && projects.length > 0 ? (
+                    projects
+                      .filter(project => project.status === 'active')
+                      .map((project) => (
+                        <ProjectCard
+                          key={project.id}
+                          project={{
+                            ...project,
+                            pm: project.pm || 'Unassigned',
+                            budget: project.retainerTotal ? `$${Number(project.retainerTotal).toLocaleString()}` : 'Not set',
+                            burned: '$0', // TODO: Calculate from time entries
+                            burnPercentage: 0, // TODO: Calculate actual burn percentage
+                            dueDate: project.endDate ? new Date(project.endDate).toLocaleDateString() : 'Not set'
+                          }}
+                          onView={handleViewProject}
+                          onEdit={handleEditProject}
+                        />
+                      ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-4 text-center text-muted-foreground">
+                        No active projects found
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
