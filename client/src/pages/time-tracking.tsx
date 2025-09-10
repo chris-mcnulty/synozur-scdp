@@ -179,8 +179,38 @@ export default function TimeTracking() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => {
-                window.open('/api/time-entries/template', '_blank');
+              onClick={async () => {
+                try {
+                  const sessionId = localStorage.getItem('sessionId');
+                  const response = await fetch('/api/time-entries/template', {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error('Failed to download template');
+                  }
+                  
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'time-entries-template.xlsx';
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  
+                  toast({
+                    title: "Template downloaded",
+                    description: "Check your downloads folder for the template file.",
+                  });
+                } catch (error) {
+                  toast({
+                    title: "Download failed",
+                    description: "Unable to download the template. Please try again.",
+                    variant: "destructive",
+                  });
+                }
               }}
               data-testid="button-download-template"
             >
@@ -189,9 +219,39 @@ export default function TimeTracking() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                const params = new URLSearchParams();
-                window.open(`/api/time-entries/export?${params.toString()}`, '_blank');
+              onClick={async () => {
+                try {
+                  const sessionId = localStorage.getItem('sessionId');
+                  const params = new URLSearchParams();
+                  const response = await fetch(`/api/time-entries/export?${params.toString()}`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error('Failed to export entries');
+                  }
+                  
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `time-entries-${new Date().toISOString().split('T')[0]}.xlsx`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  
+                  toast({
+                    title: "Export completed",
+                    description: "Your time entries have been exported successfully.",
+                  });
+                } catch (error) {
+                  toast({
+                    title: "Export failed",
+                    description: "Unable to export time entries. Please try again.",
+                    variant: "destructive",
+                  });
+                }
               }}
               data-testid="button-export-entries"
             >
