@@ -830,26 +830,76 @@ export class DatabaseStorage implements IStorage {
     unbilledHours: number;
   }> {
     // Get active projects count
-    const [projectCount] = await db.select({ count: sql<number>`count(*)` })
+    const [projectCount] = await db.select({ count: sql<number>`count(*)::int` })
       .from(projects)
       .where(eq(projects.status, 'active'));
 
-    // Get unbilled hours
-    const [unbilledHours] = await db.select({ 
-      total: sql<number>`coalesce(sum(${timeEntries.hours}), 0)` 
+    // Get current month start and end dates
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const monthStartStr = monthStart.toISOString().split('T')[0];
+    const monthEndStr = monthEnd.toISOString().split('T')[0];
+
+    // Calculate utilization rate: (billable hours / total hours) * 100
+    const [utilizationData] = await db.select({
+      billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} = true THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)`,
+      totalHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)`
     })
       .from(timeEntries)
-      .where(and(eq(timeEntries.billable, true), eq(timeEntries.billedFlag, false)));
+      .where(and(
+        gte(timeEntries.date, monthStartStr),
+        lte(timeEntries.date, monthEndStr)
+      ));
 
-    // Calculate utilization and revenue (simplified for demo)
-    const utilizationRate = 87; // Would be calculated from actual data
-    const monthlyRevenue = 485000; // Would be calculated from invoice batches
+    const utilizationRate = utilizationData.totalHours > 0 
+      ? Math.round((utilizationData.billableHours / utilizationData.totalHours) * 100)
+      : 0;
+
+    // Calculate monthly revenue from billable time entries
+    // First get all billable time entries for current month with their projects and users
+    const billableEntries = await db.select({
+      hours: timeEntries.hours,
+      personId: timeEntries.personId,
+      projectId: timeEntries.projectId,
+      date: timeEntries.date,
+      userId: users.id,
+      userRate: users.defaultRate,
+      projectChargeRate: projects.chargeRate
+    })
+      .from(timeEntries)
+      .innerJoin(users, eq(timeEntries.personId, users.id))
+      .innerJoin(projects, eq(timeEntries.projectId, projects.id))
+      .where(and(
+        eq(timeEntries.billable, true),
+        gte(timeEntries.date, monthStartStr),
+        lte(timeEntries.date, monthEndStr)
+      ));
+
+    // Calculate revenue: sum of (hours * applicable rate)
+    let monthlyRevenue = 0;
+    for (const entry of billableEntries) {
+      // Use project charge rate if available, otherwise use user's default rate
+      const rate = entry.projectChargeRate || entry.userRate || 150; // Default fallback rate
+      const hours = Number(entry.hours) || 0;
+      monthlyRevenue += hours * Number(rate);
+    }
+
+    // Get unbilled hours (cast to numeric for proper calculation)
+    const [unbilledHours] = await db.select({ 
+      total: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)` 
+    })
+      .from(timeEntries)
+      .where(and(
+        eq(timeEntries.billable, true), 
+        eq(timeEntries.billedFlag, false)
+      ));
 
     return {
-      activeProjects: Number(projectCount.count),
-      utilizationRate,
-      monthlyRevenue,
-      unbilledHours: Number(unbilledHours.total)
+      activeProjects: Number(projectCount.count) || 0,
+      utilizationRate: Number(utilizationRate) || 0,
+      monthlyRevenue: Math.round(monthlyRevenue) || 0,
+      unbilledHours: Math.round(Number(unbilledHours.total)) || 0
     };
   }
 
@@ -1202,11 +1252,11 @@ export class DatabaseStorage implements IStorage {
     // Get all time entries for the project grouped by month
     const timeMetrics = await db.select({
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
-      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
-      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
+      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        ${users.defaultChargeRate},
+        CAST(${users.defaultRate} AS NUMERIC),
         150
       ) ELSE 0 END)::float`
     })
@@ -1219,7 +1269,7 @@ export class DatabaseStorage implements IStorage {
     // Get expenses grouped by month
     const expenseMetrics = await db.select({
       month: sql<string>`TO_CHAR(${expenses.date}::date, 'YYYY-MM')`,
-      expenseAmount: sql<number>`SUM(${expenses.amount})::float`
+      expenseAmount: sql<number>`SUM(CAST(${expenses.amount} AS NUMERIC))::float`
     })
     .from(expenses)
     .where(eq(expenses.projectId, projectId))
@@ -1287,10 +1337,10 @@ export class DatabaseStorage implements IStorage {
 
     // Get actual hours and revenue consumed
     const [actualMetrics] = await db.select({
-      actualHours: sql<number>`COALESCE(SUM(${timeEntries.hours}), 0)::float`,
-      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+      actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        ${users.defaultChargeRate},
+        CAST(${users.defaultRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
     })
@@ -1300,7 +1350,7 @@ export class DatabaseStorage implements IStorage {
 
     // Get expenses
     const [expenseMetrics] = await db.select({
-      totalExpenses: sql<number>`COALESCE(SUM(${expenses.amount}), 0)::float`
+      totalExpenses: sql<number>`COALESCE(SUM(CAST(${expenses.amount} AS NUMERIC)), 0)::float`
     })
     .from(expenses)
     .where(eq(expenses.projectId, projectId));
@@ -1346,12 +1396,12 @@ export class DatabaseStorage implements IStorage {
     const teamMetrics = await db.select({
       personId: users.id,
       personName: users.name,
-      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
-      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
-      totalHours: sql<number>`SUM(${timeEntries.hours})::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
+      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
+      totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${users.id} LIMIT 1),
-        ${users.defaultChargeRate},
+        CAST(${users.defaultRate} AS NUMERIC),
         150
       ) ELSE 0 END)::float`
     })
