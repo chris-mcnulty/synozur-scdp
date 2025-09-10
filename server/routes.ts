@@ -956,6 +956,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export time entries to Excel
+  app.get("/api/time-entries/export", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
+      
+      const filters: any = {};
+      if (personId) filters.personId = personId;
+      if (projectId) filters.projectId = projectId;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+
+      const timeEntries = await storage.getTimeEntries(filters);
+      const xlsx = await import("xlsx");
+      
+      const worksheetData = [
+        ["Time Entries Export"],
+        ["Date", "Person", "Project", "Description", "Hours", "Billable", "Phase"],
+      ];
+
+      for (const entry of timeEntries) {
+        worksheetData.push([
+          entry.date,
+          entry.person?.name || "Unknown",
+          entry.project?.name || "No Project",
+          entry.description,
+          entry.hours,
+          entry.billable ? "Yes" : "No",
+          entry.phase || "N/A"
+        ]);
+      }
+
+      const ws = xlsx.utils.aoa_to_sheet(worksheetData);
+      ws['!cols'] = [
+        { wch: 12 }, // Date
+        { wch: 20 }, // Person
+        { wch: 25 }, // Project
+        { wch: 40 }, // Description
+        { wch: 8 },  // Hours
+        { wch: 10 }, // Billable
+        { wch: 15 }, // Phase
+      ];
+
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, "Time Entries");
+      
+      const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="time-entries-${new Date().toISOString().split('T')[0]}.xlsx"`);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error exporting time entries:", error);
+      res.status(500).json({ message: "Failed to export time entries" });
+    }
+  });
+
+  // Download time entry import template
+  app.get("/api/time-entries/template", requireAuth, async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      
+      const worksheetData = [
+        ["Time Entries Import Template"],
+        ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Keep the header row intact."],
+        ["Date", "Project Name", "Description", "Hours", "Billable", "Phase"],
+        ["2024-01-15", "Example Project", "Example: Frontend development work", "8", "TRUE", "Development"],
+        ["2024-01-16", "Example Project", "Example: Code review and testing", "4", "TRUE", "QA"],
+        ["", "", "", "", "TRUE", ""],
+      ];
+
+      // Add more empty rows for user input
+      for (let i = 0; i < 50; i++) {
+        worksheetData.push(["", "", "", "", "TRUE", ""]);
+      }
+
+      const ws = xlsx.utils.aoa_to_sheet(worksheetData);
+      ws['!cols'] = [
+        { wch: 12 }, // Date
+        { wch: 25 }, // Project Name
+        { wch: 40 }, // Description
+        { wch: 8 },  // Hours
+        { wch: 10 }, // Billable
+        { wch: 15 }, // Phase
+      ];
+
+      const wb = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(wb, ws, "Time Entry Template");
+      
+      const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", "attachment; filename=\"time-entry-template.xlsx\"");
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error generating template:", error);
+      res.status(500).json({ message: "Failed to generate template" });
+    }
+  });
+
+  // Import time entries from Excel
+  app.post("/api/time-entries/import", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const multer = await import("multer");
+      const upload = multer.default({ storage: multer.default.memoryStorage() });
+      
+      upload.single("file")(req, res, async (uploadError) => {
+        if (uploadError) {
+          return res.status(400).json({ message: "File upload failed" });
+        }
+
+        if (!req.file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        try {
+          const xlsx = await import("xlsx");
+          const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const data = xlsx.utils.sheet_to_json(worksheet, { range: 2 }); // Skip header rows
+          
+          const importResults = [];
+          const errors = [];
+          
+          // Get all projects for lookup
+          const projects = await storage.getProjects();
+          const projectMap = new Map(projects.map(p => [p.name.toLowerCase(), p.id]));
+
+          for (let i = 0; i < data.length; i++) {
+            const row = data[i] as any;
+            
+            // Skip empty rows
+            if (!row.Date && !row["Project Name"] && !row.Description) continue;
+            
+            try {
+              // Find project by name
+              const projectId = projectMap.get(row["Project Name"]?.toLowerCase());
+              if (!projectId) {
+                errors.push(`Row ${i + 3}: Project "${row["Project Name"]}" not found`);
+                continue;
+              }
+              
+              const timeEntryData = {
+                date: row.Date,
+                projectId: projectId,
+                description: row.Description || "",
+                hours: parseFloat(row.Hours) || 0,
+                billable: row.Billable === "TRUE" || row.Billable === true,
+                phase: row.Phase || "",
+                personId: req.user!.id
+              };
+              
+              const validatedData = insertTimeEntrySchema.parse(timeEntryData);
+              const timeEntry = await storage.createTimeEntry(validatedData);
+              importResults.push(timeEntry);
+            } catch (error) {
+              errors.push(`Row ${i + 3}: ${error instanceof Error ? error.message : "Invalid data"}`);
+            }
+          }
+          
+          res.json({
+            success: true,
+            imported: importResults.length,
+            errors: errors,
+            message: `Successfully imported ${importResults.length} time entries${errors.length > 0 ? ` with ${errors.length} errors` : ""}`
+          });
+        } catch (error) {
+          console.error("Error processing file:", error);
+          res.status(400).json({ message: "Invalid file format or data" });
+        }
+      });
+    } catch (error) {
+      console.error("Error importing time entries:", error);
+      res.status(500).json({ message: "Failed to import time entries" });
+    }
+  });
+
   // Expenses
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {

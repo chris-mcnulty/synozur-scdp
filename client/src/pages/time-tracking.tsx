@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -77,6 +77,66 @@ export default function TimeTracking() {
     createTimeEntryMutation.mutate(data);
   };
 
+  // Import component
+  const ImportTimeEntriesButton = () => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const importMutation = useMutation({
+      mutationFn: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch('/api/time-entries/import', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        return response.json();
+      },
+      onSuccess: (data) => {
+        queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+        toast({
+          title: "Import completed",
+          description: data.message,
+        });
+      },
+      onError: (error: any) => {
+        toast({
+          title: "Import failed",
+          description: error.message || "Failed to import time entries",
+          variant: "destructive",
+        });
+      },
+    });
+
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        importMutation.mutate(file);
+      }
+    };
+
+    return (
+      <>
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={handleFileSelect}
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+        />
+        <Button
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importMutation.isPending}
+          data-testid="button-import-entries"
+        >
+          <Upload className="w-4 h-4 mr-2" />
+          {importMutation.isPending ? "Importing..." : "Import Entries"}
+        </Button>
+      </>
+    );
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -87,6 +147,30 @@ export default function TimeTracking() {
             <p className="text-muted-foreground" data-testid="time-tracking-subtitle">
               Log your daily hours and track project progress
             </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                window.open('/api/time-entries/template', '_blank');
+              }}
+              data-testid="button-download-template"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              Download Template
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const params = new URLSearchParams();
+                window.open(`/api/time-entries/export?${params.toString()}`, '_blank');
+              }}
+              data-testid="button-export-entries"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export Entries
+            </Button>
+            <ImportTimeEntriesButton />
           </div>
         </div>
 
