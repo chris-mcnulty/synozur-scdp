@@ -1019,22 +1019,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const worksheetData = [
         ["Time Entries Import Template"],
-        ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Keep the header row intact."],
-        ["Date", "Project Name", "Description", "Hours", "Billable", "Phase"],
-        ["2024-01-15", "Example Project", "Example: Frontend development work", "8", "TRUE", "Development"],
-        ["2024-01-16", "Example Project", "Example: Code review and testing", "4", "TRUE", "QA"],
-        ["", "", "", "", "TRUE", ""],
+        ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact."],
+        ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", "Phase"],
+        ["2024-01-15", "Example Project", "John Smith", "Example: Frontend development work", "8", "TRUE", "Development"],
+        ["2024-01-16", "Example Project", "Jane Doe", "Example: Code review and testing", "4", "TRUE", "QA"],
+        ["", "", "", "", "", "TRUE", ""],
       ];
 
       // Add more empty rows for user input
       for (let i = 0; i < 50; i++) {
-        worksheetData.push(["", "", "", "", "TRUE", ""]);
+        worksheetData.push(["", "", "", "", "", "TRUE", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
       ws['!cols'] = [
         { wch: 12 }, // Date
         { wch: 25 }, // Project Name
+        { wch: 25 }, // Resource Name
         { wch: 40 }, // Description
         { wch: 8 },  // Hours
         { wch: 10 }, // Billable
@@ -1079,10 +1080,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           const importResults = [];
           const errors = [];
+          const warnings = [];
           
-          // Get all projects for lookup
+          // Get all projects and users for lookup
           const projects = await storage.getProjects();
           const projectMap = new Map(projects.map(p => [p.name.toLowerCase(), p.id]));
+          
+          const users = await storage.getUsers();
+          const userMap = new Map();
+          users.forEach(u => {
+            // Map by full name and email
+            userMap.set(u.name.toLowerCase(), u.id);
+            userMap.set(u.email.toLowerCase(), u.id);
+            if (u.firstName && u.lastName) {
+              userMap.set(`${u.firstName} ${u.lastName}`.toLowerCase(), u.id);
+            }
+          });
 
           for (let i = 0; i < data.length; i++) {
             const row = data[i] as any;
@@ -1094,8 +1107,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Find project by name
               const projectId = projectMap.get(row["Project Name"]?.toLowerCase());
               if (!projectId) {
-                errors.push(`Row ${i + 3}: Project "${row["Project Name"]}" not found`);
+                errors.push(`Row ${i + 3}: Project "${row["Project Name"]}" not found. Please create the project first or check spelling.`);
                 continue;
+              }
+              
+              // Find resource/person by name
+              let personId = req.user!.id; // Default to current user
+              const resourceName = row["Resource Name"]?.trim();
+              
+              if (resourceName) {
+                const foundPersonId = userMap.get(resourceName.toLowerCase());
+                
+                if (foundPersonId) {
+                  // Check permissions: only admin, billing-admin, pm, and executive can assign to others
+                  if (["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+                    personId = foundPersonId;
+                  } else if (foundPersonId !== req.user!.id) {
+                    errors.push(`Row ${i + 3}: You don't have permission to create entries for "${resourceName}". Entry will be assigned to you instead.`);
+                    warnings.push(`Row ${i + 3}: Entry assigned to ${req.user!.name} instead of ${resourceName}`);
+                  } else {
+                    personId = foundPersonId;
+                  }
+                } else {
+                  // Resource not found
+                  if (["admin", "billing-admin"].includes(req.user!.role)) {
+                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Consider creating this user. Entry assigned to Unknown.`);
+                    // Note: You might want to create an "Unknown" user in the system
+                    // For now, assign to the current user
+                    personId = req.user!.id;
+                  } else {
+                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you instead.`);
+                    personId = req.user!.id;
+                  }
+                }
               }
               
               const timeEntryData = {
@@ -1105,7 +1149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 hours: parseFloat(row.Hours) || 0,
                 billable: row.Billable === "TRUE" || row.Billable === true,
                 phase: row.Phase || "",
-                personId: req.user!.id
+                personId: personId
               };
               
               const validatedData = insertTimeEntrySchema.parse(timeEntryData);
@@ -1120,7 +1164,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             success: true,
             imported: importResults.length,
             errors: errors,
-            message: `Successfully imported ${importResults.length} time entries${errors.length > 0 ? ` with ${errors.length} errors` : ""}`
+            warnings: warnings,
+            message: `Successfully imported ${importResults.length} time entries${errors.length > 0 ? ` with ${errors.length} errors` : ""}${warnings.length > 0 ? ` and ${warnings.length} warnings` : ""}`
           });
         } catch (error) {
           console.error("Error processing file:", error);
