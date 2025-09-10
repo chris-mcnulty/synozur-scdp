@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, TrendingUp, FileText, DollarSign } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, TrendingUp, FileText, DollarSign, Eye } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
@@ -284,14 +285,16 @@ export default function Projects() {
                   )}
                   
                   <div className="flex space-x-2 pt-2">
-                    <Button 
-                      size="sm" 
-                      className="flex-1"
-                      onClick={() => console.log('View project:', project.id)}
-                      data-testid={`button-view-project-${project.id}`}
-                    >
-                      View Details
-                    </Button>
+                    <Link href={`/projects/${project.id}`} className="flex-1">
+                      <Button 
+                        size="sm" 
+                        className="w-full"
+                        data-testid={`button-view-project-${project.id}`}
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        View Analytics
+                      </Button>
+                    </Link>
                     <Button 
                       size="sm" 
                       variant="outline"

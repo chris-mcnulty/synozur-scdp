@@ -228,6 +228,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/projects/:id/analytics", requireAuth, async (req, res) => {
+    try {
+      // Verify project exists
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Check user permissions - only allow admin, billing-admin, pm, and executive roles
+      const user = req.user!;
+      const allowedRoles = ["admin", "billing-admin", "pm", "executive"];
+      
+      // Check if user has an allowed role
+      const hasAllowedRole = allowedRoles.includes(user.role);
+      
+      // For PMs, also check if they are the PM of this specific project
+      const isProjectPM = user.role === "pm" && project.pm === user.id;
+      
+      if (!hasAllowedRole && !isProjectPM) {
+        return res.status(403).json({ 
+          message: "You don't have permission to view analytics for this project" 
+        });
+      }
+      
+      // Additional check for PMs - they can only see their own projects
+      if (user.role === "pm" && project.pm !== user.id) {
+        return res.status(403).json({ 
+          message: "You can only view analytics for projects you manage" 
+        });
+      }
+
+      // Get all analytics data in parallel
+      const [monthlyMetrics, burnRate, teamHours] = await Promise.all([
+        storage.getProjectMonthlyMetrics(req.params.id),
+        storage.getProjectBurnRate(req.params.id),
+        storage.getProjectTeamHours(req.params.id)
+      ]);
+
+      res.json({
+        project,
+        monthlyMetrics,
+        burnRate,
+        teamHours
+      });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project analytics:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch project analytics", 
+        error: error.message 
+      });
+    }
+  });
+
   app.delete("/api/projects/:id", requireAuth, async (req, res) => {
     try {
       // Get the project first to check permissions

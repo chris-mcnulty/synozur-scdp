@@ -121,6 +121,32 @@ export interface IStorage {
     expensesBilled: number;
     totalAmount: number;
   }>;
+  
+  // Project Analytics
+  getProjectMonthlyMetrics(projectId: string): Promise<{
+    month: string;
+    billableHours: number;
+    nonBillableHours: number;
+    revenue: number;
+    expenseAmount: number;
+  }[]>;
+  getProjectBurnRate(projectId: string): Promise<{
+    totalBudget: number;
+    consumedBudget: number;
+    burnRatePercentage: number;
+    estimatedHours: number;
+    actualHours: number;
+    hoursVariance: number;
+    projectedCompletion: Date | null;
+  }>;
+  getProjectTeamHours(projectId: string): Promise<{
+    personId: string;
+    personName: string;
+    billableHours: number;
+    nonBillableHours: number;
+    totalHours: number;
+    revenue: number;
+  }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1164,6 +1190,185 @@ export class DatabaseStorage implements IStorage {
         totalAmount
       };
     });
+  }
+
+  async getProjectMonthlyMetrics(projectId: string): Promise<{
+    month: string;
+    billableHours: number;
+    nonBillableHours: number;
+    revenue: number;
+    expenseAmount: number;
+  }[]> {
+    // Get all time entries for the project grouped by month
+    const timeMetrics = await db.select({
+      month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
+      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
+      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+        ${users.defaultChargeRate},
+        150
+      ) ELSE 0 END)::float`
+    })
+    .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .where(eq(timeEntries.projectId, projectId))
+    .groupBy(sql`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`)
+    .orderBy(sql`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`);
+
+    // Get expenses grouped by month
+    const expenseMetrics = await db.select({
+      month: sql<string>`TO_CHAR(${expenses.date}::date, 'YYYY-MM')`,
+      expenseAmount: sql<number>`SUM(${expenses.amount})::float`
+    })
+    .from(expenses)
+    .where(eq(expenses.projectId, projectId))
+    .groupBy(sql`TO_CHAR(${expenses.date}::date, 'YYYY-MM')`);
+
+    // Merge time and expense metrics
+    const metricsMap = new Map<string, any>();
+    
+    timeMetrics.forEach(metric => {
+      metricsMap.set(metric.month, {
+        month: metric.month,
+        billableHours: Number(metric.billableHours) || 0,
+        nonBillableHours: Number(metric.nonBillableHours) || 0,
+        revenue: Number(metric.revenue) || 0,
+        expenseAmount: 0
+      });
+    });
+
+    expenseMetrics.forEach(metric => {
+      const existing = metricsMap.get(metric.month);
+      if (existing) {
+        existing.expenseAmount = Number(metric.expenseAmount) || 0;
+      } else {
+        metricsMap.set(metric.month, {
+          month: metric.month,
+          billableHours: 0,
+          nonBillableHours: 0,
+          revenue: 0,
+          expenseAmount: Number(metric.expenseAmount) || 0
+        });
+      }
+    });
+
+    return Array.from(metricsMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  async getProjectBurnRate(projectId: string): Promise<{
+    totalBudget: number;
+    consumedBudget: number;
+    burnRatePercentage: number;
+    estimatedHours: number;
+    actualHours: number;
+    hoursVariance: number;
+    projectedCompletion: Date | null;
+  }> {
+    // Get project details
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
+    // Get total budget from project (sum of all estimates)
+    const projectEstimates = await db.select({
+      totalAmount: sql<number>`COALESCE(SUM(CAST(${estimates.totalFees} AS DECIMAL)), 0)::float`,
+      totalHours: sql<number>`COALESCE(SUM(CAST(${estimates.totalHours} AS DECIMAL)), 0)::float`
+    })
+    .from(estimates)
+    .where(and(
+      eq(estimates.projectId, projectId),
+      eq(estimates.status, 'approved')
+    ));
+
+    const totalBudget = Number(projectEstimates[0]?.totalAmount) || Number(project.baselineBudget) || 0;
+    const estimatedHours = Number(projectEstimates[0]?.totalHours) || 0;
+
+    // Get actual hours and revenue consumed
+    const [actualMetrics] = await db.select({
+      actualHours: sql<number>`COALESCE(SUM(${timeEntries.hours}), 0)::float`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
+        ${users.defaultChargeRate},
+        150
+      ) ELSE 0 END), 0)::float`
+    })
+    .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .where(eq(timeEntries.projectId, projectId));
+
+    // Get expenses
+    const [expenseMetrics] = await db.select({
+      totalExpenses: sql<number>`COALESCE(SUM(${expenses.amount}), 0)::float`
+    })
+    .from(expenses)
+    .where(eq(expenses.projectId, projectId));
+
+    const actualHours = Number(actualMetrics?.actualHours) || 0;
+    const revenue = Number(actualMetrics?.revenue) || 0;
+    const totalExpenses = Number(expenseMetrics?.totalExpenses) || 0;
+    const consumedBudget = revenue + totalExpenses;
+    const burnRatePercentage = totalBudget > 0 ? (consumedBudget / totalBudget) * 100 : 0;
+    const hoursVariance = actualHours - estimatedHours;
+
+    // Calculate projected completion
+    let projectedCompletion: Date | null = null;
+    if (project.startDate && actualHours > 0 && estimatedHours > 0) {
+      const startDate = new Date(project.startDate);
+      const today = new Date();
+      const daysElapsed = Math.max(1, (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      const dailyBurnRate = actualHours / daysElapsed;
+      const remainingHours = Math.max(0, estimatedHours - actualHours);
+      const daysToCompletion = remainingHours / dailyBurnRate;
+      projectedCompletion = new Date(today.getTime() + (daysToCompletion * 24 * 60 * 60 * 1000));
+    }
+
+    return {
+      totalBudget,
+      consumedBudget,
+      burnRatePercentage,
+      estimatedHours,
+      actualHours,
+      hoursVariance,
+      projectedCompletion
+    };
+  }
+
+  async getProjectTeamHours(projectId: string): Promise<{
+    personId: string;
+    personName: string;
+    billableHours: number;
+    nonBillableHours: number;
+    totalHours: number;
+    revenue: number;
+  }[]> {
+    const teamMetrics = await db.select({
+      personId: users.id,
+      personName: users.name,
+      billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
+      nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN ${timeEntries.hours} ELSE 0 END)::float`,
+      totalHours: sql<number>`SUM(${timeEntries.hours})::float`,
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN ${timeEntries.hours} * COALESCE(
+        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${users.id} LIMIT 1),
+        ${users.defaultChargeRate},
+        150
+      ) ELSE 0 END)::float`
+    })
+    .from(timeEntries)
+    .innerJoin(users, eq(timeEntries.personId, users.id))
+    .where(eq(timeEntries.projectId, projectId))
+    .groupBy(users.id, users.name)
+    .orderBy(sql`SUM(${timeEntries.hours}) DESC`);
+
+    return teamMetrics.map(metric => ({
+      personId: metric.personId,
+      personName: metric.personName,
+      billableHours: Number(metric.billableHours) || 0,
+      nonBillableHours: Number(metric.nonBillableHours) || 0,
+      totalHours: Number(metric.totalHours) || 0,
+      revenue: Number(metric.revenue) || 0
+    }));
   }
 }
 

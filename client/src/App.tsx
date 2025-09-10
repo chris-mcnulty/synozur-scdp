@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
+import ProjectDetail from "@/pages/project-detail";
 import Estimates from "@/pages/estimates";
 import EstimateDetail from "@/pages/estimate-detail";
 import TimeTracking from "@/pages/time-tracking";
@@ -64,6 +65,9 @@ function Router() {
       </Route>
       <Route path="/projects">
         {user ? <Projects /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/projects/:id">
+        {user ? <ProjectDetail /> : <Redirect to="/login" />}
       </Route>
       <Route path="/estimates">
         {user ? <Estimates /> : <Redirect to="/login" />}
