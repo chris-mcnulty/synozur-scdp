@@ -85,19 +85,47 @@ export default function TimeTracking() {
       mutationFn: async (file: File) => {
         const formData = new FormData();
         formData.append('file', file);
+        const sessionId = localStorage.getItem('sessionId');
         const response = await fetch('/api/time-entries/import', {
           method: 'POST',
           body: formData,
           credentials: 'include',
+          headers: sessionId ? { 'X-Session-Id': sessionId } : {},
         });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || 'Import failed');
+        }
         return response.json();
       },
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-        toast({
-          title: "Import completed",
-          description: data.message,
-        });
+        
+        // Show success with any warnings
+        if (data.warnings && data.warnings.length > 0) {
+          toast({
+            title: "Import completed with warnings",
+            description: `${data.message}. Check console for details.`,
+          });
+          console.log('Import warnings:', data.warnings);
+        } else {
+          toast({
+            title: "Import completed successfully",
+            description: data.message,
+          });
+        }
+        
+        // Show errors if any
+        if (data.errors && data.errors.length > 0) {
+          console.error('Import errors:', data.errors);
+          setTimeout(() => {
+            toast({
+              title: `${data.errors.length} rows had errors`,
+              description: "Check console for details. Common issues: unknown projects or resources.",
+              variant: "destructive",
+            });
+          }, 500);
+        }
       },
       onError: (error: any) => {
         toast({

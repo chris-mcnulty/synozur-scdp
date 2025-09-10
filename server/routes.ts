@@ -1153,8 +1153,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const userMap = new Map();
           users.forEach(u => {
             // Map by full name and email
-            userMap.set(u.name.toLowerCase(), u.id);
-            userMap.set(u.email.toLowerCase(), u.id);
+            if (u.name) userMap.set(u.name.toLowerCase(), u.id);
+            if (u.email) userMap.set(u.email.toLowerCase(), u.id);
             if (u.firstName && u.lastName) {
               userMap.set(`${u.firstName} ${u.lastName}`.toLowerCase(), u.id);
             }
