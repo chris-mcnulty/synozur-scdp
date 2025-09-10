@@ -1136,14 +1136,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         try {
           const xlsx = await import("xlsx");
-          const workbook = xlsx.read(req.file.buffer, { type: "buffer" });
+          const workbook = xlsx.read(req.file.buffer, { type: "buffer", cellDates: true });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          const data = xlsx.utils.sheet_to_json(worksheet, { range: 2 }); // Skip header rows
+          const data = xlsx.utils.sheet_to_json(worksheet, { range: 2, raw: false, dateNF: 'yyyy-mm-dd' }); // Skip header rows
           
           const importResults = [];
           const errors = [];
           const warnings = [];
+          
+          // Helper function to convert Excel serial date to YYYY-MM-DD
+          const excelDateToYYYYMMDD = (serial: any): string => {
+            if (typeof serial === 'string' && serial.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              return serial; // Already in correct format
+            }
+            if (typeof serial === 'number') {
+              // Excel stores dates as days since 1900-01-01 (with leap year bug)
+              const excelEpoch = new Date(1900, 0, 1);
+              const msPerDay = 24 * 60 * 60 * 1000;
+              const date = new Date(excelEpoch.getTime() + (serial - 2) * msPerDay); // -2 for Excel's leap year bug
+              const year = date.getFullYear();
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              const day = String(date.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            }
+            if (serial instanceof Date) {
+              const year = serial.getFullYear();
+              const month = String(serial.getMonth() + 1).padStart(2, '0');
+              const day = String(serial.getDate()).padStart(2, '0');
+              return `${year}-${month}-${day}`;
+            }
+            return serial; // Return as-is and let validation catch it
+          };
           
           // Get all projects and users for lookup
           const projects = await storage.getProjects();
@@ -1160,6 +1184,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           });
 
+          // Track unique missing projects and resources for summary
+          const missingProjects = new Set<string>();
+          const missingResources = new Set<string>();
+
           for (let i = 0; i < data.length; i++) {
             const row = data[i] as any;
             
@@ -1167,10 +1195,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (!row.Date && !row["Project Name"] && !row.Description) continue;
             
             try {
+              // Convert date format
+              const formattedDate = excelDateToYYYYMMDD(row.Date);
+              
               // Find project by name
-              const projectId = projectMap.get(row["Project Name"]?.toLowerCase());
+              const projectName = row["Project Name"]?.trim();
+              const projectId = projectMap.get(projectName?.toLowerCase());
               if (!projectId) {
-                errors.push(`Row ${i + 3}: Project "${row["Project Name"]}" not found. Please create the project first or check spelling.`);
+                missingProjects.add(projectName);
+                errors.push(`Row ${i + 3}: Project "${projectName}" not found.`);
                 continue;
               }
               
@@ -1186,31 +1219,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   if (["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
                     personId = foundPersonId;
                   } else if (foundPersonId !== req.user!.id) {
-                    errors.push(`Row ${i + 3}: You don't have permission to create entries for "${resourceName}". Entry will be assigned to you instead.`);
-                    warnings.push(`Row ${i + 3}: Entry assigned to ${req.user!.name} instead of ${resourceName}`);
+                    warnings.push(`Row ${i + 3}: Entry assigned to you instead of ${resourceName} (no permission)`);
+                    personId = req.user!.id;
                   } else {
                     personId = foundPersonId;
                   }
                 } else {
                   // Resource not found
+                  missingResources.add(resourceName);
                   if (["admin", "billing-admin"].includes(req.user!.role)) {
-                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Consider creating this user. Entry assigned to Unknown.`);
-                    // Note: You might want to create an "Unknown" user in the system
-                    // For now, assign to the current user
+                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you.`);
                     personId = req.user!.id;
                   } else {
-                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you instead.`);
+                    warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Entry assigned to you.`);
                     personId = req.user!.id;
                   }
                 }
               }
               
+              // Parse billable field (handle string 'TRUE'/'FALSE' or boolean)
+              let billable = false;
+              if (typeof row.Billable === 'string') {
+                billable = row.Billable.toUpperCase() === 'TRUE';
+              } else if (typeof row.Billable === 'boolean') {
+                billable = row.Billable;
+              }
+              
               const timeEntryData = {
-                date: row.Date,
+                date: formattedDate,
                 projectId: projectId,
                 description: row.Description || "",
                 hours: parseFloat(row.Hours) || 0,
-                billable: row.Billable === "TRUE" || row.Billable === true,
+                billable: billable,
                 phase: row.Phase || "",
                 personId: personId
               };
@@ -1223,12 +1263,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
+          // Add summary of missing projects and resources to help user understand what needs to be created
+          if (missingProjects.size > 0) {
+            errors.unshift(`MISSING PROJECTS (create these first): ${Array.from(missingProjects).join(', ')}`);
+          }
+          if (missingResources.size > 0) {
+            const resourceMsg = req.user?.role === 'admin' || req.user?.role === 'billing-admin' 
+              ? `MISSING USERS (create these or entries will be assigned to you): ${Array.from(missingResources).join(', ')}`
+              : `UNKNOWN USERS (entries assigned to you): ${Array.from(missingResources).join(', ')}`;
+            warnings.unshift(resourceMsg);
+          }
+          
           res.json({
-            success: true,
+            success: importResults.length > 0,
             imported: importResults.length,
             errors: errors,
             warnings: warnings,
-            message: `Successfully imported ${importResults.length} time entries${errors.length > 0 ? ` with ${errors.length} errors` : ""}${warnings.length > 0 ? ` and ${warnings.length} warnings` : ""}`
+            message: `${importResults.length > 0 ? `Successfully imported ${importResults.length} time entries` : 'No entries imported'}${errors.length > 0 ? ` (${errors.length} rows failed)` : ""}${warnings.length > 0 ? ` with ${warnings.length} warnings` : ""}`,
+            summary: {
+              totalRows: data.length,
+              imported: importResults.length,
+              failed: errors.length,
+              missingProjects: Array.from(missingProjects),
+              missingResources: Array.from(missingResources)
+            }
           });
         } catch (error) {
           console.error("Error processing file:", error);
