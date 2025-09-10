@@ -169,10 +169,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const project = await storage.updateProject(req.params.id, req.body);
-      res.json(project);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update project" });
+      // Get the project first to check it exists
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      console.log("[DEBUG] Updating project with:", req.body);
+      const validatedData = insertProjectSchema.partial().parse(req.body);
+      console.log("[DEBUG] Validated project update data:", validatedData);
+      const updatedProject = await storage.updateProject(req.params.id, validatedData);
+      console.log("[DEBUG] Updated project:", updatedProject.id);
+      res.json(updatedProject);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to update project:", error);
+      if (error instanceof z.ZodError) {
+        console.error("[ERROR] Project validation errors:", error.errors);
+        return res.status(400).json({ message: "Invalid project data", errors: error.errors });
+      }
+      res.status(500).json({ 
+        message: "Failed to update project", 
+        error: error.message 
+      });
     }
   });
 
