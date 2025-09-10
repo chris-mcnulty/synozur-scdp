@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 
 interface InvoiceBatchData {
   id: string;
@@ -74,7 +75,6 @@ export default function Billing() {
   
   const { canViewPricing } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
   const { data: projects } = useQuery({
     queryKey: ["/api/projects"],
@@ -108,13 +108,63 @@ export default function Billing() {
 
   const unbilledSummary = getUnbilledSummary();
 
+  const createBatchMutation = useMutation({
+    mutationFn: async (data: { batchId: string; month: string; discountPercent?: string; discountAmount?: string }) => {
+      // First create the batch
+      const batchResponse = await apiRequest('/api/invoice-batches', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      
+      // Then generate invoices for selected clients
+      if (selectedClients.length > 0) {
+        const generateResponse = await apiRequest(`/api/invoice-batches/${data.batchId}/generate`, {
+          method: 'POST',
+          body: JSON.stringify({
+            clientIds: selectedClients,
+            month: data.month
+          })
+        });
+        return generateResponse;
+      }
+      
+      return batchResponse;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/time-entries'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/expenses'] });
+      
+      const message = data.invoicesCreated 
+        ? `Generated ${data.invoicesCreated} invoices. Billed ${data.timeEntriesBilled} time entries and ${data.expensesBilled} expenses for a total of $${Math.round(data.totalAmount).toLocaleString()}.`
+        : "Invoice batch created successfully.";
+      
+      toast({
+        title: "Invoice batch created",
+        description: message,
+      });
+      setNewBatchOpen(false);
+      setSelectedClients([]);
+      setDiscountValue('');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to create invoice batch",
+        description: error.message || "Please check your input and try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleCreateBatch = () => {
-    // Here you would typically create the invoice batch
-    toast({
-      title: "Invoice batch created",
-      description: "New billing batch has been created successfully.",
+    const batchId = `INV-${selectedMonth.replace('-', '')}-${Date.now().toString().slice(-4)}`;
+    
+    createBatchMutation.mutate({
+      batchId,
+      month: selectedMonth,
+      discountPercent: discountType === 'percent' ? discountValue : undefined,
+      discountAmount: discountType === 'amount' ? discountValue : undefined
     });
-    setNewBatchOpen(false);
   };
 
   const handleExportToQBO = (batchId: string) => {

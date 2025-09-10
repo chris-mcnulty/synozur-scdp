@@ -10,7 +10,9 @@ import {
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense,
-  type ChangeOrder, type InsertChangeOrder
+  type ChangeOrder, type InsertChangeOrder,
+  type InvoiceBatch, type InsertInvoiceBatch,
+  type InvoiceLine, type InsertInvoiceLine
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -105,6 +107,16 @@ export interface IStorage {
     utilizationRate: number;
     monthlyRevenue: number;
     unbilledHours: number;
+  }>;
+  
+  // Invoice Batches
+  createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch>;
+  getInvoiceBatches(): Promise<InvoiceBatch[]>;
+  generateInvoicesForBatch(batchId: string, clientIds: string[], month: string): Promise<{
+    invoicesCreated: number;
+    timeEntriesBilled: number;
+    expensesBilled: number;
+    totalAmount: number;
   }>;
 }
 
@@ -849,6 +861,154 @@ export class DatabaseStorage implements IStorage {
       console.error("Error copying estimate structure to project:", error);
       throw new Error(`Failed to copy estimate structure: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  async createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch> {
+    const [newBatch] = await db.insert(invoiceBatches).values(batch).returning();
+    return newBatch;
+  }
+
+  async getInvoiceBatches(): Promise<InvoiceBatch[]> {
+    return await db.select().from(invoiceBatches).orderBy(desc(invoiceBatches.createdAt));
+  }
+
+  async generateInvoicesForBatch(batchId: string, clientIds: string[], month: string): Promise<{
+    invoicesCreated: number;
+    timeEntriesBilled: number;
+    expensesBilled: number;
+    totalAmount: number;
+  }> {
+    // Use transaction to ensure atomicity
+    return await db.transaction(async (tx) => {
+      let invoicesCreated = 0;
+      let timeEntriesBilled = 0;
+      let expensesBilled = 0;
+      let totalAmount = 0;
+
+      // Parse month to get date range
+      const startDate = new Date(`${month}-01`);
+      const endDate = new Date(startDate);
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(0); // Last day of the month
+
+      for (const clientId of clientIds) {
+        // Get all projects for this client
+        const clientProjects = await tx.select()
+          .from(projects)
+          .where(eq(projects.clientId, clientId));
+
+        if (clientProjects.length === 0) continue;
+
+        for (const project of clientProjects) {
+          // Get unbilled time entries for this project in the specified month
+          const unbilledTimeEntries = await tx.select({
+            timeEntry: timeEntries,
+            user: users
+          })
+          .from(timeEntries)
+          .innerJoin(users, eq(timeEntries.personId, users.id))
+          .where(and(
+            eq(timeEntries.projectId, project.id),
+            eq(timeEntries.billable, true),
+            eq(timeEntries.billedFlag, false),
+            gte(timeEntries.date, startDate.toISOString().split('T')[0]),
+            lte(timeEntries.date, endDate.toISOString().split('T')[0])
+          ));
+
+          // Get unbilled expenses for this project in the specified month
+          const unbilledExpenses = await tx.select()
+            .from(expenses)
+            .where(and(
+              eq(expenses.projectId, project.id),
+              eq(expenses.billable, true),
+              eq(expenses.billedFlag, false),
+              gte(expenses.date, startDate.toISOString().split('T')[0]),
+              lte(expenses.date, endDate.toISOString().split('T')[0])
+            ));
+
+          if (unbilledTimeEntries.length === 0 && unbilledExpenses.length === 0) continue;
+
+          // Calculate time entries amount
+          let timeAmount = 0;
+          const timeEntryIds: string[] = [];
+          
+          for (const { timeEntry, user } of unbilledTimeEntries) {
+            // Check for rate overrides (using the correct rateOverrides schema)
+            const [rateOverride] = await tx.select()
+              .from(rateOverrides)
+              .where(and(
+                eq(rateOverrides.scope, 'project'),
+                eq(rateOverrides.scopeId, project.id),
+                eq(rateOverrides.subjectType, 'person'),
+                eq(rateOverrides.subjectId, user.id)
+              ))
+              .limit(1);
+
+            // Use chargeRate from override, or fall back to a default rate
+            const rate = rateOverride?.chargeRate ? Number(rateOverride.chargeRate) : 150; // Default rate fallback
+            
+            const amount = Number(timeEntry.hours) * rate;
+            timeAmount += amount;
+            timeEntryIds.push(timeEntry.id);
+
+            // Create invoice line for time entry
+            await tx.insert(invoiceLines).values({
+              batchId,
+              projectId: project.id,
+              type: 'time',
+              quantity: timeEntry.hours,
+              rate: rate.toString(),
+              amount: amount.toString(),
+              description: `${user.name} - ${timeEntry.description || 'Time entry'} (${timeEntry.date})`
+            });
+          }
+
+          // Calculate expenses amount
+          let expenseAmount = 0;
+          const expenseIds: string[] = [];
+          
+          for (const expense of unbilledExpenses) {
+            expenseAmount += Number(expense.amount);
+            expenseIds.push(expense.id);
+
+            // Create invoice line for expense
+            await tx.insert(invoiceLines).values({
+              batchId,
+              projectId: project.id,
+              type: 'expense',
+              amount: expense.amount,
+              description: `${expense.description} (${expense.date})`
+            });
+          }
+
+          // Mark time entries as billed
+          if (timeEntryIds.length > 0) {
+            await tx.update(timeEntries)
+              .set({ billedFlag: true })
+              .where(sql`${timeEntries.id} IN ${sql.raw(`(${timeEntryIds.map(id => `'${id}'`).join(',')})`)}}`);
+            timeEntriesBilled += timeEntryIds.length;
+          }
+
+          // Mark expenses as billed
+          if (expenseIds.length > 0) {
+            await tx.update(expenses)
+              .set({ billedFlag: true })
+              .where(sql`${expenses.id} IN ${sql.raw(`(${expenseIds.map(id => `'${id}'`).join(',')})`)}}`);
+            expensesBilled += expenseIds.length;
+          }
+
+          totalAmount += timeAmount + expenseAmount;
+          invoicesCreated++;
+        }
+      }
+
+      return {
+        invoicesCreated,
+        timeEntriesBilled,
+        expensesBilled,
+        totalAmount
+      };
+    });
   }
 }
 

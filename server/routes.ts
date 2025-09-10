@@ -1469,6 +1469,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Invoice batch endpoints
+  app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId, month, discountPercent, discountAmount } = req.body;
+      
+      // Create the batch
+      const batch = await storage.createInvoiceBatch({
+        batchId,
+        month,
+        pricingSnapshotDate: new Date().toISOString().split('T')[0],
+        discountPercent: discountPercent || null,
+        discountAmount: discountAmount || null,
+        totalAmount: "0", // Will be updated after generating invoices
+        exportedToQBO: false
+      });
+      
+      res.json(batch);
+    } catch (error) {
+      console.error("Failed to create invoice batch:", error);
+      res.status(500).json({ message: "Failed to create invoice batch" });
+    }
+  });
+  
+  app.get("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const batches = await storage.getInvoiceBatches();
+      res.json(batches);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch invoice batches" });
+    }
+  });
+  
+  app.post("/api/invoice-batches/:batchId/generate", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { clientIds, month } = req.body;
+      
+      if (!clientIds || clientIds.length === 0) {
+        return res.status(400).json({ message: "Please select at least one client" });
+      }
+      
+      // Generate invoices for the batch
+      const result = await storage.generateInvoicesForBatch(
+        req.params.batchId,
+        clientIds,
+        month
+      );
+      
+      res.json({
+        message: `Generated ${result.invoicesCreated} invoices`,
+        ...result
+      });
+    } catch (error) {
+      console.error("Failed to generate invoices:", error);
+      res.status(500).json({ message: "Failed to generate invoices for batch" });
+    }
+  });
+
   app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
     try {
       // Get the estimate first to check ownership

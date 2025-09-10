@@ -626,3 +626,16 @@ export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
 export type InvoiceBatch = typeof invoiceBatches.$inferSelect;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type RateOverride = typeof rateOverrides.$inferSelect;
+
+// Invoice schemas
+export const insertInvoiceBatchSchema = createInsertSchema(invoiceBatches).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertInvoiceBatch = z.infer<typeof insertInvoiceBatchSchema>;
+
+export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
