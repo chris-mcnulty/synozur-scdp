@@ -942,9 +942,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/time-entries", requireAuth, async (req, res) => {
     try {
+      // Regular employees can only create their own entries
+      // PMs, admins, billing-admins, and executives can create for anyone
+      let personId = req.user!.id;
+      
+      if (req.body.personId && ["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        personId = req.body.personId;
+      }
+      
       const validatedData = insertTimeEntrySchema.parse({
         ...req.body,
-        personId: req.user!.id // Always use the authenticated user
+        personId: personId
       });
       const timeEntry = await storage.createTimeEntry(validatedData);
       res.status(201).json(timeEntry);
@@ -953,6 +961,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid time entry data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create time entry" });
+    }
+  });
+
+  app.patch("/api/time-entries/:id", requireAuth, async (req, res) => {
+    try {
+      // Get the existing time entry first
+      const existingEntries = await storage.getTimeEntries({ personId: req.user!.id });
+      const existingEntry = existingEntries.find(e => e.id === req.params.id);
+      
+      // Check permissions
+      if (req.user?.role === "employee") {
+        // Regular employees can only edit their own entries
+        if (!existingEntry || existingEntry.personId !== req.user.id) {
+          return res.status(403).json({ message: "You can only edit your own time entries" });
+        }
+      } else if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        // Other roles need specific permissions
+        return res.status(403).json({ message: "Insufficient permissions to edit time entries" });
+      }
+      
+      // Remove personId from update if user doesn't have permission to change it
+      const updateData = { ...req.body };
+      if (req.user?.role === "employee") {
+        delete updateData.personId;
+      }
+      
+      const updatedEntry = await storage.updateTimeEntry(req.params.id, updateData);
+      res.json(updatedEntry);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update time entry" });
+    }
+  });
+
+  app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
+    try {
+      // Get the existing time entry first
+      const existingEntries = await storage.getTimeEntries({ personId: req.user!.id });
+      const existingEntry = existingEntries.find(e => e.id === req.params.id);
+      
+      // Check permissions
+      if (req.user?.role === "employee") {
+        // Regular employees can only delete their own entries
+        if (!existingEntry || existingEntry.personId !== req.user.id) {
+          return res.status(403).json({ message: "You can only delete your own time entries" });
+        }
+      } else if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+        // Other roles need specific permissions
+        return res.status(403).json({ message: "Insufficient permissions to delete time entries" });
+      }
+      
+      // Note: You need to add deleteTimeEntry to storage if it doesn't exist
+      // For now, we can use update to mark as deleted or handle differently
+      res.status(501).json({ message: "Delete functionality not yet implemented in storage layer" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete time entry" });
     }
   });
 
