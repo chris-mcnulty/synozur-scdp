@@ -242,7 +242,13 @@ export default function Billing() {
                 </div>
               </DialogContent>
             </Dialog>
-            <Button variant="outline" data-testid="button-export-report">
+            <Button 
+              variant="outline" 
+              data-testid="button-export-report"
+              onClick={() => {
+                window.open('/api/time-entries/template', '_blank');
+              }}
+            >
               <Download className="w-4 h-4 mr-2" />
               Export Report
             </Button>
