@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
@@ -262,6 +262,53 @@ export default function EstimateDetail() {
     onError: (error: any) => {
       toast({ 
         title: "Failed to update estimate", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const approveEstimateMutation = useMutation({
+    mutationFn: async ({ createProject }: { createProject: boolean }) => {
+      return apiRequest(`/api/estimates/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ createProject }),
+      });
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      if (data.project) {
+        toast({ 
+          title: "Estimate approved", 
+          description: `Project "${data.project.name}" created successfully.` 
+        });
+      } else {
+        toast({ title: "Estimate approved successfully" });
+      }
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to approve estimate", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const rejectEstimateMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/estimates/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      toast({ title: "Estimate rejected" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to reject estimate", 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -618,6 +665,51 @@ export default function EstimateDetail() {
           </div>
         </div>
         <div className="flex gap-2">
+          {/* Status Badge */}
+          {estimate?.status && (
+            <div className="flex items-center">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                estimate.status === 'approved' ? 'bg-green-100 text-green-800' :
+                estimate.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                estimate.status === 'sent' ? 'bg-blue-100 text-blue-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {estimate.status.charAt(0).toUpperCase() + estimate.status.slice(1)}
+              </span>
+            </div>
+          )}
+          
+          {/* Approve/Reject Buttons */}
+          {estimate?.status === 'draft' && (user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
+            <>
+              <Button 
+                onClick={() => {
+                  if (window.confirm('Do you want to create a project from this estimate?')) {
+                    approveEstimateMutation.mutate({ createProject: true });
+                  } else {
+                    approveEstimateMutation.mutate({ createProject: false });
+                  }
+                }}
+                variant="default"
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Approve
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to reject this estimate?')) {
+                    rejectEstimateMutation.mutate();
+                  }
+                }}
+                variant="destructive"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Reject
+              </Button>
+            </>
+          )}
+          
           <Button onClick={handleDownloadTemplate} variant="outline">
             <FileDown className="h-4 w-4 mr-2" />
             Download Template
@@ -1984,8 +2076,16 @@ export default function EstimateDetail() {
                 Total Hours: {Math.round(totalHours)}
               </div>
               <div className="text-lg font-semibold">
-                Total Amount: ${Math.round(totalAmount).toLocaleString()}
+                Total Amount: ${Math.round(
+                  estimate?.blockDollars ? Number(estimate.blockDollars) : 
+                  (estimate?.presentedTotal ? Number(estimate.presentedTotal) : totalAmount)
+                ).toLocaleString()}
               </div>
+              {estimate?.blockDollars && totalAmount > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  (Line Items Total: ${Math.round(totalAmount).toLocaleString()})
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

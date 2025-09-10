@@ -1408,6 +1408,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Approve estimate and optionally create project
+  app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { createProject: shouldCreateProject } = req.body;
+      
+      // Update estimate status to approved
+      const estimate = await storage.updateEstimate(req.params.id, { 
+        status: "approved"
+      });
+      
+      let project = null;
+      if (shouldCreateProject && estimate) {
+        // Check if project already exists
+        const existingProject = estimate.projectId ? 
+          await storage.getProject(estimate.projectId) : null;
+        
+        if (!existingProject) {
+          // Create new project from estimate
+          const projectCode = `${estimate.name.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
+          project = await storage.createProject({
+            clientId: estimate.clientId,
+            name: estimate.name,
+            code: projectCode,
+            pm: req.user!.id,
+            startDate: new Date().toISOString().split('T')[0],
+            commercialScheme: estimate.blockDollars ? "retainer" : "tm",
+            retainerTotal: estimate.blockDollars || "0",
+            baselineBudget: estimate.presentedTotal || estimate.totalFees || estimate.blockDollars || "0",
+            sowValue: estimate.presentedTotal || estimate.totalFees || estimate.blockDollars || "0",
+            sowDate: new Date().toISOString().split('T')[0],
+            hasSow: true,
+            status: "active"
+          });
+          
+          // Link estimate to project
+          await storage.updateEstimate(req.params.id, { projectId: project.id });
+        } else {
+          project = existingProject;
+        }
+      }
+      
+      res.json({ estimate, project });
+    } catch (error) {
+      console.error("Failed to approve estimate:", error);
+      res.status(500).json({ message: "Failed to approve estimate" });
+    }
+  });
+
+  // Reject estimate
+  app.post("/api/estimates/:id/reject", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const estimate = await storage.updateEstimate(req.params.id, { 
+        status: "rejected"
+      });
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reject estimate" });
+    }
+  });
+
   app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
     try {
       // Get the estimate first to check ownership
