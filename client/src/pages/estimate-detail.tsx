@@ -1528,8 +1528,8 @@ export default function EstimateDetail() {
             </div>
           )}
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[1400px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -1545,22 +1545,22 @@ export default function EstimateDetail() {
                       }}
                     />
                   </TableHead>
-                  <TableHead>Epic</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Workstream</TableHead>
-                  <TableHead>Week</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Hours</TableHead>
-                  <TableHead>Factor</TableHead>
-                  <TableHead>Resource</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Cost</TableHead>
-                  <TableHead>Adjustments</TableHead>
-                  <TableHead>Adj. Hours</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Margin</TableHead>
-                  <TableHead>Comments</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
+                  <TableHead className="w-20">Epic</TableHead>
+                  <TableHead className="w-20">Stage</TableHead>
+                  <TableHead className="w-24">Workstream</TableHead>
+                  <TableHead className="w-16">Week</TableHead>
+                  <TableHead className="min-w-[200px]">Description</TableHead>
+                  <TableHead className="w-16">Hours</TableHead>
+                  <TableHead className="w-16">Factor</TableHead>
+                  <TableHead className="w-24">Resource</TableHead>
+                  <TableHead className="w-16">Rate</TableHead>
+                  <TableHead className="w-16">Cost</TableHead>
+                  <TableHead className="w-20">Adjustments</TableHead>
+                  <TableHead className="w-20">Adj. Hours</TableHead>
+                  <TableHead className="w-20">Total</TableHead>
+                  <TableHead className="w-24">Margin</TableHead>
+                  <TableHead className="w-32">Comments</TableHead>
+                  <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
