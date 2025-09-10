@@ -66,6 +66,9 @@ export default function EstimateDetail() {
   const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [splittingItem, setSplittingItem] = useState<EstimateLineItem | null>(null);
   const [splitHours, setSplitHours] = useState({ first: "", second: "" });
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
+  const [blockHourDescription, setBlockHourDescription] = useState("");
+  const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -269,19 +272,25 @@ export default function EstimateDetail() {
   });
 
   const approveEstimateMutation = useMutation({
-    mutationFn: async ({ createProject }: { createProject: boolean }) => {
+    mutationFn: async ({ createProject, blockHourDescription }: { createProject: boolean; blockHourDescription?: string }) => {
       return apiRequest(`/api/estimates/${id}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ createProject }),
+        body: JSON.stringify({ createProject, blockHourDescription }),
       });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      setShowApprovalDialog(false);
+      setBlockHourDescription("");
       if (data.project) {
         toast({ 
           title: "Estimate approved", 
           description: `Project "${data.project.name}" created successfully.` 
         });
+        // Navigate to the new project
+        setTimeout(() => {
+          setLocation(`/projects`);
+        }, 1500);
       } else {
         toast({ title: "Estimate approved successfully" });
       }
@@ -683,13 +692,7 @@ export default function EstimateDetail() {
           {estimate?.status === 'draft' && (user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
             <>
               <Button 
-                onClick={() => {
-                  if (window.confirm('Do you want to create a project from this estimate?')) {
-                    approveEstimateMutation.mutate({ createProject: true });
-                  } else {
-                    approveEstimateMutation.mutate({ createProject: false });
-                  }
-                }}
+                onClick={() => setShowApprovalDialog(true)}
                 variant="default"
                 className="bg-green-600 hover:bg-green-700"
               >
@@ -2707,6 +2710,86 @@ export default function EstimateDetail() {
             disabled={!splitHours.first || !splitHours.second || splitLineItemMutation.isPending}
           >
             {splitLineItemMutation.isPending ? "Splitting..." : "Split Item"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Approval Dialog */}
+    <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>Approve Estimate</DialogTitle>
+          <DialogDescription>
+            Approve this estimate and optionally create a project from it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="create-project"
+              checked={shouldCreateProject}
+              onChange={(e) => setShouldCreateProject(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            <Label htmlFor="create-project">Create project from this estimate</Label>
+          </div>
+          
+          {shouldCreateProject && estimate?.blockDollars && (
+            <div>
+              <Label htmlFor="block-description">
+                Block Hour Line Item Description
+                <span className="text-sm text-muted-foreground ml-2">
+                  (for invoicing)
+                </span>
+              </Label>
+              <Input
+                id="block-description"
+                placeholder="e.g., Professional Services - Q1 2025"
+                value={blockHourDescription}
+                onChange={(e) => setBlockHourDescription(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-sm text-muted-foreground mt-1">
+                This description will appear on invoices for block hour billing
+              </p>
+            </div>
+          )}
+          
+          {shouldCreateProject && (
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <h4 className="font-medium text-sm mb-2">Project will be created with:</h4>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• All epics, stages, and activities from this estimate</li>
+                <li>• Rate overrides from resource allocations</li>
+                <li>• Time tracking phase templates</li>
+                <li>• Budget: {estimate?.presentedTotal || estimate?.totalFees || estimate?.blockDollars || '0'}</li>
+              </ul>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => {
+              setShowApprovalDialog(false);
+              setBlockHourDescription("");
+            }}
+            variant="outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              approveEstimateMutation.mutate({ 
+                createProject: shouldCreateProject,
+                blockHourDescription: blockHourDescription || undefined
+              });
+            }}
+            disabled={approveEstimateMutation.isPending}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {approveEstimateMutation.isPending ? "Approving..." : "Approve Estimate"}
           </Button>
         </DialogFooter>
       </DialogContent>

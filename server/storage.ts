@@ -39,6 +39,7 @@ export interface IStorage {
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
   copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void>;
+  createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string): Promise<Project>;
   
   // Roles
   getRoles(): Promise<Role[]>;
@@ -887,6 +888,133 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error("Error copying estimate structure to project:", error);
       throw new Error(`Failed to copy estimate structure: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string): Promise<Project> {
+    try {
+      return await db.transaction(async (tx) => {
+        // 1. Create the project
+        const [project] = await tx.insert(projects).values(projectData).returning();
+        
+        // 2. Copy the estimate structure (epics, stages, activities, workstreams)
+        // Get all epics from the estimate
+        const epics = await tx.select().from(estimateEpics).where(eq(estimateEpics.estimateId, estimateId)).orderBy(estimateEpics.order);
+        
+        for (const epic of epics) {
+          // Create project epic
+          const [projectEpic] = await tx.insert(projectEpics).values({
+            projectId: project.id,
+            name: epic.name,
+            order: epic.order,
+          }).returning();
+          
+          // Get all stages for this epic
+          const stages = await tx.select().from(estimateStages).where(eq(estimateStages.epicId, epic.id)).orderBy(estimateStages.order);
+          
+          for (const stage of stages) {
+            // Create project stage
+            const [projectStage] = await tx.insert(projectStages).values({
+              epicId: projectEpic.id,
+              name: stage.name,
+              order: stage.order,
+            }).returning();
+            
+            // Get all activities for this stage
+            const activities = await tx.select().from(estimateActivities).where(eq(estimateActivities.stageId, stage.id)).orderBy(estimateActivities.order);
+            
+            for (const activity of activities) {
+              // Create project activity
+              await tx.insert(projectActivities).values({
+                stageId: projectStage.id,
+                name: activity.name,
+                order: activity.order,
+              });
+            }
+          }
+        }
+        
+        // Get all unique workstreams from estimate line items
+        const workstreams = await tx.select({
+          workstream: estimateLineItems.workstream
+        })
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, estimateId))
+        .groupBy(estimateLineItems.workstream);
+        
+        let workstreamOrder = 1;
+        for (const { workstream } of workstreams) {
+          if (workstream) {
+            await tx.insert(projectWorkstreams).values({
+              projectId: project.id,
+              name: workstream,
+              order: workstreamOrder++,
+            });
+          }
+        }
+        
+        // 3. Create rate overrides from estimate allocations that have custom rates
+        const allocations = await tx.select()
+          .from(estimateAllocations)
+          .innerJoin(estimateActivities, eq(estimateAllocations.activityId, estimateActivities.id))
+          .innerJoin(estimateStages, eq(estimateActivities.stageId, estimateStages.id))
+          .innerJoin(estimateEpics, eq(estimateStages.epicId, estimateEpics.id))
+          .where(eq(estimateEpics.estimateId, estimateId));
+        
+        // Track unique person/role rate combinations to avoid duplicates
+        const processedRates = new Set<string>();
+        
+        for (const { estimate_allocations: allocation } of allocations) {
+          if (!allocation.rackRate || parseFloat(allocation.rackRate) === 0) continue;
+          
+          const subjectType = allocation.pricingMode === 'role' ? 'role' : 'person';
+          const subjectId = allocation.pricingMode === 'role' ? allocation.roleId : allocation.personId;
+          
+          if (!subjectId) continue;
+          
+          // Create a unique key for this rate override
+          const rateKey = `${subjectType}-${subjectId}-${allocation.rackRate}`;
+          
+          if (processedRates.has(rateKey)) continue;
+          processedRates.add(rateKey);
+          
+          // Create rate override for the project
+          await tx.insert(rateOverrides).values({
+            scope: 'project',
+            scopeId: project.id,
+            subjectType,
+            subjectId,
+            effectiveStart: projectData.startDate || new Date().toISOString().split('T')[0],
+            effectiveEnd: projectData.endDate || null,
+            rackRate: allocation.rackRate,
+            precedence: 10, // Project-level overrides have higher precedence
+          });
+        }
+        
+        // 4. If block hour description is provided, we'll store it in the estimate itself
+        // Note: We could also create a separate project_settings table or use the estimate's blockDescription field
+        if (blockHourDescription && projectData.commercialScheme === 'retainer') {
+          // Update the estimate with the block hour description for future reference
+          await tx.update(estimates)
+            .set({ 
+              blockDescription: blockHourDescription
+            })
+            .where(eq(estimates.id, estimateId));
+        }
+        
+        // 5. Update the estimate to link it to the project
+        await tx.update(estimates)
+          .set({ 
+            projectId: project.id,
+            status: 'approved'
+          })
+          .where(eq(estimates.id, estimateId));
+        
+        return project;
+      });
+    } catch (error) {
+      console.error("Error creating project from estimate:", error);
+      throw new Error(`Failed to create project from estimate: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

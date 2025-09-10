@@ -1550,23 +1550,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Approve estimate and optionally create project
   app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
-      const { createProject: shouldCreateProject } = req.body;
+      const { createProject: shouldCreateProject, blockHourDescription } = req.body;
+      
+      // Get the full estimate details first
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
       
       // Update estimate status to approved
-      const estimate = await storage.updateEstimate(req.params.id, { 
-        status: "approved"
+      const updatedEstimate = await storage.updateEstimate(req.params.id, { 
+        status: "approved",
+        approvedAt: new Date(),
+        approvedBy: req.user!.id
       });
       
       let project = null;
-      if (shouldCreateProject && estimate) {
+      if (shouldCreateProject && updatedEstimate) {
         // Check if project already exists
-        const existingProject = estimate.projectId ? 
-          await storage.getProject(estimate.projectId) : null;
+        const existingProject = updatedEstimate.projectId ? 
+          await storage.getProject(updatedEstimate.projectId) : null;
         
         if (!existingProject) {
-          // Create new project from estimate
+          // Generate project code
           const projectCode = `${estimate.name.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-          project = await storage.createProject({
+          
+          // Prepare project data
+          const projectData = {
             clientId: estimate.clientId,
             name: estimate.name,
             code: projectCode,
@@ -1578,20 +1588,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sowValue: estimate.presentedTotal || estimate.totalFees || estimate.blockDollars || "0",
             sowDate: new Date().toISOString().split('T')[0],
             hasSow: true,
-            status: "active"
-          });
+            status: "active" as const,
+            notes: ""
+          };
           
-          // Link estimate to project
-          await storage.updateEstimate(req.params.id, { projectId: project.id });
+          // Use the enhanced createProjectFromEstimate method
+          project = await storage.createProjectFromEstimate(
+            req.params.id, 
+            projectData, 
+            blockHourDescription
+          );
+          
+          console.log("[DEBUG] Project created successfully:", project.id);
         } else {
           project = existingProject;
+          console.log("[DEBUG] Using existing project:", project.id);
         }
       }
       
-      res.json({ estimate, project });
-    } catch (error) {
-      console.error("Failed to approve estimate:", error);
-      res.status(500).json({ message: "Failed to approve estimate" });
+      res.json({ estimate: updatedEstimate, project });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to approve estimate:", error);
+      res.status(500).json({ 
+        message: "Failed to approve estimate", 
+        error: error.message 
+      });
     }
   });
 
