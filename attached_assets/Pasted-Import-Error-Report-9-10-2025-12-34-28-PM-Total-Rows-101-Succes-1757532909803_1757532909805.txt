@@ -1,0 +1,1120 @@
+Import Error Report - 9/10/2025, 12:34:28 PM
+================================
+Total Rows: 101
+Successfully Imported: 0
+Failed: 101
+
+Missing Data:
+
+All Errors:
+Row 3: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 4: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 5: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 6: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 7: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 8: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 9: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 10: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 11: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 12: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 13: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 14: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 15: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 16: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 17: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 18: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 19: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 20: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 21: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 22: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 23: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 24: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 25: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 26: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 27: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 28: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 29: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 30: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 31: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 32: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 33: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 34: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 35: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 36: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 37: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 38: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 39: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 40: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 41: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 42: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 43: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 44: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 45: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 46: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 47: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 48: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 49: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 50: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 51: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 52: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 53: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 54: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 55: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 56: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 57: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 58: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 59: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 60: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 61: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 62: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 63: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 64: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 65: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 66: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 67: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 68: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 69: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 70: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 71: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 72: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 73: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 74: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 75: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 76: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 77: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 78: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 79: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 80: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 81: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 82: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 83: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 84: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 85: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 86: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 87: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 88: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 89: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 90: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 91: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 92: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 93: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 94: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 95: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 96: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 97: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 98: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 99: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 100: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 101: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 102: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+Row 103: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "hours"
+    ],
+    "message": "Expected string, received number"
+  }
+]

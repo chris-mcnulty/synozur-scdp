@@ -1308,7 +1308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 date: formattedDate,
                 projectId: projectId,
                 description: row.Description || "",
-                hours: parseFloat(row.Hours) || 0,
+                hours: String(row.Hours || 0), // Convert number to string for schema validation
                 billable: billable,
                 phase: row.Phase || "",
                 personId: personId
