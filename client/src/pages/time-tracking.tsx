@@ -28,6 +28,21 @@ const timeEntryFormSchema = insertTimeEntrySchema.extend({
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
 
+// Helper function to parse date string without timezone issues
+function parseLocalDate(dateStr: string): Date {
+  // Split the date string and create a date in local timezone
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Helper function to format date for display without timezone issues
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // API response types that include nested relations
 type ProjectWithClient = Project & {
   client: Client;
@@ -55,7 +70,7 @@ export default function TimeTracking() {
   const form = useForm<TimeEntryFormData>({
     resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: formatLocalDate(new Date()),
       hours: "0",
       billable: true,
       description: "",
@@ -423,7 +438,7 @@ export default function TimeTracking() {
                                 data-testid="button-select-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value), "PPP")
+                                  format(parseLocalDate(field.value), "PPP")
                                 ) : (
                                   <span>Pick a date</span>
                                 )}
@@ -434,8 +449,8 @@ export default function TimeTracking() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
-                              onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
+                              selected={field.value ? parseLocalDate(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -712,7 +727,7 @@ export default function TimeTracking() {
                           {entry.hours}h
                         </div>
                         <div className="text-sm text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
-                          {format(new Date(entry.date), 'MMM d')}
+                          {format(parseLocalDate(entry.date), 'MMM d')}
                         </div>
                         {entry.billingRate && (
                           <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
