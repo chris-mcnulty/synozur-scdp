@@ -141,10 +141,18 @@ export default function TimeTracking() {
 
   const createTimeEntryMutation = useMutation({
     mutationFn: async (data: TimeEntryFormData) => {
-      return await apiRequest("/api/time-entries", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      console.log('Sending to API:', data);
+      try {
+        const response = await apiRequest("/api/time-entries", {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
+        console.log('API response:', response);
+        return response;
+      } catch (error) {
+        console.error('API error:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
@@ -154,16 +162,39 @@ export default function TimeTracking() {
         description: "Your time has been logged successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error('Mutation error:', error);
+      const errorMessage = error?.message || "Failed to create time entry. Please try again.";
       toast({
         title: "Error",
-        description: "Failed to create time entry. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     },
   });
 
   const onSubmit = (data: TimeEntryFormData) => {
+    console.log('Submitting time entry:', data);
+    
+    // Check for required fields
+    if (!data.projectId) {
+      toast({
+        title: "Error",
+        description: "Please select a project.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!data.hours || parseFloat(data.hours) <= 0) {
+      toast({
+        title: "Error",
+        description: "Please enter valid hours.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     createTimeEntryMutation.mutate(data);
   };
 
