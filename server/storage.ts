@@ -371,8 +371,9 @@ export class DatabaseStorage implements IStorage {
         const totalBudget = await this.getProjectTotalBudget(project.id);
         
         // Get burned amount from billed time entries
+        // Note: Using default rate of 150 since timeEntries doesn't have a rate column
         const burnedData = await db.select({
-          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${timeEntries.rate} AS NUMERIC), 150)), 0)`
+          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * 150), 0)`
         })
         .from(timeEntries)
         .where(and(
