@@ -12,9 +12,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertTimeEntrySchema, type TimeEntry } from "@shared/schema";
+import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -22,13 +22,27 @@ import { z } from "zod";
 
 const timeEntryFormSchema = insertTimeEntrySchema.extend({
   date: z.string(),
+  milestoneId: z.string().optional(),
+  workstreamId: z.string().optional(),
 });
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
 
+// API response types that include nested relations
+type ProjectWithClient = Project & {
+  client: Client;
+};
+
+type TimeEntryWithRelations = TimeEntry & {
+  project: ProjectWithClient;
+  milestone?: ProjectMilestone;
+  workstream?: ProjectWorkstream;
+};
+
 export default function TimeTracking() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [filters, setFilters] = useState({
     projectId: "",
     clientId: "",
@@ -47,22 +61,53 @@ export default function TimeTracking() {
       description: "",
       phase: "",
       projectId: "",
+      milestoneId: "",
+      workstreamId: "",
     },
   });
 
-  const { data: projects } = useQuery({
+  const { data: projects } = useQuery<ProjectWithClient[]>({
     queryKey: ["/api/projects"],
   });
   
-  const { data: clients } = useQuery({
+  const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
   
-  const { data: currentUser } = useQuery({
+  const { data: currentUser } = useQuery<User>({
     queryKey: ["/api/auth/me"],
   });
 
-  const { data: timeEntries, isLoading } = useQuery({
+  // Fetch milestones and workstreams for selected project
+  const { data: milestones, isLoading: milestonesLoading } = useQuery({
+    queryKey: ["/api/projects", selectedProjectId, "milestones"],
+    enabled: !!selectedProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${selectedProjectId}/milestones`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch milestones');
+      return response.json();
+    }
+  });
+
+  const { data: workstreams, isLoading: workstreamsLoading } = useQuery({
+    queryKey: ["/api/projects", selectedProjectId, "workstreams"],
+    enabled: !!selectedProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${selectedProjectId}/workstreams`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch workstreams');
+      return response.json();
+    }
+  });
+
+  const { data: timeEntries, isLoading } = useQuery<TimeEntryWithRelations[]>({
     queryKey: ["/api/time-entries", filters],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -81,8 +126,10 @@ export default function TimeTracking() {
 
   const createTimeEntryMutation = useMutation({
     mutationFn: async (data: TimeEntryFormData) => {
-      const response = await apiRequest("POST", "/api/time-entries", data);
-      return response.json();
+      return await apiRequest("/api/time-entries", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
@@ -407,7 +454,16 @@ export default function TimeTracking() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select 
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setSelectedProjectId(value);
+                            // Clear milestone and workstream when project changes
+                            form.setValue('milestoneId', '');
+                            form.setValue('workstreamId', '');
+                          }} 
+                          defaultValue={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-project">
                               <SelectValue placeholder="Select project" />
@@ -450,6 +506,64 @@ export default function TimeTracking() {
 
                   <FormField
                     control={form.control}
+                    name="milestoneId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Milestone (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value}
+                          disabled={!selectedProjectId || milestonesLoading}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-milestone">
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select milestone"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {milestones?.map((milestone: any) => (
+                              <SelectItem key={milestone.id} value={milestone.id}>
+                                {milestone.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="workstreamId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Workstream (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value}
+                          disabled={!selectedProjectId || workstreamsLoading}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-workstream">
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select workstream"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {workstreams?.map((workstream: any) => (
+                              <SelectItem key={workstream.id} value={workstream.id}>
+                                {workstream.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="phase"
                     render={({ field }) => (
                       <FormItem>
@@ -458,6 +572,7 @@ export default function TimeTracking() {
                           <Input
                             placeholder="e.g., Assessment, Strategy Design"
                             {...field}
+                            value={field.value ?? ""}
                             data-testid="input-phase"
                           />
                         </FormControl>
@@ -476,6 +591,7 @@ export default function TimeTracking() {
                           <Textarea
                             placeholder="Brief description of work performed..."
                             {...field}
+                            value={field.value ?? ""}
                             data-testid="textarea-description"
                           />
                         </FormControl>
@@ -561,9 +677,35 @@ export default function TimeTracking() {
                             </div>
                           )}
                         </div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          {entry.milestone && (
+                            <span className="mr-2" data-testid={`entry-milestone-${entry.id}`}>
+                              📍 {entry.milestone.name}
+                            </span>
+                          )}
+                          {entry.workstream && (
+                            <span className="mr-2" data-testid={`entry-workstream-${entry.id}`}>
+                              🔄 {entry.workstream.name}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-sm text-muted-foreground mt-1" data-testid={`entry-description-${entry.id}`}>
                           {entry.description}
                         </div>
+                        {/* Show rates for admins */}
+                        {currentUser && currentUser.role && (currentUser.role === 'admin' || currentUser.role === 'billing-admin') && entry.billingRate && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            <span className="mr-3">Rate: ${entry.billingRate}/hr</span>
+                            {entry.costRate && (
+                              <>
+                                <span className="mr-3">Cost: ${entry.costRate}/hr</span>
+                                <span className="text-chart-2">
+                                  Margin: ${(parseFloat(entry.billingRate) - parseFloat(entry.costRate)).toFixed(2)}/hr
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <div className="font-medium" data-testid={`entry-hours-${entry.id}`}>
@@ -572,6 +714,11 @@ export default function TimeTracking() {
                         <div className="text-sm text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
                           {format(new Date(entry.date), 'MMM d')}
                         </div>
+                        {entry.billingRate && (
+                          <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
+                            ${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

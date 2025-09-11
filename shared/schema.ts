@@ -301,6 +301,8 @@ export const timeEntries = pgTable("time_entries", {
   statusReportedFlag: boolean("status_reported_flag").notNull().default(false),
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Billing rate at time of entry
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate at time of entry
+  milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
+  workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
