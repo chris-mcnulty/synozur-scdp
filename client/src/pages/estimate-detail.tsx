@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
@@ -793,6 +793,152 @@ export default function EstimateDetail() {
           />
         </div>
       </div>
+
+      {/* Pricing Configuration Section */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Pricing Configuration</CardTitle>
+          <CardDescription>Configure how this estimate is priced</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            {/* Pricing Type Selector */}
+            <div>
+              <Label>Pricing Type</Label>
+              <Select 
+                value={estimate?.pricingType || 'hourly'} 
+                onValueChange={(value) => {
+                  updateEstimateMutation.mutate({ 
+                    pricingType: value as 'hourly' | 'fixed'
+                  });
+                }}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hourly">Hourly (Time & Materials)</SelectItem>
+                  <SelectItem value="fixed">Fixed Price / Block</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Fixed Price Field - only show for fixed pricing */}
+            {estimate?.pricingType === 'fixed' && (
+              <div>
+                <Label htmlFor="fixed-price">Fixed Price ($)</Label>
+                <Input
+                  id="fixed-price"
+                  type="number"
+                  placeholder="Enter fixed price"
+                  value={estimate?.fixedPrice || ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || !isNaN(parseFloat(value))) {
+                      updateEstimateMutation.mutate({ 
+                        fixedPrice: value === '' ? null : parseFloat(value)
+                      });
+                    }
+                  }}
+                  className="mt-1"
+                />
+              </div>
+            )}
+
+            {/* Estimate Type Selector */}
+            <div>
+              <Label>Estimate Type</Label>
+              <Select 
+                value={estimate?.estimateType || 'detailed'} 
+                onValueChange={(value) => {
+                  updateEstimateMutation.mutate({ 
+                    estimateType: value as 'detailed' | 'block'
+                  });
+                }}
+              >
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="detailed">Detailed (Line Items)</SelectItem>
+                  <SelectItem value="block">Block (Simple Hours/Dollars)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Status Workflow Buttons */}
+          <div className="border-t pt-4">
+            <Label className="mb-2 block">Estimate Status: <span className="font-semibold">{estimate?.status || 'draft'}</span></Label>
+            <div className="flex gap-2">
+              {estimate?.status === 'draft' && (
+                <Button 
+                  onClick={() => {
+                    updateEstimateMutation.mutate({ status: 'final' });
+                  }}
+                  variant="outline"
+                  className="bg-blue-50 hover:bg-blue-100"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Mark as Final
+                </Button>
+              )}
+              
+              {estimate?.status === 'final' && (
+                <>
+                  <Button 
+                    onClick={() => {
+                      setShouldCreateProject(false);
+                      setShowApprovalDialog(true);
+                    }}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Approve Estimate
+                  </Button>
+                  
+                  <Button 
+                    onClick={() => {
+                      updateEstimateMutation.mutate({ status: 'draft' });
+                    }}
+                    variant="outline"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Back to Draft
+                  </Button>
+                </>
+              )}
+              
+              {estimate?.status === 'approved' && (
+                <>
+                  {!estimate?.projectId && (
+                    <Button 
+                      onClick={() => {
+                        setShouldCreateProject(true);
+                        setShowApprovalDialog(true);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Briefcase className="h-4 w-4 mr-2" />
+                      Create Project from Estimate
+                    </Button>
+                  )}
+                  
+                  <Button 
+                    onClick={() => {
+                      updateEstimateMutation.mutate({ status: 'final' });
+                    }}
+                    variant="outline"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Revert to Final
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Show block estimate UI for block type estimates */}
       {estimate?.estimateType === 'block' ? (
