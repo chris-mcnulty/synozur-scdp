@@ -3,6 +3,7 @@ import {
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
+  projectMilestones, projectRateOverrides,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Staff, type InsertStaff,
@@ -13,7 +14,10 @@ import {
   type ChangeOrder, type InsertChangeOrder,
   type InvoiceBatch, type InsertInvoiceBatch,
   type InvoiceLine, type InsertInvoiceLine,
-  type Sow, type InsertSow
+  type Sow, type InsertSow,
+  type ProjectMilestone, type InsertProjectMilestone,
+  type ProjectWorkstream, type InsertProjectWorkstream,
+  type ProjectRateOverride, type InsertProjectRateOverride
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -26,6 +30,8 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
   deleteUser(id: string): Promise<void>;
+  getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }>;  
+  setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void>;
   
   // Clients
   getClients(): Promise<Client[]>;
@@ -90,7 +96,7 @@ export interface IStorage {
   // Time entries
   getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]>;
   getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined>;
-  createTimeEntry(timeEntry: InsertTimeEntry): Promise<TimeEntry>;
+  createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry>;
   updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
   deleteTimeEntry(id: string): Promise<void>;
   
@@ -156,6 +162,21 @@ export interface IStorage {
     totalHours: number;
     revenue: number;
   }[]>;
+  
+  // Project Structure Methods
+  getProjectMilestones(projectId: string): Promise<ProjectMilestone[]>;
+  getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]>;
+  createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
+  createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream>;
+  
+  // Rate Management Methods
+  getProjectRateOverride(projectId: string, userId: string, date: string): Promise<ProjectRateOverride | null>;
+  createProjectRateOverride(override: InsertProjectRateOverride): Promise<ProjectRateOverride>;
+  getProjectRateOverrides(projectId: string): Promise<ProjectRateOverride[]>;
+  
+  // Profit Calculation Methods
+  calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }>;
+  calculateProjectMargin(projectId: string): Promise<number>;
   
   // Portfolio Reporting Methods
   getPortfolioMetrics(filters?: { 
@@ -329,6 +350,33 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }> {
+    const [user] = await db.select({
+      billingRate: users.defaultBillingRate,
+      costRate: users.defaultCostRate
+    })
+    .from(users)
+    .where(eq(users.id, userId));
+    
+    if (!user) {
+      return { billingRate: null, costRate: null };
+    }
+    
+    return {
+      billingRate: user.billingRate ? Number(user.billingRate) : null,
+      costRate: user.costRate ? Number(user.costRate) : null
+    };
+  }
+
+  async setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void> {
+    await db.update(users)
+      .set({
+        defaultBillingRate: billingRate?.toString() ?? null,
+        defaultCostRate: costRate?.toString() ?? null
+      })
+      .where(eq(users.id, userId));
+  }
+
   async getClients(): Promise<Client[]> {
     return await db.select().from(clients).orderBy(clients.name);
   }
@@ -370,10 +418,9 @@ export class DatabaseStorage implements IStorage {
         // Get total budget from approved SOWs
         const totalBudget = await this.getProjectTotalBudget(project.id);
         
-        // Get burned amount from billed time entries
-        // Note: Using default rate of 150 since timeEntries doesn't have a rate column
+        // Get burned amount from billable time entries using actual billing rates
         const burnedData = await db.select({
-          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * 150), 0)`
+          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
         })
         .from(timeEntries)
         .where(and(
@@ -928,8 +975,36 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async createTimeEntry(insertTimeEntry: InsertTimeEntry): Promise<TimeEntry> {
-    const [timeEntry] = await db.insert(timeEntries).values(insertTimeEntry).returning();
+  async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry> {
+    // Calculate rates for the time entry
+    const { personId, projectId, date } = insertTimeEntry;
+    
+    // First check for project-specific rate override
+    const override = await this.getProjectRateOverride(projectId, personId, date);
+    
+    let billingRate: number | null = null;
+    let costRate: number | null = null;
+    
+    if (override) {
+      // Use override rates if available
+      billingRate = override.billingRate ? Number(override.billingRate) : null;
+      costRate = override.costRate ? Number(override.costRate) : null;
+    }
+    
+    // If no override or rates are still null, get user default rates
+    if (billingRate === null || costRate === null) {
+      const userRates = await this.getUserRates(personId);
+      billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
+      costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set  
+    }
+    
+    // Create time entry with calculated rates
+    const [timeEntry] = await db.insert(timeEntries).values({
+      ...insertTimeEntry,
+      billingRate: billingRate.toString(),
+      costRate: costRate.toString()
+    }).returning();
+    
     return timeEntry;
   }
 
@@ -940,6 +1015,97 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTimeEntry(id: string): Promise<void> {
     await db.delete(timeEntries).where(eq(timeEntries.id, id));
+  }
+
+  // Project Structure Methods
+  async getProjectMilestones(projectId: string): Promise<ProjectMilestone[]> {
+    return await db.select()
+      .from(projectMilestones)
+      .innerJoin(projectEpics, eq(projectMilestones.projectEpicId, projectEpics.id))
+      .where(eq(projectEpics.projectId, projectId))
+      .orderBy(projectMilestones.order)
+      .then(rows => rows.map(r => r.project_milestones));
+  }
+
+  async getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]> {
+    return await db.select()
+      .from(projectWorkstreams)
+      .where(eq(projectWorkstreams.projectId, projectId))
+      .orderBy(projectWorkstreams.order);
+  }
+
+  async createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone> {
+    const [created] = await db.insert(projectMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream> {
+    const [created] = await db.insert(projectWorkstreams).values(workstream).returning();
+    return created;
+  }
+
+  // Rate Management Methods
+  async getProjectRateOverride(projectId: string, userId: string, date: string): Promise<ProjectRateOverride | null> {
+    const [override] = await db.select()
+      .from(projectRateOverrides)
+      .where(and(
+        eq(projectRateOverrides.projectId, projectId),
+        eq(projectRateOverrides.userId, userId),
+        lte(projectRateOverrides.effectiveDate, date),
+        sql`(${projectRateOverrides.endDate} IS NULL OR ${projectRateOverrides.endDate} >= ${date})`
+      ))
+      .orderBy(desc(projectRateOverrides.effectiveDate))
+      .limit(1);
+    
+    return override || null;
+  }
+
+  async createProjectRateOverride(override: InsertProjectRateOverride): Promise<ProjectRateOverride> {
+    const [created] = await db.insert(projectRateOverrides).values(override).returning();
+    return created;
+  }
+
+  async getProjectRateOverrides(projectId: string): Promise<ProjectRateOverride[]> {
+    return await db.select()
+      .from(projectRateOverrides)
+      .where(eq(projectRateOverrides.projectId, projectId))
+      .orderBy(desc(projectRateOverrides.effectiveDate));
+  }
+
+  // Profit Calculation Methods
+  async calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }> {
+    // Calculate revenue from billable time entries
+    const [revenueData] = await db.select({
+      totalRevenue: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
+    })
+    .from(timeEntries)
+    .where(and(
+      eq(timeEntries.projectId, projectId),
+      eq(timeEntries.billable, true)
+    ));
+    
+    // Calculate cost from all time entries (billable and non-billable)
+    const [costData] = await db.select({
+      totalCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC)), 0)`
+    })
+    .from(timeEntries)
+    .where(eq(timeEntries.projectId, projectId));
+    
+    const revenue = Number(revenueData?.totalRevenue || 0);
+    const cost = Number(costData?.totalCost || 0);
+    const profit = revenue - cost;
+    
+    return { revenue, cost, profit };
+  }
+
+  async calculateProjectMargin(projectId: string): Promise<number> {
+    const { revenue, profit } = await this.calculateProjectProfit(projectId);
+    
+    if (revenue === 0) {
+      return 0;
+    }
+    
+    return Math.round((profit / revenue) * 100);
   }
 
   async getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
@@ -1130,34 +1296,18 @@ export class DatabaseStorage implements IStorage {
       ? Math.round((utilizationData.billableHours / utilizationData.totalHours) * 100)
       : 0;
 
-    // Calculate monthly revenue from billable time entries
-    // First get all billable time entries for current month with their projects and users
-    const billableEntries = await db.select({
-      hours: timeEntries.hours,
-      personId: timeEntries.personId,
-      projectId: timeEntries.projectId,
-      date: timeEntries.date,
-      userId: users.id,
-      userRate: users.defaultRate,
-      projectChargeRate: projects.chargeRate
+    // Calculate monthly revenue from billable time entries using actual billing rates
+    const [monthlyRevenueData] = await db.select({
+      totalRevenue: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
     })
       .from(timeEntries)
-      .innerJoin(users, eq(timeEntries.personId, users.id))
-      .innerJoin(projects, eq(timeEntries.projectId, projects.id))
       .where(and(
         eq(timeEntries.billable, true),
         gte(timeEntries.date, monthStartStr),
         lte(timeEntries.date, monthEndStr)
       ));
 
-    // Calculate revenue: sum of (hours * applicable rate)
-    let monthlyRevenue = 0;
-    for (const entry of billableEntries) {
-      // Use project charge rate if available, otherwise use user's default rate
-      const rate = entry.projectChargeRate || entry.userRate || 150; // Default fallback rate
-      const hours = Number(entry.hours) || 0;
-      monthlyRevenue += hours * Number(rate);
-    }
+    const monthlyRevenue = Number(monthlyRevenueData?.totalRevenue || 0);
 
     // Get unbilled hours (cast to numeric for proper calculation)
     const [unbilledHours] = await db.select({ 
@@ -1244,26 +1394,63 @@ export class DatabaseStorage implements IStorage {
   async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string): Promise<Project> {
     try {
       return await db.transaction(async (tx) => {
-        // 1. Create the project
+        // 1. Get the estimate details first
+        const [estimate] = await tx.select().from(estimates).where(eq(estimates.id, estimateId));
+        if (!estimate) {
+          throw new Error('Estimate not found');
+        }
+        
+        // 2. Create the project
         const [project] = await tx.insert(projects).values(projectData).returning();
         
-        // 2. Copy the estimate structure (epics, stages, activities, workstreams)
+        // 3. Copy the estimate structure (epics, stages -> milestones, activities)
         // Get all epics from the estimate
         const epics = await tx.select().from(estimateEpics).where(eq(estimateEpics.estimateId, estimateId)).orderBy(estimateEpics.order);
         
+        // Map to store epic ID mapping (estimate epic -> project epic)
+        const epicMapping = new Map<string, string>();
+        
         for (const epic of epics) {
+          // Calculate budget hours for epic from line items
+          const [epicBudget] = await tx.select({
+            totalHours: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC)), 0)`
+          })
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.epicId, epic.id));
+          
           // Create project epic
           const [projectEpic] = await tx.insert(projectEpics).values({
             projectId: project.id,
+            estimateEpicId: epic.id, // Link to original estimate epic
             name: epic.name,
+            budgetHours: epicBudget?.totalHours?.toString() || '0',
             order: epic.order,
           }).returning();
           
-          // Get all stages for this epic
+          epicMapping.set(epic.id, projectEpic.id);
+          
+          // Get all stages for this epic and create milestones
           const stages = await tx.select().from(estimateStages).where(eq(estimateStages.epicId, epic.id)).orderBy(estimateStages.order);
           
           for (const stage of stages) {
-            // Create project stage
+            // Calculate budget hours for stage from line items
+            const [stageBudget] = await tx.select({
+              totalHours: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC)), 0)`
+            })
+            .from(estimateLineItems)
+            .where(eq(estimateLineItems.stageId, stage.id));
+            
+            // Create project milestone from estimate stage
+            await tx.insert(projectMilestones).values({
+              projectEpicId: projectEpic.id,
+              estimateStageId: stage.id, // Link to original estimate stage
+              name: stage.name,
+              budgetHours: stageBudget?.totalHours?.toString() || '0',
+              status: 'not-started',
+              order: stage.order,
+            });
+            
+            // Create project stage for the structure
             const [projectStage] = await tx.insert(projectStages).values({
               epicId: projectEpic.id,
               name: stage.name,
@@ -1284,75 +1471,86 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
-        // Get all unique workstreams from estimate line items
+        // 4. Get all unique workstreams from estimate line items and create them
         const workstreams = await tx.select({
-          workstream: estimateLineItems.workstream
+          workstream: estimateLineItems.workstream,
+          totalHours: sql<number>`SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC))`
         })
         .from(estimateLineItems)
         .where(eq(estimateLineItems.estimateId, estimateId))
         .groupBy(estimateLineItems.workstream);
         
         let workstreamOrder = 1;
-        for (const { workstream } of workstreams) {
+        for (const { workstream, totalHours } of workstreams) {
           if (workstream) {
             await tx.insert(projectWorkstreams).values({
               projectId: project.id,
               name: workstream,
+              budgetHours: totalHours?.toString() || '0',
               order: workstreamOrder++,
             });
           }
         }
         
-        // 3. Create rate overrides from estimate allocations that have custom rates
-        const allocations = await tx.select()
-          .from(estimateAllocations)
-          .innerJoin(estimateActivities, eq(estimateAllocations.activityId, estimateActivities.id))
-          .innerJoin(estimateStages, eq(estimateActivities.stageId, estimateStages.id))
-          .innerJoin(estimateEpics, eq(estimateStages.epicId, estimateEpics.id))
-          .where(eq(estimateEpics.estimateId, estimateId));
+        // 5. Create project rate overrides from estimate line items that have assigned users
+        const lineItemsWithUsers = await tx.select()
+          .from(estimateLineItems)
+          .where(and(
+            eq(estimateLineItems.estimateId, estimateId),
+            sql`${estimateLineItems.assignedUserId} IS NOT NULL`
+          ));
         
-        // Track unique person/role rate combinations to avoid duplicates
-        const processedRates = new Set<string>();
+        // Track unique user rate combinations to avoid duplicates
+        const processedUserRates = new Set<string>();
         
-        for (const { estimate_allocations: allocation } of allocations) {
-          if (!allocation.rackRate || parseFloat(allocation.rackRate) === 0) continue;
-          
-          const subjectType = allocation.pricingMode === 'role' ? 'role' : 'person';
-          const subjectId = allocation.pricingMode === 'role' ? allocation.roleId : allocation.personId;
-          
-          if (!subjectId) continue;
+        for (const lineItem of lineItemsWithUsers) {
+          if (!lineItem.assignedUserId || !lineItem.rate) continue;
           
           // Create a unique key for this rate override
-          const rateKey = `${subjectType}-${subjectId}-${allocation.rackRate}`;
+          const rateKey = `${lineItem.assignedUserId}-${lineItem.rate}-${lineItem.costRate || '0'}`;
           
-          if (processedRates.has(rateKey)) continue;
-          processedRates.add(rateKey);
+          if (processedUserRates.has(rateKey)) continue;
+          processedUserRates.add(rateKey);
           
-          // Create rate override for the project
-          await tx.insert(rateOverrides).values({
-            scope: 'project',
-            scopeId: project.id,
-            subjectType,
-            subjectId,
-            effectiveStart: projectData.startDate || new Date().toISOString().split('T')[0],
-            effectiveEnd: projectData.endDate || null,
-            rackRate: allocation.rackRate,
-            precedence: 10, // Project-level overrides have higher precedence
+          // Create project rate override for the user
+          await tx.insert(projectRateOverrides).values({
+            projectId: project.id,
+            userId: lineItem.assignedUserId,
+            billingRate: lineItem.rate,
+            costRate: lineItem.costRate,
+            effectiveDate: projectData.startDate || new Date().toISOString().split('T')[0],
+            endDate: projectData.endDate || null,
           });
         }
         
-        // 4. If block hour description is provided, we'll store it in the estimate itself
-        // Note: We could also create a separate project_settings table or use the estimate's blockDescription field
-        if (blockHourDescription && projectData.commercialScheme === 'retainer') {
-          // Update the estimate with the block hour description for future reference
-          await tx.update(estimates)
-            .set({ 
-              blockDescription: blockHourDescription
-            })
-            .where(eq(estimates.id, estimateId));
-        }
+        // 6. Create initial SOW with estimate total value
+        const estimateValue = estimate.presentedTotal || estimate.totalFees || '0';
+        const estimateHours = estimate.totalHours || estimate.blockHours || '0';
         
-        // 5. Update the estimate to link it to the project
+        const [initialSow] = await tx.insert(sows).values({
+          projectId: project.id,
+          type: 'initial',
+          name: 'Initial SOW',
+          description: blockHourDescription || `Initial statement of work based on ${estimate.name}`,
+          value: estimateValue,
+          hours: estimateHours,
+          effectiveDate: projectData.startDate || new Date().toISOString().split('T')[0],
+          status: 'approved', // Auto-approve since project is being created from approved estimate
+          approvedAt: new Date(),
+          notes: `Created from estimate: ${estimate.name}`,
+        }).returning();
+        
+        // 7. Update project with SOW information
+        await tx.update(projects)
+          .set({
+            sowValue: estimateValue,
+            sowDate: projectData.startDate || new Date().toISOString().split('T')[0],
+            hasSow: true,
+            baselineBudget: estimateValue,
+          })
+          .where(eq(projects.id, project.id));
+        
+        // 8. Update the estimate to link it to the project
         await tx.update(estimates)
           .set({ 
             projectId: project.id,
@@ -1438,19 +1636,21 @@ export class DatabaseStorage implements IStorage {
           const timeEntryIds: string[] = [];
           
           for (const { timeEntry, user } of unbilledTimeEntries) {
-            // Check for rate overrides (using the correct rateOverrides schema)
+            // Check for project rate override for this user
             const [rateOverride] = await tx.select()
-              .from(rateOverrides)
+              .from(projectRateOverrides)
               .where(and(
-                eq(rateOverrides.scope, 'project'),
-                eq(rateOverrides.scopeId, project.id),
-                eq(rateOverrides.subjectType, 'person'),
-                eq(rateOverrides.subjectId, user.id)
+                eq(projectRateOverrides.projectId, project.id),
+                eq(projectRateOverrides.userId, user.id),
+                lte(projectRateOverrides.effectiveDate, timeEntry.date),
+                sql`(${projectRateOverrides.endDate} IS NULL OR ${projectRateOverrides.endDate} >= ${timeEntry.date})`
               ))
+              .orderBy(desc(projectRateOverrides.effectiveDate))
               .limit(1);
 
-            // Use chargeRate from override, or fall back to a default rate
-            const rate = rateOverride?.chargeRate ? Number(rateOverride.chargeRate) : 150; // Default rate fallback
+            // Use billing rate from override, or fall back to user's default billing rate  
+            const rate = rateOverride?.billingRate ? Number(rateOverride.billingRate) : 
+                        (user.defaultBillingRate ? Number(user.defaultBillingRate) : 150); // Default rate fallback
             
             const amount = Number(timeEntry.hours) * rate;
             timeAmount += amount;
@@ -1528,11 +1728,7 @@ export class DatabaseStorage implements IStorage {
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
       billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.defaultRate} AS NUMERIC),
-        150
-      ) ELSE 0 END)::float`
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END)::float`
     })
     .from(timeEntries)
     .leftJoin(users, eq(timeEntries.personId, users.id))
@@ -1614,7 +1810,7 @@ export class DatabaseStorage implements IStorage {
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
     })
@@ -1675,7 +1871,7 @@ export class DatabaseStorage implements IStorage {
       totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
       revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${users.id} LIMIT 1),
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END)::float`
     })
@@ -1716,18 +1912,27 @@ export class DatabaseStorage implements IStorage {
     completionPercentage: number;
     healthScore: string;
   }[]> {
-    let query = db.select({
+    // Build filter conditions
+    const conditions = [];
+    if (filters?.clientId) {
+      conditions.push(eq(projects.clientId, filters.clientId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(projects.status, filters.status));
+    }
+
+    const baseQuery = db.select({
       project: projects,
       client: clients,
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
       actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.costRate} AS NUMERIC),
+        CAST(${users.defaultCostRate} AS NUMERIC),
         100
       )), 0)::float`,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
         (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projects.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
     })
@@ -1737,15 +1942,9 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(users, eq(timeEntries.personId, users.id))
     .groupBy(projects.id, clients.id);
 
-    // Apply filters
-    if (filters?.clientId) {
-      query = query.where(eq(projects.clientId, filters.clientId));
-    }
-    if (filters?.status) {
-      query = query.where(eq(projects.status, filters.status));
-    }
-
-    const results = await query;
+    const results = conditions.length > 0 
+      ? await baseQuery.where(and(...conditions))
+      : await baseQuery;
 
     // Process each project to calculate additional metrics
     const processedResults = await Promise.all(results.map(async (row) => {
@@ -1761,7 +1960,7 @@ export class DatabaseStorage implements IStorage {
         if (estimate) {
           const lineItems = await this.getEstimateLineItems(estimate.id);
           estimatedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
-          estimatedCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+          estimatedCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.rate)), 0);
         }
       }
 
@@ -1786,8 +1985,8 @@ export class DatabaseStorage implements IStorage {
         projectName: row.project.name,
         clientName: row.client?.name || '',
         status: row.project.status,
-        startDate: row.project.startDate,
-        endDate: row.project.endDate,
+        startDate: row.project.startDate ? new Date(row.project.startDate) : null,
+        endDate: row.project.endDate ? new Date(row.project.endDate) : null,
         estimatedHours,
         actualHours,
         estimatedCost,
@@ -1802,10 +2001,10 @@ export class DatabaseStorage implements IStorage {
     // Apply date filters if provided
     if (filters?.startDate || filters?.endDate) {
       return processedResults.filter(project => {
-        if (filters.startDate && project.startDate && project.startDate < new Date(filters.startDate)) {
+        if (filters.startDate && project.startDate && new Date(project.startDate) < new Date(filters.startDate)) {
           return false;
         }
-        if (filters.endDate && project.endDate && project.endDate > new Date(filters.endDate)) {
+        if (filters.endDate && project.endDate && new Date(project.endDate) > new Date(filters.endDate)) {
           return false;
         }
         return true;
@@ -1836,13 +2035,14 @@ export class DatabaseStorage implements IStorage {
     changeOrderCount: number;
     changeOrderValue: number;
   }[]> {
-    let projectQuery = db.select()
-      .from(projects)
-      .leftJoin(clients, eq(projects.clientId, clients.id));
-
-    if (filters?.clientId) {
-      projectQuery = projectQuery.where(eq(projects.clientId, filters.clientId));
-    }
+    const projectQuery = filters?.clientId 
+      ? db.select()
+          .from(projects)
+          .leftJoin(clients, eq(projects.clientId, clients.id))
+          .where(eq(projects.clientId, filters.clientId))
+      : db.select()
+          .from(projects)
+          .leftJoin(clients, eq(projects.clientId, clients.id));
 
     const projectResults = await projectQuery;
 
@@ -1863,7 +2063,7 @@ export class DatabaseStorage implements IStorage {
       if (originalEstimate) {
         const lineItems = await this.getEstimateLineItems(originalEstimate.id);
         originalEstimateHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
-        originalEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+        originalEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.rate)), 0);
       }
       
       // Get current estimate (latest approved or latest)
@@ -1874,7 +2074,7 @@ export class DatabaseStorage implements IStorage {
       if (currentEstimate) {
         const lineItems = await this.getEstimateLineItems(currentEstimate.id);
         currentEstimateHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
-        currentEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.adjustedRate)), 0);
+        currentEstimateCost = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.rate)), 0);
       }
 
       // Get actual hours and costs
@@ -1882,7 +2082,7 @@ export class DatabaseStorage implements IStorage {
         actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
         actualCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
           (SELECT cost_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${project.id} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-          CAST(${users.costRate} AS NUMERIC),
+          CAST(${users.defaultCostRate} AS NUMERIC),
           100
         )), 0)::float`
       })
@@ -1898,7 +2098,7 @@ export class DatabaseStorage implements IStorage {
       const changeOrderCount = changeOrdersData.length;
       const changeOrderValue = changeOrdersData
         .filter(co => co.status === 'approved')
-        .reduce((sum, co) => sum + parseFloat(co.amount), 0);
+        .reduce((sum, co) => sum + parseFloat(co.deltaFees || '0'), 0);
 
       // Calculate variances
       const hoursVariance = actualHours - currentEstimateHours;
@@ -1975,15 +2175,15 @@ export class DatabaseStorage implements IStorage {
     // Get summary metrics
     const summaryQuery = db.select({
       totalRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      billedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      billedRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      unbilledRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      unbilledRevenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
     })
@@ -2000,30 +2200,42 @@ export class DatabaseStorage implements IStorage {
     const summaryResults = await summaryQuery;
     
     // Get quoted revenue from estimates
-    const estimateQuery = db.select({
-      quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.adjustedRate} AS NUMERIC)), 0)::float`
-    })
-    .from(estimates)
-    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-    .where(eq(estimates.status, 'approved'));
-
-    if (filters?.clientId) {
-      estimateQuery.where(eq(estimates.clientId, filters.clientId));
-    }
+    const estimateQuery = filters?.clientId 
+      ? db.select({
+          quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+        })
+        .from(estimates)
+        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+        .where(and(
+          eq(estimates.status, 'approved'),
+          eq(estimates.clientId, filters.clientId)
+        ))
+      : db.select({
+          quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+        })
+        .from(estimates)
+        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+        .where(eq(estimates.status, 'approved'));
 
     const estimateResults = await estimateQuery;
     
     // Get pipeline revenue (draft estimates)
-    const pipelineQuery = db.select({
-      pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.adjustedRate} AS NUMERIC)), 0)::float`
-    })
-    .from(estimates)
-    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-    .where(eq(estimates.status, 'draft'));
-
-    if (filters?.clientId) {
-      pipelineQuery.where(eq(estimates.clientId, filters.clientId));
-    }
+    const pipelineQuery = filters?.clientId 
+      ? db.select({
+          pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+        })
+        .from(estimates)
+        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+        .where(and(
+          eq(estimates.status, 'draft'),
+          eq(estimates.clientId, filters.clientId)
+        ))
+      : db.select({
+          pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+        })
+        .from(estimates)
+        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+        .where(eq(estimates.status, 'draft'));
 
     const pipelineResults = await pipelineQuery;
 
@@ -2038,15 +2250,15 @@ export class DatabaseStorage implements IStorage {
     const monthlyQuery = db.select({
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`
     })
@@ -2114,15 +2326,15 @@ export class DatabaseStorage implements IStorage {
       clientId: clients.id,
       clientName: clients.name,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
-      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.invoiced} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
+        CAST(${users.defaultBillingRate} AS NUMERIC),
         150
       ) ELSE 0 END), 0)::float`,
       projectCount: sql<number>`COUNT(DISTINCT ${projects.id})::int`
@@ -2132,7 +2344,7 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(timeEntries, eq(timeEntries.projectId, projects.id))
     .leftJoin(users, eq(timeEntries.personId, users.id))
     .groupBy(clients.id, clients.name)
-    .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${users.defaultRate} AS NUMERIC), 150) ELSE 0 END) DESC`);
+    .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${users.defaultBillingRate} AS NUMERIC), 150) ELSE 0 END) DESC`);
 
     if (filters?.clientId) {
       clientQuery.where(eq(clients.id, filters.clientId));
@@ -2204,29 +2416,22 @@ export class DatabaseStorage implements IStorage {
     const totalCapacity = workDays * hoursPerDay;
 
     // Get utilization by person
-    let personQuery = db.select({
+    const personQuery = db.select({
       personId: users.id,
       personName: users.name,
       role: users.role,
-      targetUtilization: users.targetUtilization,
       billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
       nonBillableHours: sql<number>`COALESCE(SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
-      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultRate} AS NUMERIC),
-        150
-      ) ELSE 0 END), 0)::float`
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`
     })
     .from(users)
-    .leftJoin(timeEntries, eq(timeEntries.personId, users.id))
+    .leftJoin(timeEntries, and(
+      eq(timeEntries.personId, users.id),
+      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
+      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
+    ))
     .where(eq(users.isActive, true))
-    .groupBy(users.id, users.name, users.role, users.targetUtilization);
-
-    if (filters?.startDate) {
-      personQuery = personQuery.where(gte(timeEntries.date, filters.startDate));
-    }
-    if (filters?.endDate) {
-      personQuery = personQuery.where(lte(timeEntries.date, filters.endDate));
-    }
+    .groupBy(users.id, users.name, users.role);
 
     const personResults = await personQuery;
 
@@ -2242,7 +2447,7 @@ export class DatabaseStorage implements IStorage {
         personId: row.personId,
         personName: row.personName,
         role: row.role,
-        targetUtilization: Number(row.targetUtilization) || 80,
+        targetUtilization: 80, // Default target utilization
         actualUtilization,
         billableHours,
         nonBillableHours,
@@ -2255,19 +2460,21 @@ export class DatabaseStorage implements IStorage {
     // Get utilization by role
     const roleQuery = db.select({
       role: users.role,
-      targetUtilization: sql<number>`AVG(${users.targetUtilization})::float`,
       billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
       nonBillableHours: sql<number>`COALESCE(SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
       headcount: sql<number>`COUNT(DISTINCT ${users.id})::int`
     })
     .from(users)
-    .leftJoin(timeEntries, eq(timeEntries.personId, users.id))
-    .where(eq(users.isActive, true))
+    .leftJoin(timeEntries, and(
+      eq(timeEntries.personId, users.id),
+      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
+      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
+    ))
+    .where(and(
+      eq(users.isActive, true),
+      filters?.roleId ? eq(users.role, filters.roleId) : sql`true`
+    ))
     .groupBy(users.role);
-
-    if (filters?.roleId) {
-      roleQuery.where(eq(users.role, filters.roleId));
-    }
 
     const roleResults = await roleQuery;
 
@@ -2282,7 +2489,7 @@ export class DatabaseStorage implements IStorage {
       return {
         roleId: row.role,
         roleName: row.role,
-        targetUtilization: Number(row.targetUtilization) || 80,
+        targetUtilization: 80, // Default target utilization
         actualUtilization,
         billableHours,
         nonBillableHours,
@@ -2299,15 +2506,12 @@ export class DatabaseStorage implements IStorage {
       personCount: sql<number>`COUNT(DISTINCT ${timeEntries.personId})::int`
     })
     .from(timeEntries)
+    .where(and(
+      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
+      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
+    ))
     .groupBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`)
     .orderBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`);
-
-    if (filters?.startDate) {
-      trendQuery.where(gte(timeEntries.date, filters.startDate));
-    }
-    if (filters?.endDate) {
-      trendQuery.where(lte(timeEntries.date, filters.endDate));
-    }
 
     const trendResults = await trendQuery;
 
