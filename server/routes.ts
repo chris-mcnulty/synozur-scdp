@@ -1683,20 +1683,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let totalHours = 0;
         let totalCost = 0;
         
+        // Safely handle potentially null fields from older estimates
+        const estimateType = est.estimateType || 'detailed';
+        
         // For block estimates, use the block values directly
-        if (est.estimateType === 'block') {
-          totalHours = parseFloat(est.blockHours || '0');
-          totalCost = parseFloat(est.blockDollars || '0');
+        if (estimateType === 'block' && est.blockHours && est.blockDollars) {
+          totalHours = parseFloat(est.blockHours);
+          totalCost = parseFloat(est.blockDollars);
         } else {
-          // For detailed estimates, calculate from line items
+          // For detailed estimates or when block values are missing, calculate from line items
           const lineItems = await storage.getEstimateLineItems(est.id);
           
           totalHours = lineItems.reduce((sum, item) => {
-            return sum + (parseFloat(item.adjustedHours) || 0);
+            const hours = item.adjustedHours ? parseFloat(item.adjustedHours) : 0;
+            return sum + (isNaN(hours) ? 0 : hours);
           }, 0);
           
           totalCost = lineItems.reduce((sum, item) => {
-            return sum + (parseFloat(item.totalAmount) || 0);
+            const amount = item.totalAmount ? parseFloat(item.totalAmount) : 0;
+            return sum + (isNaN(amount) ? 0 : amount);
           }, 0);
         }
         
@@ -1704,14 +1709,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: est.id,
           name: est.name,
           clientId: est.clientId,
-          clientName: est.client.name,
-          projectId: est.projectId,
-          projectName: est.project?.name,
-          status: est.status,
-          estimateType: est.estimateType || 'detailed',
+          clientName: est.client ? est.client.name : 'Unknown Client',
+          projectId: est.projectId || null,
+          projectName: est.project?.name || null,
+          status: est.status || 'draft',
+          estimateType: estimateType,
+          pricingType: est.pricingType || 'hourly',
           totalHours: totalHours,
           totalCost: totalCost,
-          validUntil: est.validUntil,
+          validUntil: est.validUntil || null,
           createdAt: est.createdAt,
         };
       }));
