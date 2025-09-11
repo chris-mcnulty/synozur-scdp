@@ -145,9 +145,21 @@ export default function ProjectDetail() {
 
   const createSowMutation = useMutation({
     mutationFn: async (data: SowFormData) => {
+      // Convert empty date strings to null
+      const processedData = {
+        ...data,
+        signedDate: data.signedDate || null,
+        expirationDate: data.expirationDate || null,
+        documentUrl: data.documentUrl || null,
+        documentName: data.documentName || null,
+        description: data.description || null,
+        hours: data.hours || null,
+        notes: data.notes || null
+      };
+      
       return apiRequest(`/api/projects/${id}/sows`, {
         method: "POST",
-        body: JSON.stringify(data)
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -171,9 +183,21 @@ export default function ProjectDetail() {
 
   const updateSowMutation = useMutation({
     mutationFn: async ({ id: sowId, data }: { id: string; data: SowFormData }) => {
+      // Convert empty date strings to null
+      const processedData = {
+        ...data,
+        signedDate: data.signedDate || null,
+        expirationDate: data.expirationDate || null,
+        documentUrl: data.documentUrl || null,
+        documentName: data.documentName || null,
+        description: data.description || null,
+        hours: data.hours || null,
+        notes: data.notes || null
+      };
+      
       return apiRequest(`/api/sows/${sowId}`, {
         method: "PATCH",
-        body: JSON.stringify(data)
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
