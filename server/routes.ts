@@ -1294,7 +1294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           entry.date,
           entry.person?.name || "Unknown",
           entry.project?.name || "No Project",
-          entry.description,
+          entry.description || "",
           entry.hours,
           entry.billable ? "Yes" : "No",
           entry.phase || "N/A"
@@ -1481,7 +1481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 
                 // Try to find partial matches
                 if (!projectId) {
-                  for (const [key, id] of projectMap.entries()) {
+                  for (const [key, id] of Array.from(projectMap.entries())) {
                     if (key.includes(normalizedName) || normalizedName.includes(key)) {
                       projectId = id;
                       console.log(`Import Debug - Fuzzy matched project "${projectName}" to "${key}"`);
@@ -1789,9 +1789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update estimate status to approved
       const updatedEstimate = await storage.updateEstimate(req.params.id, { 
-        status: "approved",
-        approvedAt: new Date(),
-        approvedBy: req.user!.id
+        status: "approved"
       });
       
       let project = null;
@@ -2161,6 +2159,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/user", requireAuth, async (req, res) => {
     console.log("[DEBUG] Auth user request:", req.user);
     res.json(req.user);
+  });
+
+  // ===================== RATE MANAGEMENT ENDPOINTS =====================
+  
+  // Get user's default billing and cost rates
+  app.get("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const rates = await storage.getUserRates(req.params.userId);
+      res.json(rates);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get user rates" });
+    }
+  });
+
+  // Update user's default rates
+  app.put("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { billingRate, costRate } = req.body;
+      const updated = await storage.setUserRates(req.params.userId, billingRate, costRate);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user rates" });
+    }
+  });
+
+  // Get all rate overrides for a project
+  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const overrides = await storage.getProjectRateOverrides(req.params.projectId);
+      res.json(overrides);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get project rate overrides" });
+    }
+  });
+
+  // Create/update rate override for a user on a project
+  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const overrideData = {
+        ...req.body,
+        projectId: req.params.projectId
+      };
+      const override = await storage.createProjectRateOverride(overrideData);
+      res.json(override);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create rate override" });
+    }
+  });
+
+  // Delete a rate override
+  app.delete("/api/projects/:projectId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      await storage.deleteProjectRateOverride(req.params.overrideId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete rate override" });
+    }
+  });
+
+  // ===================== PROJECT STRUCTURE ENDPOINTS =====================
+  
+  // Get milestones for dropdown
+  app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
+    try {
+      const milestones = await storage.getProjectMilestones(req.params.projectId);
+      res.json(milestones);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get project milestones" });
+    }
+  });
+
+  // Create milestone
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const milestoneData = {
+        ...req.body,
+        projectId: req.params.projectId
+      };
+      const milestone = await storage.createProjectMilestone(milestoneData);
+      res.json(milestone);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create milestone" });
+    }
+  });
+
+  // Get workstreams for dropdown  
+  app.get("/api/projects/:projectId/workstreams", requireAuth, async (req, res) => {
+    try {
+      const workstreams = await storage.getProjectWorkStreams(req.params.projectId);
+      res.json(workstreams);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get project workstreams" });
+    }
+  });
+
+  // Create workstream
+  app.post("/api/projects/:projectId/workstreams", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const workstreamData = {
+        ...req.body,
+        projectId: req.params.projectId
+      };
+      const workstream = await storage.createProjectWorkStream(workstreamData);
+      res.json(workstream);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create workstream" });
+    }
+  });
+
+  // ===================== PROFIT TRACKING ENDPOINTS =====================
+  
+  // Get project profit/margin calculations
+  app.get("/api/projects/:projectId/profit", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+    try {
+      const profit = await storage.calculateProjectProfit(req.params.projectId);
+      const margin = await storage.calculateProjectMargin(req.params.projectId);
+      res.json({ ...profit, margin });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to calculate project profit" });
+    }
   });
 
   const httpServer = createServer(app);

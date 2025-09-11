@@ -173,6 +173,7 @@ export interface IStorage {
   getProjectRateOverride(projectId: string, userId: string, date: string): Promise<ProjectRateOverride | null>;
   createProjectRateOverride(override: InsertProjectRateOverride): Promise<ProjectRateOverride>;
   getProjectRateOverrides(projectId: string): Promise<ProjectRateOverride[]>;
+  deleteProjectRateOverride(overrideId: string): Promise<void>;
   
   // Profit Calculation Methods
   calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }>;
@@ -1063,6 +1064,10 @@ export class DatabaseStorage implements IStorage {
   async createProjectRateOverride(override: InsertProjectRateOverride): Promise<ProjectRateOverride> {
     const [created] = await db.insert(projectRateOverrides).values(override).returning();
     return created;
+  }
+
+  async deleteProjectRateOverride(overrideId: string): Promise<void> {
+    await db.delete(projectRateOverrides).where(eq(projectRateOverrides.id, overrideId));
   }
 
   async getProjectRateOverrides(projectId: string): Promise<ProjectRateOverride[]> {
