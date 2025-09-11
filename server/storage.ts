@@ -357,7 +357,15 @@ export class DatabaseStorage implements IStorage {
     const projectsWithBillableInfo = await Promise.all(
       projectRows.map(async (row) => {
         const project = row.projects;
-        const client = row.clients!;
+        // Handle case where client might be null (LEFT JOIN)
+        const client = row.clients || {
+          id: 'unknown',
+          name: 'No Client Assigned',
+          currency: 'USD',
+          billingContact: null,
+          vocabularyOverrides: null,
+          createdAt: new Date()
+        };
         
         // Get total budget from approved SOWs
         const totalBudget = await this.getProjectTotalBudget(project.id);
@@ -404,9 +412,19 @@ export class DatabaseStorage implements IStorage {
     if (rows.length === 0) return undefined;
     
     const row = rows[0];
+    // Handle case where client might be null (LEFT JOIN)
+    const client = row.clients || {
+      id: 'unknown',
+      name: 'No Client Assigned',
+      currency: 'USD',
+      billingContact: null,
+      vocabularyOverrides: null,
+      createdAt: new Date()
+    };
+    
     return {
       ...row.projects,
-      client: row.clients!
+      client
     };
   }
 
