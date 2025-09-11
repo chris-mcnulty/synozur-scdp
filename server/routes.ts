@@ -1676,56 +1676,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Estimates
   app.get("/api/estimates", requireAuth, async (req, res) => {
     try {
+      console.log("[DEBUG] Fetching estimates...");
       const estimates = await storage.getEstimates();
+      console.log(`[DEBUG] Found ${estimates.length} estimates`);
       
       // Calculate totals from line items for each estimate
-      const estimatesWithTotals = await Promise.all(estimates.map(async (est) => {
-        let totalHours = 0;
-        let totalCost = 0;
-        
-        // Safely handle potentially null fields from older estimates
-        const estimateType = est.estimateType || 'detailed';
-        
-        // For block estimates, use the block values directly
-        if (estimateType === 'block' && est.blockHours && est.blockDollars) {
-          totalHours = parseFloat(est.blockHours);
-          totalCost = parseFloat(est.blockDollars);
-        } else {
-          // For detailed estimates or when block values are missing, calculate from line items
-          const lineItems = await storage.getEstimateLineItems(est.id);
+      const estimatesWithTotals = await Promise.all(estimates.map(async (est, index) => {
+        try {
+          console.log(`[DEBUG] Processing estimate ${index + 1}/${estimates.length}: ${est.id}`);
           
-          totalHours = lineItems.reduce((sum, item) => {
-            const hours = item.adjustedHours ? parseFloat(item.adjustedHours) : 0;
-            return sum + (isNaN(hours) ? 0 : hours);
-          }, 0);
+          let totalHours = 0;
+          let totalCost = 0;
           
-          totalCost = lineItems.reduce((sum, item) => {
-            const amount = item.totalAmount ? parseFloat(item.totalAmount) : 0;
-            return sum + (isNaN(amount) ? 0 : amount);
-          }, 0);
+          // Safely handle potentially null fields from older estimates
+          const estimateType = est.estimateType || 'detailed';
+          
+          // For block estimates, use the block values directly
+          if (estimateType === 'block' && est.blockHours && est.blockDollars) {
+            totalHours = parseFloat(est.blockHours);
+            totalCost = parseFloat(est.blockDollars);
+            console.log(`[DEBUG] Block estimate - hours: ${totalHours}, cost: ${totalCost}`);
+          } else {
+            // For detailed estimates or when block values are missing, calculate from line items
+            try {
+              const lineItems = await storage.getEstimateLineItems(est.id);
+              console.log(`[DEBUG] Found ${lineItems.length} line items for estimate ${est.id}`);
+              
+              totalHours = lineItems.reduce((sum, item) => {
+                const hours = item.adjustedHours ? parseFloat(item.adjustedHours) : 0;
+                return sum + (isNaN(hours) ? 0 : hours);
+              }, 0);
+              
+              totalCost = lineItems.reduce((sum, item) => {
+                const amount = item.totalAmount ? parseFloat(item.totalAmount) : 0;
+                return sum + (isNaN(amount) ? 0 : amount);
+              }, 0);
+              
+              console.log(`[DEBUG] Detailed estimate - hours: ${totalHours}, cost: ${totalCost}`);
+            } catch (lineItemError) {
+              console.error(`[ERROR] Failed to fetch line items for estimate ${est.id}:`, lineItemError);
+              // Continue with zero totals if line items fail
+            }
+          }
+          
+          return {
+            id: est.id,
+            name: est.name || 'Unnamed Estimate',
+            clientId: est.clientId || null,
+            clientName: est.client ? est.client.name : 'Unknown Client',
+            projectId: est.projectId || null,
+            projectName: est.project?.name || null,
+            status: est.status || 'draft',
+            estimateType: estimateType,
+            pricingType: est.pricingType || 'hourly',
+            totalHours: totalHours,
+            totalCost: totalCost,
+            validUntil: est.validUntil || null,
+            createdAt: est.createdAt,
+          };
+        } catch (estError) {
+          console.error(`[ERROR] Failed to process estimate ${est.id}:`, estError);
+          // Return a minimal estimate object if processing fails
+          return {
+            id: est.id,
+            name: est.name || 'Error Loading Estimate',
+            clientId: est.clientId || null,
+            clientName: 'Error',
+            projectId: null,
+            projectName: null,
+            status: 'draft',
+            estimateType: 'detailed',
+            pricingType: 'hourly',
+            totalHours: 0,
+            totalCost: 0,
+            validUntil: null,
+            createdAt: est.createdAt || new Date().toISOString(),
+          };
         }
-        
-        return {
-          id: est.id,
-          name: est.name,
-          clientId: est.clientId,
-          clientName: est.client ? est.client.name : 'Unknown Client',
-          projectId: est.projectId || null,
-          projectName: est.project?.name || null,
-          status: est.status || 'draft',
-          estimateType: estimateType,
-          pricingType: est.pricingType || 'hourly',
-          totalHours: totalHours,
-          totalCost: totalCost,
-          validUntil: est.validUntil || null,
-          createdAt: est.createdAt,
-        };
       }));
       
+      console.log(`[DEBUG] Successfully processed ${estimatesWithTotals.length} estimates`);
       res.json(estimatesWithTotals);
     } catch (error) {
-      console.error("Error fetching estimates:", error);
-      res.status(500).json({ message: "Failed to fetch estimates" });
+      console.error("[ERROR] Failed to fetch estimates:", error);
+      console.error("[ERROR] Stack trace:", error.stack);
+      res.status(500).json({ 
+        message: "Failed to fetch estimates",
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined 
+      });
     }
   });
 
