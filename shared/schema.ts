@@ -20,6 +20,7 @@ export const users = pgTable("users", {
   customRole: text("custom_role"), // For non-standard roles
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }), // Default rack rate for this person
   defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }), // Default charge rate for this person  
+  defaultBillingRate: decimal("default_billing_rate", { precision: 10, scale: 2 }), // Default billing rate
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate (internal)
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -191,7 +192,11 @@ export const estimateActivities = pgTable("estimate_activities", {
 export const projectEpics = pgTable("project_epics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  estimateEpicId: varchar("estimate_epic_id").references(() => estimateEpics.id), // Link to original estimate epic
   name: text("name").notNull(),
+  description: text("description"),
+  budgetHours: decimal("budget_hours", { precision: 10, scale: 2 }),
+  actualHours: decimal("actual_hours", { precision: 10, scale: 2 }).default('0'),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
@@ -215,7 +220,27 @@ export const projectActivities = pgTable("project_activities", {
 export const projectWorkstreams = pgTable("project_workstreams", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  estimateWorkStreamId: varchar("estimate_workstream_id"), // Link to original estimate workstream if applicable
   name: text("name").notNull(),
+  description: text("description"),
+  budgetHours: decimal("budget_hours", { precision: 10, scale: 2 }),
+  actualHours: decimal("actual_hours", { precision: 10, scale: 2 }).default('0'),
+  order: integer("order").notNull(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Project Milestones (from estimate stages)
+export const projectMilestones = pgTable("project_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectEpicId: varchar("project_epic_id").notNull().references(() => projectEpics.id, { onDelete: 'cascade' }),
+  estimateStageId: varchar("estimate_stage_id").references(() => estimateStages.id), // Link to original estimate stage
+  name: text("name").notNull(),
+  description: text("description"),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  budgetHours: decimal("budget_hours", { precision: 10, scale: 2 }),
+  actualHours: decimal("actual_hours", { precision: 10, scale: 2 }).default('0'),
+  status: text("status").notNull().default('not-started'), // not-started, in-progress, completed
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
@@ -232,6 +257,18 @@ export const estimateAllocations = pgTable("estimate_allocations", {
   pricingMode: text("pricing_mode").notNull(), // "role" or "person"
   rackRate: decimal("rack_rate", { precision: 10, scale: 2 }).notNull(), // Snapshot of rate at time of estimate
   notes: text("notes"), // Additional notes for the allocation
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Project Rate Overrides
+export const projectRateOverrides = pgTable("project_rate_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
+  effectiveDate: date("effective_date").notNull(),
+  endDate: date("end_date"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -262,6 +299,8 @@ export const timeEntries = pgTable("time_entries", {
   description: text("description"),
   billedFlag: boolean("billed_flag").notNull().default(false),
   statusReportedFlag: boolean("status_reported_flag").notNull().default(false),
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Billing rate at time of entry
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate at time of entry
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -281,6 +320,12 @@ export const expenses = pgTable("expenses", {
   billedFlag: boolean("billed_flag").notNull().default(false),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
+
+// Add unique constraint for project rate overrides
+export const projectRateOverridesUniqueConstraint = sql`
+  CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx 
+  ON project_rate_overrides(project_id, user_id, effective_date)
+`;
 
 // SOWs (Statements of Work) - One-to-many relationship with projects
 export const sows = pgTable("sows", {
@@ -348,6 +393,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   timeEntries: many(timeEntries),
   expenses: many(expenses),
   allocations: many(estimateAllocations),
+  projectRateOverrides: many(projectRateOverrides),
 }));
 
 export const clientsRelations = relations(clients, ({ many }) => ({
@@ -370,6 +416,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   invoiceLines: many(invoiceLines),
   epics: many(projectEpics),
   workstreams: many(projectWorkstreams),
+  rateOverrides: many(projectRateOverrides),
 }));
 
 export const estimatesRelations = relations(estimates, ({ one, many }) => ({
@@ -430,7 +477,12 @@ export const projectEpicsRelations = relations(projectEpics, ({ one, many }) => 
     fields: [projectEpics.projectId],
     references: [projects.id],
   }),
+  estimateEpic: one(estimateEpics, {
+    fields: [projectEpics.estimateEpicId],
+    references: [estimateEpics.id],
+  }),
   stages: many(projectStages),
+  milestones: many(projectMilestones),
 }));
 
 export const projectStagesRelations = relations(projectStages, ({ one, many }) => ({
@@ -452,6 +504,28 @@ export const projectWorkstreamsRelations = relations(projectWorkstreams, ({ one 
   project: one(projects, {
     fields: [projectWorkstreams.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const projectMilestonesRelations = relations(projectMilestones, ({ one }) => ({
+  projectEpic: one(projectEpics, {
+    fields: [projectMilestones.projectEpicId],
+    references: [projectEpics.id],
+  }),
+  estimateStage: one(estimateStages, {
+    fields: [projectMilestones.estimateStageId],
+    references: [estimateStages.id],
+  }),
+}));
+
+export const projectRateOverridesRelations = relations(projectRateOverrides, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectRateOverrides.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [projectRateOverrides.userId],
+    references: [users.id],
   }),
 }));
 
@@ -558,6 +632,16 @@ export const insertProjectWorkstreamSchema = createInsertSchema(projectWorkstrea
   createdAt: true,
 });
 
+export const insertProjectMilestoneSchema = createInsertSchema(projectMilestones).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertProjectRateOverrideSchema = createInsertSchema(projectRateOverrides).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertRoleSchema = createInsertSchema(roles).omit({
   id: true,
   createdAt: true,
@@ -642,6 +726,10 @@ export type ProjectActivity = typeof projectActivities.$inferSelect;
 export type InsertProjectActivity = z.infer<typeof insertProjectActivitySchema>;
 export type ProjectWorkstream = typeof projectWorkstreams.$inferSelect;
 export type InsertProjectWorkstream = z.infer<typeof insertProjectWorkstreamSchema>;
+export type ProjectMilestone = typeof projectMilestones.$inferSelect;
+export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
+export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
+export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
