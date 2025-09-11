@@ -1079,15 +1079,86 @@ export class DatabaseStorage implements IStorage {
 
   // Profit Calculation Methods
   async calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }> {
-    // Calculate revenue from billable time entries
-    const [revenueData] = await db.select({
-      totalRevenue: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
-    })
-    .from(timeEntries)
-    .where(and(
-      eq(timeEntries.projectId, projectId),
-      eq(timeEntries.billable, true)
-    ));
+    // Get project details to check commercial scheme
+    const project = await this.getProject(projectId);
+    
+    let revenue = 0;
+    
+    if (project && project.commercialScheme === 'retainer') {
+      // For retainer projects, calculate recognized revenue based on elapsed months
+      if (project.startDate && project.retainerTotal) {
+        const startDate = new Date(project.startDate);
+        const today = new Date();
+        
+        // Only recognize revenue if project has started
+        if (today >= startDate) {
+          if (project.endDate) {
+            // Fixed-term retainer: recognize monthly over contract period
+            const endDate = new Date(project.endDate);
+            const effectiveEndDate = endDate < today ? endDate : today;
+            
+            // Calculate months elapsed (inclusive)
+            const monthsElapsed = Math.max(0, 
+              (effectiveEndDate.getFullYear() - startDate.getFullYear()) * 12 +
+              (effectiveEndDate.getMonth() - startDate.getMonth()) + 1
+            );
+            
+            // Calculate total contract months
+            const totalMonths = Math.max(1, 
+              (endDate.getFullYear() - startDate.getFullYear()) * 12 +
+              (endDate.getMonth() - startDate.getMonth()) + 1
+            );
+            
+            const monthlyRate = Number(project.retainerTotal) / totalMonths;
+            revenue = monthlyRate * Math.min(monthsElapsed, totalMonths);
+          } else {
+            // Open-ended retainer: use invoiced amounts as recognized revenue
+            // This avoids the issue of not knowing the contract duration
+            const [invoicedData] = await db.select({
+              totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
+            })
+            .from(invoiceLines)
+            .where(eq(invoiceLines.projectId, projectId));
+            
+            revenue = Number(invoicedData?.totalInvoiced || 0);
+          }
+        }
+      }
+    } else if (project && project.commercialScheme === 'milestone') {
+      // For milestone projects, use invoiced amounts as recognized revenue
+      // This queries invoice lines for this project
+      const [invoicedData] = await db.select({
+        totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
+      })
+      .from(invoiceLines)
+      .where(eq(invoiceLines.projectId, projectId));
+      
+      revenue = Number(invoicedData?.totalInvoiced || 0);
+      
+      // Also add approved change orders
+      const changeOrdersTotal = await db.select({
+        total: sql<number>`COALESCE(SUM(CAST(${changeOrders.deltaFees} AS NUMERIC)), 0)`
+      })
+      .from(changeOrders)
+      .where(and(
+        eq(changeOrders.projectId, projectId),
+        eq(changeOrders.status, 'approved')
+      ));
+      
+      revenue += Number(changeOrdersTotal[0]?.total || 0);
+    } else {
+      // For hourly (T&M) projects, calculate revenue from billable time entries
+      const [revenueData] = await db.select({
+        totalRevenue: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
+      })
+      .from(timeEntries)
+      .where(and(
+        eq(timeEntries.projectId, projectId),
+        eq(timeEntries.billable, true)
+      ));
+      
+      revenue = Number(revenueData?.totalRevenue || 0);
+    }
     
     // Calculate cost from all time entries (billable and non-billable)
     const [costData] = await db.select({
@@ -1096,7 +1167,6 @@ export class DatabaseStorage implements IStorage {
     .from(timeEntries)
     .where(eq(timeEntries.projectId, projectId));
     
-    const revenue = Number(revenueData?.totalRevenue || 0);
     const cost = Number(costData?.totalCost || 0);
     const profit = revenue - cost;
     
