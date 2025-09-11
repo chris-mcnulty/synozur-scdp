@@ -88,14 +88,17 @@ export const estimates = pgTable("estimates", {
   clientId: varchar("client_id").notNull().references(() => clients.id),
   projectId: varchar("project_id").references(() => projects.id), // Optional - can create estimate without project
   version: integer("version").notNull().default(1),
-  status: text("status").notNull().default("draft"), // draft, sent, approved, rejected
+  status: text("status").notNull().default("draft"), // draft, final, approved, rejected
   estimateType: text("estimate_type").notNull().default("detailed"), // detailed or block
+  pricingType: text("pricing_type").notNull().default("hourly"), // hourly or fixed
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
   // Block estimate fields (for retainer/simple estimates)
   blockHours: decimal("block_hours", { precision: 10, scale: 2 }),
   blockDollars: decimal("block_dollars", { precision: 10, scale: 2 }),
   blockDescription: text("block_description"),
+  // Fixed price field for block/retainer pricing
+  fixedPrice: decimal("fixed_price", { precision: 10, scale: 2 }),
   // Output totals (customer-facing)
   presentedTotal: decimal("presented_total", { precision: 10, scale: 2 }), // Total presented to customer
   margin: decimal("margin", { precision: 5, scale: 2 }), // Margin percentage

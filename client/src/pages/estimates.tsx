@@ -330,6 +330,7 @@ export default function Estimates() {
                 projectId: (!projectId || projectId === 'none' || projectId === '') ? null : projectId,
                 validDays: parseInt(formData.get('validDays') as string) || 30,
                 estimateType: selectedEstimateType,
+                pricingType: formData.get('pricingType') || 'hourly',
                 estimateDate: formData.get('estimateDate') as string || undefined,
               };
               
@@ -338,10 +339,12 @@ export default function Estimates() {
                 const blockHours = formData.get('blockHours') as string;
                 const blockDollars = formData.get('blockDollars') as string;
                 const blockDescription = formData.get('blockDescription') as string;
+                const fixedPrice = formData.get('fixedPrice') as string;
                 
                 if (blockHours) estimateData.blockHours = parseFloat(blockHours);
                 if (blockDollars) estimateData.blockDollars = parseFloat(blockDollars);
                 if (blockDescription) estimateData.blockDescription = blockDescription;
+                if (fixedPrice) estimateData.fixedPrice = parseFloat(fixedPrice);
               }
               
               createEstimate.mutate(estimateData);
@@ -403,20 +406,38 @@ export default function Estimates() {
                   </Select>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label htmlFor="estimateType">Estimate Type</Label>
-                  <Select name="estimateType" defaultValue="detailed" onValueChange={setEstimateType}>
-                    <SelectTrigger data-testid="select-estimate-type">
-                      <SelectValue placeholder="Select estimate type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="detailed">Detailed (with line items)</SelectItem>
-                      <SelectItem value="block">Block (simple hours/dollars)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Block estimates are ideal for retainer projects with fixed hours/dollars
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="estimateType">Estimate Type</Label>
+                    <Select name="estimateType" defaultValue="detailed" onValueChange={setEstimateType}>
+                      <SelectTrigger data-testid="select-estimate-type">
+                        <SelectValue placeholder="Select estimate type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="detailed">Detailed (with line items)</SelectItem>
+                        <SelectItem value="block">Block (simple hours/dollars)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Block estimates are ideal for retainer projects with fixed hours/dollars
+                    </p>
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="pricingType">Pricing Type</Label>
+                    <Select name="pricingType" defaultValue="hourly">
+                      <SelectTrigger data-testid="select-pricing-type">
+                        <SelectValue placeholder="Select pricing type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hourly">Hourly Rate</SelectItem>
+                        <SelectItem value="fixed">Fixed Price</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Fixed price for deliverables, hourly for time-based work
+                    </p>
+                  </div>
                 </div>
 
                 {estimateType === 'block' && (
@@ -443,6 +464,21 @@ export default function Estimates() {
                         />
                       </div>
                     </div>
+                    
+                    <div className="grid gap-2">
+                      <Label htmlFor="fixedPrice">Fixed Price (if applicable)</Label>
+                      <Input
+                        id="fixedPrice"
+                        name="fixedPrice"
+                        type="number"
+                        placeholder="e.g., 10000 (for fixed-price deliverables)"
+                        data-testid="input-fixed-price"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        For fixed-price projects like workshops or deliverables
+                      </p>
+                    </div>
+                    
                     <div className="grid gap-2">
                       <Label htmlFor="blockDescription">Description</Label>
                       <textarea

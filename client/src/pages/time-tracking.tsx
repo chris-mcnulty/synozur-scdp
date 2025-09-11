@@ -716,7 +716,11 @@ export default function TimeTracking() {
                         </div>
                         {entry.billingRate && (
                           <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
-                            ${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}
+                            {entry.project.commercialScheme === 'retainer' || entry.project.commercialScheme === 'milestone' ? (
+                              <span className="text-blue-600">Block/Retainer</span>
+                            ) : (
+                              `$${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}`
+                            )}
                           </div>
                         )}
                       </div>

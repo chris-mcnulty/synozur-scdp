@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
 
@@ -284,12 +284,12 @@ export default function EstimateDetail() {
       setBlockHourDescription("");
       if (data.project) {
         toast({ 
-          title: "Estimate approved", 
+          title: estimate?.status === 'approved' ? "Project created" : "Estimate approved", 
           description: `Project "${data.project.name}" created successfully.` 
         });
         // Navigate to the new project
         setTimeout(() => {
-          setLocation(`/projects`);
+          setLocation(`/projects/${data.project.id}`);
         }, 1500);
       } else {
         toast({ title: "Estimate approved successfully" });
@@ -297,7 +297,7 @@ export default function EstimateDetail() {
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to approve estimate", 
+        title: estimate?.status === 'approved' ? "Failed to create project" : "Failed to approve estimate", 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -680,6 +680,7 @@ export default function EstimateDetail() {
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                 estimate.status === 'approved' ? 'bg-green-100 text-green-800' :
                 estimate.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                estimate.status === 'final' ? 'bg-blue-100 text-blue-800' :
                 estimate.status === 'sent' ? 'bg-blue-100 text-blue-800' :
                 'bg-gray-100 text-gray-800'
               }`}>
@@ -688,28 +689,83 @@ export default function EstimateDetail() {
             </div>
           )}
           
-          {/* Approve/Reject Buttons */}
-          {estimate?.status === 'draft' && (user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
+          {/* Status Management Buttons */}
+          {(user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
             <>
-              <Button 
-                onClick={() => setShowApprovalDialog(true)}
-                variant="default"
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Check className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-              <Button 
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to reject this estimate?')) {
-                    rejectEstimateMutation.mutate();
-                  }
-                }}
-                variant="destructive"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
+              {estimate?.status === 'draft' && (
+                <Button 
+                  onClick={() => {
+                    if (window.confirm('Mark this estimate as final and ready for client review?')) {
+                      updateEstimateMutation.mutate({ status: 'final' });
+                    }
+                  }}
+                  variant="default"
+                >
+                  <FileCheck className="h-4 w-4 mr-2" />
+                  Mark as Final
+                </Button>
+              )}
+              
+              {estimate?.status === 'final' && (
+                <>
+                  <Button 
+                    onClick={() => setShowApprovalDialog(true)}
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Approve
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to reject this estimate?')) {
+                        rejectEstimateMutation.mutate();
+                      }
+                    }}
+                    variant="destructive"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Reject
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (window.confirm('Return this estimate to draft status for more changes?')) {
+                        updateEstimateMutation.mutate({ status: 'draft' });
+                      }
+                    }}
+                    variant="outline"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Back to Draft
+                  </Button>
+                </>
+              )}
+              
+              {estimate?.status === 'approved' && !estimate?.projectId && (
+                <Button 
+                  onClick={() => {
+                    setShouldCreateProject(true);
+                    setShowApprovalDialog(true);
+                  }}
+                  variant="default"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <Briefcase className="h-4 w-4 mr-2" />
+                  Create Project
+                </Button>
+              )}
+              
+              {estimate?.status === 'approved' && estimate?.projectId && (
+                <Button 
+                  onClick={() => {
+                    setLocation(`/projects/${estimate.projectId}`);
+                  }}
+                  variant="outline"
+                >
+                  <Briefcase className="h-4 w-4 mr-2" />
+                  View Project
+                </Button>
+              )}
             </>
           )}
           
@@ -2719,9 +2775,11 @@ export default function EstimateDetail() {
     <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Approve Estimate</DialogTitle>
+          <DialogTitle>{estimate?.status === 'approved' ? 'Create Project from Estimate' : 'Approve Estimate'}</DialogTitle>
           <DialogDescription>
-            Approve this estimate and optionally create a project from it.
+            {estimate?.status === 'approved' 
+              ? 'Create a new project from this approved estimate.'
+              : 'Approve this estimate and optionally create a project from it.'}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -2789,7 +2847,9 @@ export default function EstimateDetail() {
             disabled={approveEstimateMutation.isPending}
             className="bg-green-600 hover:bg-green-700"
           >
-            {approveEstimateMutation.isPending ? "Approving..." : "Approve Estimate"}
+            {approveEstimateMutation.isPending 
+              ? (estimate?.status === 'approved' ? "Creating Project..." : "Approving...") 
+              : (estimate?.status === 'approved' ? "Create Project" : "Approve Estimate")}
           </Button>
         </DialogFooter>
       </DialogContent>
