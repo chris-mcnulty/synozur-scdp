@@ -1,0 +1,81 @@
+index-CskgkmIN.js:48   GET https://scdp.synozur.com/api/dashboard/metrics 500 (Internal Server Error)
+(anonymous) @ index-CskgkmIN.js:48
+a @ index-CskgkmIN.js:48
+g @ index-CskgkmIN.js:48
+start @ index-CskgkmIN.js:48
+fetch @ index-CskgkmIN.js:48
+yf @ index-CskgkmIN.js:48
+onSubscribe @ index-CskgkmIN.js:48
+subscribe @ index-CskgkmIN.js:48
+(anonymous) @ index-CskgkmIN.js:48
+kR @ index-CskgkmIN.js:38
+Py @ index-CskgkmIN.js:40
+Yc @ index-CskgkmIN.js:40
+rq @ index-CskgkmIN.js:40
+al @ index-CskgkmIN.js:40
+$O @ index-CskgkmIN.js:40
+Wo @ index-CskgkmIN.js:38
+(anonymous) @ index-CskgkmIN.js:40
+setTimeout
+i @ index-CskgkmIN.js:48
+o @ index-CskgkmIN.js:48
+batch @ index-CskgkmIN.js:48
+cs @ index-CskgkmIN.js:48
+setData @ index-CskgkmIN.js:48
+onSuccess @ index-CskgkmIN.js:48
+f @ index-CskgkmIN.js:48
+Promise.then
+g @ index-CskgkmIN.js:48
+start @ index-CskgkmIN.js:48
+fetch @ index-CskgkmIN.js:48
+yf @ index-CskgkmIN.js:48
+setOptions @ index-CskgkmIN.js:48
+(anonymous) @ index-CskgkmIN.js:48
+Py @ index-CskgkmIN.js:40
+Yc @ index-CskgkmIN.js:40
+(anonymous) @ index-CskgkmIN.js:40
+x @ index-CskgkmIN.js:25
+P @ index-CskgkmIN.js:25
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-CskgkmIN.js:48   GET https://scdp.synozur.com/api/projects 500 (Internal Server Error)
+(anonymous) @ index-CskgkmIN.js:48
+a @ index-CskgkmIN.js:48
+g @ index-CskgkmIN.js:48
+start @ index-CskgkmIN.js:48
+fetch @ index-CskgkmIN.js:48
+yf @ index-CskgkmIN.js:48
+onSubscribe @ index-CskgkmIN.js:48
+subscribe @ index-CskgkmIN.js:48
+(anonymous) @ index-CskgkmIN.js:48
+kR @ index-CskgkmIN.js:38
+Py @ index-CskgkmIN.js:40
+Yc @ index-CskgkmIN.js:40
+rq @ index-CskgkmIN.js:40
+al @ index-CskgkmIN.js:40
+$O @ index-CskgkmIN.js:40
+Wo @ index-CskgkmIN.js:38
+(anonymous) @ index-CskgkmIN.js:40
+setTimeout
+i @ index-CskgkmIN.js:48
+o @ index-CskgkmIN.js:48
+batch @ index-CskgkmIN.js:48
+cs @ index-CskgkmIN.js:48
+setData @ index-CskgkmIN.js:48
+onSuccess @ index-CskgkmIN.js:48
+f @ index-CskgkmIN.js:48
+Promise.then
+g @ index-CskgkmIN.js:48
+start @ index-CskgkmIN.js:48
+fetch @ index-CskgkmIN.js:48
+yf @ index-CskgkmIN.js:48
+setOptions @ index-CskgkmIN.js:48
+(anonymous) @ index-CskgkmIN.js:48
+Py @ index-CskgkmIN.js:40
+Yc @ index-CskgkmIN.js:40
+(anonymous) @ index-CskgkmIN.js:40
+x @ index-CskgkmIN.js:25
+P @ index-CskgkmIN.js:25
