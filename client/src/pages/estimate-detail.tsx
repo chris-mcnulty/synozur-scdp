@@ -72,6 +72,7 @@ export default function EstimateDetail() {
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [blockHoursInput, setBlockHoursInput] = useState<string>("");
   const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
+  const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -285,7 +286,10 @@ export default function EstimateDetail() {
     if (estimate?.blockDollars !== undefined) {
       setBlockDollarsInput(estimate.blockDollars?.toString() || "");
     }
-  }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars]);
+    if (estimate?.blockDescription !== undefined) {
+      setBlockDescriptionInput(estimate.blockDescription || "");
+    }
+  }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars, estimate?.blockDescription]);
 
   const approveEstimateMutation = useMutation({
     mutationFn: async ({ createProject, blockHourDescription }: { createProject: boolean; blockHourDescription?: string }) => {
@@ -1021,10 +1025,13 @@ export default function EstimateDetail() {
               <textarea
                 id="block-description"
                 placeholder="Describe the work to be done..."
-                value={estimate?.blockDescription || ""}
+                value={blockDescriptionInput}
                 onChange={(e) => {
+                  setBlockDescriptionInput(e.target.value);
+                }}
+                onBlur={() => {
                   updateEstimateMutation.mutate({ 
-                    blockDescription: e.target.value
+                    blockDescription: blockDescriptionInput
                   });
                 }}
                 className="mt-1 w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
