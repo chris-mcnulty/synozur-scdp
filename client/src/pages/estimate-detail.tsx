@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -69,6 +69,7 @@ export default function EstimateDetail() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
+  const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -270,6 +271,13 @@ export default function EstimateDetail() {
       });
     }
   });
+
+  // Initialize fixed price input when estimate loads
+  useEffect(() => {
+    if (estimate?.fixedPrice !== undefined) {
+      setFixedPriceInput(estimate.fixedPrice?.toString() || "");
+    }
+  }, [estimate?.fixedPrice]);
 
   const approveEstimateMutation = useMutation({
     mutationFn: async ({ createProject, blockHourDescription }: { createProject: boolean; blockHourDescription?: string }) => {
@@ -830,10 +838,14 @@ export default function EstimateDetail() {
                 <Input
                   id="fixed-price"
                   type="number"
-                  placeholder="Enter fixed price"
-                  value={estimate?.fixedPrice || ""}
+                  step="0.01"
+                  placeholder="Enter fixed price (e.g., 10000)"
+                  value={fixedPriceInput}
                   onChange={(e) => {
-                    const value = e.target.value;
+                    setFixedPriceInput(e.target.value);
+                  }}
+                  onBlur={() => {
+                    const value = fixedPriceInput.trim();
                     if (value === '' || !isNaN(parseFloat(value))) {
                       updateEstimateMutation.mutate({ 
                         fixedPrice: value === '' ? null : parseFloat(value)
