@@ -1,8 +1,9 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema } from "@shared/schema";
+import { storage, db } from "./storage";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, sows } from "@shared/schema";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 
 // Extend Express Request interface to include user
@@ -525,18 +526,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      console.log("Creating SOW with data:", req.body);
+      console.log("Project ID:", req.params.id);
+      
       const insertData = insertSowSchema.parse({
         ...req.body,
         projectId: req.params.id
       });
+      
+      console.log("Parsed SOW data:", insertData);
       const sow = await storage.createSow(insertData);
       res.status(201).json(sow);
     } catch (error: any) {
-      console.error("Error creating SOW:", error);
+      console.error("Error creating SOW - Full error:", error);
+      console.error("Error stack:", error.stack);
+      console.error("Request body:", req.body);
+      
       if (error instanceof z.ZodError) {
+        console.error("Zod validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid SOW data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create SOW" });
+      
+      res.status(500).json({ 
+        message: "Failed to create SOW", 
+        details: error.message || "Unknown error",
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   });
 
@@ -562,12 +577,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/sows/:id/approve", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      // First update status to approved
       const sow = await storage.updateSow(req.params.id, { 
-        status: "approved",
-        approvedBy: req.user?.id,
-        approvedAt: new Date()
+        status: "approved"
       });
-      res.json(sow);
+      
+      // Then manually update the approval fields directly (since they're not in InsertSow)
+      const [updatedSow] = await db.update(sows)
+        .set({
+          approvedBy: req.user?.id,
+          approvedAt: new Date()
+        })
+        .where(eq(sows.id, req.params.id))
+        .returning();
+      
+      res.json(updatedSow);
     } catch (error) {
       console.error("Error approving SOW:", error);
       res.status(500).json({ message: "Failed to approve SOW" });

@@ -678,6 +678,8 @@ export const insertSowSchema = createInsertSchema(sows).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  approvedBy: true,
+  approvedAt: true,
 });
 
 export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
