@@ -70,6 +70,8 @@ export default function EstimateDetail() {
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
+  const [blockHoursInput, setBlockHoursInput] = useState<string>("");
+  const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -272,12 +274,18 @@ export default function EstimateDetail() {
     }
   });
 
-  // Initialize fixed price input when estimate loads
+  // Initialize inputs when estimate loads
   useEffect(() => {
     if (estimate?.fixedPrice !== undefined) {
       setFixedPriceInput(estimate.fixedPrice?.toString() || "");
     }
-  }, [estimate?.fixedPrice]);
+    if (estimate?.blockHours !== undefined) {
+      setBlockHoursInput(estimate.blockHours?.toString() || "");
+    }
+    if (estimate?.blockDollars !== undefined) {
+      setBlockDollarsInput(estimate.blockDollars?.toString() || "");
+    }
+  }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars]);
 
   const approveEstimateMutation = useMutation({
     mutationFn: async ({ createProject, blockHourDescription }: { createProject: boolean; blockHourDescription?: string }) => {
@@ -966,10 +974,14 @@ export default function EstimateDetail() {
                 <Input
                   id="block-hours"
                   type="number"
+                  step="0.01"
                   placeholder="Enter total hours"
-                  value={estimate?.blockHours || ""}
+                  value={blockHoursInput}
                   onChange={(e) => {
-                    const value = e.target.value;
+                    setBlockHoursInput(e.target.value);
+                  }}
+                  onBlur={() => {
+                    const value = blockHoursInput.trim();
                     if (value === '' || !isNaN(parseFloat(value))) {
                       updateEstimateMutation.mutate({ 
                         blockHours: value === '' ? null : parseFloat(value)
@@ -985,10 +997,14 @@ export default function EstimateDetail() {
                 <Input
                   id="block-dollars"
                   type="number"
-                  placeholder="Enter total dollar amount"
-                  value={estimate?.blockDollars || ""}
+                  step="0.01"
+                  placeholder="Enter total dollar amount (e.g., 10000)"
+                  value={blockDollarsInput}
                   onChange={(e) => {
-                    const value = e.target.value;
+                    setBlockDollarsInput(e.target.value);
+                  }}
+                  onBlur={() => {
+                    const value = blockDollarsInput.trim();
                     if (value === '' || !isNaN(parseFloat(value))) {
                       updateEstimateMutation.mutate({ 
                         blockDollars: value === '' ? null : parseFloat(value)
