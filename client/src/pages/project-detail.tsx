@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -19,6 +19,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart
@@ -27,13 +30,14 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck
+  Check, X, FileCheck, Lock, Filter
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, startOfMonth, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface ProjectAnalytics {
@@ -137,6 +141,7 @@ type EpicFormData = z.infer<typeof epicFormSchema>;
 
 export default function ProjectDetail() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
@@ -157,7 +162,19 @@ export default function ProjectDetail() {
   const [editingEpic, setEditingEpic] = useState<any>(null);
   const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
   
+  // Time entries state
+  const [timeGrouping, setTimeGrouping] = useState<"none" | "month" | "workstream" | "stage">("none");
+  const [timeFilters, setTimeFilters] = useState({
+    startDate: "",
+    endDate: "",
+    personId: "all",
+    billableFilter: "all" as "all" | "billable" | "non-billable"
+  });
+  
   const { toast } = useToast();
+  
+  // Check if user can view Time tab
+  const canViewTime = user ? ['admin', 'billing-admin', 'pm', 'executive'].includes(user.role) : false;
 
   const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
     queryKey: [`/api/projects/${id}/analytics`],
@@ -189,6 +206,133 @@ export default function ProjectDetail() {
     queryKey: [`/api/projects/${id}/epics`],
     enabled: !!id,
   });
+  
+  // Time entries query
+  const { data: timeEntries = [], isLoading: timeEntriesLoading } = useQuery<any[]>({
+    queryKey: ['/api/time-entries', id],
+    enabled: !!id && canViewTime,
+  });
+  
+  // Processed time entries with filtering and grouping
+  const processedTimeEntries = useMemo(() => {
+    if (!timeEntries || timeEntries.length === 0) return { groups: [], summary: null };
+    
+    // Apply filters
+    let filtered = [...timeEntries];
+    
+    if (timeFilters.startDate) {
+      filtered = filtered.filter(entry => entry.date >= timeFilters.startDate);
+    }
+    
+    if (timeFilters.endDate) {
+      filtered = filtered.filter(entry => entry.date <= timeFilters.endDate);
+    }
+    
+    if (timeFilters.personId && timeFilters.personId !== "all") {
+      filtered = filtered.filter(entry => entry.personId === timeFilters.personId);
+    }
+    
+    if (timeFilters.billableFilter !== "all") {
+      const isBillable = timeFilters.billableFilter === "billable";
+      filtered = filtered.filter(entry => entry.isBillable === isBillable);
+    }
+    
+    // Calculate summary
+    const summary = {
+      totalHours: filtered.reduce((sum, entry) => sum + (entry.hours || 0), 0),
+      billableHours: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + (entry.hours || 0), 0),
+      nonBillableHours: filtered.filter(e => !e.isBillable).reduce((sum, entry) => sum + (entry.hours || 0), 0),
+      totalRevenue: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + ((entry.hours || 0) * (entry.billingRate || 0)), 0),
+      lockedCount: filtered.filter(e => e.isLocked).length,
+      unlockedCount: filtered.filter(e => !e.isLocked).length,
+      dateRange: filtered.length > 0 ? {
+        start: filtered.reduce((min, e) => e.date < min ? e.date : min, filtered[0].date),
+        end: filtered.reduce((max, e) => e.date > max ? e.date : max, filtered[0].date)
+      } : null
+    };
+    
+    // Group entries
+    let groups: any[] = [];
+    
+    if (timeGrouping === "none") {
+      groups = [{
+        name: "All Entries",
+        entries: filtered.sort((a, b) => b.date.localeCompare(a.date))
+      }];
+    } else if (timeGrouping === "month") {
+      const monthMap = new Map<string, any[]>();
+      filtered.forEach(entry => {
+        const monthKey = format(startOfMonth(parseISO(entry.date)), "MMMM yyyy");
+        if (!monthMap.has(monthKey)) {
+          monthMap.set(monthKey, []);
+        }
+        monthMap.get(monthKey)!.push(entry);
+      });
+      
+      groups = Array.from(monthMap.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([month, entries]) => ({
+          name: month,
+          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
+        }));
+    } else if (timeGrouping === "workstream") {
+      const workstreamMap = new Map<string, any[]>();
+      filtered.forEach(entry => {
+        const workstream = entry.workstream || "No Workstream";
+        if (!workstreamMap.has(workstream)) {
+          workstreamMap.set(workstream, []);
+        }
+        workstreamMap.get(workstream)!.push(entry);
+      });
+      
+      groups = Array.from(workstreamMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([workstream, entries]) => ({
+          name: workstream,
+          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
+        }));
+    } else if (timeGrouping === "stage") {
+      const stageMap = new Map<string, any[]>();
+      filtered.forEach(entry => {
+        const stage = entry.stage || "No Stage";
+        if (!stageMap.has(stage)) {
+          stageMap.set(stage, []);
+        }
+        stageMap.get(stage)!.push(entry);
+      });
+      
+      groups = Array.from(stageMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([stage, entries]) => ({
+          name: stage,
+          entries: entries.sort((a, b) => b.date.localeCompare(a.date))
+        }));
+    }
+    
+    // Add group summaries
+    groups = groups.map(group => ({
+      ...group,
+      summary: {
+        totalHours: group.entries.reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
+        billableHours: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
+        nonBillableHours: group.entries.filter((e: any) => !e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
+        revenue: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + ((entry.hours || 0) * (entry.billingRate || 0)), 0)
+      }
+    }));
+    
+    return { groups, summary };
+  }, [timeEntries, timeGrouping, timeFilters]);
+  
+  // Get unique people from time entries
+  const uniquePeople = useMemo(() => {
+    const peopleMap = new Map<string, string>();
+    timeEntries.forEach((entry: any) => {
+      if (entry.personId && entry.personName) {
+        peopleMap.set(entry.personId, entry.personName);
+      }
+    });
+    return Array.from(peopleMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [timeEntries]);
 
   const sowForm = useForm<SowFormData>({
     resolver: zodResolver(sowFormSchema),
@@ -893,6 +1037,9 @@ export default function ProjectDetail() {
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
             <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
             <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
+            {canViewTime && (
+              <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -1590,6 +1737,306 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Time Tab */}
+          {canViewTime && (
+            <TabsContent value="time" className="space-y-6">
+              {/* Overall Summary Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Time Entries Summary</CardTitle>
+                  <CardDescription>
+                    Overview of all time entries for this project
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {timeEntriesLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-4 w-1/2" />
+                    </div>
+                  ) : processedTimeEntries.summary ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Total Hours</p>
+                        <p className="text-2xl font-bold">{processedTimeEntries.summary.totalHours.toFixed(1)}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Billable / Non-Billable</p>
+                        <p className="text-lg font-semibold">
+                          <span className="text-green-600">{processedTimeEntries.summary.billableHours.toFixed(1)}</span>
+                          {" / "}
+                          <span className="text-orange-600">{processedTimeEntries.summary.nonBillableHours.toFixed(1)}</span>
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Total Revenue</p>
+                        <p className="text-2xl font-bold text-green-600">
+                          ${processedTimeEntries.summary.totalRevenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Locked / Unlocked</p>
+                        <p className="text-lg font-semibold">
+                          <span className="inline-flex items-center gap-1">
+                            <Lock className="w-4 h-4" />
+                            {processedTimeEntries.summary.lockedCount}
+                          </span>
+                          {" / "}
+                          <span>{processedTimeEntries.summary.unlockedCount}</span>
+                        </p>
+                      </div>
+                      {processedTimeEntries.summary.dateRange && (
+                        <div className="col-span-full pt-2 border-t">
+                          <p className="text-sm text-muted-foreground">
+                            Date Range: {format(parseISO(processedTimeEntries.summary.dateRange.start), "MMM d, yyyy")} - {format(parseISO(processedTimeEntries.summary.dateRange.end), "MMM d, yyyy")}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-8">No time entries found</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Filters and Grouping */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Filters & Grouping</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Grouping Options */}
+                  <div className="space-y-3">
+                    <Label>Group By</Label>
+                    <RadioGroup
+                      value={timeGrouping}
+                      onValueChange={(value: any) => setTimeGrouping(value)}
+                      className="flex flex-wrap gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="none" id="group-none" />
+                        <Label htmlFor="group-none" className="cursor-pointer">No Grouping</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="month" id="group-month" />
+                        <Label htmlFor="group-month" className="cursor-pointer">By Month</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="workstream" id="group-workstream" />
+                        <Label htmlFor="group-workstream" className="cursor-pointer">By Workstream</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="stage" id="group-stage" />
+                        <Label htmlFor="group-stage" className="cursor-pointer">By Stage</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  <Separator />
+
+                  {/* Filters */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="filter-start-date">Start Date</Label>
+                      <Input
+                        id="filter-start-date"
+                        type="date"
+                        value={timeFilters.startDate}
+                        onChange={(e) => setTimeFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                        data-testid="input-filter-start-date"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="filter-end-date">End Date</Label>
+                      <Input
+                        id="filter-end-date"
+                        type="date"
+                        value={timeFilters.endDate}
+                        onChange={(e) => setTimeFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                        data-testid="input-filter-end-date"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="filter-person">Person</Label>
+                      <Select
+                        value={timeFilters.personId}
+                        onValueChange={(value) => setTimeFilters(prev => ({ ...prev, personId: value }))}
+                      >
+                        <SelectTrigger id="filter-person" data-testid="select-filter-person">
+                          <SelectValue placeholder="All People" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All People</SelectItem>
+                          {uniquePeople.map(person => (
+                            <SelectItem key={person.id} value={person.id}>
+                              {person.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="filter-billable">Billable Status</Label>
+                      <Select
+                        value={timeFilters.billableFilter}
+                        onValueChange={(value: any) => setTimeFilters(prev => ({ ...prev, billableFilter: value }))}
+                      >
+                        <SelectTrigger id="filter-billable" data-testid="select-filter-billable">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Entries</SelectItem>
+                          <SelectItem value="billable">Billable Only</SelectItem>
+                          <SelectItem value="non-billable">Non-Billable Only</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {(timeFilters.startDate || timeFilters.endDate || (timeFilters.personId && timeFilters.personId !== "all") || timeFilters.billableFilter !== "all") && (
+                    <div className="flex items-center gap-2">
+                      <Filter className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Filters applied</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setTimeFilters({
+                          startDate: "",
+                          endDate: "",
+                          personId: "all",
+                          billableFilter: "all"
+                        })}
+                        data-testid="button-clear-filters"
+                      >
+                        Clear all
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Time Entries Groups */}
+              {timeEntriesLoading ? (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="space-y-4">
+                      <Skeleton className="h-8 w-1/3" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : processedTimeEntries.groups.length === 0 ? (
+                <Card>
+                  <CardContent className="py-16">
+                    <div className="text-center space-y-3">
+                      <Clock className="w-12 h-12 mx-auto text-muted-foreground" />
+                      <h3 className="text-lg font-semibold">No Time Entries</h3>
+                      <p className="text-muted-foreground">
+                        No time entries found for the selected filters.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-6">
+                  {processedTimeEntries.groups.map((group, groupIndex) => (
+                    <Card key={groupIndex}>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle>{group.name}</CardTitle>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="text-muted-foreground">
+                              Total: <span className="font-semibold text-foreground">{group.summary.totalHours.toFixed(1)}h</span>
+                            </span>
+                            <span className="text-muted-foreground">
+                              Billable: <span className="font-semibold text-green-600">{group.summary.billableHours.toFixed(1)}h</span>
+                            </span>
+                            <span className="text-muted-foreground">
+                              Non-Billable: <span className="font-semibold text-orange-600">{group.summary.nonBillableHours.toFixed(1)}h</span>
+                            </span>
+                            {group.summary.revenue > 0 && (
+                              <span className="text-muted-foreground">
+                                Revenue: <span className="font-semibold text-green-600">
+                                  ${group.summary.revenue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Person</TableHead>
+                              <TableHead>Hours</TableHead>
+                              <TableHead>Description</TableHead>
+                              {timeGrouping !== "workstream" && <TableHead>Workstream</TableHead>}
+                              {timeGrouping !== "stage" && <TableHead>Stage</TableHead>}
+                              <TableHead>Status</TableHead>
+                              <TableHead className="text-right">Revenue</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.entries.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                                  No entries in this group
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              group.entries.map((entry: any, index: number) => (
+                                <TableRow key={entry.id || index} data-testid={`time-entry-${entry.id}`}>
+                                  <TableCell>
+                                    {format(parseISO(entry.date), "MMM d, yyyy")}
+                                  </TableCell>
+                                  <TableCell>{entry.personName || "Unknown"}</TableCell>
+                                  <TableCell>{entry.hours.toFixed(1)}</TableCell>
+                                  <TableCell className="max-w-xs truncate" title={entry.description}>
+                                    {entry.description || "-"}
+                                  </TableCell>
+                                  {timeGrouping !== "workstream" && (
+                                    <TableCell>{entry.workstream || "-"}</TableCell>
+                                  )}
+                                  {timeGrouping !== "stage" && (
+                                    <TableCell>{entry.stage || "-"}</TableCell>
+                                  )}
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={entry.isBillable ? "default" : "secondary"}>
+                                        {entry.isBillable ? "Billable" : "Non-Billable"}
+                                      </Badge>
+                                      {entry.isLocked && (
+                                        <Lock className="w-4 h-4 text-muted-foreground" />
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {entry.isBillable && entry.billingRate ? (
+                                      <span className="font-medium text-green-600">
+                                        ${(entry.hours * entry.billingRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </span>
+                                    ) : (
+                                      "-"
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          )}
         </Tabs>
 
         {/* SOW Dialog */}
