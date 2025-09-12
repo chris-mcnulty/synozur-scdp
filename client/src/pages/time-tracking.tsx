@@ -114,7 +114,7 @@ export default function TimeTracking() {
   });
   
   const { data: currentUser } = useQuery<User>({
-    queryKey: ["/api/auth/me"],
+    queryKey: ["/api/auth/user"],
   });
 
   // Fetch milestones and workstreams for selected project
