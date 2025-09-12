@@ -102,12 +102,61 @@ const sowFormSchema = z.object({
 
 type SowFormData = z.infer<typeof sowFormSchema>;
 
+// Milestone schema
+const milestoneFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  budgetHours: z.string().optional(),
+  status: z.enum(["not-started", "in-progress", "completed"]),
+  projectEpicId: z.string().min(1, "Epic is required"),
+  order: z.number().int().default(0)
+});
+
+type MilestoneFormData = z.infer<typeof milestoneFormSchema>;
+
+// Workstream schema
+const workstreamFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  budgetHours: z.string().optional(),
+  order: z.number().int().default(0)
+});
+
+type WorkstreamFormData = z.infer<typeof workstreamFormSchema>;
+
+// Epic schema
+const epicFormSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  order: z.number().int().default(0)
+});
+
+type EpicFormData = z.infer<typeof epicFormSchema>;
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
   const [deletingSowId, setDeletingSowId] = useState<string | null>(null);
+  
+  // Milestone state
+  const [showMilestoneDialog, setShowMilestoneDialog] = useState(false);
+  const [editingMilestone, setEditingMilestone] = useState<any>(null);
+  const [deletingMilestoneId, setDeletingMilestoneId] = useState<string | null>(null);
+  
+  // Workstream state
+  const [showWorkstreamDialog, setShowWorkstreamDialog] = useState(false);
+  const [editingWorkstream, setEditingWorkstream] = useState<any>(null);
+  const [deletingWorkstreamId, setDeletingWorkstreamId] = useState<string | null>(null);
+  
+  // Epic state
+  const [showEpicDialog, setShowEpicDialog] = useState(false);
+  const [editingEpic, setEditingEpic] = useState<any>(null);
+  const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
+  
   const { toast } = useToast();
 
   const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
@@ -122,6 +171,22 @@ export default function ProjectDetail() {
 
   const { data: estimates = [] } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/estimates`],
+    enabled: !!id,
+  });
+  
+  // Project structure queries
+  const { data: milestones = [], refetch: refetchMilestones } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/milestones`],
+    enabled: !!id,
+  });
+  
+  const { data: workstreams = [], refetch: refetchWorkstreams } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/workstreams`],
+    enabled: !!id,
+  });
+  
+  const { data: epics = [], refetch: refetchEpics } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/epics`],
     enabled: !!id,
   });
 
@@ -140,6 +205,39 @@ export default function ProjectDetail() {
       expirationDate: "",
       status: "draft",
       notes: ""
+    }
+  });
+  
+  const milestoneForm = useForm<MilestoneFormData>({
+    resolver: zodResolver(milestoneFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      startDate: "",
+      endDate: "",
+      budgetHours: "",
+      status: "not-started",
+      projectEpicId: "",
+      order: 0
+    }
+  });
+  
+  const workstreamForm = useForm<WorkstreamFormData>({
+    resolver: zodResolver(workstreamFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      budgetHours: "",
+      order: 0
+    }
+  });
+  
+  const epicForm = useForm<EpicFormData>({
+    resolver: zodResolver(epicFormSchema),
+    defaultValues: {
+      name: "",
+      description: "",
+      order: 0
     }
   });
 
@@ -244,6 +342,243 @@ export default function ProjectDetail() {
     }
   });
 
+  // Milestone mutations
+  const createMilestoneMutation = useMutation({
+    mutationFn: async (data: MilestoneFormData) => {
+      return apiRequest(`/api/projects/${id}/milestones`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...data,
+          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
+        })
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Milestone created",
+        description: "The milestone has been created successfully."
+      });
+      setShowMilestoneDialog(false);
+      milestoneForm.reset();
+      refetchMilestones();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create milestone",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateMilestoneMutation = useMutation({
+    mutationFn: async ({ id: milestoneId, data }: { id: string; data: MilestoneFormData }) => {
+      return apiRequest(`/api/milestones/${milestoneId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...data,
+          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
+        })
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Milestone updated",
+        description: "The milestone has been updated successfully."
+      });
+      setShowMilestoneDialog(false);
+      setEditingMilestone(null);
+      milestoneForm.reset();
+      refetchMilestones();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update milestone",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteMilestoneMutation = useMutation({
+    mutationFn: async (milestoneId: string) => {
+      return apiRequest(`/api/milestones/${milestoneId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Milestone deleted",
+        description: "The milestone has been deleted successfully."
+      });
+      setDeletingMilestoneId(null);
+      refetchMilestones();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete milestone",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Workstream mutations
+  const createWorkstreamMutation = useMutation({
+    mutationFn: async (data: WorkstreamFormData) => {
+      return apiRequest(`/api/projects/${id}/workstreams`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...data,
+          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
+        })
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Workstream created",
+        description: "The workstream has been created successfully."
+      });
+      setShowWorkstreamDialog(false);
+      workstreamForm.reset();
+      refetchWorkstreams();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create workstream",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateWorkstreamMutation = useMutation({
+    mutationFn: async ({ id: workstreamId, data }: { id: string; data: WorkstreamFormData }) => {
+      return apiRequest(`/api/workstreams/${workstreamId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...data,
+          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
+        })
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Workstream updated",
+        description: "The workstream has been updated successfully."
+      });
+      setShowWorkstreamDialog(false);
+      setEditingWorkstream(null);
+      workstreamForm.reset();
+      refetchWorkstreams();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update workstream",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteWorkstreamMutation = useMutation({
+    mutationFn: async (workstreamId: string) => {
+      return apiRequest(`/api/workstreams/${workstreamId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Workstream deleted",
+        description: "The workstream has been deleted successfully."
+      });
+      setDeletingWorkstreamId(null);
+      refetchWorkstreams();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete workstream",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Epic mutations
+  const createEpicMutation = useMutation({
+    mutationFn: async (data: EpicFormData) => {
+      return apiRequest(`/api/projects/${id}/epics`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Epic created",
+        description: "The epic has been created successfully."
+      });
+      setShowEpicDialog(false);
+      epicForm.reset();
+      refetchEpics();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create epic",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateEpicMutation = useMutation({
+    mutationFn: async ({ id: epicId, data }: { id: string; data: EpicFormData }) => {
+      return apiRequest(`/api/epics/${epicId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Epic updated",
+        description: "The epic has been updated successfully."
+      });
+      setShowEpicDialog(false);
+      setEditingEpic(null);
+      epicForm.reset();
+      refetchEpics();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update epic",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteEpicMutation = useMutation({
+    mutationFn: async (epicId: string) => {
+      return apiRequest(`/api/epics/${epicId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Epic deleted",
+        description: "The epic has been deleted successfully."
+      });
+      setDeletingEpicId(null);
+      refetchEpics();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete epic",
+        variant: "destructive"
+      });
+    }
+  });
+
   const approveSowMutation = useMutation({
     mutationFn: async (sowId: string) => {
       return apiRequest(`/api/sows/${sowId}/approve`, {
@@ -296,6 +631,30 @@ export default function ProjectDetail() {
       updateSowMutation.mutate({ id: editingSow.id, data });
     } else {
       createSowMutation.mutate(data);
+    }
+  };
+
+  const handleSubmitMilestone = (data: MilestoneFormData) => {
+    if (editingMilestone) {
+      updateMilestoneMutation.mutate({ id: editingMilestone.id, data });
+    } else {
+      createMilestoneMutation.mutate(data);
+    }
+  };
+
+  const handleSubmitWorkstream = (data: WorkstreamFormData) => {
+    if (editingWorkstream) {
+      updateWorkstreamMutation.mutate({ id: editingWorkstream.id, data });
+    } else {
+      createWorkstreamMutation.mutate(data);
+    }
+  };
+
+  const handleSubmitEpic = (data: EpicFormData) => {
+    if (editingEpic) {
+      updateEpicMutation.mutate({ id: editingEpic.id, data });
+    } else {
+      createEpicMutation.mutate(data);
     }
   };
 
@@ -1039,6 +1398,198 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Milestones Tab */}
+          <TabsContent value="milestones" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Project Milestones</CardTitle>
+                  <Button
+                    onClick={() => {
+                      setEditingMilestone(null);
+                      milestoneForm.reset();
+                      setShowMilestoneDialog(true);
+                    }}
+                    data-testid="button-add-milestone"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Milestone
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Epic</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start Date</TableHead>
+                      <TableHead>End Date</TableHead>
+                      <TableHead>Budget Hours</TableHead>
+                      <TableHead>Actual Hours</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {milestones.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground">
+                          No milestones found. Click "Add Milestone" to create one.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      milestones.map((milestone: any) => (
+                        <TableRow key={milestone.id} data-testid={`milestone-row-${milestone.id}`}>
+                          <TableCell className="font-medium">{milestone.name}</TableCell>
+                          <TableCell>{milestone.epic?.name || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={
+                              milestone.status === "completed" ? "default" : 
+                              milestone.status === "in-progress" ? "secondary" : "outline"
+                            }>
+                              {milestone.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{milestone.startDate ? format(new Date(milestone.startDate), "MMM d, yyyy") : '-'}</TableCell>
+                          <TableCell>{milestone.endDate ? format(new Date(milestone.endDate), "MMM d, yyyy") : '-'}</TableCell>
+                          <TableCell>{milestone.budgetHours || '-'}</TableCell>
+                          <TableCell>{milestone.actualHours || '0'}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingMilestone(milestone);
+                                  milestoneForm.reset({
+                                    name: milestone.name,
+                                    description: milestone.description || '',
+                                    startDate: milestone.startDate || '',
+                                    endDate: milestone.endDate || '',
+                                    budgetHours: milestone.budgetHours?.toString() || '',
+                                    status: milestone.status,
+                                    projectEpicId: milestone.projectEpicId,
+                                    order: milestone.order
+                                  });
+                                  setShowMilestoneDialog(true);
+                                }}
+                                data-testid={`button-edit-milestone-${milestone.id}`}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setDeletingMilestoneId(milestone.id)}
+                                data-testid={`button-delete-milestone-${milestone.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Workstreams Tab */}
+          <TabsContent value="workstreams" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Project Workstreams</CardTitle>
+                  <Button
+                    onClick={() => {
+                      setEditingWorkstream(null);
+                      workstreamForm.reset();
+                      setShowWorkstreamDialog(true);
+                    }}
+                    data-testid="button-add-workstream"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Workstream
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Budget Hours</TableHead>
+                      <TableHead>Actual Hours</TableHead>
+                      <TableHead>Variance</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {workstreams.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground">
+                          No workstreams found. Click "Add Workstream" to create one.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      workstreams.map((workstream: any) => {
+                        const variance = (workstream.budgetHours || 0) - (workstream.actualHours || 0);
+                        return (
+                          <TableRow key={workstream.id} data-testid={`workstream-row-${workstream.id}`}>
+                            <TableCell className="font-medium">{workstream.name}</TableCell>
+                            <TableCell>{workstream.description || '-'}</TableCell>
+                            <TableCell>{workstream.budgetHours || '-'}</TableCell>
+                            <TableCell>{workstream.actualHours || '0'}</TableCell>
+                            <TableCell>
+                              {workstream.budgetHours ? (
+                                <span className={variance < 0 ? "text-destructive" : "text-green-600"}>
+                                  {variance > 0 ? '+' : ''}{variance.toFixed(1)}h
+                                </span>
+                              ) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setEditingWorkstream(workstream);
+                                    workstreamForm.reset({
+                                      name: workstream.name,
+                                      description: workstream.description || '',
+                                      budgetHours: workstream.budgetHours?.toString() || '',
+                                      order: workstream.order
+                                    });
+                                    setShowWorkstreamDialog(true);
+                                  }}
+                                  data-testid={`button-edit-workstream-${workstream.id}`}
+                                >
+                                  <Edit className="w-3 h-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setDeletingWorkstreamId(workstream.id)}
+                                  data-testid={`button-delete-workstream-${workstream.id}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* SOW Dialog */}
@@ -1288,6 +1839,282 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-delete-sow"
               >
                 Delete SOW
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Milestone Dialog */}
+        <Dialog open={showMilestoneDialog} onOpenChange={setShowMilestoneDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingMilestone ? "Edit Milestone" : "Add New Milestone"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingMilestone 
+                  ? "Update the milestone details." 
+                  : "Create a new milestone for this project."}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...milestoneForm}>
+              <form onSubmit={milestoneForm.handleSubmit(handleSubmitMilestone)} className="space-y-4">
+                <FormField
+                  control={milestoneForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Phase 1 Completion" data-testid="input-milestone-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={milestoneForm.control}
+                  name="projectEpicId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Epic</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-milestone-epic">
+                            <SelectValue placeholder="Select an epic" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {epics.map((epic: any) => (
+                            <SelectItem key={epic.id} value={epic.id}>
+                              {epic.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={milestoneForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} placeholder="Milestone description..." data-testid="textarea-milestone-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={milestoneForm.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="date" data-testid="input-milestone-start-date" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={milestoneForm.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="date" data-testid="input-milestone-end-date" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={milestoneForm.control}
+                    name="budgetHours"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Budget Hours</FormLabel>
+                        <FormControl>
+                          <Input {...field} type="number" step="0.5" placeholder="0" data-testid="input-milestone-budget-hours" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={milestoneForm.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-milestone-status">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="not-started">Not Started</SelectItem>
+                            <SelectItem value="in-progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setShowMilestoneDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createMilestoneMutation.isPending || updateMilestoneMutation.isPending}>
+                    {editingMilestone ? "Update" : "Create"} Milestone
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Milestone Confirmation Dialog */}
+        <Dialog open={!!deletingMilestoneId} onOpenChange={() => setDeletingMilestoneId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Milestone</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this milestone? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeletingMilestoneId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deletingMilestoneId) {
+                    deleteMilestoneMutation.mutate(deletingMilestoneId);
+                  }
+                }}
+                disabled={deleteMilestoneMutation.isPending}
+                data-testid="button-confirm-delete-milestone"
+              >
+                Delete Milestone
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Workstream Dialog */}
+        <Dialog open={showWorkstreamDialog} onOpenChange={setShowWorkstreamDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingWorkstream ? "Edit Workstream" : "Add New Workstream"}
+              </DialogTitle>
+              <DialogDescription>
+                {editingWorkstream 
+                  ? "Update the workstream details." 
+                  : "Create a new workstream for this project."}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...workstreamForm}>
+              <form onSubmit={workstreamForm.handleSubmit(handleSubmitWorkstream)} className="space-y-4">
+                <FormField
+                  control={workstreamForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Frontend Development" data-testid="input-workstream-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={workstreamForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} placeholder="Workstream description..." data-testid="textarea-workstream-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={workstreamForm.control}
+                  name="budgetHours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Budget Hours</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" step="0.5" placeholder="0" data-testid="input-workstream-budget-hours" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setShowWorkstreamDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createWorkstreamMutation.isPending || updateWorkstreamMutation.isPending}>
+                    {editingWorkstream ? "Update" : "Create"} Workstream
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Workstream Confirmation Dialog */}
+        <Dialog open={!!deletingWorkstreamId} onOpenChange={() => setDeletingWorkstreamId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Workstream</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this workstream? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeletingWorkstreamId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deletingWorkstreamId) {
+                    deleteWorkstreamMutation.mutate(deletingWorkstreamId);
+                  }
+                }}
+                disabled={deleteWorkstreamMutation.isPending}
+                data-testid="button-confirm-delete-workstream"
+              >
+                Delete Workstream
               </Button>
             </DialogFooter>
           </DialogContent>
