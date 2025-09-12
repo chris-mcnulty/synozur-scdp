@@ -1977,16 +1977,12 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Get actual hours and revenue consumed
+    // Use the billingRate that's already stored in time entries (calculated at creation time)
     const [actualMetrics] = await db.select({
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
-      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${timeEntries.personId} LIMIT 1),
-        CAST(${users.defaultBillingRate} AS NUMERIC),
-        150
-      ) ELSE 0 END), 0)::float`
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`
     })
     .from(timeEntries)
-    .leftJoin(users, eq(timeEntries.personId, users.id))
     .where(eq(timeEntries.projectId, projectId));
 
     // Get expenses
@@ -2040,11 +2036,7 @@ export class DatabaseStorage implements IStorage {
       billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        (SELECT charge_rate FROM rate_overrides WHERE scope = 'project' AND scope_id = ${projectId} AND subject_type = 'person' AND subject_id = ${users.id} LIMIT 1),
-        CAST(${users.defaultBillingRate} AS NUMERIC),
-        150
-      ) ELSE 0 END)::float`
+      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END)::float`
     })
     .from(timeEntries)
     .innerJoin(users, eq(timeEntries.personId, users.id))

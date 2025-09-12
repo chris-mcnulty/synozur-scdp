@@ -217,8 +217,28 @@ export default function ProjectDetail() {
   const processedTimeEntries = useMemo(() => {
     if (!timeEntries || timeEntries.length === 0) return { groups: [], summary: null };
     
+    // Validate and clean time entries data
+    const validEntries = timeEntries.filter(entry => {
+      // Check if entry has valid date
+      if (!entry.date || typeof entry.date !== 'string') return false;
+      // Check if date is valid ISO format
+      try {
+        const testDate = parseISO(entry.date);
+        return !isNaN(testDate.getTime());
+      } catch {
+        return false;
+      }
+    }).map(entry => ({
+      ...entry,
+      hours: Number(entry.hours || 0),
+      billingRate: Number(entry.billingRate || 0),
+      costRate: Number(entry.costRate || 0),
+      isBillable: Boolean(entry.isBillable || entry.billable),
+      isLocked: Boolean(entry.isLocked || entry.locked)
+    }));
+    
     // Apply filters
-    let filtered = [...timeEntries];
+    let filtered = [...validEntries];
     
     if (timeFilters.startDate) {
       filtered = filtered.filter(entry => entry.date >= timeFilters.startDate);
@@ -239,10 +259,10 @@ export default function ProjectDetail() {
     
     // Calculate summary
     const summary = {
-      totalHours: filtered.reduce((sum, entry) => sum + (entry.hours || 0), 0),
-      billableHours: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + (entry.hours || 0), 0),
-      nonBillableHours: filtered.filter(e => !e.isBillable).reduce((sum, entry) => sum + (entry.hours || 0), 0),
-      totalRevenue: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + ((entry.hours || 0) * (entry.billingRate || 0)), 0),
+      totalHours: filtered.reduce((sum, entry) => sum + entry.hours, 0),
+      billableHours: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + entry.hours, 0),
+      nonBillableHours: filtered.filter(e => !e.isBillable).reduce((sum, entry) => sum + entry.hours, 0),
+      totalRevenue: filtered.filter(e => e.isBillable).reduce((sum, entry) => sum + (entry.hours * entry.billingRate), 0),
       lockedCount: filtered.filter(e => e.isLocked).length,
       unlockedCount: filtered.filter(e => !e.isLocked).length,
       dateRange: filtered.length > 0 ? {
@@ -262,11 +282,15 @@ export default function ProjectDetail() {
     } else if (timeGrouping === "month") {
       const monthMap = new Map<string, any[]>();
       filtered.forEach(entry => {
-        const monthKey = format(startOfMonth(parseISO(entry.date)), "MMMM yyyy");
-        if (!monthMap.has(monthKey)) {
-          monthMap.set(monthKey, []);
+        try {
+          const monthKey = format(startOfMonth(parseISO(entry.date)), "MMMM yyyy");
+          if (!monthMap.has(monthKey)) {
+            monthMap.set(monthKey, []);
+          }
+          monthMap.get(monthKey)!.push(entry);
+        } catch (error) {
+          console.warn('Invalid date in entry:', entry.date);
         }
-        monthMap.get(monthKey)!.push(entry);
       });
       
       groups = Array.from(monthMap.entries())
@@ -313,10 +337,10 @@ export default function ProjectDetail() {
     groups = groups.map(group => ({
       ...group,
       summary: {
-        totalHours: group.entries.reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
-        billableHours: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
-        nonBillableHours: group.entries.filter((e: any) => !e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours || 0), 0),
-        revenue: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + ((entry.hours || 0) * (entry.billingRate || 0)), 0)
+        totalHours: group.entries.reduce((sum: number, entry: any) => sum + entry.hours, 0),
+        billableHours: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + entry.hours, 0),
+        nonBillableHours: group.entries.filter((e: any) => !e.isBillable).reduce((sum: number, entry: any) => sum + entry.hours, 0),
+        revenue: group.entries.filter((e: any) => e.isBillable).reduce((sum: number, entry: any) => sum + (entry.hours * entry.billingRate), 0)
       }
     }));
     

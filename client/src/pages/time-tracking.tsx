@@ -295,11 +295,6 @@ export default function TimeTracking() {
   });
 
   const onSubmit = (data: TimeEntryFormData) => {
-    // Debug logging to help diagnose issues
-    console.log('Form submitted with data:', data);
-    console.log('Form state:', form.formState);
-    console.log('Form errors:', form.formState.errors);
-    
     // The validation is now handled by Zod schema
     // If we get here, the data is valid
     createTimeEntryMutation.mutate(data);
@@ -600,7 +595,7 @@ export default function TimeTracking() {
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
                   <FormField
                     control={form.control}
                     name="date"
@@ -688,12 +683,11 @@ export default function TimeTracking() {
                           <Input
                             type="number"
                             step="0.25"
-                            min="0.25"
+                            min="0"
                             max="24"
                             placeholder="8.0"
                             {...field}
                             data-testid="input-hours"
-                            required
                           />
                         </FormControl>
                         <FormMessage />
@@ -821,12 +815,6 @@ export default function TimeTracking() {
                     className="w-full" 
                     disabled={createTimeEntryMutation.isPending}
                     data-testid="button-submit-time"
-                    onClick={() => {
-                      console.log('Button clicked!');
-                      console.log('Form values:', form.getValues());
-                      console.log('Form errors:', form.formState.errors);
-                      console.log('Form is valid:', form.formState.isValid);
-                    }}
                   >
                     {createTimeEntryMutation.isPending ? "Saving..." : "Log Time"}
                   </Button>
@@ -999,7 +987,7 @@ export default function TimeTracking() {
               </DialogDescription>
             </DialogHeader>
             <Form {...editForm}>
-              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4" noValidate>
                 <FormField
                   control={editForm.control}
                   name="date"
@@ -1086,12 +1074,11 @@ export default function TimeTracking() {
                         <Input
                           type="number"
                           step="0.25"
-                          min="0.25"
+                          min="0"
                           max="24"
                           placeholder="8.0"
                           {...field}
                           data-testid="input-edit-hours"
-                          required
                         />
                       </FormControl>
                       <FormMessage />
