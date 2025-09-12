@@ -429,11 +429,19 @@ export class DatabaseStorage implements IStorage {
         // Get total budget from approved SOWs
         const totalBudget = await this.getProjectTotalBudget(project.id);
         
-        // Get burned amount from billable time entries using actual billing rates
+        // Get burned amount from billable time entries using actual billing rates with fallback to user default
         const burnedData = await db.select({
-          totalBurned: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
+          totalBurned: sql<number>`COALESCE(SUM(
+            CAST(${timeEntries.hours} AS NUMERIC) * 
+            COALESCE(
+              NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
+              CAST(${users.defaultBillingRate} AS NUMERIC),
+              150
+            )
+          ), 0)`
         })
         .from(timeEntries)
+        .leftJoin(users, eq(timeEntries.personId, users.id))
         .where(and(
           eq(timeEntries.projectId, project.id),
           eq(timeEntries.billable, true)
@@ -956,14 +964,40 @@ export class DatabaseStorage implements IStorage {
 
     const rows = await query.orderBy(desc(timeEntries.date));
     
-    return rows.map(row => ({
-      ...row.time_entries,
-      person: row.users!,
-      project: {
-        ...row.projects!,
-        client: row.clients!
-      }
-    }));
+    return rows.map(row => {
+      // Handle case where user might not exist (deleted user, etc.)
+      const person = row.users || {
+        id: row.time_entries.personId,
+        email: 'unknown@example.com',
+        name: 'Unknown User',
+        firstName: null,
+        lastName: null,
+        initials: null,
+        title: null,
+        role: 'employee',
+        canLogin: false,
+        isAssignable: false,
+        roleId: null,
+        customRole: null,
+        defaultRackRate: null,
+        defaultChargeRate: null,
+        defaultBillingRate: null,
+        defaultCostRate: null,
+        isActive: false,
+        createdAt: new Date()
+      };
+      
+      return {
+        ...row.time_entries,
+        person,
+        // Add personName directly on the entry for backward compatibility
+        personName: person.name,
+        project: {
+          ...row.projects!,
+          client: row.clients!
+        }
+      };
+    });
   }
 
   async getTimeEntry(id: string): Promise<(TimeEntry & { person: User; project: Project & { client: Client } }) | undefined> {
@@ -976,9 +1010,31 @@ export class DatabaseStorage implements IStorage {
     if (rows.length === 0) return undefined;
     
     const row = rows[0];
+    // Handle case where user might not exist (deleted user, etc.)
+    const person = row.users || {
+      id: row.time_entries.personId,
+      email: 'unknown@example.com',
+      name: 'Unknown User',
+      firstName: null,
+      lastName: null,
+      initials: null,
+      title: null,
+      role: 'employee',
+      canLogin: false,
+      isAssignable: false,
+      roleId: null,
+      customRole: null,
+      defaultRackRate: null,
+      defaultChargeRate: null,
+      defaultBillingRate: null,
+      defaultCostRate: null,
+      isActive: false,
+      createdAt: new Date()
+    };
+    
     return {
       ...row.time_entries,
-      person: row.users!,
+      person,
       project: {
         ...row.projects!,
         client: row.clients!
@@ -1484,11 +1540,19 @@ export class DatabaseStorage implements IStorage {
       ? Math.round((utilizationData.billableHours / utilizationData.totalHours) * 100)
       : 0;
 
-    // Calculate monthly revenue from billable time entries using actual billing rates
+    // Calculate monthly revenue from billable time entries using actual billing rates with fallback to user default
     const [monthlyRevenueData] = await db.select({
-      totalRevenue: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC)), 0)`
+      totalRevenue: sql<number>`COALESCE(SUM(
+        CAST(${timeEntries.hours} AS NUMERIC) * 
+        COALESCE(
+          NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
+          CAST(${users.defaultBillingRate} AS NUMERIC),
+          150
+        )
+      ), 0)`
     })
       .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
       .where(and(
         eq(timeEntries.billable, true),
         gte(timeEntries.date, monthStartStr),
@@ -1921,7 +1985,16 @@ export class DatabaseStorage implements IStorage {
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
       billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END)::float`
+      revenue: sql<number>`SUM(
+        CASE WHEN ${timeEntries.billable} THEN 
+          CAST(${timeEntries.hours} AS NUMERIC) * 
+          COALESCE(
+            NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
+            CAST(${users.defaultBillingRate} AS NUMERIC),
+            150
+          )
+        ELSE 0 END
+      )::float`
     })
     .from(timeEntries)
     .leftJoin(users, eq(timeEntries.personId, users.id))
@@ -2020,12 +2093,22 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Get actual hours and revenue consumed
-    // Use the billingRate that's already stored in time entries (calculated at creation time)
+    // Use the billingRate that's already stored in time entries with fallback to user default rate
     const [actualMetrics] = await db.select({
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
-      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`
+      revenue: sql<number>`COALESCE(SUM(
+        CASE WHEN ${timeEntries.billable} THEN 
+          CAST(${timeEntries.hours} AS NUMERIC) * 
+          COALESCE(
+            NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
+            CAST(${users.defaultBillingRate} AS NUMERIC),
+            150
+          )
+        ELSE 0 END
+      ), 0)::float`
     })
     .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
     .where(eq(timeEntries.projectId, projectId));
 
     // Get expenses
@@ -2079,7 +2162,16 @@ export class DatabaseStorage implements IStorage {
       billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
-      revenue: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END)::float`
+      revenue: sql<number>`SUM(
+        CASE WHEN ${timeEntries.billable} THEN 
+          CAST(${timeEntries.hours} AS NUMERIC) * 
+          COALESCE(
+            NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
+            CAST(${users.defaultBillingRate} AS NUMERIC),
+            150
+          )
+        ELSE 0 END
+      )::float`
     })
     .from(timeEntries)
     .innerJoin(users, eq(timeEntries.personId, users.id))
