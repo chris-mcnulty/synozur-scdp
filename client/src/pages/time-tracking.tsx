@@ -22,6 +22,10 @@ import { z } from "zod";
 
 const timeEntryFormSchema = insertTimeEntrySchema.extend({
   date: z.string(),
+  hours: z.string().min(1, "Hours is required").refine(
+    (val) => !isNaN(Number(val)) && Number(val) > 0,
+    "Please enter valid hours greater than 0"
+  ),
   milestoneId: z.string().optional(),
   workstreamId: z.string().optional(),
 });
@@ -174,27 +178,13 @@ export default function TimeTracking() {
   });
 
   const onSubmit = (data: TimeEntryFormData) => {
-    console.log('Submitting time entry:', data);
+    // Debug logging to help diagnose issues
+    console.log('Form submitted with data:', data);
+    console.log('Form state:', form.formState);
+    console.log('Form errors:', form.formState.errors);
     
-    // Check for required fields
-    if (!data.projectId) {
-      toast({
-        title: "Error",
-        description: "Please select a project.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!data.hours || parseFloat(data.hours) <= 0) {
-      toast({
-        title: "Error",
-        description: "Please enter valid hours.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
+    // The validation is now handled by Zod schema
+    // If we get here, the data is valid
     createTimeEntryMutation.mutate(data);
   };
 
@@ -538,11 +528,12 @@ export default function TimeTracking() {
                           <Input
                             type="number"
                             step="0.25"
-                            min="0"
+                            min="0.01"
                             max="24"
                             placeholder="8.0"
                             {...field}
                             data-testid="input-hours"
+                            required
                           />
                         </FormControl>
                         <FormMessage />
