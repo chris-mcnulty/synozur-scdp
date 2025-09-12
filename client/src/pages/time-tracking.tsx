@@ -71,7 +71,7 @@ export default function TimeTracking() {
     resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
       date: formatLocalDate(new Date()),
-      hours: "0",
+      hours: "",
       billable: true,
       description: "",
       phase: "",
@@ -670,6 +670,12 @@ export default function TimeTracking() {
                     className="w-full" 
                     disabled={createTimeEntryMutation.isPending}
                     data-testid="button-submit-time"
+                    onClick={() => {
+                      console.log('Button clicked!');
+                      console.log('Form values:', form.getValues());
+                      console.log('Form errors:', form.formState.errors);
+                      console.log('Form is valid:', form.formState.isValid);
+                    }}
                   >
                     {createTimeEntryMutation.isPending ? "Saving..." : "Log Time"}
                   </Button>
