@@ -23,7 +23,17 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
-const timeEntryFormSchema = insertTimeEntrySchema.extend({
+const timeEntryFormSchema = insertTimeEntrySchema.omit({
+  personId: true, // personId is added server-side from authenticated user
+  billingRate: true, // rates are calculated server-side
+  costRate: true,
+  invoiceBatchId: true,
+  locked: true,
+  lockedAt: true,
+  billedFlag: true,
+  statusReportedFlag: true,
+  projectStageId: true
+}).extend({
   date: z.string(),
   hours: z.string().min(1, "Hours is required").refine(
     (val) => !isNaN(Number(val)) && Number(val) > 0,

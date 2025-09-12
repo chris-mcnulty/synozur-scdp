@@ -1712,6 +1712,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Maintenance endpoint to fix time entries with null/zero rates
+  app.post("/api/time-entries/fix-rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      // Get all time entries with null or zero rates
+      const allEntries = await storage.getTimeEntries({});
+      const entriesToFix = allEntries.filter(entry => 
+        !entry.billingRate || entry.billingRate === '0' || 
+        !entry.costRate || entry.costRate === '0'
+      );
+      
+      let fixedCount = 0;
+      const errors = [];
+      
+      for (const entry of entriesToFix) {
+        try {
+          // Get rates for this entry
+          const override = await storage.getProjectRateOverride(entry.projectId, entry.personId, entry.date);
+          
+          let billingRate: number | null = null;
+          let costRate: number | null = null;
+          
+          if (override) {
+            billingRate = override.billingRate ? Number(override.billingRate) : null;
+            costRate = override.costRate ? Number(override.costRate) : null;
+          }
+          
+          // If no override or rates are still null, get user default rates
+          if (billingRate === null || costRate === null) {
+            const userRates = await storage.getUserRates(entry.personId);
+            billingRate = billingRate ?? userRates.billingRate ?? 150;
+            costRate = costRate ?? userRates.costRate ?? 100;
+          }
+          
+          // Update the entry with the calculated rates
+          await storage.updateTimeEntry(entry.id, {
+            billingRate: billingRate.toString(),
+            costRate: costRate.toString()
+          });
+          
+          fixedCount++;
+        } catch (error) {
+          errors.push({
+            entryId: entry.id,
+            date: entry.date,
+            projectId: entry.projectId,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+      
+      res.json({
+        success: true,
+        message: `Fixed ${fixedCount} time entries out of ${entriesToFix.length} that had null/zero rates`,
+        totalEntriesChecked: allEntries.length,
+        entriesNeedingFix: entriesToFix.length,
+        entriesFixed: fixedCount,
+        errors: errors.length > 0 ? errors : undefined
+      });
+    } catch (error) {
+      console.error("Error fixing time entry rates:", error);
+      res.status(500).json({ message: "Failed to fix time entry rates" });
+    }
+  });
+
   // Expenses
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
