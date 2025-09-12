@@ -1199,12 +1199,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Build filters based on user role and query params
       const filters: any = {};
       
-      // DEFAULT BEHAVIOR: Everyone sees their own entries in time tracking screen
-      // The ability to see others' entries is only used when explicitly requested
-      // (e.g., in project context with personId parameter)
-      
-      if (personId) {
-        // If a specific person is requested, check permissions
+      // SPECIAL CASE: If projectId is provided and user has appropriate permissions,
+      // return ALL entries for that project (for project reporting/analytics)
+      if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {
+        // When viewing a specific project, admins/PMs see ALL team entries
+        filters.projectId = projectId;
+        // Don't filter by personId unless explicitly requested
+        if (personId) {
+          // If they specifically want to filter by a person within the project
+          filters.personId = personId;
+        }
+        // Otherwise, no personId filter - show all team members' entries for the project
+      } else if (personId) {
+        // If a specific person is requested (but not in project context), check permissions
         if (req.user?.role === "employee") {
           // Employees can only see their own entries, ignore the personId parameter
           filters.personId = req.user.id;
@@ -1212,14 +1219,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Admin, billing-admin, pm, executive can see the requested person's entries
           filters.personId = personId;
         }
+        // Add project filter if provided
+        if (projectId) filters.projectId = projectId;
       } else {
-        // No personId specified = default to current user's entries for EVERYONE
+        // No personId or privileged projectId access = default to current user's entries
         // This makes the time tracking screen personal for all users
         filters.personId = req.user!.id;
+        // Add project filter if provided
+        if (projectId) filters.projectId = projectId;
       }
       
-      // Add optional filters
-      if (projectId) filters.projectId = projectId;
+      // Add other optional filters
       if (clientId) filters.clientId = clientId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;

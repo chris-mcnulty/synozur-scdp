@@ -1020,7 +1020,50 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry> {
-    const [timeEntry] = await db.update(timeEntries).set(updateTimeEntry).where(eq(timeEntries.id, id)).returning();
+    // Get the existing entry to check if project or date changed
+    const [existingEntry] = await db.select().from(timeEntries).where(eq(timeEntries.id, id));
+    
+    if (!existingEntry) {
+      throw new Error('Time entry not found');
+    }
+    
+    // Check if we need to recalculate rates (project or date changed)
+    const projectChanged = updateTimeEntry.projectId && updateTimeEntry.projectId !== existingEntry.projectId;
+    const dateChanged = updateTimeEntry.date && updateTimeEntry.date !== existingEntry.date;
+    
+    let finalUpdateData = { ...updateTimeEntry };
+    
+    if (projectChanged || dateChanged) {
+      // Use the new values if provided, otherwise keep existing
+      const projectId = updateTimeEntry.projectId || existingEntry.projectId;
+      const date = updateTimeEntry.date || existingEntry.date;
+      const personId = existingEntry.personId; // Person ID cannot be changed via update
+      
+      // First check for project-specific rate override
+      const override = await this.getProjectRateOverride(projectId, personId, date);
+      
+      let billingRate: number | null = null;
+      let costRate: number | null = null;
+      
+      if (override) {
+        // Use override rates if available
+        billingRate = override.billingRate ? Number(override.billingRate) : null;
+        costRate = override.costRate ? Number(override.costRate) : null;
+      }
+      
+      // If no override or rates are still null, get user default rates
+      if (billingRate === null || costRate === null) {
+        const userRates = await this.getUserRates(personId);
+        billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
+        costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set  
+      }
+      
+      // Add recalculated rates to update data
+      finalUpdateData.billingRate = billingRate.toString();
+      finalUpdateData.costRate = costRate.toString();
+    }
+    
+    const [timeEntry] = await db.update(timeEntries).set(finalUpdateData).where(eq(timeEntries.id, id)).returning();
     return timeEntry;
   }
 

@@ -685,8 +685,10 @@ export default function TimeTracking() {
                             step="0.25"
                             min="0"
                             max="24"
-                            placeholder="8.0"
+                            placeholder="Enter hours"
                             {...field}
+                            value={field.value || ''}
+                            onChange={(e) => field.onChange(e.target.value)}
                             data-testid="input-hours"
                           />
                         </FormControl>
@@ -1076,8 +1078,10 @@ export default function TimeTracking() {
                           step="0.25"
                           min="0"
                           max="24"
-                          placeholder="8.0"
+                          placeholder="Enter hours"
                           {...field}
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(e.target.value)}
                           data-testid="input-edit-hours"
                         />
                       </FormControl>
