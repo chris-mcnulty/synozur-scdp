@@ -295,6 +295,7 @@ export default function TimeTracking() {
   });
 
   const onSubmit = (data: TimeEntryFormData) => {
+    console.log('Form submitted with data:', data);
     // The validation is now handled by Zod schema
     // If we get here, the data is valid
     createTimeEntryMutation.mutate(data);
@@ -595,7 +596,13 @@ export default function TimeTracking() {
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+                <form 
+                  onSubmit={form.handleSubmit(onSubmit, (errors) => {
+                    console.log('Form validation errors:', errors);
+                  })} 
+                  className="space-y-4" 
+                  noValidate
+                >
                   <FormField
                     control={form.control}
                     name="date"
@@ -653,7 +660,7 @@ export default function TimeTracking() {
                             form.setValue('milestoneId', '');
                             form.setValue('workstreamId', '');
                           }} 
-                          defaultValue={field.value}
+                          value={field.value}
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-project">
