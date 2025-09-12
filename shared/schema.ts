@@ -306,6 +306,11 @@ export const timeEntries = pgTable("time_entries", {
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Cost rate at time of entry
   milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
+  // Invoice batch locking fields
+  invoiceBatchId: varchar("invoice_batch_id").references(() => invoiceBatches.id),
+  locked: boolean("locked").notNull().default(false),
+  lockedAt: timestamp("locked_at"),
+  projectStageId: varchar("project_stage_id").references(() => projectStages.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

@@ -100,6 +100,7 @@ export interface IStorage {
   createTimeEntry(timeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry>;
   updateTimeEntry(id: string, timeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry>;
   deleteTimeEntry(id: string): Promise<void>;
+  lockTimeEntriesForBatch(batchId: string, entryIds: string[]): Promise<void>;
   
   // Expenses
   getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
@@ -1027,6 +1028,18 @@ export class DatabaseStorage implements IStorage {
     await db.delete(timeEntries).where(eq(timeEntries.id, id));
   }
 
+  async lockTimeEntriesForBatch(batchId: string, entryIds: string[]): Promise<void> {
+    if (entryIds.length === 0) return;
+    
+    await db.update(timeEntries)
+      .set({
+        invoiceBatchId: batchId,
+        locked: true,
+        lockedAt: sql`now()`
+      })
+      .where(sql`id = ANY(${entryIds})`);
+  }
+
   // Project Structure Methods
   async getProjectEpics(projectId: string): Promise<ProjectEpic[]> {
     return await db.select()
@@ -1818,10 +1831,15 @@ export class DatabaseStorage implements IStorage {
             });
           }
 
-          // Mark time entries as billed
+          // Mark time entries as billed and lock them
           if (timeEntryIds.length > 0) {
             await tx.update(timeEntries)
-              .set({ billedFlag: true })
+              .set({ 
+                billedFlag: true,
+                invoiceBatchId: batchId,
+                locked: true,
+                lockedAt: sql`now()`
+              })
               .where(sql`${timeEntries.id} IN ${sql.raw(`(${timeEntryIds.map(id => `'${id}'`).join(',')})`)}}`);
             timeEntriesBilled += timeEntryIds.length;
           }

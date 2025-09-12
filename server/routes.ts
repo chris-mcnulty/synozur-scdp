@@ -1242,6 +1242,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Time entry not found" });
       }
       
+      // Check if entry is locked (invoice batch)
+      const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
+      if (existingEntry.locked && !isAdmin) {
+        return res.status(403).json({ 
+          message: "This time entry has been locked in an invoice batch and cannot be edited" 
+        });
+      }
+      
       // Check permissions
       if (req.user?.role === "employee") {
         // Regular employees can only edit their own entries
@@ -1273,6 +1281,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!existingEntry) {
         return res.status(404).json({ message: "Time entry not found" });
+      }
+      
+      // Check if entry is locked (invoice batch)
+      const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
+      if (existingEntry.locked && !isAdmin) {
+        return res.status(403).json({ 
+          message: "This time entry has been locked in an invoice batch and cannot be deleted" 
+        });
       }
       
       // Check permissions
