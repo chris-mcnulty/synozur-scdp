@@ -1941,19 +1941,40 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Project not found");
     }
 
-    // Get total budget from project (sum of all estimates)
-    const projectEstimates = await db.select({
-      totalAmount: sql<number>`COALESCE(SUM(CAST(${estimates.totalFees} AS DECIMAL)), 0)::float`,
-      totalHours: sql<number>`COALESCE(SUM(CAST(${estimates.totalHours} AS DECIMAL)), 0)::float`
+    // Get total budget from approved SOWs first, then fall back to estimates
+    const sowBudget = await this.getProjectTotalBudget(projectId);
+    
+    // Get SOW hours if available
+    const approvedSows = await db.select({
+      totalHours: sql<number>`COALESCE(SUM(CAST(${sows.hours} AS DECIMAL)), 0)::float`
     })
-    .from(estimates)
+    .from(sows)
     .where(and(
-      eq(estimates.projectId, projectId),
-      eq(estimates.status, 'approved')
+      eq(sows.projectId, projectId),
+      eq(sows.status, 'approved')
     ));
-
-    const totalBudget = Number(projectEstimates[0]?.totalAmount) || Number(project.baselineBudget) || 0;
-    const estimatedHours = Number(projectEstimates[0]?.totalHours) || 0;
+    
+    const sowHours = Number(approvedSows[0]?.totalHours) || 0;
+    
+    // If we have SOWs, use them for budget; otherwise fall back to estimates
+    let totalBudget = sowBudget;
+    let estimatedHours = sowHours;
+    
+    // If no SOWs, fall back to estimates
+    if (totalBudget === 0) {
+      const projectEstimates = await db.select({
+        totalAmount: sql<number>`COALESCE(SUM(CAST(${estimates.totalFees} AS DECIMAL)), 0)::float`,
+        totalHours: sql<number>`COALESCE(SUM(CAST(${estimates.totalHours} AS DECIMAL)), 0)::float`
+      })
+      .from(estimates)
+      .where(and(
+        eq(estimates.projectId, projectId),
+        eq(estimates.status, 'approved')
+      ));
+      
+      totalBudget = Number(projectEstimates[0]?.totalAmount) || Number(project.baselineBudget) || 0;
+      estimatedHours = Number(projectEstimates[0]?.totalHours) || 0;
+    }
 
     // Get actual hours and revenue consumed
     const [actualMetrics] = await db.select({

@@ -207,9 +207,9 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
   
-  // Time entries query
+  // Time entries query - fetch time entries for this project
   const { data: timeEntries = [], isLoading: timeEntriesLoading } = useQuery<any[]>({
-    queryKey: ['/api/time-entries', id],
+    queryKey: [`/api/time-entries?projectId=${id}`],
     enabled: !!id && canViewTime,
   });
   

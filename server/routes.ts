@@ -1241,10 +1241,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         personId = req.body.personId;
       }
       
-      const validatedData = insertTimeEntrySchema.parse({
+      // Convert hours to string if it's a number
+      const dataWithHours = {
         ...req.body,
-        personId: personId
-      });
+        personId: personId,
+        hours: req.body.hours !== undefined ? String(req.body.hours) : req.body.hours
+      };
+      
+      const validatedData = insertTimeEntrySchema.parse(dataWithHours);
       const timeEntry = await storage.createTimeEntry(validatedData);
       res.status(201).json(timeEntry);
     } catch (error) {
@@ -1290,7 +1294,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Only copy allowed fields from request body
       for (const field of allowedFields) {
         if (field in req.body) {
-          updateData[field] = req.body[field];
+          // Convert hours to string if it's a number
+          if (field === 'hours' && req.body[field] !== undefined) {
+            updateData[field] = String(req.body[field]);
+          } else {
+            updateData[field] = req.body[field];
+          }
         }
       }
       
