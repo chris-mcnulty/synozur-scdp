@@ -532,6 +532,8 @@ export default function ProjectDetail() {
             <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
+            <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
+            <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
