@@ -688,7 +688,7 @@ export default function TimeTracking() {
                           <Input
                             type="number"
                             step="0.25"
-                            min="0.01"
+                            min="0.25"
                             max="24"
                             placeholder="8.0"
                             {...field}
@@ -764,7 +764,7 @@ export default function TimeTracking() {
                     name="phase"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Phase (Optional)</FormLabel>
+                        <FormLabel>Stage (Optional)</FormLabel>
                         <FormControl>
                           <Input
                             placeholder="e.g., Assessment, Strategy Design"
@@ -1086,7 +1086,7 @@ export default function TimeTracking() {
                         <Input
                           type="number"
                           step="0.25"
-                          min="0.01"
+                          min="0.25"
                           max="24"
                           placeholder="8.0"
                           {...field}
@@ -1162,7 +1162,7 @@ export default function TimeTracking() {
                   name="phase"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phase (Optional)</FormLabel>
+                      <FormLabel>Stage (Optional)</FormLabel>
                       <FormControl>
                         <Input
                           placeholder="e.g., Assessment, Strategy Design"
