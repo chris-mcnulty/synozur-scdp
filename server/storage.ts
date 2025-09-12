@@ -15,6 +15,7 @@ import {
   type InvoiceBatch, type InsertInvoiceBatch,
   type InvoiceLine, type InsertInvoiceLine,
   type Sow, type InsertSow,
+  type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectRateOverride, type InsertProjectRateOverride
@@ -164,10 +165,18 @@ export interface IStorage {
   }[]>;
   
   // Project Structure Methods
+  getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
+  createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
+  updateProjectEpic(id: string, update: Partial<InsertProjectEpic>): Promise<ProjectEpic>;
+  deleteProjectEpic(id: string): Promise<void>;
   getProjectMilestones(projectId: string): Promise<ProjectMilestone[]>;
-  getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]>;
   createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
+  updateProjectMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone>;
+  deleteProjectMilestone(id: string): Promise<void>;
+  getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]>;
   createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream>;
+  updateProjectWorkStream(id: string, update: Partial<InsertProjectWorkstream>): Promise<ProjectWorkstream>;
+  deleteProjectWorkStream(id: string): Promise<void>;
   
   // Rate Management Methods
   getProjectRateOverride(projectId: string, userId: string, date: string): Promise<ProjectRateOverride | null>;
@@ -1019,6 +1028,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Project Structure Methods
+  async getProjectEpics(projectId: string): Promise<ProjectEpic[]> {
+    return await db.select()
+      .from(projectEpics)
+      .where(eq(projectEpics.projectId, projectId))
+      .orderBy(projectEpics.order);
+  }
+
+  async createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic> {
+    const [created] = await db.insert(projectEpics).values(epic).returning();
+    return created;
+  }
+
+  async updateProjectEpic(id: string, update: Partial<InsertProjectEpic>): Promise<ProjectEpic> {
+    const [updated] = await db.update(projectEpics)
+      .set(update)
+      .where(eq(projectEpics.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectEpic(id: string): Promise<void> {
+    await db.delete(projectEpics).where(eq(projectEpics.id, id));
+  }
+
   async getProjectMilestones(projectId: string): Promise<ProjectMilestone[]> {
     return await db.select()
       .from(projectMilestones)
@@ -1040,9 +1073,33 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateProjectMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone> {
+    const [updated] = await db.update(projectMilestones)
+      .set(update)
+      .where(eq(projectMilestones.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectMilestone(id: string): Promise<void> {
+    await db.delete(projectMilestones).where(eq(projectMilestones.id, id));
+  }
+
   async createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream> {
     const [created] = await db.insert(projectWorkstreams).values(workstream).returning();
     return created;
+  }
+
+  async updateProjectWorkStream(id: string, update: Partial<InsertProjectWorkstream>): Promise<ProjectWorkstream> {
+    const [updated] = await db.update(projectWorkstreams)
+      .set(update)
+      .where(eq(projectWorkstreams.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectWorkStream(id: string): Promise<void> {
+    await db.delete(projectWorkstreams).where(eq(projectWorkstreams.id, id));
   }
 
   // Rate Management Methods

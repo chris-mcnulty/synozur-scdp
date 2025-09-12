@@ -2288,6 +2288,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ===================== PROJECT STRUCTURE ENDPOINTS =====================
   
+  // Get project epics
+  app.get("/api/projects/:projectId/epics", requireAuth, async (req, res) => {
+    try {
+      const epics = await storage.getProjectEpics(req.params.projectId);
+      res.json(epics);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get project epics" });
+    }
+  });
+
+  // Create project epic
+  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const epicData = {
+        ...req.body,
+        projectId: req.params.projectId,
+        order: req.body.order || 0
+      };
+      const epic = await storage.createProjectEpic(epicData);
+      res.json(epic);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create epic" });
+    }
+  });
+
+  // Update project epic
+  app.patch("/api/epics/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const epic = await storage.updateProjectEpic(req.params.id, req.body);
+      res.json(epic);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update epic" });
+    }
+  });
+
+  // Delete project epic
+  app.delete("/api/epics/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectEpic(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete epic" });
+    }
+  });
+  
   // Get milestones for dropdown
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
@@ -2303,12 +2348,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const milestoneData = {
         ...req.body,
-        projectId: req.params.projectId
+        projectId: req.params.projectId,
+        order: req.body.order ?? 0
       };
       const milestone = await storage.createProjectMilestone(milestoneData);
       res.json(milestone);
     } catch (error) {
+      console.error("Error creating milestone:", error);
       res.status(500).json({ message: "Failed to create milestone" });
+    }
+  });
+
+  // Update milestone
+  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
+      res.json(milestone);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update milestone" });
+    }
+  });
+
+  // Delete milestone
+  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectMilestone(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete milestone" });
     }
   });
 
@@ -2327,12 +2394,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const workstreamData = {
         ...req.body,
-        projectId: req.params.projectId
+        projectId: req.params.projectId,
+        order: req.body.order || 0
       };
       const workstream = await storage.createProjectWorkStream(workstreamData);
       res.json(workstream);
     } catch (error) {
       res.status(500).json({ message: "Failed to create workstream" });
+    }
+  });
+
+  // Update workstream
+  app.patch("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const workstream = await storage.updateProjectWorkStream(req.params.id, req.body);
+      res.json(workstream);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update workstream" });
+    }
+  });
+
+  // Delete workstream
+  app.delete("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectWorkStream(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete workstream" });
     }
   });
 
