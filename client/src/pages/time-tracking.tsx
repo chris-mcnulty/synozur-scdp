@@ -10,11 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -68,10 +71,27 @@ export default function TimeTracking() {
     startDate: "",
     endDate: ""
   });
+  const [editingEntry, setEditingEntry] = useState<TimeEntryWithRelations | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState<TimeEntryWithRelations | null>(null);
+  const [editProjectId, setEditProjectId] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const form = useForm<TimeEntryFormData>({
+    resolver: zodResolver(timeEntryFormSchema),
+    defaultValues: {
+      date: formatLocalDate(new Date()),
+      hours: "",
+      billable: true,
+      description: "",
+      phase: "",
+      projectId: "",
+      milestoneId: "",
+      workstreamId: "",
+    },
+  });
+
+  const editForm = useForm<TimeEntryFormData>({
     resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
       date: formatLocalDate(new Date()),
@@ -118,6 +138,35 @@ export default function TimeTracking() {
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
       const response = await fetch(`/api/projects/${selectedProjectId}/workstreams`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch workstreams');
+      return response.json();
+    }
+  });
+
+  // Fetch milestones and workstreams for edit form
+  const { data: editMilestones } = useQuery({
+    queryKey: ["/api/projects", editProjectId, "milestones"],
+    enabled: !!editProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${editProjectId}/milestones`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch milestones');
+      return response.json();
+    }
+  });
+
+  const { data: editWorkstreams } = useQuery({
+    queryKey: ["/api/projects", editProjectId, "workstreams"],
+    enabled: !!editProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${editProjectId}/workstreams`, {
         credentials: 'include',
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
@@ -177,6 +226,74 @@ export default function TimeTracking() {
     },
   });
 
+  const updateTimeEntryMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: TimeEntryFormData }) => {
+      const response = await apiRequest(`/api/time-entries/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      setEditingEntry(null);
+      editForm.reset();
+      toast({
+        title: "Time entry updated",
+        description: "Your time entry has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to update time entry.";
+      if (errorMessage.includes("locked") || errorMessage.includes("invoice")) {
+        toast({
+          title: "Entry is locked",
+          description: "This time entry is locked in an invoice batch and cannot be edited.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
+  const deleteTimeEntryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest(`/api/time-entries/${id}`, {
+        method: "DELETE",
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
+      setDeletingEntry(null);
+      toast({
+        title: "Time entry deleted",
+        description: "The time entry has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.message || "Failed to delete time entry.";
+      if (errorMessage.includes("locked") || errorMessage.includes("invoice")) {
+        toast({
+          title: "Entry is locked",
+          description: "This time entry is locked in an invoice batch and cannot be deleted.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
   const onSubmit = (data: TimeEntryFormData) => {
     // Debug logging to help diagnose issues
     console.log('Form submitted with data:', data);
@@ -186,6 +303,49 @@ export default function TimeTracking() {
     // The validation is now handled by Zod schema
     // If we get here, the data is valid
     createTimeEntryMutation.mutate(data);
+  };
+
+  const onEditSubmit = (data: TimeEntryFormData) => {
+    if (!editingEntry) return;
+    updateTimeEntryMutation.mutate({ id: editingEntry.id, data });
+  };
+
+  const handleEditEntry = (entry: TimeEntryWithRelations) => {
+    setEditingEntry(entry);
+    setEditProjectId(entry.projectId);
+    editForm.reset({
+      date: entry.date,
+      hours: entry.hours,
+      billable: entry.billable,
+      description: entry.description || "",
+      phase: entry.phase || "",
+      projectId: entry.projectId,
+      milestoneId: entry.milestoneId || "",
+      workstreamId: entry.workstreamId || "",
+    });
+  };
+
+  const handleDeleteEntry = (entry: TimeEntryWithRelations) => {
+    setDeletingEntry(entry);
+  };
+
+  const confirmDelete = () => {
+    if (deletingEntry) {
+      deleteTimeEntryMutation.mutate(deletingEntry.id);
+    }
+  };
+
+  // Check if user can edit/delete entry
+  const canModifyEntry = (entry: TimeEntryWithRelations) => {
+    const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'billing-admin';
+    const isOwner = entry.personId === currentUser?.id;
+    const isLocked = entry.locked;
+    
+    // Admins can always modify unless locked
+    if (isAdmin) return !isLocked || true; // Admins can even modify locked entries
+    
+    // Regular users can only modify their own unlocked entries
+    return isOwner && !isLocked;
   };
 
   // Import component
@@ -719,6 +879,18 @@ export default function TimeTracking() {
                               Billable
                             </div>
                           )}
+                          {entry.locked && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Lock className="w-3 h-3 text-muted-foreground" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Locked in invoice batch</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {entry.milestone && (
@@ -750,20 +922,62 @@ export default function TimeTracking() {
                           </div>
                         )}
                       </div>
-                      <div className="text-right">
-                        <div className="font-medium" data-testid={`entry-hours-${entry.id}`}>
-                          {entry.hours}h
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-medium" data-testid={`entry-hours-${entry.id}`}>
+                            {entry.hours}h
+                          </div>
+                          <div className="text-sm text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
+                            {format(parseLocalDate(entry.date), 'MMM d')}
+                          </div>
+                          {entry.billingRate && (
+                            <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
+                              {entry.project.commercialScheme === 'retainer' || entry.project.commercialScheme === 'milestone' ? (
+                                <span className="text-blue-600">Block/Retainer</span>
+                              ) : (
+                                `$${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}`
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-sm text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
-                          {format(parseLocalDate(entry.date), 'MMM d')}
-                        </div>
-                        {entry.billingRate && (
-                          <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
-                            {entry.project.commercialScheme === 'retainer' || entry.project.commercialScheme === 'milestone' ? (
-                              <span className="text-blue-600">Block/Retainer</span>
-                            ) : (
-                              `$${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}`
-                            )}
+                        {canModifyEntry(entry) && (
+                          <div className="flex gap-2">
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEditEntry(entry)}
+                                    disabled={entry.locked && currentUser?.role !== 'admin' && currentUser?.role !== 'billing-admin'}
+                                    data-testid={`button-edit-${entry.id}`}
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Edit entry</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteEntry(entry)}
+                                    disabled={entry.locked && currentUser?.role !== 'admin' && currentUser?.role !== 'billing-admin'}
+                                    data-testid={`button-delete-${entry.id}`}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Delete entry</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
                         )}
                       </div>
@@ -774,6 +988,288 @@ export default function TimeTracking() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editingEntry} onOpenChange={() => setEditingEntry(null)}>
+          <DialogContent className="max-w-2xl" data-testid="dialog-edit-time-entry">
+            <DialogHeader>
+              <DialogTitle>Edit Time Entry</DialogTitle>
+              <DialogDescription>
+                Update the details of your time entry.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...editForm}>
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+                <FormField
+                  control={editForm.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="button-edit-select-date"
+                            >
+                              {field.value ? (
+                                format(parseLocalDate(field.value), "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                              <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={field.value ? parseLocalDate(field.value) : undefined}
+                            onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
+                            disabled={(date) =>
+                              date > new Date() || date < new Date("1900-01-01")
+                            }
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="projectId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Project</FormLabel>
+                      <Select 
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setEditProjectId(value);
+                          editForm.setValue('milestoneId', '');
+                          editForm.setValue('workstreamId', '');
+                        }} 
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-project">
+                            <SelectValue placeholder="Select project" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {projects?.map((project) => (
+                            <SelectItem key={project.id} value={project.id}>
+                              {project.name} - {project.client.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="hours"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hours</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.25"
+                          min="0.01"
+                          max="24"
+                          placeholder="8.0"
+                          {...field}
+                          data-testid="input-edit-hours"
+                          required
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="milestoneId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Milestone (Optional)</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value}
+                        disabled={!editProjectId}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-milestone">
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select milestone"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {editMilestones?.map((milestone: any) => (
+                            <SelectItem key={milestone.id} value={milestone.id}>
+                              {milestone.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="workstreamId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Workstream (Optional)</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value}
+                        disabled={!editProjectId}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-workstream">
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select workstream"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {editWorkstreams?.map((workstream: any) => (
+                            <SelectItem key={workstream.id} value={workstream.id}>
+                              {workstream.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="phase"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phase (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., Assessment, Strategy Design"
+                          {...field}
+                          value={field.value ?? ""}
+                          data-testid="input-edit-phase"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Brief description of work performed..."
+                          {...field}
+                          value={field.value ?? ""}
+                          data-testid="textarea-edit-description"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="billable"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="checkbox-edit-billable"
+                        />
+                      </FormControl>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>Billable to client</FormLabel>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEditingEntry(null)}
+                    data-testid="button-cancel-edit"
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={updateTimeEntryMutation.isPending}
+                    data-testid="button-save-edit"
+                  >
+                    {updateTimeEntryMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!deletingEntry} onOpenChange={() => setDeletingEntry(null)}>
+          <AlertDialogContent data-testid="dialog-delete-confirm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the time entry for{" "}
+                {deletingEntry && (
+                  <>
+                    <strong>{deletingEntry.hours} hours</strong> on{" "}
+                    <strong>{format(parseLocalDate(deletingEntry.date), "PPP")}</strong>
+                    {deletingEntry.project && (
+                      <> for project <strong>{deletingEntry.project.name}</strong></>
+                    )}.
+                  </>
+                )}
+                {" "}This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-delete">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDelete}
+                disabled={deleteTimeEntryMutation.isPending}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete"
+              >
+                {deleteTimeEntryMutation.isPending ? "Deleting..." : "Delete"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );
