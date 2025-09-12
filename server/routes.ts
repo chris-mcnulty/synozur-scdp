@@ -281,6 +281,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project Milestones endpoints
+  app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
+    try {
+      const milestones = await storage.getProjectMilestones(req.params.projectId);
+      res.json(milestones);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project milestones:", error);
+      res.status(500).json({ message: "Failed to fetch project milestones" });
+    }
+  });
+
+  // Project Workstreams endpoints
+  app.get("/api/projects/:projectId/workstreams", requireAuth, async (req, res) => {
+    try {
+      const workstreams = await storage.getProjectWorkStreams(req.params.projectId);
+      res.json(workstreams);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project workstreams:", error);
+      res.status(500).json({ message: "Failed to fetch project workstreams" });
+    }
+  });
+
   app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const { estimateId } = req.body;
@@ -1261,15 +1283,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Insufficient permissions to edit time entries" });
       }
       
-      // Remove personId from update if user doesn't have permission to change it
-      const updateData = { ...req.body };
-      if (req.user?.role === "employee") {
-        delete updateData.personId;
+      // Whitelist allowed fields only
+      const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase'];
+      const updateData: any = {};
+      
+      // Only copy allowed fields from request body
+      for (const field of allowedFields) {
+        if (field in req.body) {
+          updateData[field] = req.body[field];
+        }
       }
+      
+      // Additional restrictions for regular employees
+      if (req.user?.role === "employee") {
+        // Employees cannot change the project
+        delete updateData.projectId;
+      }
+      
+      // Never allow these fields to be updated via PATCH
+      delete updateData.locked;
+      delete updateData.lockedAt;
+      delete updateData.invoiceBatchId;
+      delete updateData.personId;
+      delete updateData.billingRate;
+      delete updateData.costRate;
+      delete updateData.billedFlag;
+      delete updateData.statusReportedFlag;
       
       const updatedEntry = await storage.updateTimeEntry(req.params.id, updateData);
       res.json(updatedEntry);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[ERROR] Failed to update time entry:", error);
       res.status(500).json({ message: "Failed to update time entry" });
     }
   });
@@ -1773,7 +1817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`[DEBUG] Successfully processed ${estimatesWithTotals.length} estimates`);
       res.json(estimatesWithTotals);
-    } catch (error) {
+    } catch (error: any) {
       console.error("[ERROR] Failed to fetch estimates:", error);
       console.error("[ERROR] Stack trace:", error.stack);
       res.status(500).json({ 
