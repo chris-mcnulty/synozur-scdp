@@ -88,6 +88,7 @@ export default function TimeTracking() {
       projectId: "",
       milestoneId: "",
       workstreamId: "",
+      projectStageId: "",
     },
   });
 
@@ -102,6 +103,7 @@ export default function TimeTracking() {
       projectId: "",
       milestoneId: "",
       workstreamId: "",
+      projectStageId: "",
     },
   });
 
@@ -146,6 +148,20 @@ export default function TimeTracking() {
     }
   });
 
+  const { data: projectStages, isLoading: projectStagesLoading } = useQuery({
+    queryKey: ["/api/projects", selectedProjectId, "stages"],
+    enabled: !!selectedProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${selectedProjectId}/stages`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch project stages');
+      return response.json();
+    }
+  });
+
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
     queryKey: ["/api/projects", editProjectId, "milestones"],
@@ -171,6 +187,20 @@ export default function TimeTracking() {
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
       if (!response.ok) throw new Error('Failed to fetch workstreams');
+      return response.json();
+    }
+  });
+
+  const { data: editProjectStages } = useQuery({
+    queryKey: ["/api/projects", editProjectId, "stages"],
+    enabled: !!editProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${editProjectId}/stages`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch project stages');
       return response.json();
     }
   });
@@ -778,6 +808,35 @@ export default function TimeTracking() {
 
                   <FormField
                     control={form.control}
+                    name="projectStageId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Stage (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value || undefined}
+                          disabled={!selectedProjectId || projectStagesLoading}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-stage">
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select stage"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {projectStages?.map((stage: any) => (
+                              <SelectItem key={stage.id} value={stage.id}>
+                                {stage.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="description"
                     render={({ field }) => (
                       <FormItem>
@@ -1141,6 +1200,35 @@ export default function TimeTracking() {
                           {editWorkstreams?.map((workstream: any) => (
                             <SelectItem key={workstream.id} value={workstream.id}>
                               {workstream.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="projectStageId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Stage (Optional)</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value || undefined}
+                        disabled={!editProjectId}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-stage">
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select stage"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {editProjectStages?.map((stage: any) => (
+                            <SelectItem key={stage.id} value={stage.id}>
+                              {stage.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

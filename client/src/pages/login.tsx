@@ -80,7 +80,7 @@ export default function Login() {
 
   const handleDemoLogin = () => {
     loginMutation.mutate({ 
-      email: "demo@synozur.com", 
+      email: "chris.mcnulty@synozur.com", 
       password: "demo123" 
     });
   };
