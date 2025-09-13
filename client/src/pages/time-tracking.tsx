@@ -25,22 +25,12 @@ import { z } from "zod";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true, // personId is added server-side from authenticated user
-  billingRate: true, // rates are calculated server-side
-  costRate: true,
-  invoiceBatchId: true,
-  locked: true,
-  lockedAt: true,
-  billedFlag: true,
-  statusReportedFlag: true,
-  projectStageId: true
 }).extend({
   date: z.string(),
   hours: z.string().min(1, "Hours is required").refine(
     (val) => !isNaN(Number(val)) && Number(val) > 0,
     "Please enter valid hours greater than 0"
   ),
-  milestoneId: z.string().optional(),
-  workstreamId: z.string().optional(),
 });
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
@@ -685,7 +675,7 @@ export default function TimeTracking() {
                             form.setValue('milestoneId', '');
                             form.setValue('workstreamId', '');
                           }} 
-                          value={field.value}
+                          value={field.value || undefined}
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-project">
@@ -737,7 +727,7 @@ export default function TimeTracking() {
                         <FormLabel>Milestone (Optional)</FormLabel>
                         <Select 
                           onValueChange={field.onChange} 
-                          value={field.value}
+                          value={field.value || undefined}
                           disabled={!selectedProjectId || milestonesLoading}
                         >
                           <FormControl>
@@ -766,7 +756,7 @@ export default function TimeTracking() {
                         <FormLabel>Workstream (Optional)</FormLabel>
                         <Select 
                           onValueChange={field.onChange} 
-                          value={field.value}
+                          value={field.value || undefined}
                           disabled={!selectedProjectId || workstreamsLoading}
                         >
                           <FormControl>
@@ -1078,7 +1068,7 @@ export default function TimeTracking() {
                           editForm.setValue('milestoneId', '');
                           editForm.setValue('workstreamId', '');
                         }} 
-                        value={field.value}
+                        value={field.value || undefined}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-project">
@@ -1130,7 +1120,7 @@ export default function TimeTracking() {
                       <FormLabel>Milestone (Optional)</FormLabel>
                       <Select 
                         onValueChange={field.onChange} 
-                        value={field.value}
+                        value={field.value || undefined}
                         disabled={!editProjectId}
                       >
                         <FormControl>
@@ -1159,7 +1149,7 @@ export default function TimeTracking() {
                       <FormLabel>Workstream (Optional)</FormLabel>
                       <Select 
                         onValueChange={field.onChange} 
-                        value={field.value}
+                        value={field.value || undefined}
                         disabled={!editProjectId}
                       >
                         <FormControl>

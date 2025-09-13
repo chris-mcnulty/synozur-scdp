@@ -698,6 +698,8 @@ export const insertEstimateMilestoneSchema = createInsertSchema(estimateMileston
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
+  billingRate: true,  // Calculated server-side
+  costRate: true,     // Calculated server-side
 });
 
 export const insertExpenseSchema = createInsertSchema(expenses).omit({

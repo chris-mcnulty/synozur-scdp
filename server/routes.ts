@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -1358,6 +1358,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log("[TIME_ENTRY] Creating time entry:", req.body);
       console.log("[TIME_ENTRY] User:", req.user?.id, "Role:", req.user?.role);
       
+      // CRITICAL: Strip billingRate and costRate from request body
+      // These are calculated server-side, not provided by the client
+      delete req.body.billingRate;
+      delete req.body.costRate;
+      
       // Regular employees can only create their own entries
       // PMs, admins, billing-admins, and executives can create for anyone
       let personId = req.user!.id;
@@ -1373,13 +1378,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hours: req.body.hours !== undefined ? String(req.body.hours) : req.body.hours
       };
       
-      console.log("[TIME_ENTRY] Data with hours:", dataWithHours);
+      // CRITICAL: Ensure billingRate and costRate are not in the data
+      delete dataWithHours.billingRate;
+      delete dataWithHours.costRate;
+      
+      console.log("[TIME_ENTRY] Data with hours (rates stripped):", dataWithHours);
       
       const validatedData = insertTimeEntrySchema.parse(dataWithHours);
       console.log("[TIME_ENTRY] Validated data:", validatedData);
       
       const timeEntry = await storage.createTimeEntry(validatedData);
-      console.log("[TIME_ENTRY] Created successfully:", timeEntry.id);
+      console.log("[TIME_ENTRY] Created successfully with rates:", {
+        id: timeEntry.id,
+        billingRate: timeEntry.billingRate,
+        costRate: timeEntry.costRate
+      });
       
       res.status(201).json(timeEntry);
     } catch (error: any) {
@@ -1875,11 +1888,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             costRate = costRate ?? userRates.costRate ?? 100;
           }
           
-          // Update the entry with the calculated rates
-          await storage.updateTimeEntry(entry.id, {
+          // Update the entry with the calculated rates directly in the database
+          await db.update(timeEntries).set({
             billingRate: billingRate.toString(),
             costRate: costRate.toString()
-          });
+          }).where(eq(timeEntries.id, entry.id));
           
           fixedCount++;
         } catch (error) {

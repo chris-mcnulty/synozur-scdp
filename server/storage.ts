@@ -1168,7 +1168,8 @@ export class DatabaseStorage implements IStorage {
     const projectChanged = updateTimeEntry.projectId && updateTimeEntry.projectId !== existingEntry.projectId;
     const dateChanged = updateTimeEntry.date && updateTimeEntry.date !== existingEntry.date;
     
-    let finalUpdateData = { ...updateTimeEntry };
+    let finalUpdateData: any = { ...updateTimeEntry };
+    let rates: { billingRate?: string; costRate?: string } = {};
     
     if (projectChanged || dateChanged) {
       // Use the new values if provided, otherwise keep existing
@@ -1195,12 +1196,15 @@ export class DatabaseStorage implements IStorage {
         costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set  
       }
       
-      // Add recalculated rates to update data
-      finalUpdateData.billingRate = billingRate.toString();
-      finalUpdateData.costRate = costRate.toString();
+      // Store rates to update separately
+      rates.billingRate = billingRate.toString();
+      rates.costRate = costRate.toString();
     }
     
-    const [timeEntry] = await db.update(timeEntries).set(finalUpdateData).where(eq(timeEntries.id, id)).returning();
+    // Combine regular update data with rates for the database update
+    const dbUpdateData = { ...finalUpdateData, ...rates };
+    
+    const [timeEntry] = await db.update(timeEntries).set(dbUpdateData).where(eq(timeEntries.id, id)).returning();
     return timeEntry;
   }
 
