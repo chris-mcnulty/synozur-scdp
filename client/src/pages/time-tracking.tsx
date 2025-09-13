@@ -296,13 +296,13 @@ export default function TimeTracking() {
 
   const onSubmit = (data: TimeEntryFormData) => {
     console.log('Form submitted with data:', data);
-    // Transform empty strings to undefined for optional fields
+    // Transform empty strings to undefined for optional foreign key fields only
     const cleanedData = {
       ...data,
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
-      phase: data.phase === "" ? undefined : data.phase || undefined,
-      description: data.description === "" ? undefined : data.description || undefined,
+      projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
+      // phase and description are text fields, don't need special handling
     };
     console.log('Sending cleaned data:', cleanedData);
     createTimeEntryMutation.mutate(cleanedData);
@@ -310,13 +310,13 @@ export default function TimeTracking() {
 
   const onEditSubmit = (data: TimeEntryFormData) => {
     if (!editingEntry) return;
-    // Transform empty strings to undefined for optional fields
+    // Transform empty strings to undefined for optional foreign key fields only
     const cleanedData = {
       ...data,
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
-      phase: data.phase === "" ? undefined : data.phase || undefined,
-      description: data.description === "" ? undefined : data.description || undefined,
+      projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
+      // phase and description are text fields, don't need special handling
     };
     updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
   };
