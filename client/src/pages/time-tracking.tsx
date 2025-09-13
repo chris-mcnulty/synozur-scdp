@@ -250,12 +250,19 @@ export default function TimeTracking() {
         hours: "",
         billable: true,
         description: "",
-        // Preserve project context
+        // Preserve project context - all dropdowns keep their values
         projectId: currentProjectId,
         milestoneId: currentMilestoneId,
         workstreamId: currentWorkstreamId,
         projectStageId: currentStageId,
       });
+      
+      // Also ensure the selectedProjectId state stays in sync
+      // This is important so milestone/workstream/stage dropdowns remain populated
+      if (currentProjectId && currentProjectId !== selectedProjectId) {
+        setSelectedProjectId(currentProjectId);
+      }
+      
       toast({
         title: "Time entry created",
         description: "Your time has been logged successfully.",
@@ -378,6 +385,7 @@ export default function TimeTracking() {
       projectId: entry.projectId,
       milestoneId: entry.milestoneId || "",
       workstreamId: entry.workstreamId || "",
+      projectStageId: entry.projectStageId || "",
     });
   };
 
