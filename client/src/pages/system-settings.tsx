@@ -28,8 +28,14 @@ interface SystemSetting {
 
 // Form schemas
 const rateSettingsSchema = z.object({
-  defaultBillingRate: z.string().min(0, "Billing rate must be 0 or greater"),
-  defaultCostRate: z.string().min(0, "Cost rate must be 0 or greater"),
+  defaultBillingRate: z.string().min(1, "Billing rate is required").refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Billing rate must be a valid number 0 or greater"),
+  defaultCostRate: z.string().min(1, "Cost rate is required").refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Cost rate must be a valid number 0 or greater"),
 });
 
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
@@ -65,7 +71,7 @@ export default function SystemSettings() {
     mutationFn: async (data: RateSettingsData) => {
       // Update both rate settings
       await Promise.all([
-        apiRequest("/api/settings/DEFAULT_BILLING_RATE", {
+        apiRequest("/api/settings", {
           method: "POST",
           body: JSON.stringify({
             settingKey: "DEFAULT_BILLING_RATE",
@@ -74,7 +80,7 @@ export default function SystemSettings() {
             description: "System-wide default billing rate used as final fallback when no other rates are available"
           }),
         }),
-        apiRequest("/api/settings/DEFAULT_COST_RATE", {
+        apiRequest("/api/settings", {
           method: "POST",
           body: JSON.stringify({
             settingKey: "DEFAULT_COST_RATE",
