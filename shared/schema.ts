@@ -18,8 +18,6 @@ export const users = pgTable("users", {
   isAssignable: boolean("is_assignable").notNull().default(true), // Can be assigned to projects/estimates
   roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
   customRole: text("custom_role"), // For non-standard roles
-  defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }), // Default rack rate for this person
-  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }), // Default charge rate for this person  
   defaultBillingRate: decimal("default_billing_rate", { precision: 10, scale: 2 }), // Default billing rate
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate (internal)
   isActive: boolean("is_active").notNull().default(true),
