@@ -1361,9 +1361,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: req.user?.id,
         email: req.user?.email,
         name: req.user?.name,
-        role: req.user?.role,
-        defaultBillingRate: req.user?.defaultBillingRate,
-        defaultCostRate: req.user?.defaultCostRate
+        role: req.user?.role
+        // Note: rates are not stored in session, they're fetched from DB when needed
       });
       
       // CRITICAL: Strip billingRate and costRate from request body
@@ -2475,15 +2474,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
           defaultCostRate: user?.defaultCostRate
         });
         if (!user) {
-          // For chris.mcnulty@synozur.com, create as admin
-          const role = email === "chris.mcnulty@synozur.com" ? "admin" : "employee";
+          // For chris.mcnulty@synozur.com, create as admin with default rates
+          const isChris = email.toLowerCase() === "chris.mcnulty@synozur.com";
+          const role = isChris ? "admin" : "employee";
           user = await storage.createUser({
             email,
             name,
             role,
             canLogin: true, // SSO users can login by default
             isActive: true,
+            // Set default rates for Chris
+            defaultBillingRate: isChris ? "400.00" : null,
+            defaultCostRate: isChris ? "350.00" : null,
           });
+        } else {
+          // Update user name from SSO if it changed
+          if (user.name !== name) {
+            user = await storage.updateUser(user.id, { name });
+          }
         }
         
         // Check if user can login

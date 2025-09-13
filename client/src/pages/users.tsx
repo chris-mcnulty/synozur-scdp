@@ -186,7 +186,7 @@ export default function Users() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {user.defaultChargeRate ? `$${user.defaultChargeRate}` : '-'}
+                        {user.defaultBillingRate ? `$${user.defaultBillingRate}` : '-'}
                       </TableCell>
                       <TableCell>
                         <Badge 
@@ -249,7 +249,7 @@ export default function Users() {
                 role: formData.get('role'),
                 canLogin: formData.get('canLogin') === 'on',
                 isAssignable: formData.get('isAssignable') === 'true',
-                defaultChargeRate: formData.get('defaultChargeRate'),
+                defaultBillingRate: formData.get('defaultBillingRate'),
                 defaultCostRate: formData.get('defaultCostRate'),
                 isActive: true,
               });
@@ -336,10 +336,10 @@ export default function Users() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="defaultChargeRate">Default Charge Rate</Label>
+                    <Label htmlFor="defaultBillingRate">Default Billing Rate</Label>
                     <Input
-                      id="defaultChargeRate"
-                      name="defaultChargeRate"
+                      id="defaultBillingRate"
+                      name="defaultBillingRate"
                       type="number"
                       placeholder="150"
                       min="0"
@@ -397,7 +397,7 @@ export default function Users() {
                     role: formData.get('role'),
                     canLogin: formData.get('canLogin') === 'on',
                     isAssignable: formData.get('isAssignable') === 'true',
-                    defaultChargeRate: formData.get('defaultChargeRate'),
+                    defaultBillingRate: formData.get('defaultBillingRate'),
                     defaultCostRate: formData.get('defaultCostRate'),
                     isActive: formData.get('isActive') === 'on',
                   }
@@ -481,12 +481,12 @@ export default function Users() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="edit-defaultChargeRate">Default Charge Rate</Label>
+                      <Label htmlFor="edit-defaultBillingRate">Default Billing Rate</Label>
                       <Input
-                        id="edit-defaultChargeRate"
-                        name="defaultChargeRate"
+                        id="edit-defaultBillingRate"
+                        name="defaultBillingRate"
                         type="number"
-                        defaultValue={editingUser.defaultChargeRate}
+                        defaultValue={editingUser.defaultBillingRate}
                         min="0"
                         step="0.01"
                       />
