@@ -700,6 +700,11 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   createdAt: true,
   billingRate: true,  // Calculated server-side
   costRate: true,     // Calculated server-side
+}).extend({
+  // Ensure projectId is a non-empty string (required for foreign key)
+  projectId: z.string().trim().min(1, "Project is required"),
+  // Ensure personId is a non-empty string (required for foreign key)
+  personId: z.string().trim().min(1, "Person is required")
 });
 
 export const insertExpenseSchema = createInsertSchema(expenses).omit({

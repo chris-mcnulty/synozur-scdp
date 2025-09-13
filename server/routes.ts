@@ -1400,6 +1400,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertTimeEntrySchema.parse(dataWithHours);
       console.log("[TIME_ENTRY] Validated data:", validatedData);
       
+      // Validate that the project exists before attempting to create the entry
+      if (validatedData.projectId) {
+        const project = await storage.getProject(validatedData.projectId);
+        if (!project) {
+          console.error("[TIME_ENTRY] Invalid project ID:", validatedData.projectId);
+          return res.status(400).json({ 
+            message: "Invalid project selected. Please refresh and try again.",
+            type: 'INVALID_PROJECT'
+          });
+        }
+      }
+      
       const timeEntry = await storage.createTimeEntry(validatedData);
       console.log("[TIME_ENTRY] Created successfully with rates:", {
         id: timeEntry.id,

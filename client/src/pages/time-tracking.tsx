@@ -239,7 +239,23 @@ export default function TimeTracking() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      form.reset();
+      // Preserve the project selection and only reset the variable fields
+      const currentProjectId = form.getValues("projectId");
+      const currentMilestoneId = form.getValues("milestoneId");
+      const currentWorkstreamId = form.getValues("workstreamId");
+      const currentStageId = form.getValues("projectStageId");
+      
+      form.reset({
+        date: formatLocalDate(new Date()),
+        hours: "",
+        billable: true,
+        description: "",
+        // Preserve project context
+        projectId: currentProjectId,
+        milestoneId: currentMilestoneId,
+        workstreamId: currentWorkstreamId,
+        projectStageId: currentStageId,
+      });
       toast({
         title: "Time entry created",
         description: "Your time has been logged successfully.",

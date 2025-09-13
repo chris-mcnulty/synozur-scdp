@@ -1210,6 +1210,24 @@ export class DatabaseStorage implements IStorage {
       
     } catch (error: any) {
       console.error("[STORAGE] Failed to create time entry:", error);
+      
+      // Check for foreign key constraint violations
+      if (error.code === '23503') { // PostgreSQL foreign key violation code
+        if (error.constraint?.includes('project')) {
+          throw new Error('Invalid project selected. Please refresh the page and try again.');
+        }
+        if (error.constraint?.includes('person')) {
+          throw new Error('Invalid user selected. Please refresh the page and try again.');
+        }
+        if (error.constraint?.includes('milestone')) {
+          throw new Error('Invalid milestone selected. Please refresh the page and try again.');
+        }
+        if (error.constraint?.includes('workstream')) {
+          throw new Error('Invalid workstream selected. Please refresh the page and try again.');
+        }
+        throw new Error('Invalid reference selected. Please refresh the page and try again.');
+      }
+      
       // Re-throw with the original error message for proper client feedback
       throw error;
     }
