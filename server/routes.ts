@@ -1357,6 +1357,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log("[TIME_ENTRY] Creating time entry:", req.body);
       console.log("[TIME_ENTRY] User:", req.user?.id, "Role:", req.user?.role);
+      console.log("[DIAGNOSTIC] Authenticated user full details:", {
+        id: req.user?.id,
+        email: req.user?.email,
+        name: req.user?.name,
+        role: req.user?.role,
+        defaultBillingRate: req.user?.defaultBillingRate,
+        defaultCostRate: req.user?.defaultCostRate
+      });
       
       // CRITICAL: Strip billingRate and costRate from request body
       // These are calculated server-side, not provided by the client
@@ -2453,8 +2461,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const email = tokenResponse.account.username;
         const name = tokenResponse.account.name || email;
         
+        console.log("[DIAGNOSTIC] SSO callback - Email from Microsoft:", email);
+        console.log("[DIAGNOSTIC] SSO callback - Name from Microsoft:", name);
+        
         // Check if user exists, create if not
         let user = await storage.getUserByEmail(email);
+        console.log("[DIAGNOSTIC] SSO callback - User lookup result:", {
+          found: !!user,
+          userId: user?.id,
+          userEmail: user?.email,
+          userName: user?.name,
+          defaultBillingRate: user?.defaultBillingRate,
+          defaultCostRate: user?.defaultCostRate
+        });
         if (!user) {
           // For chris.mcnulty@synozur.com, create as admin
           const role = email === "chris.mcnulty@synozur.com" ? "admin" : "employee";
@@ -2475,6 +2494,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create session
         const sessionId = Math.random().toString(36).substring(7);
         sessions.set(sessionId, user);
+        
+        console.log("[DIAGNOSTIC] SSO callback - Session created:", {
+          sessionId,
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.name
+        });
         
         // Redirect to dashboard with session ID
         res.redirect(`/?sessionId=${sessionId}`);

@@ -335,7 +335,23 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     if (!email) return undefined;
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    console.log("[DIAGNOSTIC] getUserByEmail called with:", email);
+    
+    // Use case-insensitive comparison for email
+    const [user] = await db.select()
+      .from(users)
+      .where(sql`LOWER(${users.email}) = LOWER(${email})`);
+    
+    console.log("[DIAGNOSTIC] getUserByEmail result:", {
+      emailSearched: email,
+      found: !!user,
+      userId: user?.id,
+      userEmail: user?.email,
+      userName: user?.name,
+      defaultBillingRate: user?.defaultBillingRate,
+      defaultCostRate: user?.defaultCostRate
+    });
+    
     return user || undefined;
   }
 
@@ -383,6 +399,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }> {
+    console.log("[DIAGNOSTIC] getUserRates called with userId:", userId);
+    
     const [user] = await db.select({
       billingRate: users.defaultBillingRate,
       costRate: users.defaultCostRate
@@ -390,14 +408,27 @@ export class DatabaseStorage implements IStorage {
     .from(users)
     .where(eq(users.id, userId));
     
+    console.log("[DIAGNOSTIC] getUserRates query result:", {
+      found: !!user,
+      rawBillingRate: user?.billingRate,
+      rawCostRate: user?.costRate,
+      typeOfBillingRate: typeof user?.billingRate,
+      typeOfCostRate: typeof user?.costRate
+    });
+    
     if (!user) {
+      console.log("[DIAGNOSTIC] getUserRates: No user found for ID:", userId);
       return { billingRate: null, costRate: null };
     }
     
-    return {
+    const result = {
       billingRate: user.billingRate ? Number(user.billingRate) : null,
       costRate: user.costRate ? Number(user.costRate) : null
     };
+    
+    console.log("[DIAGNOSTIC] getUserRates returning:", result);
+    
+    return result;
   }
 
   async setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void> {
@@ -1061,6 +1092,7 @@ export class DatabaseStorage implements IStorage {
   async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry> {
     try {
       console.log("[STORAGE] Creating time entry for person:", insertTimeEntry.personId, "project:", insertTimeEntry.projectId);
+      console.log("[DIAGNOSTIC] Full insertTimeEntry object:", insertTimeEntry);
       
       // Calculate rates for the time entry
       const { personId, projectId, date, billable } = insertTimeEntry;
@@ -1099,8 +1131,25 @@ export class DatabaseStorage implements IStorage {
       }
       
       // Get user info for better error messages
-      const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, personId));
+      const [user] = await db.select({ 
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        defaultBillingRate: users.defaultBillingRate,
+        defaultCostRate: users.defaultCostRate
+      }).from(users).where(eq(users.id, personId));
       const userName = user?.name || 'Unknown User';
+      
+      console.log("[DIAGNOSTIC] User lookup for error message:", {
+        personId,
+        found: !!user,
+        name: user?.name,
+        email: user?.email,
+        defaultBillingRate: user?.defaultBillingRate,
+        defaultCostRate: user?.defaultCostRate,
+        billingRateResolved: billingRate,
+        costRateResolved: costRate
+      });
       
       // Validate rates based on billable status
       if (billable) {
@@ -1193,8 +1242,25 @@ export class DatabaseStorage implements IStorage {
       }
       
       // Get user info for better error messages
-      const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, personId));
+      const [user] = await db.select({ 
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        defaultBillingRate: users.defaultBillingRate,
+        defaultCostRate: users.defaultCostRate
+      }).from(users).where(eq(users.id, personId));
       const userName = user?.name || 'Unknown User';
+      
+      console.log("[DIAGNOSTIC] User lookup for error message:", {
+        personId,
+        found: !!user,
+        name: user?.name,
+        email: user?.email,
+        defaultBillingRate: user?.defaultBillingRate,
+        defaultCostRate: user?.defaultCostRate,
+        billingRateResolved: billingRate,
+        costRateResolved: costRate
+      });
       
       // Validate rates based on billable status
       if (billable) {
