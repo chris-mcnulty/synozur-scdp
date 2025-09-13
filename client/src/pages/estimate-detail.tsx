@@ -52,8 +52,8 @@ export default function EstimateDetail() {
     rate: "",
     category: ""
   });
-  const [applyStaffRatesDialog, setApplyStaffRatesDialog] = useState(false);
-  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+  const [applyUserRatesDialog, setApplyUserRatesDialog] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [filterText, setFilterText] = useState("");
   const [filterEpic, setFilterEpic] = useState("all");
   const [filterStage, setFilterStage] = useState("all");
@@ -87,7 +87,7 @@ export default function EstimateDetail() {
     complexity: "small",
     confidence: "high",
     comments: "",
-    staffId: "",
+    userId: "",
     resourceName: ""
   });
 
@@ -203,7 +203,7 @@ export default function EstimateDetail() {
         complexity: "small",
         confidence: "high",
         comments: "",
-        staffId: "",
+        userId: "",
         resourceName: ""
       });
       toast({ title: "Input added successfully" });
@@ -495,7 +495,7 @@ export default function EstimateDetail() {
       complexity: newItem.complexity,
       confidence: newItem.confidence,
       comments: newItem.comments || null,
-      staffId: newItem.staffId || null,
+      userId: newItem.userId || null,
       resourceName: newItem.resourceName || null,
       adjustedHours: adjustedHours.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
@@ -1608,18 +1608,18 @@ export default function EstimateDetail() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Select
-              value={newItem.staffId || "unassigned"}
+              value={newItem.userId || "unassigned"}
               onValueChange={(value) => {
-                const selectedStaff = users.find((s: any) => s.id === value);
+                const selectedUser = users.find((s: any) => s.id === value);
                 if (value === "unassigned") {
-                  setNewItem({ ...newItem, staffId: "", resourceName: "", rate: "0", costRate: "0" });
-                } else if (selectedStaff) {
+                  setNewItem({ ...newItem, userId: "", resourceName: "", rate: "0", costRate: "0" });
+                } else if (selectedUser) {
                   setNewItem({ 
                     ...newItem, 
-                    staffId: selectedStaff.id, 
-                    resourceName: selectedStaff.name,
-                    rate: selectedStaff.defaultBillingRate?.toString() || "0",
-                    costRate: selectedStaff.defaultCostRate?.toString() || "0"
+                    userId: selectedUser.id, 
+                    resourceName: selectedUser.name,
+                    rate: selectedUser.defaultBillingRate?.toString() || "0",
+                    costRate: selectedUser.defaultCostRate?.toString() || "0"
                   });
                 }
               }}
@@ -1845,8 +1845,8 @@ export default function EstimateDetail() {
                   <Button onClick={() => setBulkEditDialog(true)} size="sm">
                     Bulk Edit
                   </Button>
-                  <Button onClick={() => setApplyStaffRatesDialog(true)} size="sm" variant="outline">
-                    Assign Roles/Staff
+                  <Button onClick={() => setApplyUserRatesDialog(true)} size="sm" variant="outline">
+                    Assign Roles/Users
                   </Button>
                   <Button 
                     onClick={() => setSelectedItems(new Set())} 
@@ -2111,7 +2111,7 @@ export default function EstimateDetail() {
                                   {role.name} (Role)
                                 </SelectItem>
                               ))}
-                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
+                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Users</div>
                               {assignableUsers.map((member: any) => (
                                 <SelectItem key={member.id} value={member.id}>
                                   {member.name}
@@ -2777,21 +2777,21 @@ export default function EstimateDetail() {
       </DialogContent>
     </Dialog>
 
-    {/* Assign Roles/Staff Dialog */}
-    <Dialog open={applyStaffRatesDialog} onOpenChange={setApplyStaffRatesDialog}>
+    {/* Assign Roles/Users Dialog */}
+    <Dialog open={applyUserRatesDialog} onOpenChange={setApplyUserRatesDialog}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign Roles/Staff</DialogTitle>
+          <DialogTitle>Assign Roles/Users</DialogTitle>
           <DialogDescription>
-            Select a role or staff member to assign to {selectedItems.size} selected line items.
+            Select a role or user to assign to {selectedItems.size} selected line items.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
             <Label htmlFor="resource">Resource Assignment</Label>
-            <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
               <SelectTrigger>
-                <SelectValue placeholder="Select role or staff member" />
+                <SelectValue placeholder="Select role or user" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
@@ -2812,15 +2812,15 @@ export default function EstimateDetail() {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setApplyStaffRatesDialog(false)}>
+          <Button variant="outline" onClick={() => setApplyUserRatesDialog(false)}>
             Cancel
           </Button>
           <Button
             onClick={() => {
-              if (selectedStaffId) {
+              if (selectedUserId) {
                 let updates: any = {};
                 
-                if (selectedStaffId === "unassigned") {
+                if (selectedUserId === "unassigned") {
                   updates = {
                     assignedUserId: null,
                     roleId: null,
@@ -2828,8 +2828,8 @@ export default function EstimateDetail() {
                     rate: "0",
                     costRate: "0"
                   };
-                } else if (selectedStaffId.startsWith("role-")) {
-                  const roleId = selectedStaffId.substring(5);
+                } else if (selectedUserId.startsWith("role-")) {
+                  const roleId = selectedUserId.substring(5);
                   const selectedRole = roles.find((r: any) => r.id === roleId);
                   if (selectedRole) {
                     updates = {
@@ -2841,14 +2841,14 @@ export default function EstimateDetail() {
                     };
                   }
                 } else {
-                  const selectedStaff = users.find((s: any) => s.id === selectedStaffId);
-                  if (selectedStaff) {
+                  const selectedUser = users.find((s: any) => s.id === selectedUserId);
+                  if (selectedUser) {
                     updates = {
-                      assignedUserId: selectedStaff.id,
+                      assignedUserId: selectedUser.id,
                       roleId: null,
-                      resourceName: selectedStaff.name,
-                      rate: selectedStaff.defaultBillingRate?.toString() || "0",
-                      costRate: selectedStaff.defaultCostRate?.toString() || "0"
+                      resourceName: selectedUser.name,
+                      rate: selectedUser.defaultBillingRate?.toString() || "0",
+                      costRate: selectedUser.defaultCostRate?.toString() || "0"
                     };
                   }
                 }
@@ -2858,12 +2858,12 @@ export default function EstimateDetail() {
                     itemIds: Array.from(selectedItems),
                     updates
                   });
-                  setApplyStaffRatesDialog(false);
-                  setSelectedStaffId("");
+                  setApplyUserRatesDialog(false);
+                  setSelectedUserId("");
                 }
               }
             }}
-            disabled={!selectedStaffId || bulkUpdateMutation.isPending}
+            disabled={!selectedUserId || bulkUpdateMutation.isPending}
           >
             {bulkUpdateMutation.isPending ? "Assigning..." : "Assign"}
           </Button>
