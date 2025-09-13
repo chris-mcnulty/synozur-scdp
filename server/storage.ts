@@ -450,19 +450,14 @@ export class DatabaseStorage implements IStorage {
         // Get total budget from approved SOWs
         const totalBudget = await this.getProjectTotalBudget(project.id);
         
-        // Get burned amount from billable time entries using actual billing rates with fallback to user default
+        // Get burned amount from billable time entries using actual billing rates only
         const burnedData = await db.select({
           totalBurned: sql<number>`COALESCE(SUM(
             CAST(${timeEntries.hours} AS NUMERIC) * 
-            COALESCE(
-              NULLIF(CAST(${timeEntries.billingRate} AS NUMERIC), 0),
-              CAST(${users.defaultBillingRate} AS NUMERIC),
-              150
-            )
+            CAST(${timeEntries.billingRate} AS NUMERIC)
           ), 0)`
         })
         .from(timeEntries)
-        .leftJoin(users, eq(timeEntries.personId, users.id))
         .where(and(
           eq(timeEntries.projectId, project.id),
           eq(timeEntries.billable, true)
@@ -1068,57 +1063,65 @@ export class DatabaseStorage implements IStorage {
       console.log("[STORAGE] Creating time entry for person:", insertTimeEntry.personId, "project:", insertTimeEntry.projectId);
       
       // Calculate rates for the time entry
-      const { personId, projectId, date } = insertTimeEntry;
+      const { personId, projectId, date, billable } = insertTimeEntry;
       
-      // Initialize with default rates - NEVER allow null
-      let billingRate: number = 150;  // Default billing rate
-      let costRate: number = 100;      // Default cost rate
+      let billingRate: number | null = null;
+      let costRate: number | null = null;
       
-      try {
-        // First check for project-specific rate override
-        console.log("[STORAGE] Checking for project rate override...");
-        const override = await this.getProjectRateOverride(projectId, personId, date);
-        
-        if (override) {
-          console.log("[STORAGE] Found project rate override:", override);
-          // Use override rates if available and valid
-          if (override.billingRate && Number(override.billingRate) > 0) {
-            billingRate = Number(override.billingRate);
-          }
-          if (override.costRate && Number(override.costRate) > 0) {
-            costRate = Number(override.costRate);
-          }
-          console.log("[STORAGE] Applied override rates - Billing:", billingRate, "Cost:", costRate);
-        } else {
-          console.log("[STORAGE] No project rate override found, checking user rates...");
-          
-          // Get user default rates
-          const userRates = await this.getUserRates(personId);
-          console.log("[STORAGE] User rates:", userRates);
-          
-          // Apply user rates if available and valid
-          if (userRates.billingRate && userRates.billingRate > 0) {
-            billingRate = userRates.billingRate;
-          }
-          if (userRates.costRate && userRates.costRate > 0) {
-            costRate = userRates.costRate;
-          }
-          console.log("[STORAGE] Applied user rates - Billing:", billingRate, "Cost:", costRate);
+      // First check for project-specific rate override
+      console.log("[STORAGE] Checking for project rate override...");
+      const override = await this.getProjectRateOverride(projectId, personId, date);
+      
+      if (override) {
+        console.log("[STORAGE] Found project rate override:", override);
+        // Use override rates if available
+        if (override.billingRate && Number(override.billingRate) > 0) {
+          billingRate = Number(override.billingRate);
         }
-      } catch (rateError: any) {
-        console.error("[STORAGE] Error getting rates, using defaults:", rateError.message);
-        // Keep default rates - already initialized
+        if (override.costRate && Number(override.costRate) > 0) {
+          costRate = Number(override.costRate);
+        }
       }
       
-      // Final validation - ensure rates are positive numbers
-      if (!billingRate || billingRate <= 0) {
-        billingRate = 150;
-        console.log("[STORAGE] Invalid billing rate detected, using default: 150");
+      // If no override or rates are still null, get user default rates
+      if (billingRate === null || costRate === null) {
+        console.log("[STORAGE] No complete project rate override, checking user rates...");
+        const userRates = await this.getUserRates(personId);
+        console.log("[STORAGE] User rates:", userRates);
+        
+        // Apply user rates if not already set
+        if (billingRate === null && userRates.billingRate !== null && userRates.billingRate > 0) {
+          billingRate = userRates.billingRate;
+        }
+        if (costRate === null && userRates.costRate !== null && userRates.costRate > 0) {
+          costRate = userRates.costRate;
+        }
       }
-      if (!costRate || costRate <= 0) {
-        costRate = 100;
-        console.log("[STORAGE] Invalid cost rate detected, using default: 100");
+      
+      // Get user info for better error messages
+      const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, personId));
+      const userName = user?.name || 'Unknown User';
+      
+      // Validate rates based on billable status
+      if (billable) {
+        // For billable entries, we MUST have a valid billing rate
+        if (billingRate === null || billingRate <= 0) {
+          throw new Error(`Cannot create billable time entry: No billing rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
+        }
+        // Cost rate is also required for billable entries
+        if (costRate === null || costRate <= 0) {
+          throw new Error(`Cannot create billable time entry: No cost rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
+        }
+      } else {
+        // For non-billable entries, billing rate is 0
+        billingRate = 0;
+        // But we still need a valid cost rate
+        if (costRate === null || costRate <= 0) {
+          throw new Error(`Cannot create time entry: No cost rate configured for user ${userName}. Please configure rates in User Management.`);
+        }
       }
+      
+      console.log("[STORAGE] Final rates - Billing:", billingRate, "Cost:", costRate, "Billable:", billable);
       
       // Create time entry with calculated rates
       const timeEntryData = {
@@ -1131,28 +1134,19 @@ export class DatabaseStorage implements IStorage {
       
       const [timeEntry] = await db.insert(timeEntries).values(timeEntryData).returning();
       
-      // Verify rates were saved correctly
-      if (!timeEntry.billingRate || !timeEntry.costRate || 
-          timeEntry.billingRate === '0' || timeEntry.costRate === '0') {
-        console.error("[STORAGE] WARNING: Time entry created with invalid rates!", {
-          id: timeEntry.id,
-          billingRate: timeEntry.billingRate,
-          costRate: timeEntry.costRate
-        });
-      } else {
-        console.log("[STORAGE] Time entry created successfully with rates:", {
-          id: timeEntry.id,
-          billingRate: timeEntry.billingRate,
-          costRate: timeEntry.costRate
-        });
-      }
+      console.log("[STORAGE] Time entry created successfully with rates:", {
+        id: timeEntry.id,
+        billingRate: timeEntry.billingRate,
+        costRate: timeEntry.costRate,
+        billable: timeEntry.billable
+      });
       
       return timeEntry;
       
     } catch (error: any) {
       console.error("[STORAGE] Failed to create time entry:", error);
-      console.error("[STORAGE] Full error details:", error.stack);
-      throw new Error(`Failed to create time entry: ${error.message || 'Unknown error'}`);
+      // Re-throw with the original error message for proper client feedback
+      throw error;
     }
   }
 
@@ -1164,17 +1158,19 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Time entry not found');
     }
     
-    // Check if we need to recalculate rates (project or date changed)
+    // Check if we need to recalculate rates (project, date, or billable status changed)
     const projectChanged = updateTimeEntry.projectId && updateTimeEntry.projectId !== existingEntry.projectId;
     const dateChanged = updateTimeEntry.date && updateTimeEntry.date !== existingEntry.date;
+    const billableChanged = updateTimeEntry.billable !== undefined && updateTimeEntry.billable !== existingEntry.billable;
     
     let finalUpdateData: any = { ...updateTimeEntry };
     let rates: { billingRate?: string; costRate?: string } = {};
     
-    if (projectChanged || dateChanged) {
+    if (projectChanged || dateChanged || billableChanged) {
       // Use the new values if provided, otherwise keep existing
       const projectId = updateTimeEntry.projectId || existingEntry.projectId;
       const date = updateTimeEntry.date || existingEntry.date;
+      const billable = updateTimeEntry.billable ?? existingEntry.billable;
       const personId = existingEntry.personId; // Person ID cannot be changed via update
       
       // First check for project-specific rate override
@@ -1192,11 +1188,34 @@ export class DatabaseStorage implements IStorage {
       // If no override or rates are still null, get user default rates
       if (billingRate === null || costRate === null) {
         const userRates = await this.getUserRates(personId);
-        billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
-        costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set  
+        if (billingRate === null) billingRate = userRates.billingRate;
+        if (costRate === null) costRate = userRates.costRate;
       }
       
-      // Store rates to update separately
+      // Get user info for better error messages
+      const [user] = await db.select({ name: users.name }).from(users).where(eq(users.id, personId));
+      const userName = user?.name || 'Unknown User';
+      
+      // Validate rates based on billable status
+      if (billable) {
+        // For billable entries, we MUST have a valid billing rate
+        if (billingRate === null || billingRate <= 0) {
+          throw new Error(`Cannot update to billable time entry: No billing rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
+        }
+        // Cost rate is also required
+        if (costRate === null || costRate <= 0) {
+          throw new Error(`Cannot update time entry: No cost rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
+        }
+      } else {
+        // For non-billable entries, billing rate is 0
+        billingRate = 0;
+        // But we still need a valid cost rate
+        if (costRate === null || costRate <= 0) {
+          throw new Error(`Cannot update time entry: No cost rate configured for user ${userName}. Please configure rates in User Management.`);
+        }
+      }
+      
+      // Store rates to update
       rates.billingRate = billingRate.toString();
       rates.costRate = costRate.toString();
     }
@@ -1435,21 +1454,56 @@ export class DatabaseStorage implements IStorage {
             );
             
             if (projectOverride) {
-              newBillingRate = Number(projectOverride.billingRate) || newBillingRate;
-              newCostRate = Number(projectOverride.costRate) || newCostRate;
-            } else {
-              // Check user rate schedule
+              if (projectOverride.billingRate && Number(projectOverride.billingRate) > 0) {
+                newBillingRate = Number(projectOverride.billingRate);
+              }
+              if (projectOverride.costRate && Number(projectOverride.costRate) > 0) {
+                newCostRate = Number(projectOverride.costRate);
+              }
+            }
+            
+            // If no override or rates still null, check user rate schedule
+            if (newBillingRate === undefined || newCostRate === undefined) {
               const userSchedule = await this.getUserRateSchedule(entry.personId, entry.date);
               if (userSchedule) {
-                newBillingRate = Number(userSchedule.billingRate) || newBillingRate;
-                newCostRate = Number(userSchedule.costRate) || newCostRate;
-              } else {
-                // Fall back to user defaults
-                const user = await this.getUser(entry.personId);
-                if (user) {
-                  newBillingRate = Number(user.defaultBillingRate) || newBillingRate;
-                  newCostRate = Number(user.defaultCostRate) || newCostRate;
+                if (newBillingRate === undefined && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) {
+                  newBillingRate = Number(userSchedule.billingRate);
                 }
+                if (newCostRate === undefined && userSchedule.costRate && Number(userSchedule.costRate) > 0) {
+                  newCostRate = Number(userSchedule.costRate);
+                }
+              }
+            }
+            
+            // If still no rates, check user defaults
+            if (newBillingRate === undefined || newCostRate === undefined) {
+              const user = await this.getUser(entry.personId);
+              if (user) {
+                if (newBillingRate === undefined && user.defaultBillingRate && Number(user.defaultBillingRate) > 0) {
+                  newBillingRate = Number(user.defaultBillingRate);
+                }
+                if (newCostRate === undefined && user.defaultCostRate && Number(user.defaultCostRate) > 0) {
+                  newCostRate = Number(user.defaultCostRate);
+                }
+              }
+            }
+            
+            // Validate rates based on billable status
+            if (entry.billable) {
+              if (newBillingRate === undefined || newBillingRate <= 0) {
+                errors.push(`Entry ${entry.id}: Cannot recalculate billable entry - no billing rate found`);
+                continue; // Skip this entry
+              }
+              if (newCostRate === undefined || newCostRate <= 0) {
+                errors.push(`Entry ${entry.id}: Cannot recalculate billable entry - no cost rate found`);
+                continue; // Skip this entry
+              }
+            } else {
+              // Non-billable entries have billing rate = 0
+              newBillingRate = 0;
+              if (newCostRate === undefined || newCostRate <= 0) {
+                errors.push(`Entry ${entry.id}: Cannot recalculate entry - no cost rate found`);
+                continue; // Skip this entry
               }
             }
           }
@@ -2133,7 +2187,13 @@ export class DatabaseStorage implements IStorage {
 
             // Use billing rate from override, or fall back to user's default billing rate  
             const rate = rateOverride?.billingRate ? Number(rateOverride.billingRate) : 
-                        (user.defaultBillingRate ? Number(user.defaultBillingRate) : 150); // Default rate fallback
+                        (user.defaultBillingRate ? Number(user.defaultBillingRate) : null);
+            
+            // Skip time entries without valid rates
+            if (!rate || rate <= 0) {
+              console.warn(`[STORAGE] Skipping time entry ${timeEntry.id} for user ${user.name} - no billing rate configured`);
+              continue;
+            }
             
             const amount = Number(timeEntry.hours) * rate;
             timeAmount += amount;
@@ -2850,22 +2910,13 @@ export class DatabaseStorage implements IStorage {
 
     const monthly = Array.from(monthlyMap.values());
 
-    // Get metrics by client
+    // Get metrics by client - using actual time entry billing rates
     const clientQuery = db.select({
       clientId: clients.id,
       clientName: clients.name,
-      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultBillingRate} AS NUMERIC),
-        150
-      ) ELSE 0 END), 0)::float`,
-      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultBillingRate} AS NUMERIC),
-        150
-      ) ELSE 0 END), 0)::float`,
-      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
-        CAST(${users.defaultBillingRate} AS NUMERIC),
-        150
-      ) ELSE 0 END), 0)::float`,
+      revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
+      billedAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
+      unbilledAmount: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} AND NOT ${timeEntries.billedFlag} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`,
       projectCount: sql<number>`COUNT(DISTINCT ${projects.id})::int`
     })
     .from(clients)
@@ -2873,7 +2924,7 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(timeEntries, eq(timeEntries.projectId, projects.id))
     .leftJoin(users, eq(timeEntries.personId, users.id))
     .groupBy(clients.id, clients.name)
-    .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(CAST(${users.defaultBillingRate} AS NUMERIC), 150) ELSE 0 END) DESC`);
+    .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END) DESC`);
 
     if (filters?.clientId) {
       clientQuery.where(eq(clients.id, filters.clientId));

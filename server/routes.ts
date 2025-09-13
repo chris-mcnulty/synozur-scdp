@@ -1397,13 +1397,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(timeEntry);
     } catch (error: any) {
       console.error("[TIME_ENTRY] Error creating time entry:", error);
-      console.error("[TIME_ENTRY] Error stack:", error.stack);
       
+      // Handle validation errors
       if (error instanceof z.ZodError) {
         console.error("[TIME_ENTRY] Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid time entry data", errors: error.errors });
       }
       
+      // Handle rate configuration errors with 422 status
+      if (error.message?.includes('No billing rate configured') || 
+          error.message?.includes('No cost rate configured') ||
+          error.message?.includes('Cannot create')) {
+        console.error("[TIME_ENTRY] Rate configuration error:", error.message);
+        return res.status(422).json({ 
+          message: error.message,
+          type: 'RATE_NOT_CONFIGURED'
+        });
+      }
+      
+      // Generic server error
+      console.error("[TIME_ENTRY] Server error:", error.stack);
       res.status(500).json({ 
         message: "Failed to create time entry",
         error: error.message || "Unknown error",
@@ -1476,6 +1489,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedEntry);
     } catch (error: any) {
       console.error("[ERROR] Failed to update time entry:", error);
+      
+      // Handle rate configuration errors with 422 status
+      if (error.message?.includes('No billing rate configured') || 
+          error.message?.includes('No cost rate configured') ||
+          error.message?.includes('Cannot update')) {
+        console.error("[TIME_ENTRY] Rate configuration error:", error.message);
+        return res.status(422).json({ 
+          message: error.message,
+          type: 'RATE_NOT_CONFIGURED'
+        });
+      }
+      
       res.status(500).json({ message: "Failed to update time entry" });
     }
   });
