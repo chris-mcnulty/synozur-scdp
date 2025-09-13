@@ -3,7 +3,7 @@ import {
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
-  projectMilestones, projectRateOverrides, userRateSchedules,
+  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Staff, type InsertStaff,
@@ -19,7 +19,8 @@ import {
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectRateOverride, type InsertProjectRateOverride,
-  type UserRateSchedule, type InsertUserRateSchedule
+  type UserRateSchedule, type InsertUserRateSchedule,
+  type SystemSetting, type InsertSystemSetting
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -319,6 +320,16 @@ export interface IStorage {
       billablePercentage: number;
     }[];
   }>;
+  
+  // System Settings Methods
+  getSystemSettings(): Promise<SystemSetting[]>;
+  getSystemSetting(key: string): Promise<SystemSetting | undefined>;
+  getSystemSettingValue(key: string, defaultValue?: string): Promise<string>;
+  setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
+  updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
+  deleteSystemSetting(id: string): Promise<void>;
+  getDefaultBillingRate(): Promise<number>;
+  getDefaultCostRate(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3213,6 +3224,77 @@ export class DatabaseStorage implements IStorage {
       byRole,
       trends
     };
+  }
+
+  // System Settings Methods
+  async getSystemSettings(): Promise<SystemSetting[]> {
+    return await db.select()
+      .from(systemSettings)
+      .orderBy(systemSettings.settingKey);
+  }
+
+  async getSystemSetting(key: string): Promise<SystemSetting | undefined> {
+    const [setting] = await db.select()
+      .from(systemSettings)
+      .where(eq(systemSettings.settingKey, key));
+    return setting || undefined;
+  }
+
+  async getSystemSettingValue(key: string, defaultValue?: string): Promise<string> {
+    const setting = await this.getSystemSetting(key);
+    return setting?.settingValue || defaultValue || '';
+  }
+
+  async setSystemSetting(key: string, value: string, description?: string, settingType: string = 'string'): Promise<SystemSetting> {
+    // Try to update existing setting first
+    const existingSetting = await this.getSystemSetting(key);
+    
+    if (existingSetting) {
+      const [updated] = await db.update(systemSettings)
+        .set({ 
+          settingValue: value, 
+          description: description || existingSetting.description,
+          settingType,
+          updatedAt: sql`now()`
+        })
+        .where(eq(systemSettings.settingKey, key))
+        .returning();
+      return updated;
+    } else {
+      // Create new setting
+      const [created] = await db.insert(systemSettings)
+        .values({
+          settingKey: key,
+          settingValue: value,
+          description,
+          settingType
+        })
+        .returning();
+      return created;
+    }
+  }
+
+  async updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting> {
+    const [updated] = await db.update(systemSettings)
+      .set({ ...updates, updatedAt: sql`now()` })
+      .where(eq(systemSettings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteSystemSetting(id: string): Promise<void> {
+    await db.delete(systemSettings)
+      .where(eq(systemSettings.id, id));
+  }
+
+  async getDefaultBillingRate(): Promise<number> {
+    const value = await this.getSystemSettingValue('DEFAULT_BILLING_RATE', '0');
+    return parseFloat(value) || 0;
+  }
+
+  async getDefaultCostRate(): Promise<number> {
+    const value = await this.getSystemSettingValue('DEFAULT_COST_RATE', '0');
+    return parseFloat(value) || 0;
   }
 }
 

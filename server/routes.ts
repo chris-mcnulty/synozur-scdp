@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -114,6 +114,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error deleting user:", error);
       res.status(400).json({ 
         message: error instanceof Error ? error.message : "Failed to delete user" 
+      });
+    }
+  });
+
+  // System Settings (admin only)
+  app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const settings = await storage.getSystemSettings();
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch system settings" });
+    }
+  });
+
+  app.get("/api/settings/:key", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const setting = await storage.getSystemSetting(req.params.key);
+      if (!setting) {
+        return res.status(404).json({ message: "System setting not found" });
+      }
+      res.json(setting);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch system setting" });
+    }
+  });
+
+  app.post("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = insertSystemSettingSchema.parse(req.body);
+      const setting = await storage.setSystemSetting(
+        validatedData.settingKey,
+        validatedData.settingValue,
+        validatedData.description || undefined,
+        validatedData.settingType || 'string'
+      );
+      res.status(201).json(setting);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid setting data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create/update system setting" });
+    }
+  });
+
+  app.put("/api/settings/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = insertSystemSettingSchema.parse(req.body);
+      const setting = await storage.updateSystemSetting(req.params.id, validatedData);
+      res.json(setting);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid setting data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update system setting" });
+    }
+  });
+
+  app.delete("/api/settings/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.deleteSystemSetting(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting system setting:", error);
+      res.status(400).json({ 
+        message: error instanceof Error ? error.message : "Failed to delete system setting" 
       });
     }
   });
