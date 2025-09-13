@@ -1618,7 +1618,7 @@ export default function EstimateDetail() {
                     ...newItem, 
                     staffId: selectedStaff.id, 
                     resourceName: selectedStaff.name,
-                    rate: selectedStaff.defaultChargeRate?.toString() || "0",
+                    rate: selectedStaff.defaultBillingRate?.toString() || "0",
                     costRate: selectedStaff.defaultCostRate?.toString() || "0"
                   });
                 }
@@ -1631,7 +1631,7 @@ export default function EstimateDetail() {
                 <SelectItem value="unassigned">Unassigned</SelectItem>
                 {users.filter((user: any) => user.isAssignable).map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
-                    {member.name} - ${member.defaultChargeRate}/hr
+                    {member.name} - ${member.defaultBillingRate}/hr
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -2074,12 +2074,12 @@ export default function EstimateDetail() {
                                     assignedUserId: selectedUser.id,
                                     roleId: null,
                                     resourceName: selectedUser.name,
-                                    rate: selectedUser.defaultChargeRate,
+                                    rate: selectedUser.defaultBillingRate,
                                     costRate: selectedUser.defaultCostRate
                                   };
                                   const baseHours = Number(updatedItem.baseHours);
                                   const factor = Number(updatedItem.factor) || 1;
-                                  const rate = Number(selectedUser.defaultChargeRate);
+                                  const rate = Number(selectedUser.defaultBillingRate);
                                   const { adjustedHours, totalAmount } = calculateAdjustedValues(
                                     baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
                                   );
@@ -2090,7 +2090,7 @@ export default function EstimateDetail() {
                                       assignedUserId: selectedUser.id,
                                       roleId: null,
                                       resourceName: selectedUser.name,
-                                      rate: selectedUser.defaultChargeRate,
+                                      rate: selectedUser.defaultBillingRate,
                                       costRate: selectedUser.defaultCostRate,
                                       adjustedHours: adjustedHours.toFixed(2),
                                       totalAmount: totalAmount.toFixed(2)
@@ -2798,13 +2798,13 @@ export default function EstimateDetail() {
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
                 {roles.map((role: any) => (
                   <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
-                    {role.name} (${role.defaultChargeRate}/hr)
+                    {role.name} (${role.defaultRackRate}/hr)
                   </SelectItem>
                 ))}
                 <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
                 {users.filter((user: any) => user.isAssignable).map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
-                    {member.name} - {member.role} (${member.defaultChargeRate}/hr)
+                    {member.name} - {member.role} (${member.defaultBillingRate}/hr)
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -2836,7 +2836,7 @@ export default function EstimateDetail() {
                       assignedUserId: null,
                       roleId: selectedRole.id,
                       resourceName: selectedRole.name,
-                      rate: selectedRole.defaultChargeRate?.toString() || "0",
+                      rate: selectedRole.defaultRackRate?.toString() || "0",
                       costRate: selectedRole.defaultCostRate?.toString() || "0"
                     };
                   }
@@ -2847,7 +2847,7 @@ export default function EstimateDetail() {
                       assignedUserId: selectedStaff.id,
                       roleId: null,
                       resourceName: selectedStaff.name,
-                      rate: selectedStaff.defaultChargeRate?.toString() || "0",
+                      rate: selectedStaff.defaultBillingRate?.toString() || "0",
                       costRate: selectedStaff.defaultCostRate?.toString() || "0"
                     };
                   }
