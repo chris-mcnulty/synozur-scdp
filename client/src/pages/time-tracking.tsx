@@ -84,7 +84,7 @@ export default function TimeTracking() {
       hours: "",
       billable: true,
       description: "",
-      phase: "",
+
       projectId: "",
       milestoneId: "",
       workstreamId: "",
@@ -98,7 +98,7 @@ export default function TimeTracking() {
       hours: "",
       billable: true,
       description: "",
-      phase: "",
+
       projectId: "",
       milestoneId: "",
       workstreamId: "",
@@ -302,7 +302,7 @@ export default function TimeTracking() {
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
-      // phase and description are text fields, don't need special handling
+      // description is a text field, doesn't need special handling
     };
     console.log('Sending cleaned data:', cleanedData);
     createTimeEntryMutation.mutate(cleanedData);
@@ -316,7 +316,7 @@ export default function TimeTracking() {
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
-      // phase and description are text fields, don't need special handling
+      // description is a text field, doesn't need special handling
     };
     updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
   };
@@ -329,7 +329,6 @@ export default function TimeTracking() {
       hours: entry.hours,
       billable: entry.billable,
       description: entry.description || "",
-      phase: entry.phase || "",
       projectId: entry.projectId,
       milestoneId: entry.milestoneId || "",
       workstreamId: entry.workstreamId || "",
@@ -779,25 +778,6 @@ export default function TimeTracking() {
 
                   <FormField
                     control={form.control}
-                    name="phase"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Stage (Optional)</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., Assessment, Strategy Design"
-                            {...field}
-                            value={field.value ?? ""}
-                            data-testid="input-phase"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name="description"
                     render={({ field }) => (
                       <FormItem>
@@ -1165,25 +1145,6 @@ export default function TimeTracking() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={editForm.control}
-                  name="phase"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Stage (Optional)</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., Assessment, Strategy Design"
-                          {...field}
-                          value={field.value ?? ""}
-                          data-testid="input-edit-phase"
-                        />
-                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
