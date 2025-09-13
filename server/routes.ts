@@ -1355,6 +1355,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/time-entries", requireAuth, async (req, res) => {
     try {
+      console.log("[TIME_ENTRY] Creating time entry:", req.body);
+      console.log("[TIME_ENTRY] User:", req.user?.id, "Role:", req.user?.role);
+      
       // Regular employees can only create their own entries
       // PMs, admins, billing-admins, and executives can create for anyone
       let personId = req.user!.id;
@@ -1370,14 +1373,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hours: req.body.hours !== undefined ? String(req.body.hours) : req.body.hours
       };
       
+      console.log("[TIME_ENTRY] Data with hours:", dataWithHours);
+      
       const validatedData = insertTimeEntrySchema.parse(dataWithHours);
+      console.log("[TIME_ENTRY] Validated data:", validatedData);
+      
       const timeEntry = await storage.createTimeEntry(validatedData);
+      console.log("[TIME_ENTRY] Created successfully:", timeEntry.id);
+      
       res.status(201).json(timeEntry);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[TIME_ENTRY] Error creating time entry:", error);
+      console.error("[TIME_ENTRY] Error stack:", error.stack);
+      
       if (error instanceof z.ZodError) {
+        console.error("[TIME_ENTRY] Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid time entry data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create time entry" });
+      
+      res.status(500).json({ 
+        message: "Failed to create time entry",
+        error: error.message || "Unknown error",
+        details: process.env.NODE_ENV === "development" ? error.stack : undefined
+      });
     }
   });
 

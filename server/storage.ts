@@ -1064,36 +1064,76 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry> {
-    // Calculate rates for the time entry
-    const { personId, projectId, date } = insertTimeEntry;
-    
-    // First check for project-specific rate override
-    const override = await this.getProjectRateOverride(projectId, personId, date);
-    
-    let billingRate: number | null = null;
-    let costRate: number | null = null;
-    
-    if (override) {
-      // Use override rates if available
-      billingRate = override.billingRate ? Number(override.billingRate) : null;
-      costRate = override.costRate ? Number(override.costRate) : null;
+    try {
+      console.log("[STORAGE] Creating time entry for person:", insertTimeEntry.personId, "project:", insertTimeEntry.projectId);
+      
+      // Calculate rates for the time entry
+      const { personId, projectId, date } = insertTimeEntry;
+      
+      let billingRate: number | null = null;
+      let costRate: number | null = null;
+      
+      try {
+        // First check for project-specific rate override
+        console.log("[STORAGE] Checking for project rate override...");
+        const override = await this.getProjectRateOverride(projectId, personId, date);
+        
+        if (override) {
+          console.log("[STORAGE] Found project rate override:", override);
+          // Use override rates if available
+          billingRate = override.billingRate ? Number(override.billingRate) : null;
+          costRate = override.costRate ? Number(override.costRate) : null;
+        } else {
+          console.log("[STORAGE] No project rate override found");
+        }
+      } catch (overrideError: any) {
+        console.error("[STORAGE] Error getting project rate override:", overrideError);
+        console.error("[STORAGE] Override error stack:", overrideError.stack);
+        // Continue without override - we'll use default rates
+      }
+      
+      // If no override or rates are still null, get user default rates
+      if (billingRate === null || costRate === null) {
+        try {
+          console.log("[STORAGE] Getting user default rates for person:", personId);
+          const userRates = await this.getUserRates(personId);
+          console.log("[STORAGE] User rates:", userRates);
+          
+          billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
+          costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set
+          
+          console.log("[STORAGE] Final rates - Billing:", billingRate, "Cost:", costRate);
+        } catch (userRatesError: any) {
+          console.error("[STORAGE] Error getting user rates:", userRatesError);
+          console.error("[STORAGE] User rates error stack:", userRatesError.stack);
+          // Use fallback rates
+          billingRate = billingRate ?? 150;
+          costRate = costRate ?? 100;
+          console.log("[STORAGE] Using fallback rates - Billing:", billingRate, "Cost:", costRate);
+        }
+      }
+      
+      // Create time entry with calculated rates
+      console.log("[STORAGE] Inserting time entry with data:", {
+        ...insertTimeEntry,
+        billingRate: billingRate.toString(),
+        costRate: costRate.toString()
+      });
+      
+      const [timeEntry] = await db.insert(timeEntries).values({
+        ...insertTimeEntry,
+        billingRate: billingRate.toString(),
+        costRate: costRate.toString()
+      }).returning();
+      
+      console.log("[STORAGE] Time entry created successfully:", timeEntry.id);
+      return timeEntry;
+      
+    } catch (error: any) {
+      console.error("[STORAGE] Failed to create time entry:", error);
+      console.error("[STORAGE] Full error details:", error.stack);
+      throw new Error(`Failed to create time entry: ${error.message || 'Unknown error'}`);
     }
-    
-    // If no override or rates are still null, get user default rates
-    if (billingRate === null || costRate === null) {
-      const userRates = await this.getUserRates(personId);
-      billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
-      costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set  
-    }
-    
-    // Create time entry with calculated rates
-    const [timeEntry] = await db.insert(timeEntries).values({
-      ...insertTimeEntry,
-      billingRate: billingRate.toString(),
-      costRate: costRate.toString()
-    }).returning();
-    
-    return timeEntry;
   }
 
   async updateTimeEntry(id: string, updateTimeEntry: Partial<InsertTimeEntry>): Promise<TimeEntry> {
