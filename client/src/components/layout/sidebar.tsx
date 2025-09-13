@@ -10,7 +10,8 @@ import {
   Users,
   UsersRound,
   Palette,
-  BarChart3 
+  BarChart3,
+  Settings
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -129,6 +130,13 @@ export function Sidebar() {
             href="/users"
             icon={<Users />}
             label="User Management"
+            requiredRoles={["admin"]}
+          />
+          
+          <SidebarItem
+            href="/system-settings"
+            icon={<Settings />}
+            label="System Settings"
             requiredRoles={["admin"]}
           />
           
