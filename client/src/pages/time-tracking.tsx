@@ -299,10 +299,10 @@ export default function TimeTracking() {
     // Transform empty strings to undefined for optional fields
     const cleanedData = {
       ...data,
-      milestoneId: data.milestoneId || undefined,
-      workstreamId: data.workstreamId || undefined,
-      phase: data.phase || undefined,
-      description: data.description || undefined,
+      milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
+      workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
+      phase: data.phase === "" ? undefined : data.phase || undefined,
+      description: data.description === "" ? undefined : data.description || undefined,
     };
     console.log('Sending cleaned data:', cleanedData);
     createTimeEntryMutation.mutate(cleanedData);
@@ -313,10 +313,10 @@ export default function TimeTracking() {
     // Transform empty strings to undefined for optional fields
     const cleanedData = {
       ...data,
-      milestoneId: data.milestoneId || undefined,
-      workstreamId: data.workstreamId || undefined,
-      phase: data.phase || undefined,
-      description: data.description || undefined,
+      milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
+      workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
+      phase: data.phase === "" ? undefined : data.phase || undefined,
+      description: data.description === "" ? undefined : data.description || undefined,
     };
     updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
   };
