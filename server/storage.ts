@@ -399,22 +399,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserRates(userId: string): Promise<{ billingRate: number | null; costRate: number | null; }> {
-    console.log("[DIAGNOSTIC] getUserRates called with userId:", userId);
+    console.log("[DIAGNOSTIC] getUserRates called with userId:", userId, "at", new Date().toISOString());
     
-    const [user] = await db.select({
-      billingRate: users.defaultBillingRate,
-      costRate: users.defaultCostRate
-    })
-    .from(users)
-    .where(eq(users.id, userId));
-    
-    console.log("[DIAGNOSTIC] getUserRates query result:", {
-      found: !!user,
-      rawBillingRate: user?.billingRate,
-      rawCostRate: user?.costRate,
-      typeOfBillingRate: typeof user?.billingRate,
-      typeOfCostRate: typeof user?.costRate
-    });
+    let user;
+    try {
+      const result = await db.select({
+        billingRate: users.defaultBillingRate,
+        costRate: users.defaultCostRate
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+      
+      user = result[0];
+      
+      console.log("[DIAGNOSTIC] getUserRates query result:", {
+        found: !!user,
+        rawBillingRate: user?.billingRate,
+        rawCostRate: user?.costRate,
+        typeOfBillingRate: typeof user?.billingRate,
+        typeOfCostRate: typeof user?.costRate,
+        timestamp: new Date().toISOString()
+      });
+    } catch (dbError) {
+      console.error("[DIAGNOSTIC] getUserRates database error:", dbError);
+      throw dbError;
+    }
     
     if (!user) {
       console.log("[DIAGNOSTIC] getUserRates: No user found for ID:", userId);
@@ -1092,7 +1101,12 @@ export class DatabaseStorage implements IStorage {
   async createTimeEntry(insertTimeEntry: Omit<InsertTimeEntry, 'billingRate' | 'costRate'>): Promise<TimeEntry> {
     try {
       console.log("[STORAGE] Creating time entry for person:", insertTimeEntry.personId, "project:", insertTimeEntry.projectId);
-      console.log("[DIAGNOSTIC] Full insertTimeEntry object:", insertTimeEntry);
+      console.log("[DIAGNOSTIC] Full insertTimeEntry object:", {
+        ...insertTimeEntry,
+        timestamp: new Date().toISOString(),
+        personIdType: typeof insertTimeEntry.personId,
+        personIdLength: insertTimeEntry.personId?.length
+      });
       
       // Calculate rates for the time entry
       const { personId, projectId, date, billable } = insertTimeEntry;
@@ -1142,13 +1156,15 @@ export class DatabaseStorage implements IStorage {
       
       console.log("[DIAGNOSTIC] User lookup for error message:", {
         personId,
+        personIdLength: personId?.length,
         found: !!user,
         name: user?.name,
         email: user?.email,
         defaultBillingRate: user?.defaultBillingRate,
         defaultCostRate: user?.defaultCostRate,
         billingRateResolved: billingRate,
-        costRateResolved: costRate
+        costRateResolved: costRate,
+        timestamp: new Date().toISOString()
       });
       
       // Validate rates based on billable status
@@ -1253,13 +1269,15 @@ export class DatabaseStorage implements IStorage {
       
       console.log("[DIAGNOSTIC] User lookup for error message:", {
         personId,
+        personIdLength: personId?.length,
         found: !!user,
         name: user?.name,
         email: user?.email,
         defaultBillingRate: user?.defaultBillingRate,
         defaultCostRate: user?.defaultCostRate,
         billingRateResolved: billingRate,
-        costRateResolved: costRate
+        costRateResolved: costRate,
+        timestamp: new Date().toISOString()
       });
       
       // Validate rates based on billable status

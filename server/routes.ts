@@ -55,11 +55,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     const sessionId = req.headers['x-session-id'] as string;
     
+    console.log("[AUTH] Session check - SessionId:", sessionId ? `${sessionId.substring(0, 4)}...` : 'none');
+    
     if (!sessionId || !sessions.has(sessionId)) {
+      console.log("[AUTH] Session not found - Total sessions:", sessions.size);
       return res.status(401).json({ message: "Not authenticated" });
     }
     
     req.user = sessions.get(sessionId);
+    console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
     next();
   };
 
@@ -1361,7 +1365,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         id: req.user?.id,
         email: req.user?.email,
         name: req.user?.name,
-        role: req.user?.role
+        role: req.user?.role,
+        sessionSize: sessions.size,
+        timestamp: new Date().toISOString()
         // Note: rates are not stored in session, they're fetched from DB when needed
       });
       
