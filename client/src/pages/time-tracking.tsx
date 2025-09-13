@@ -306,14 +306,29 @@ export default function TimeTracking() {
 
   const onSubmit = (data: TimeEntryFormData) => {
     console.log('Form submitted with data:', data);
-    // The validation is now handled by Zod schema
-    // If we get here, the data is valid
-    createTimeEntryMutation.mutate(data);
+    // Transform empty strings to undefined for optional fields
+    const cleanedData = {
+      ...data,
+      milestoneId: data.milestoneId || undefined,
+      workstreamId: data.workstreamId || undefined,
+      phase: data.phase || undefined,
+      description: data.description || undefined,
+    };
+    console.log('Sending cleaned data:', cleanedData);
+    createTimeEntryMutation.mutate(cleanedData);
   };
 
   const onEditSubmit = (data: TimeEntryFormData) => {
     if (!editingEntry) return;
-    updateTimeEntryMutation.mutate({ id: editingEntry.id, data });
+    // Transform empty strings to undefined for optional fields
+    const cleanedData = {
+      ...data,
+      milestoneId: data.milestoneId || undefined,
+      workstreamId: data.workstreamId || undefined,
+      phase: data.phase || undefined,
+      description: data.description || undefined,
+    };
+    updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
   };
 
   const handleEditEntry = (entry: TimeEntryWithRelations) => {
