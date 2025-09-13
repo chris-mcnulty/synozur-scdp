@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, sows } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows } from "@shared/schema";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -760,6 +760,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Staff rates applied successfully" });
     } catch (error) {
       res.status(500).json({ message: "Failed to apply staff rates" });
+    }
+  });
+
+  // Rate Management Endpoints
+  app.get("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { userId } = req.query;
+      if (!userId || typeof userId !== 'string') {
+        return res.status(400).json({ message: "userId query parameter is required" });
+      }
+      
+      const schedules = await storage.getUserRateSchedules(userId);
+      res.json(schedules);
+    } catch (error) {
+      console.error("Error fetching rate schedules:", error);
+      res.status(500).json({ message: "Failed to fetch rate schedules" });
+    }
+  });
+
+  app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const validatedData = insertUserRateScheduleSchema.parse(req.body);
+      const schedule = await storage.createUserRateSchedule(validatedData);
+      res.status(201).json(schedule);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid rate schedule data", errors: error.errors });
+      }
+      console.error("Error creating rate schedule:", error);
+      res.status(500).json({ message: "Failed to create rate schedule" });
+    }
+  });
+
+  app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const schedule = await storage.updateUserRateSchedule(req.params.id, req.body);
+      res.json(schedule);
+    } catch (error) {
+      console.error("Error updating rate schedule:", error);
+      res.status(500).json({ message: "Failed to update rate schedule" });
+    }
+  });
+
+  app.post("/api/rates/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { filters, rates, skipLocked = true, dryRun = false } = req.body;
+      
+      // Validate input
+      if (!filters || !rates) {
+        return res.status(400).json({ message: "filters and rates are required" });
+      }
+      
+      if (!rates.mode || !['override', 'recalculate'].includes(rates.mode)) {
+        return res.status(400).json({ message: "rates.mode must be 'override' or 'recalculate'" });
+      }
+      
+      if (dryRun) {
+        // For dry run, just return a preview without making changes
+        // This would require an additional storage method to preview changes
+        return res.json({
+          message: "Dry run mode - no changes made",
+          preview: {
+            estimatedUpdates: 0,
+            filters,
+            rates
+          }
+        });
+      }
+      
+      const result = await storage.bulkUpdateTimeEntryRates(filters, rates, skipLocked);
+      res.json(result);
+    } catch (error) {
+      console.error("Error in bulk rate update:", error);
+      res.status(500).json({ message: "Failed to bulk update rates" });
+    }
+  });
+
+  // Project Rate Overrides
+  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const overrides = await storage.getProjectRateOverrides(req.params.projectId);
+      res.json(overrides);
+    } catch (error) {
+      console.error("Error fetching project rate overrides:", error);
+      res.status(500).json({ message: "Failed to fetch project rate overrides" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const validatedData = insertProjectRateOverrideSchema.parse({
+        ...req.body,
+        projectId: req.params.projectId
+      });
+      const override = await storage.createProjectRateOverride(validatedData);
+      res.status(201).json(override);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid rate override data", errors: error.errors });
+      }
+      console.error("Error creating project rate override:", error);
+      res.status(500).json({ message: "Failed to create project rate override" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectRateOverride(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting project rate override:", error);
+      res.status(500).json({ message: "Failed to delete project rate override" });
     }
   });
 

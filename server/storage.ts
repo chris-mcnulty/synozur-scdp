@@ -3,7 +3,7 @@ import {
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
-  projectMilestones, projectRateOverrides,
+  projectMilestones, projectRateOverrides, userRateSchedules,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Staff, type InsertStaff,
@@ -18,7 +18,8 @@ import {
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
-  type ProjectRateOverride, type InsertProjectRateOverride
+  type ProjectRateOverride, type InsertProjectRateOverride,
+  type UserRateSchedule, type InsertUserRateSchedule
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -184,6 +185,26 @@ export interface IStorage {
   createProjectRateOverride(override: InsertProjectRateOverride): Promise<ProjectRateOverride>;
   getProjectRateOverrides(projectId: string): Promise<ProjectRateOverride[]>;
   deleteProjectRateOverride(overrideId: string): Promise<void>;
+  
+  // User Rate Schedule Methods
+  getUserRateSchedule(userId: string, date: string): Promise<UserRateSchedule | null>;
+  createUserRateSchedule(schedule: InsertUserRateSchedule): Promise<UserRateSchedule>;
+  updateUserRateSchedule(id: string, updates: Partial<InsertUserRateSchedule>): Promise<UserRateSchedule>;
+  getUserRateSchedules(userId: string): Promise<UserRateSchedule[]>;
+  bulkUpdateTimeEntryRates(filters: {
+    userId?: string;
+    projectId?: string;
+    startDate?: string;
+    endDate?: string;
+  }, rates: {
+    billingRate?: number;
+    costRate?: number;
+    mode: 'override' | 'recalculate';
+  }, skipLocked?: boolean): Promise<{
+    updated: number;
+    skipped: number;
+    errors: string[];
+  }>;
   
   // Profit Calculation Methods
   calculateProjectProfit(projectId: string): Promise<{ revenue: number; cost: number; profit: number; }>;
@@ -1221,10 +1242,10 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(projectRateOverrides.projectId, projectId),
         eq(projectRateOverrides.userId, userId),
-        lte(projectRateOverrides.effectiveDate, date),
-        sql`(${projectRateOverrides.endDate} IS NULL OR ${projectRateOverrides.endDate} >= ${date})`
+        lte(projectRateOverrides.effectiveStart, date),
+        sql`(${projectRateOverrides.effectiveEnd} IS NULL OR ${projectRateOverrides.effectiveEnd} >= ${date})`
       ))
-      .orderBy(desc(projectRateOverrides.effectiveDate))
+      .orderBy(desc(projectRateOverrides.effectiveStart))
       .limit(1);
     
     return override || null;
@@ -1243,7 +1264,153 @@ export class DatabaseStorage implements IStorage {
     return await db.select()
       .from(projectRateOverrides)
       .where(eq(projectRateOverrides.projectId, projectId))
-      .orderBy(desc(projectRateOverrides.effectiveDate));
+      .orderBy(desc(projectRateOverrides.effectiveStart));
+  }
+  
+  // User Rate Schedule Methods  
+  async getUserRateSchedule(userId: string, date: string): Promise<UserRateSchedule | null> {
+    const [schedule] = await db.select()
+      .from(userRateSchedules)
+      .where(and(
+        eq(userRateSchedules.userId, userId),
+        lte(userRateSchedules.effectiveStart, date),
+        sql`(${userRateSchedules.effectiveEnd} IS NULL OR ${userRateSchedules.effectiveEnd} >= ${date})`
+      ))
+      .orderBy(desc(userRateSchedules.effectiveStart))
+      .limit(1);
+    
+    return schedule || null;
+  }
+  
+  async createUserRateSchedule(schedule: InsertUserRateSchedule): Promise<UserRateSchedule> {
+    // Auto-close previous schedule if exists
+    const previousSchedules = await db.select()
+      .from(userRateSchedules)
+      .where(and(
+        eq(userRateSchedules.userId, schedule.userId),
+        sql`(${userRateSchedules.effectiveEnd} IS NULL OR ${userRateSchedules.effectiveEnd} >= ${schedule.effectiveStart})`
+      ))
+      .orderBy(desc(userRateSchedules.effectiveStart));
+    
+    // Close any open-ended schedules that would overlap
+    for (const prev of previousSchedules) {
+      if (!prev.effectiveEnd || prev.effectiveEnd >= schedule.effectiveStart) {
+        // Calculate the day before the new schedule starts
+        const endDate = new Date(schedule.effectiveStart);
+        endDate.setDate(endDate.getDate() - 1);
+        
+        await db.update(userRateSchedules)
+          .set({ effectiveEnd: endDate.toISOString().split('T')[0] })
+          .where(eq(userRateSchedules.id, prev.id));
+      }
+    }
+    
+    const [created] = await db.insert(userRateSchedules).values(schedule).returning();
+    return created;
+  }
+  
+  async updateUserRateSchedule(id: string, updates: Partial<InsertUserRateSchedule>): Promise<UserRateSchedule> {
+    const [updated] = await db.update(userRateSchedules)
+      .set(updates)
+      .where(eq(userRateSchedules.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async getUserRateSchedules(userId: string): Promise<UserRateSchedule[]> {
+    return await db.select()
+      .from(userRateSchedules)
+      .where(eq(userRateSchedules.userId, userId))
+      .orderBy(desc(userRateSchedules.effectiveStart));
+  }
+  
+  async bulkUpdateTimeEntryRates(
+    filters: {
+      userId?: string;
+      projectId?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+    rates: {
+      billingRate?: number;
+      costRate?: number;
+      mode: 'override' | 'recalculate';
+    },
+    skipLocked: boolean = true
+  ): Promise<{ updated: number; skipped: number; errors: string[]; }> {
+    let updated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    
+    try {
+      // Build filter conditions
+      const conditions = [];
+      if (filters.userId) conditions.push(eq(timeEntries.personId, filters.userId));
+      if (filters.projectId) conditions.push(eq(timeEntries.projectId, filters.projectId));
+      if (filters.startDate) conditions.push(gte(timeEntries.date, filters.startDate));
+      if (filters.endDate) conditions.push(lte(timeEntries.date, filters.endDate));
+      if (skipLocked) conditions.push(eq(timeEntries.locked, false));
+      
+      // Get matching time entries
+      const entries = await db.select()
+        .from(timeEntries)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+      
+      for (const entry of entries) {
+        try {
+          let newBillingRate = rates.billingRate;
+          let newCostRate = rates.costRate;
+          
+          if (rates.mode === 'recalculate') {
+            // Look up rates based on entry date
+            // First check project override
+            const projectOverride = await this.getProjectRateOverride(
+              entry.projectId,
+              entry.personId,
+              entry.date
+            );
+            
+            if (projectOverride) {
+              newBillingRate = Number(projectOverride.billingRate) || newBillingRate;
+              newCostRate = Number(projectOverride.costRate) || newCostRate;
+            } else {
+              // Check user rate schedule
+              const userSchedule = await this.getUserRateSchedule(entry.personId, entry.date);
+              if (userSchedule) {
+                newBillingRate = Number(userSchedule.billingRate) || newBillingRate;
+                newCostRate = Number(userSchedule.costRate) || newCostRate;
+              } else {
+                // Fall back to user defaults
+                const user = await this.getUser(entry.personId);
+                if (user) {
+                  newBillingRate = Number(user.defaultBillingRate) || newBillingRate;
+                  newCostRate = Number(user.defaultCostRate) || newCostRate;
+                }
+              }
+            }
+          }
+          
+          // Update the entry
+          await db.update(timeEntries)
+            .set({
+              billingRate: newBillingRate?.toString(),
+              costRate: newCostRate?.toString()
+            })
+            .where(eq(timeEntries.id, entry.id));
+          
+          updated++;
+        } catch (err) {
+          errors.push(`Failed to update entry ${entry.id}: ${err}`);
+        }
+      }
+      
+      skipped = entries.filter(e => e.locked).length;
+      
+    } catch (err) {
+      errors.push(`Bulk update failed: ${err}`);
+    }
+    
+    return { updated, skipped, errors };
   }
 
   // Profit Calculation Methods

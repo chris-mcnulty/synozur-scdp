@@ -263,15 +263,29 @@ export const estimateAllocations = pgTable("estimate_allocations", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// User Rate Schedules (time-based rate management)
+export const userRateSchedules = pgTable("user_rate_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  effectiveStart: date("effective_start").notNull(),
+  effectiveEnd: date("effective_end"), // null means ongoing
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  createdBy: varchar("created_by").references(() => users.id),
+});
+
 // Project Rate Overrides
 export const projectRateOverrides = pgTable("project_rate_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   userId: varchar("user_id").notNull().references(() => users.id),
+  effectiveStart: date("effective_start").notNull().default(sql`CURRENT_DATE`),
+  effectiveEnd: date("effective_end"), // null means ongoing
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
-  effectiveDate: date("effective_date").notNull(),
-  endDate: date("end_date"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -647,9 +661,18 @@ export const insertProjectMilestoneSchema = createInsertSchema(projectMilestones
   createdAt: true,
 });
 
+export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
+  id: true,
+  createdAt: true,
+  createdBy: true,
+});
+
 export const insertProjectRateOverrideSchema = createInsertSchema(projectRateOverrides).omit({
   id: true,
   createdAt: true,
+  effectiveStart: true, // Will use default
+}).extend({
+  effectiveStart: z.string().optional(), // Allow optional, will default to today
 });
 
 export const insertRoleSchema = createInsertSchema(roles).omit({
@@ -742,6 +765,8 @@ export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
 export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
+export type UserRateSchedule = typeof userRateSchedules.$inferSelect;
+export type InsertUserRateSchedule = z.infer<typeof insertUserRateScheduleSchema>;
 
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
