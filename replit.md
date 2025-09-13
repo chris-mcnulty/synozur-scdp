@@ -83,3 +83,22 @@ Preferred communication style: Simple, everyday language.
 - **ESBuild**: Fast bundling for production server builds
 - **PostCSS**: CSS processing with Tailwind and Autoprefixer
 - **WS**: WebSocket library for Neon database connections
+
+## Technical Debt & Backlog
+
+### Staff Table Removal
+- **Status**: Legacy table to be removed
+- **Description**: The `staff` table is a legacy system that has been superseded by the `users` table
+- **Current State**: 
+  - Staff table still exists in database schema
+  - Staff Management UI exists at `/staff` but is hidden from navigation
+  - API endpoints at `/api/staff/*` are still active
+  - Estimates system uses `users` table, not `staff` table
+  - Variables named `selectedStaff` and `staffId` in estimates actually reference users
+- **Tasks**:
+  1. Remove staff table from database schema (`shared/schema.ts`)
+  2. Remove Staff Management page (`client/src/pages/staff.tsx`)
+  3. Remove staff-related API endpoints from `server/routes.ts`
+  4. Remove staff storage methods from `server/storage.ts`
+  5. Clean up misleading variable names (e.g., `selectedStaff` -> `selectedUser`)
+  6. Migrate any historical data if needed
