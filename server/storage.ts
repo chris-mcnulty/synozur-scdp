@@ -1937,8 +1937,8 @@ export class DatabaseStorage implements IStorage {
             userId: lineItem.assignedUserId,
             billingRate: lineItem.rate,
             costRate: lineItem.costRate,
-            effectiveDate: projectData.startDate || new Date().toISOString().split('T')[0],
-            endDate: projectData.endDate || null,
+            effectiveStart: projectData.startDate || new Date().toISOString().split('T')[0],
+            effectiveEnd: projectData.endDate || null,
           });
         }
         
@@ -2061,10 +2061,10 @@ export class DatabaseStorage implements IStorage {
               .where(and(
                 eq(projectRateOverrides.projectId, project.id),
                 eq(projectRateOverrides.userId, user.id),
-                lte(projectRateOverrides.effectiveDate, timeEntry.date),
-                sql`(${projectRateOverrides.endDate} IS NULL OR ${projectRateOverrides.endDate} >= ${timeEntry.date})`
+                lte(projectRateOverrides.effectiveStart, timeEntry.date),
+                sql`(${projectRateOverrides.effectiveEnd} IS NULL OR ${projectRateOverrides.effectiveEnd} >= ${timeEntry.date})`
               ))
-              .orderBy(desc(projectRateOverrides.effectiveDate))
+              .orderBy(desc(projectRateOverrides.effectiveStart))
               .limit(1);
 
             // Use billing rate from override, or fall back to user's default billing rate  
