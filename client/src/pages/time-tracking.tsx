@@ -27,10 +27,22 @@ const timeEntryFormSchema = insertTimeEntrySchema.omit({
   personId: true, // personId is added server-side from authenticated user
 }).extend({
   date: z.string(),
-  hours: z.string().min(1, "Hours is required").refine(
-    (val) => !isNaN(Number(val)) && Number(val) > 0,
-    "Please enter valid hours greater than 0"
-  ),
+  hours: z.string()
+    .min(1, "Hours is required")
+    .refine(
+      (val) => {
+        const num = parseFloat(val);
+        return !isNaN(num);
+      },
+      "Please enter a valid number"
+    )
+    .refine(
+      (val) => {
+        const num = parseFloat(val);
+        return num > 0 && num <= 24;
+      },
+      "Hours must be between 0.01 and 24"
+    ),
 });
 
 type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
@@ -758,9 +770,9 @@ export default function TimeTracking() {
                           <Input
                             type="number"
                             step="0.25"
-                            min="0"
+                            min="0.01"
                             max="24"
-                            placeholder="Enter hours"
+                            placeholder="Enter hours (e.g., 8 or 8.5)"
                             {...field}
                             value={field.value || ''}
                             onChange={(e) => field.onChange(e.target.value)}
@@ -1161,9 +1173,9 @@ export default function TimeTracking() {
                         <Input
                           type="number"
                           step="0.25"
-                          min="0"
+                          min="0.01"
                           max="24"
-                          placeholder="Enter hours"
+                          placeholder="Enter hours (e.g., 8 or 8.5)"
                           {...field}
                           value={field.value || ''}
                           onChange={(e) => field.onChange(e.target.value)}
