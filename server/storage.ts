@@ -1070,8 +1070,9 @@ export class DatabaseStorage implements IStorage {
       // Calculate rates for the time entry
       const { personId, projectId, date } = insertTimeEntry;
       
-      let billingRate: number | null = null;
-      let costRate: number | null = null;
+      // Initialize with default rates - NEVER allow null
+      let billingRate: number = 150;  // Default billing rate
+      let costRate: number = 100;      // Default cost rate
       
       try {
         // First check for project-specific rate override
@@ -1080,53 +1081,72 @@ export class DatabaseStorage implements IStorage {
         
         if (override) {
           console.log("[STORAGE] Found project rate override:", override);
-          // Use override rates if available
-          billingRate = override.billingRate ? Number(override.billingRate) : null;
-          costRate = override.costRate ? Number(override.costRate) : null;
+          // Use override rates if available and valid
+          if (override.billingRate && Number(override.billingRate) > 0) {
+            billingRate = Number(override.billingRate);
+          }
+          if (override.costRate && Number(override.costRate) > 0) {
+            costRate = Number(override.costRate);
+          }
+          console.log("[STORAGE] Applied override rates - Billing:", billingRate, "Cost:", costRate);
         } else {
-          console.log("[STORAGE] No project rate override found");
-        }
-      } catch (overrideError: any) {
-        console.error("[STORAGE] Error getting project rate override:", overrideError);
-        console.error("[STORAGE] Override error stack:", overrideError.stack);
-        // Continue without override - we'll use default rates
-      }
-      
-      // If no override or rates are still null, get user default rates
-      if (billingRate === null || costRate === null) {
-        try {
-          console.log("[STORAGE] Getting user default rates for person:", personId);
+          console.log("[STORAGE] No project rate override found, checking user rates...");
+          
+          // Get user default rates
           const userRates = await this.getUserRates(personId);
           console.log("[STORAGE] User rates:", userRates);
           
-          billingRate = billingRate ?? userRates.billingRate ?? 150; // Default to 150 if no rate set
-          costRate = costRate ?? userRates.costRate ?? 100; // Default to 100 if no cost rate set
-          
-          console.log("[STORAGE] Final rates - Billing:", billingRate, "Cost:", costRate);
-        } catch (userRatesError: any) {
-          console.error("[STORAGE] Error getting user rates:", userRatesError);
-          console.error("[STORAGE] User rates error stack:", userRatesError.stack);
-          // Use fallback rates
-          billingRate = billingRate ?? 150;
-          costRate = costRate ?? 100;
-          console.log("[STORAGE] Using fallback rates - Billing:", billingRate, "Cost:", costRate);
+          // Apply user rates if available and valid
+          if (userRates.billingRate && userRates.billingRate > 0) {
+            billingRate = userRates.billingRate;
+          }
+          if (userRates.costRate && userRates.costRate > 0) {
+            costRate = userRates.costRate;
+          }
+          console.log("[STORAGE] Applied user rates - Billing:", billingRate, "Cost:", costRate);
         }
+      } catch (rateError: any) {
+        console.error("[STORAGE] Error getting rates, using defaults:", rateError.message);
+        // Keep default rates - already initialized
+      }
+      
+      // Final validation - ensure rates are positive numbers
+      if (!billingRate || billingRate <= 0) {
+        billingRate = 150;
+        console.log("[STORAGE] Invalid billing rate detected, using default: 150");
+      }
+      if (!costRate || costRate <= 0) {
+        costRate = 100;
+        console.log("[STORAGE] Invalid cost rate detected, using default: 100");
       }
       
       // Create time entry with calculated rates
-      console.log("[STORAGE] Inserting time entry with data:", {
+      const timeEntryData = {
         ...insertTimeEntry,
         billingRate: billingRate.toString(),
         costRate: costRate.toString()
-      });
+      };
       
-      const [timeEntry] = await db.insert(timeEntries).values({
-        ...insertTimeEntry,
-        billingRate: billingRate.toString(),
-        costRate: costRate.toString()
-      }).returning();
+      console.log("[STORAGE] Inserting time entry with rates - Billing:", billingRate, "Cost:", costRate);
       
-      console.log("[STORAGE] Time entry created successfully:", timeEntry.id);
+      const [timeEntry] = await db.insert(timeEntries).values(timeEntryData).returning();
+      
+      // Verify rates were saved correctly
+      if (!timeEntry.billingRate || !timeEntry.costRate || 
+          timeEntry.billingRate === '0' || timeEntry.costRate === '0') {
+        console.error("[STORAGE] WARNING: Time entry created with invalid rates!", {
+          id: timeEntry.id,
+          billingRate: timeEntry.billingRate,
+          costRate: timeEntry.costRate
+        });
+      } else {
+        console.log("[STORAGE] Time entry created successfully with rates:", {
+          id: timeEntry.id,
+          billingRate: timeEntry.billingRate,
+          costRate: timeEntry.costRate
+        });
+      }
+      
       return timeEntry;
       
     } catch (error: any) {
