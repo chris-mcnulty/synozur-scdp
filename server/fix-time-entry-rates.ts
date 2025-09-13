@@ -6,6 +6,7 @@
  * 1. Identifies all time entries with NULL or 0 rates
  * 2. Calculates the proper rates based on:
  *    - Project rate overrides (if exist)
+ *    - User rate schedules (if exist for the date)
  *    - User default rates
  *    - Fallback defaults (150/100)
  * 3. Updates each entry with calculated rates
@@ -13,7 +14,8 @@
  */
 
 import { db } from "./db";
-import { timeEntries, users, projectRateOverrides } from "@shared/schema";
+import { storage, resolveRatesForTimeEntry } from "./storage";
+import { timeEntries, users, projectRateOverrides, userRateSchedules } from "@shared/schema";
 import { eq, or, isNull, sql, and, lte, gte } from "drizzle-orm";
 
 interface TimeEntryToFix {
@@ -30,57 +32,26 @@ interface UserRates {
   defaultCostRate: string | null;
 }
 
-// Default rates if nothing else is available
-const DEFAULT_BILLING_RATE = 150;
-const DEFAULT_COST_RATE = 100;
+// Default rates are now retrieved from system settings via storage methods
 
 async function getRatesForEntry(
   entry: TimeEntryToFix,
   userRates: UserRates
 ): Promise<{ billingRate: number; costRate: number }> {
   try {
-    // 1. Check for project rate override for this user and date
-    const override = await db
-      .select()
-      .from(projectRateOverrides)
-      .where(
-        and(
-          eq(projectRateOverrides.projectId, entry.projectId),
-          eq(projectRateOverrides.userId, entry.personId),
-          lte(projectRateOverrides.effectiveStart, entry.date),
-          or(
-            isNull(projectRateOverrides.effectiveEnd),
-            gte(projectRateOverrides.effectiveEnd, entry.date)
-          )
-        )
-      )
-      .limit(1);
-
-    if (override.length > 0) {
-      const billingRate = override[0].billingRate ? parseFloat(override[0].billingRate) : null;
-      const costRate = override[0].costRate ? parseFloat(override[0].costRate) : null;
-      
-      if (billingRate !== null && costRate !== null) {
-        console.log(`  → Using project override rates: $${billingRate}/$${costRate}`);
-        return { billingRate, costRate };
-      }
-    }
-
-    // 2. Use user default rates
-    const userBillingRate = userRates.defaultBillingRate ? parseFloat(userRates.defaultBillingRate) : null;
-    const userCostRate = userRates.defaultCostRate ? parseFloat(userRates.defaultCostRate) : null;
+    // Use the shared rate resolution helper for consistent behavior
+    console.log(`  → Using shared rate resolution helper...`);
+    const rates = await resolveRatesForTimeEntry(storage, entry.personId, entry.projectId, entry.date);
     
-    if (userBillingRate !== null && userCostRate !== null) {
-      console.log(`  → Using user default rates: $${userBillingRate}/$${userCostRate}`);
-      return { billingRate: userBillingRate, costRate: userCostRate };
-    }
-
-    // 3. Fallback to system defaults
-    console.log(`  → Using system default rates: $${DEFAULT_BILLING_RATE}/$${DEFAULT_COST_RATE}`);
-    return { billingRate: DEFAULT_BILLING_RATE, costRate: DEFAULT_COST_RATE };
+    console.log(`  → Resolved rates: billing=$${rates.billingRate}, cost=$${rates.costRate}`);
+    return rates;
   } catch (error) {
     console.error(`  ⚠️  Error getting rates for entry ${entry.id}:`, error);
-    return { billingRate: DEFAULT_BILLING_RATE, costRate: DEFAULT_COST_RATE };
+    // Fallback to system defaults if helper fails
+    const defaultBilling = await storage.getDefaultBillingRate();
+    const defaultCost = await storage.getDefaultCostRate();
+    console.log(`  → Using system fallback rates: billing=$${defaultBilling}, cost=$${defaultCost}`);
+    return { billingRate: defaultBilling, costRate: defaultCost };
   }
 }
 

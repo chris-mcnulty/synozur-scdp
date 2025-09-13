@@ -1115,41 +1115,12 @@ export class DatabaseStorage implements IStorage {
         personIdLength: insertTimeEntry.personId?.length
       });
       
-      // Calculate rates for the time entry
+      // Calculate rates for the time entry using shared helper
       const { personId, projectId, date, billable } = insertTimeEntry;
       
-      let billingRate: number | null = null;
-      let costRate: number | null = null;
-      
-      // First check for project-specific rate override
-      console.log("[STORAGE] Checking for project rate override...");
-      const override = await this.getProjectRateOverride(projectId, personId, date);
-      
-      if (override) {
-        console.log("[STORAGE] Found project rate override:", override);
-        // Use override rates if available
-        if (override.billingRate && Number(override.billingRate) > 0) {
-          billingRate = Number(override.billingRate);
-        }
-        if (override.costRate && Number(override.costRate) > 0) {
-          costRate = Number(override.costRate);
-        }
-      }
-      
-      // If no override or rates are still null, get user default rates
-      if (billingRate === null || costRate === null) {
-        console.log("[STORAGE] No complete project rate override, checking user rates...");
-        const userRates = await this.getUserRates(personId);
-        console.log("[STORAGE] User rates:", userRates);
-        
-        // Apply user rates if not already set
-        if (billingRate === null && userRates.billingRate !== null && userRates.billingRate > 0) {
-          billingRate = userRates.billingRate;
-        }
-        if (costRate === null && userRates.costRate !== null && userRates.costRate > 0) {
-          costRate = userRates.costRate;
-        }
-      }
+      console.log("[STORAGE] Resolving rates using shared helper...");
+      const { billingRate, costRate } = await resolveRatesForTimeEntry(this, personId, projectId, date);
+      console.log("[STORAGE] Resolved rates - Billing:", billingRate, "Cost:", costRate);
       
       // Get user info for better error messages
       const [user] = await db.select({ 
@@ -1175,34 +1146,37 @@ export class DatabaseStorage implements IStorage {
       });
       
       // Validate rates based on billable status
+      let finalBillingRate = billingRate;
+      let finalCostRate = costRate;
+      
       if (billable) {
         // For billable entries, we MUST have a valid billing rate
-        if (billingRate === null || billingRate <= 0) {
+        if (finalBillingRate <= 0) {
           throw new Error(`Cannot create billable time entry: No billing rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
         }
         // Cost rate is also required for billable entries
-        if (costRate === null || costRate <= 0) {
+        if (finalCostRate <= 0) {
           throw new Error(`Cannot create billable time entry: No cost rate configured for user ${userName}. Please configure rates in User Management or Project Settings.`);
         }
       } else {
         // For non-billable entries, billing rate is 0
-        billingRate = 0;
+        finalBillingRate = 0;
         // But we still need a valid cost rate
-        if (costRate === null || costRate <= 0) {
+        if (finalCostRate <= 0) {
           throw new Error(`Cannot create time entry: No cost rate configured for user ${userName}. Please configure rates in User Management.`);
         }
       }
       
-      console.log("[STORAGE] Final rates - Billing:", billingRate, "Cost:", costRate, "Billable:", billable);
+      console.log("[STORAGE] Final rates - Billing:", finalBillingRate, "Cost:", finalCostRate, "Billable:", billable);
       
       // Create time entry with calculated rates
       const timeEntryData = {
         ...insertTimeEntry,
-        billingRate: billingRate.toString(),
-        costRate: costRate.toString()
+        billingRate: finalBillingRate.toString(),
+        costRate: finalCostRate.toString()
       };
       
-      console.log("[STORAGE] Inserting time entry with rates - Billing:", billingRate, "Cost:", costRate);
+      console.log("[STORAGE] Inserting time entry with rates - Billing:", finalBillingRate, "Cost:", finalCostRate);
       
       const [timeEntry] = await db.insert(timeEntries).values(timeEntryData).returning();
       
@@ -1275,7 +1249,22 @@ export class DatabaseStorage implements IStorage {
         costRate = override.costRate ? Number(override.costRate) : null;
       }
       
-      // If no override or rates are still null, get user default rates
+      // If no override or rates are still null, check user rate schedule
+      if (billingRate === null || costRate === null) {
+        const userSchedule = await this.getUserRateSchedule(personId, date);
+        
+        if (userSchedule) {
+          // Apply rate schedule rates if not already set
+          if (billingRate === null && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) {
+            billingRate = Number(userSchedule.billingRate);
+          }
+          if (costRate === null && userSchedule.costRate && Number(userSchedule.costRate) > 0) {
+            costRate = Number(userSchedule.costRate);
+          }
+        }
+      }
+      
+      // If still no rates, fall back to user default rates
       if (billingRate === null || costRate === null) {
         const userRates = await this.getUserRates(personId);
         if (billingRate === null) billingRate = userRates.billingRate;
@@ -3299,4 +3288,79 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+/**
+ * Shared rate resolution helper that implements the complete rate hierarchy:
+ * 1. Project Rate Overrides
+ * 2. User Rate Schedules
+ * 3. User Defaults  
+ * 4. System Settings (configurable fallback)
+ */
+export async function resolveRatesForTimeEntry(
+  storage: IStorage,
+  personId: string,
+  projectId: string,
+  date: string
+): Promise<{ billingRate: number; costRate: number }> {
+  let billingRate: number | null = null;
+  let costRate: number | null = null;
+  
+  // 1. Check for project rate override for this user and date
+  const override = await storage.getProjectRateOverride(projectId, personId, date);
+  
+  if (override) {
+    // Apply partial rates from project override
+    if (override.billingRate && Number(override.billingRate) > 0) {
+      billingRate = Number(override.billingRate);
+    }
+    if (override.costRate && Number(override.costRate) > 0) {
+      costRate = Number(override.costRate);
+    }
+  }
+  
+  // 2. Check for user rate schedule for this date (only for rates still null)
+  if (billingRate === null || costRate === null) {
+    const userSchedule = await storage.getUserRateSchedule(personId, date);
+    
+    if (userSchedule) {
+      // Apply partial rates from user schedule
+      if (billingRate === null && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) {
+        billingRate = Number(userSchedule.billingRate);
+      }
+      if (costRate === null && userSchedule.costRate && Number(userSchedule.costRate) > 0) {
+        costRate = Number(userSchedule.costRate);
+      }
+    }
+  }
+  
+  // 3. Use user default rates (only for rates still null)
+  if (billingRate === null || costRate === null) {
+    const userRates = await storage.getUserRates(personId);
+    
+    if (billingRate === null && userRates.billingRate !== null && userRates.billingRate > 0) {
+      billingRate = userRates.billingRate;
+    }
+    if (costRate === null && userRates.costRate !== null && userRates.costRate > 0) {
+      costRate = userRates.costRate;
+    }
+  }
+  
+  // 4. Fallback to system defaults for any remaining null rates
+  if (billingRate === null) {
+    billingRate = await storage.getDefaultBillingRate();
+    // If system default is 0, this indicates system settings aren't configured
+    if (billingRate === 0) {
+      console.warn(`Warning: System billing rate default is 0. Please configure DEFAULT_BILLING_RATE in system settings.`);
+    }
+  }
+  if (costRate === null) {
+    costRate = await storage.getDefaultCostRate();
+    // If system default is 0, this indicates system settings aren't configured  
+    if (costRate === 0) {
+      console.warn(`Warning: System cost rate default is 0. Please configure DEFAULT_COST_RATE in system settings.`);
+    }
+  }
+  
+  return { billingRate, costRate };
+}
+
 export { db };
