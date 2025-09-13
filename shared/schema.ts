@@ -357,7 +357,7 @@ export const expenses = pgTable("expenses", {
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
   CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx 
-  ON project_rate_overrides(project_id, user_id, effective_date)
+  ON project_rate_overrides(project_id, user_id, effective_start)
 `;
 
 // SOWs (Statements of Work) - One-to-many relationship with projects
