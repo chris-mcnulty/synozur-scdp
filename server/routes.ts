@@ -1526,6 +1526,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if entry is locked (invoice batch)
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
+      const isPM = req.user?.role === "pm";
+      const isPrivileged = ["admin", "billing-admin", "pm", "executive"].includes(req.user!.role);
+      
       if (existingEntry.locked && !isAdmin) {
         return res.status(403).json({ 
           message: "This time entry has been locked in an invoice batch and cannot be edited" 
@@ -1538,14 +1541,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (existingEntry.personId !== req.user.id) {
           return res.status(403).json({ message: "You can only edit your own time entries" });
         }
-      } else if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
+      } else if (!isPrivileged) {
         // Other roles need specific permissions
         return res.status(403).json({ message: "Insufficient permissions to edit time entries" });
+      }
+      
+      // For PMs, check if they manage this project
+      if (isPM && existingEntry.projectId) {
+        const project = await storage.getProject(existingEntry.projectId);
+        if (project && project.pm !== req.user.id) {
+          return res.status(403).json({ message: "You can only edit time entries for projects you manage" });
+        }
       }
       
       // Whitelist allowed fields only
       const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase'];
       const updateData: any = {};
+      
+      // Allow personId reassignment for admin, billing-admin, and PMs (for their projects)
+      if ((isAdmin || (isPM && existingEntry.projectId)) && req.body.personId !== undefined) {
+        // Verify the new person exists and is assignable
+        const newPerson = await storage.getUser(req.body.personId);
+        if (!newPerson) {
+          return res.status(400).json({ message: "Invalid person ID" });
+        }
+        if (!newPerson.isAssignable) {
+          return res.status(400).json({ message: "This person cannot be assigned to time entries" });
+        }
+        updateData.personId = req.body.personId;
+      }
       
       // Only copy allowed fields from request body
       for (const field of allowedFields) {
@@ -1561,15 +1585,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Additional restrictions for regular employees
       if (req.user?.role === "employee") {
-        // Employees cannot change the project
+        // Employees cannot change the project or person
         delete updateData.projectId;
+        delete updateData.personId;
       }
       
       // Never allow these fields to be updated via PATCH
       delete updateData.locked;
       delete updateData.lockedAt;
       delete updateData.invoiceBatchId;
-      delete updateData.personId;
       delete updateData.billingRate;
       delete updateData.costRate;
       delete updateData.billedFlag;
