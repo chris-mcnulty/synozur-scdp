@@ -9,23 +9,15 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, TrendingUp, FileText, DollarSign, Eye, ChevronDown, ChevronUp, Clock, User as UserIcon, Calendar } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
-import { format } from "date-fns";
-import { cn } from "@/lib/utils";
 import type { ProjectWithClient } from "@/lib/types";
-import type { TimeEntry, User } from "@shared/schema";
 
 interface ProjectWithBillableInfo extends ProjectWithClient {
   totalBudget?: number;
   burnedAmount?: number;
   utilizationRate?: number;
-}
-
-interface TimeEntryWithPerson extends TimeEntry {
-  person?: User;
 }
 
 export default function Projects() {
@@ -38,11 +30,6 @@ export default function Projects() {
   const [projectToDelete, setProjectToDelete] = useState<ProjectWithBillableInfo | null>(null);
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-  const [selectedTimeEntry, setSelectedTimeEntry] = useState<TimeEntry | null>(null);
-  const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
-  const [timeEntryToDelete, setTimeEntryToDelete] = useState<TimeEntryWithPerson | null>(null);
-  const [deleteTimeEntryDialogOpen, setDeleteTimeEntryDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
@@ -55,10 +42,6 @@ export default function Projects() {
 
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
-  });
-
-  const { data: currentUser } = useQuery<User>({
-    queryKey: ["/api/auth/user"],
   });
 
   const createProject = useMutation({
@@ -154,30 +137,6 @@ export default function Projects() {
     },
   });
 
-  const deleteTimeEntry = useMutation({
-    mutationFn: (id: string) => apiRequest(`/api/time-entries/${id}`, {
-      method: "DELETE",
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      setDeleteTimeEntryDialogOpen(false);
-      setTimeEntryToDelete(null);
-      toast({
-        title: "Success",
-        description: "Time entry deleted successfully",
-      });
-    },
-    onError: (error: any) => {
-      console.error("Time entry deletion error:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete time entry. You may not have permission.",
-        variant: "destructive",
-      });
-    },
-  });
-
   const filteredProjects = projects?.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          project.client.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -193,36 +152,6 @@ export default function Projects() {
   const handleDeleteProject = (project: ProjectWithBillableInfo) => {
     setProjectToDelete(project);
     setDeleteDialogOpen(true);
-  };
-
-  const toggleProjectExpansion = (projectId: string) => {
-    setExpandedProjects(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(projectId)) {
-        newSet.delete(projectId);
-      } else {
-        newSet.add(projectId);
-      }
-      return newSet;
-    });
-  };
-
-  const handleEditTimeEntry = (entry: TimeEntry) => {
-    setSelectedTimeEntry(entry);
-    setTimeEntryDialogOpen(true);
-  };
-
-  const handleDeleteTimeEntry = (entry: TimeEntryWithPerson) => {
-    setTimeEntryToDelete(entry);
-    setDeleteTimeEntryDialogOpen(true);
-  };
-
-  const canManageTimeEntries = currentUser && ["admin", "billing-admin", "pm", "executive"].includes(currentUser.role);
-  const canManageProjectTimeEntries = (project: ProjectWithBillableInfo) => {
-    if (!currentUser) return false;
-    if (["admin", "billing-admin"].includes(currentUser.role)) return true;
-    if (currentUser.role === "pm" && project.pm === currentUser.id) return true;
-    return false;
   };
 
   return (
@@ -312,10 +241,7 @@ export default function Projects() {
               </Card>
             </div>
           ) : (
-            filteredProjects.map((project) => {
-              const isExpanded = expandedProjects.has(project.id);
-              
-              return (
+            filteredProjects.map((project) => (
               <Card key={project.id} className="hover:shadow-lg transition-all duration-200" data-testid={`project-card-${project.id}`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
@@ -327,23 +253,12 @@ export default function Projects() {
                         {project.code}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        project.status === 'active' 
-                          ? 'bg-chart-4/10 text-chart-4' 
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {project.status}
-                      </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => toggleProjectExpansion(project.id)}
-                        data-testid={`button-expand-${project.id}`}
-                      >
-                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                      </Button>
+                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      project.status === 'active' 
+                        ? 'bg-chart-4/10 text-chart-4' 
+                        : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {project.status}
                     </div>
                   </div>
                 </CardHeader>
@@ -438,18 +353,8 @@ export default function Projects() {
                     </Button>
                   </div>
                 </CardContent>
-                
-                {isExpanded && (
-                  <TimeEntriesSection
-                    projectId={project.id}
-                    canManage={canManageProjectTimeEntries(project)}
-                    onEdit={handleEditTimeEntry}
-                    onDelete={handleDeleteTimeEntry}
-                  />
-                )}
               </Card>
-            );
-            })
+            ))
           )}
         </div>
 
@@ -904,202 +809,8 @@ export default function Projects() {
           </DialogContent>
         </Dialog>
 
-        <TimeEntryManagementDialog
-          entry={selectedTimeEntry}
-          projectId={selectedTimeEntry?.projectId || ""}
-          open={timeEntryDialogOpen}
-          onOpenChange={setTimeEntryDialogOpen}
-        />
-
-        <AlertDialog open={deleteTimeEntryDialogOpen} onOpenChange={setDeleteTimeEntryDialogOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Time Entry</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete this time entry?
-                {timeEntryToDelete && (
-                  <div className="mt-2 text-sm">
-                    <div><strong>Date:</strong> {format(new Date(timeEntryToDelete.date), "PPP")}</div>
-                    <div><strong>Hours:</strong> {timeEntryToDelete.hours}</div>
-                    <div><strong>Person:</strong> {timeEntryToDelete.person?.name || "Unknown"}</div>
-                    {timeEntryToDelete.description && (
-                      <div><strong>Description:</strong> {timeEntryToDelete.description}</div>
-                    )}
-                  </div>
-                )}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel data-testid="button-cancel-delete-time-entry">Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => timeEntryToDelete && deleteTimeEntry.mutate(timeEntryToDelete.id)}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                data-testid="button-confirm-delete-time-entry"
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
     </Layout>
   );
 }
 
-// Time Entries Section Component
-interface TimeEntriesSectionProps {
-  projectId: string;
-  canManage: boolean;
-  onEdit: (entry: TimeEntry) => void;
-  onDelete: (entry: TimeEntryWithPerson) => void;
-}
-
-function TimeEntriesSection({ projectId, canManage, onEdit, onDelete }: TimeEntriesSectionProps) {
-  const { data: timeEntries = [], isLoading } = useQuery<TimeEntryWithPerson[]>({
-    queryKey: ["/api/time-entries", { projectId }],
-    queryFn: async () => {
-      const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(`/api/time-entries?projectId=${projectId}`, {
-        credentials: 'include',
-        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
-      });
-      if (!response.ok) throw new Error('Failed to fetch time entries');
-      return response.json();
-    },
-    enabled: !!projectId,
-  });
-
-  // Calculate summary statistics
-  const totalHours = timeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours), 0);
-  const billableHours = timeEntries.reduce((sum, entry) => 
-    entry.billable ? sum + parseFloat(entry.hours) : sum, 0
-  );
-  const nonBillableHours = totalHours - billableHours;
-
-  // Group entries by person
-  const entriesByPerson = timeEntries.reduce((acc, entry) => {
-    const personName = entry.person?.name || "Unknown";
-    if (!acc[personName]) {
-      acc[personName] = [];
-    }
-    acc[personName].push(entry);
-    return acc;
-  }, {} as Record<string, TimeEntryWithPerson[]>);
-
-  if (isLoading) {
-    return (
-      <div className="border-t p-4">
-        <div className="text-center text-muted-foreground">Loading time entries...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="border-t">
-      {/* Summary Statistics */}
-      <div className="p-4 bg-muted/50">
-        <h4 className="font-semibold text-sm mb-3">Time Entry Summary</h4>
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <div className="text-muted-foreground">Total Hours</div>
-            <div className="font-semibold text-lg">{totalHours.toFixed(2)}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">Billable</div>
-            <div className="font-semibold text-lg text-green-600">{billableHours.toFixed(2)}</div>
-          </div>
-          <div>
-            <div className="text-muted-foreground">Non-Billable</div>
-            <div className="font-semibold text-lg text-orange-600">{nonBillableHours.toFixed(2)}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Time Entries List */}
-      <div className="p-4">
-        <h4 className="font-semibold text-sm mb-3">Time Entries ({timeEntries.length})</h4>
-        
-        {timeEntries.length === 0 ? (
-          <div className="text-center text-muted-foreground py-4">No time entries logged yet</div>
-        ) : (
-          <div className="space-y-4">
-            {Object.entries(entriesByPerson).map(([personName, entries]) => (
-              <div key={personName} className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <UserIcon className="w-4 h-4" />
-                  <span>{personName}</span>
-                  <span className="text-muted-foreground">
-                    ({entries.reduce((sum, e) => sum + parseFloat(e.hours), 0).toFixed(2)} hours)
-                  </span>
-                </div>
-                
-                <div className="ml-6 space-y-1">
-                  {entries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className={cn(
-                        "flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors",
-                        entry.locked && "opacity-60"
-                      )}
-                      data-testid={`time-entry-${entry.id}`}
-                    >
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Calendar className="w-3 h-3" />
-                          <span>{format(new Date(entry.date), "MMM d, yyyy")}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          <span className="font-medium">{entry.hours}h</span>
-                          {entry.billable ? (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">Billable</span>
-                          ) : (
-                            <span className="text-xs px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded">Non-Billable</span>
-                          )}
-                        </div>
-                        
-                        {entry.description && (
-                          <div className="text-sm text-muted-foreground flex-1">
-                            {entry.description}
-                          </div>
-                        )}
-                        
-                        {entry.locked && (
-                          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">Locked</span>
-                        )}
-                      </div>
-                      
-                      {canManage && !entry.locked && (
-                        <div className="flex gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            onClick={() => onEdit(entry)}
-                            data-testid={`button-edit-time-entry-${entry.id}`}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6 text-destructive"
-                            onClick={() => onDelete(entry)}
-                            data-testid={`button-delete-time-entry-${entry.id}`}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

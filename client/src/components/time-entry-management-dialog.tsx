@@ -342,14 +342,14 @@ export function TimeEntryManagementDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Milestone (Optional)</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none">
                       <FormControl>
                         <SelectTrigger data-testid="select-milestone">
                           <SelectValue placeholder="Select a milestone" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="" data-testid="select-milestone-none">None</SelectItem>
+                        <SelectItem value="none" data-testid="select-milestone-none">None</SelectItem>
                         {milestones.map((milestone) => (
                           <SelectItem key={milestone.id} value={milestone.id} data-testid={`select-milestone-${milestone.id}`}>
                             {milestone.name}
@@ -370,14 +370,14 @@ export function TimeEntryManagementDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Workstream (Optional)</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none"}>
                       <FormControl>
                         <SelectTrigger data-testid="select-workstream">
                           <SelectValue placeholder="Select a workstream" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="" data-testid="select-workstream-none">None</SelectItem>
+                        <SelectItem value="none" data-testid="select-workstream-none">None</SelectItem>
                         {workstreams.map((workstream) => (
                           <SelectItem key={workstream.id} value={workstream.id} data-testid={`select-workstream-${workstream.id}`}>
                             {workstream.name}
@@ -397,14 +397,14 @@ export function TimeEntryManagementDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Phase (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none"}>
                     <FormControl>
                       <SelectTrigger data-testid="select-phase">
                         <SelectValue placeholder="Select a phase" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="" data-testid="select-phase-none">None</SelectItem>
+                      <SelectItem value="none" data-testid="select-phase-none">None</SelectItem>
                       <SelectItem value="Discovery" data-testid="select-phase-discovery">Discovery</SelectItem>
                       <SelectItem value="Design" data-testid="select-phase-design">Design</SelectItem>
                       <SelectItem value="Development" data-testid="select-phase-development">Development</SelectItem>

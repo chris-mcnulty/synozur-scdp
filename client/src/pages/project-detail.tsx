@@ -13,6 +13,16 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle 
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage 
 } from "@/components/ui/form";
@@ -32,6 +42,7 @@ import {
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
   Check, X, FileCheck, Lock, Filter
 } from "lucide-react";
+import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -170,11 +181,22 @@ export default function ProjectDetail() {
     personId: "all",
     billableFilter: "all" as "all" | "billable" | "non-billable"
   });
+  const [selectedTimeEntry, setSelectedTimeEntry] = useState<any>(null);
+  const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
+  const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
+  const [deleteTimeEntryDialogOpen, setDeleteTimeEntryDialogOpen] = useState(false);
   
   const { toast } = useToast();
   
   // Check if user can view Time tab
   const canViewTime = user ? ['admin', 'billing-admin', 'pm', 'executive'].includes(user.role) : false;
+  
+  // Check if user can manage time entries
+  const canManageTimeEntries = user ? ['admin', 'billing-admin'].includes(user.role) : false;
+  const canManageProjectTimeEntries = user ? (
+    ['admin', 'billing-admin'].includes(user.role) ||
+    (user.role === 'pm' && analytics?.project?.pm === user.id)
+  ) : false;
 
   const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
     queryKey: [`/api/projects/${id}/analytics`],
@@ -765,6 +787,32 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to approve SOW",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Time entry mutations
+  const deleteTimeEntryMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      return apiRequest(`/api/time-entries/${entryId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Time entry deleted",
+        description: "The time entry has been deleted successfully."
+      });
+      setDeleteTimeEntryDialogOpen(false);
+      setTimeEntryToDelete(null);
+      queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete time entry",
         variant: "destructive"
       });
     }
@@ -2004,6 +2052,7 @@ export default function ProjectDetail() {
                               {timeGrouping !== "stage" && <TableHead>Stage</TableHead>}
                               <TableHead>Status</TableHead>
                               <TableHead className="text-right">Revenue</TableHead>
+                              {canManageProjectTimeEntries && <TableHead className="text-right">Actions</TableHead>}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -2049,6 +2098,38 @@ export default function ProjectDetail() {
                                       "-"
                                     )}
                                   </TableCell>
+                                  {canManageProjectTimeEntries && (
+                                    <TableCell className="text-right">
+                                      {!entry.isLocked && (
+                                        <div className="flex justify-end gap-1">
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-8 w-8"
+                                            onClick={() => {
+                                              setSelectedTimeEntry(entry);
+                                              setTimeEntryDialogOpen(true);
+                                            }}
+                                            data-testid={`button-edit-time-entry-${entry.id}`}
+                                          >
+                                            <Edit className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-8 w-8 text-destructive"
+                                            onClick={() => {
+                                              setTimeEntryToDelete(entry);
+                                              setDeleteTimeEntryDialogOpen(true);
+                                            }}
+                                            data-testid={`button-delete-time-entry-${entry.id}`}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               ))
                             )}
@@ -2590,6 +2671,50 @@ export default function ProjectDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Time Entry Management Dialog */}
+        <TimeEntryManagementDialog
+          entry={selectedTimeEntry}
+          projectId={id || ""}
+          open={timeEntryDialogOpen}
+          onOpenChange={setTimeEntryDialogOpen}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
+            queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
+          }}
+        />
+
+        {/* Delete Time Entry Confirmation Dialog */}
+        <AlertDialog open={deleteTimeEntryDialogOpen} onOpenChange={setDeleteTimeEntryDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Time Entry</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete this time entry?
+                {timeEntryToDelete && (
+                  <div className="mt-2 text-sm space-y-1">
+                    <div><strong>Date:</strong> {format(parseISO(timeEntryToDelete.date), "PPP")}</div>
+                    <div><strong>Hours:</strong> {timeEntryToDelete.hours.toFixed(1)}</div>
+                    <div><strong>Person:</strong> {timeEntryToDelete.personName || "Unknown"}</div>
+                    {timeEntryToDelete.description && (
+                      <div><strong>Description:</strong> {timeEntryToDelete.description}</div>
+                    )}
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-delete-time-entry">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => timeEntryToDelete && deleteTimeEntryMutation.mutate(timeEntryToDelete.id)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                data-testid="button-confirm-delete-time-entry"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );
