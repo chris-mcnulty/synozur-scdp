@@ -1549,7 +1549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For PMs, check if they manage this project
       if (isPM && existingEntry.projectId) {
         const project = await storage.getProject(existingEntry.projectId);
-        if (project && project.pm !== req.user.id) {
+        if (project && req.user && project.pm !== req.user.id) {
           return res.status(403).json({ message: "You can only edit time entries for projects you manage" });
         }
       }

@@ -8,7 +8,7 @@ export const ROLES = {
 
 export type UserRole = typeof ROLES[keyof typeof ROLES];
 
-export function getRoleDisplayName(role: UserRole): string {
+export function getRoleDisplayName(role: string | UserRole): string {
   switch (role) {
     case ROLES.ADMIN:
       return 'Admin';
@@ -25,12 +25,15 @@ export function getRoleDisplayName(role: UserRole): string {
   }
 }
 
+const PRICING_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.BILLING_ADMIN]);
+const PROJECT_MANAGEMENT_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.PM]);
+
 export function canViewPricing(role: UserRole): boolean {
-  return [ROLES.ADMIN, ROLES.BILLING_ADMIN].includes(role);
+  return PRICING_ROLES.has(role);
 }
 
 export function canManageProjects(role: UserRole): boolean {
-  return [ROLES.ADMIN, ROLES.PM].includes(role);
+  return PROJECT_MANAGEMENT_ROLES.has(role);
 }
 
 export function canManageRates(role: UserRole): boolean {

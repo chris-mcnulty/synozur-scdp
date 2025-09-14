@@ -1,17 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
-import { format } from "date-fns";
-import { CalendarIcon, User as UserIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -24,6 +20,10 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -31,50 +31,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { TimeEntry, User, ProjectMilestone, ProjectWorkstream } from "@shared/schema";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
-const timeEntryEditSchema = z.object({
-  date: z.string(),
-  hours: z.string()
-    .min(1, "Hours is required")
-    .refine(
-      (val) => {
-        const num = parseFloat(val);
-        return !isNaN(num) && num > 0 && num <= 24;
-      },
-      "Hours must be between 0.01 and 24"
-    ),
-  personId: z.string().min(1, "Person is required"),
-  description: z.string(),
-  billable: z.boolean(),
-  milestoneId: z.string().optional(),
-  workstreamId: z.string().optional(),
-  phase: z.string().optional(),
-});
-
-type TimeEntryEditData = z.infer<typeof timeEntryEditSchema>;
-
-interface TimeEntryManagementDialogProps {
-  entry: TimeEntry | null;
-  projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSuccess?: () => void;
-}
-
-// Helper function to parse date string without timezone issues
+// Helper functions for date handling
 function parseLocalDate(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
   return new Date(year, month - 1, day);
 }
 
-// Helper function to format date for display without timezone issues
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -82,121 +54,165 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function TimeEntryManagementDialog({
-  entry,
-  projectId,
-  open,
-  onOpenChange,
-  onSuccess,
-}: TimeEntryManagementDialogProps) {
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
-  const { toast } = useToast();
+// Form validation schema
+const timeEntryFormSchema = z.object({
+  personId: z.string().min(1, "Person is required"),
+  date: z.string(),
+  hours: z.string()
+    .min(1, "Hours is required")
+    .refine(
+      (val) => {
+        const num = parseFloat(val);
+        return !isNaN(num);
+      },
+      "Please enter a valid number"
+    )
+    .refine(
+      (val) => {
+        const num = parseFloat(val);
+        return num > 0 && num <= 24;
+      },
+      "Hours must be between 0.01 and 24"
+    ),
+  billable: z.boolean(),
+  description: z.string().optional(),
+  milestoneId: z.string().optional(),
+  workstreamId: z.string().optional(),
+  phase: z.string().optional(),
+});
 
-  const form = useForm<TimeEntryEditData>({
-    resolver: zodResolver(timeEntryEditSchema),
+type TimeEntryFormData = z.infer<typeof timeEntryFormSchema>;
+
+interface TimeEntryManagementDialogProps {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  timeEntry: any | null;
+  projectId: string;
+}
+
+export function TimeEntryManagementDialog({
+  isOpen,
+  onOpenChange,
+  timeEntry,
+  projectId,
+}: TimeEntryManagementDialogProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Fetch users for reassignment dropdown
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["/api/users"],
+    enabled: isOpen,
+  });
+
+  // Fetch project-specific data
+  const { data: milestones = [] } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/milestones`],
+    enabled: isOpen && !!projectId,
+  });
+
+  const { data: workstreams = [] } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/workstreams`],
+    enabled: isOpen && !!projectId,
+  });
+
+  const form = useForm<TimeEntryFormData>({
+    resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
-      date: "",
-      hours: "",
       personId: "",
-      description: "",
+      date: formatLocalDate(new Date()),
+      hours: "",
       billable: true,
+      description: "",
       milestoneId: "",
       workstreamId: "",
       phase: "",
     },
   });
 
-  // Fetch all assignable users
-  const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
-    enabled: open,
-  });
-
-  // Fetch milestones and workstreams for the project
-  const { data: milestones = [] } = useQuery<ProjectMilestone[]>({
-    queryKey: ["/api/projects", projectId, "milestones"],
-    enabled: open && !!projectId,
-  });
-
-  const { data: workstreams = [] } = useQuery<ProjectWorkstream[]>({
-    queryKey: ["/api/projects", projectId, "workstreams"],
-    enabled: open && !!projectId,
-  });
-
-  // Filter to only show assignable users
-  const assignableUsers = users.filter(u => u.isAssignable && u.isActive);
-
-  // Update form when entry changes
+  // Reset form when timeEntry changes
   useEffect(() => {
-    if (entry) {
-      const entryDate = parseLocalDate(entry.date);
-      setSelectedDate(entryDate);
+    if (timeEntry && isOpen) {
       form.reset({
-        date: entry.date,
-        hours: entry.hours.toString(),
-        personId: entry.personId,
-        description: entry.description || "",
-        billable: entry.billable,
-        milestoneId: entry.milestoneId || "",
-        workstreamId: entry.workstreamId || "",
-        phase: entry.phase || "",
+        personId: timeEntry.personId || "",
+        date: timeEntry.date || formatLocalDate(new Date()),
+        hours: timeEntry.hours || "",
+        billable: timeEntry.billable ?? true,
+        description: timeEntry.description || "",
+        milestoneId: timeEntry.milestoneId || "",
+        workstreamId: timeEntry.workstreamId || "",
+        phase: timeEntry.phase || "",
       });
     }
-  }, [entry, form]);
+  }, [timeEntry, isOpen, form]);
 
   const updateTimeEntry = useMutation({
-    mutationFn: async (data: TimeEntryEditData) => {
-      if (!entry) throw new Error("No entry to update");
-      
-      return apiRequest(`/api/time-entries/${entry.id}`, {
+    mutationFn: async (data: TimeEntryFormData) => {
+      const response = await apiRequest(`/api/time-entries/${timeEntry?.id}`, {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          milestoneId: data.milestoneId === "" ? undefined : data.milestoneId,
+          workstreamId: data.workstreamId === "" ? undefined : data.workstreamId,
+          phase: data.phase === "" ? undefined : data.phase,
+        }),
       });
+      return response;
     },
     onSuccess: () => {
-      // Invalidate both time entries and projects queries
-      queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${projectId}`] });
       toast({
-        title: "Success",
-        description: "Time entry updated successfully",
+        title: "Time entry updated",
+        description: "The time entry has been updated successfully.",
       });
       onOpenChange(false);
-      onSuccess?.();
     },
     onError: (error: any) => {
-      console.error("Error updating time entry:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to update time entry",
+        description: error?.message || "Failed to update time entry. Please try again.",
         variant: "destructive",
       });
     },
   });
 
-  const handleSubmit = (data: TimeEntryEditData) => {
+  const onSubmit = (data: TimeEntryFormData) => {
     updateTimeEntry.mutate(data);
   };
 
-  const handleDateSelect = (date: Date | undefined) => {
-    setSelectedDate(date);
-    if (date) {
-      form.setValue("date", formatLocalDate(date));
-    }
-  };
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Time Entry</DialogTitle>
-          <DialogDescription>
-            Update time entry details and reassign to different team members.
-          </DialogDescription>
         </DialogHeader>
-
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="personId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Assign to Person</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-person">
+                        <SelectValue placeholder="Select a person" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {users.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.fullName || user.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             <FormField
               control={form.control}
               name="date"
@@ -209,67 +225,32 @@ export function TimeEntryManagementDialog({
                         <Button
                           variant="outline"
                           className={cn(
-                            "w-full justify-start text-left font-normal",
+                            "w-full pl-3 text-left font-normal",
                             !field.value && "text-muted-foreground"
                           )}
-                          data-testid="button-date-picker"
+                          data-testid="button-select-date"
                         >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {field.value ? format(parseLocalDate(field.value), "PPP") : "Pick a date"}
+                          {field.value ? (
+                            format(parseLocalDate(field.value), "PPP")
+                          ) : (
+                            <span>Pick a date</span>
+                          )}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
                       </FormControl>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar
                         mode="single"
-                        selected={selectedDate}
-                        onSelect={handleDateSelect}
+                        selected={field.value ? parseLocalDate(field.value) : undefined}
+                        onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
+                        disabled={(date) =>
+                          date > new Date() || date < new Date("1900-01-01")
+                        }
                         initialFocus
                       />
                     </PopoverContent>
                   </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="personId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Assign To</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-person">
-                        <SelectValue placeholder="Select a person">
-                          {field.value && (
-                            <div className="flex items-center gap-2">
-                              <UserIcon className="w-4 h-4" />
-                              <span>
-                                {assignableUsers.find(u => u.id === field.value)?.name || "Unknown"}
-                              </span>
-                            </div>
-                          )}
-                        </SelectValue>
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {assignableUsers.map((user) => (
-                        <SelectItem key={user.id} value={user.id} data-testid={`select-person-${user.id}`}>
-                          <div className="flex items-center gap-2">
-                            <UserIcon className="w-4 h-4" />
-                            <div>
-                              <div className="font-medium">{user.name}</div>
-                              {user.title && (
-                                <div className="text-xs text-muted-foreground">{user.title}</div>
-                              )}
-                            </div>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -287,7 +268,7 @@ export function TimeEntryManagementDialog({
                       step="0.25"
                       min="0.01"
                       max="24"
-                      placeholder="Enter hours worked"
+                      placeholder="Enter hours (e.g., 8 or 8.5)"
                       {...field}
                       data-testid="input-hours"
                     />
@@ -305,8 +286,7 @@ export function TimeEntryManagementDialog({
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Describe the work performed"
-                      className="resize-none"
+                      placeholder="Brief description of work performed..."
                       {...field}
                       data-testid="textarea-description"
                     />
@@ -342,16 +322,16 @@ export function TimeEntryManagementDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Milestone (Optional)</FormLabel>
-                    <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none">
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-milestone">
                           <SelectValue placeholder="Select a milestone" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none" data-testid="select-milestone-none">None</SelectItem>
+                        <SelectItem value="">None</SelectItem>
                         {milestones.map((milestone) => (
-                          <SelectItem key={milestone.id} value={milestone.id} data-testid={`select-milestone-${milestone.id}`}>
+                          <SelectItem key={milestone.id} value={milestone.id}>
                             {milestone.name}
                           </SelectItem>
                         ))}
@@ -370,16 +350,16 @@ export function TimeEntryManagementDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Workstream (Optional)</FormLabel>
-                    <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none"}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-workstream">
                           <SelectValue placeholder="Select a workstream" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="none" data-testid="select-workstream-none">None</SelectItem>
+                        <SelectItem value="">None</SelectItem>
                         {workstreams.map((workstream) => (
-                          <SelectItem key={workstream.id} value={workstream.id} data-testid={`select-workstream-${workstream.id}`}>
+                          <SelectItem key={workstream.id} value={workstream.id}>
                             {workstream.name}
                           </SelectItem>
                         ))}
@@ -397,20 +377,20 @@ export function TimeEntryManagementDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Phase (Optional)</FormLabel>
-                  <Select onValueChange={(value) => field.onChange(value === "none" ? "" : value)} value={field.value || "none"}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger data-testid="select-phase">
                         <SelectValue placeholder="Select a phase" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="none" data-testid="select-phase-none">None</SelectItem>
-                      <SelectItem value="Discovery" data-testid="select-phase-discovery">Discovery</SelectItem>
-                      <SelectItem value="Design" data-testid="select-phase-design">Design</SelectItem>
-                      <SelectItem value="Development" data-testid="select-phase-development">Development</SelectItem>
-                      <SelectItem value="Testing" data-testid="select-phase-testing">Testing</SelectItem>
-                      <SelectItem value="Deployment" data-testid="select-phase-deployment">Deployment</SelectItem>
-                      <SelectItem value="Maintenance" data-testid="select-phase-maintenance">Maintenance</SelectItem>
+                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="Discovery">Discovery</SelectItem>
+                      <SelectItem value="Design">Design</SelectItem>
+                      <SelectItem value="Development">Development</SelectItem>
+                      <SelectItem value="Testing">Testing</SelectItem>
+                      <SelectItem value="Deployment">Deployment</SelectItem>
+                      <SelectItem value="Maintenance">Maintenance</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

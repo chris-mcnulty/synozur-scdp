@@ -19,6 +19,8 @@ export interface ProjectWithClient {
   sowValue: string | null;
   sowDate: string | null;
   hasSow: boolean;
+  clientId: string;
+  pm: string | null;
   client: {
     id: string;
     name: string;
