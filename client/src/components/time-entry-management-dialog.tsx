@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -124,9 +125,9 @@ export function TimeEntryManagementDialog({
       hours: "",
       billable: true,
       description: "",
-      milestoneId: "",
-      workstreamId: "",
-      phase: "",
+      milestoneId: "none",
+      workstreamId: "none",
+      phase: "none",
     },
   });
 
@@ -139,9 +140,9 @@ export function TimeEntryManagementDialog({
         hours: timeEntry.hours || "",
         billable: timeEntry.billable ?? true,
         description: timeEntry.description || "",
-        milestoneId: timeEntry.milestoneId || "",
-        workstreamId: timeEntry.workstreamId || "",
-        phase: timeEntry.phase || "",
+        milestoneId: timeEntry.milestoneId || "none",
+        workstreamId: timeEntry.workstreamId || "none",
+        phase: timeEntry.phase || "none",
       });
     }
   }, [timeEntry, isOpen, form]);
@@ -152,9 +153,9 @@ export function TimeEntryManagementDialog({
         method: "PATCH",
         body: JSON.stringify({
           ...data,
-          milestoneId: data.milestoneId === "" ? undefined : data.milestoneId,
-          workstreamId: data.workstreamId === "" ? undefined : data.workstreamId,
-          phase: data.phase === "" ? undefined : data.phase,
+          milestoneId: data.milestoneId === "" || data.milestoneId === "none" ? undefined : data.milestoneId,
+          workstreamId: data.workstreamId === "" || data.workstreamId === "none" ? undefined : data.workstreamId,
+          phase: data.phase === "" || data.phase === "none" ? undefined : data.phase,
         }),
       });
       return response;
@@ -185,6 +186,9 @@ export function TimeEntryManagementDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Edit Time Entry</DialogTitle>
+          <DialogDescription>
+            Update the time entry details and reassign team members if needed.
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -329,7 +333,7 @@ export function TimeEntryManagementDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {milestones.map((milestone) => (
                           <SelectItem key={milestone.id} value={milestone.id}>
                             {milestone.name}
@@ -357,7 +361,7 @@ export function TimeEntryManagementDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {workstreams.map((workstream) => (
                           <SelectItem key={workstream.id} value={workstream.id}>
                             {workstream.name}
@@ -384,7 +388,7 @@ export function TimeEntryManagementDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       <SelectItem value="Discovery">Discovery</SelectItem>
                       <SelectItem value="Design">Design</SelectItem>
                       <SelectItem value="Development">Development</SelectItem>
