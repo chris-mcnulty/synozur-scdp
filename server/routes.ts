@@ -2352,23 +2352,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      const { batchId, month, discountPercent, discountAmount } = req.body;
+      const { batchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode } = req.body;
+      
+      console.log("[DEBUG] Creating invoice batch with:", { batchId, startDate, endDate, month, invoicingMode });
+      
+      // Handle backward compatibility with month parameter
+      let finalStartDate = startDate;
+      let finalEndDate = endDate;
+      let finalMonth = null;
+      
+      if (month && !startDate && !endDate) {
+        // Convert month string (e.g., "2024-03") to proper date range
+        const monthDate = new Date(month + "-01");
+        finalStartDate = monthDate.toISOString().split('T')[0];
+        // Get last day of month
+        const lastDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+        finalEndDate = lastDay.toISOString().split('T')[0];
+        finalMonth = finalStartDate; // Store month for backward compatibility
+      }
+      
+      if (!finalStartDate || !finalEndDate) {
+        return res.status(400).json({ message: "Start date and end date are required" });
+      }
+      
+      // Validate date order
+      if (new Date(finalStartDate) > new Date(finalEndDate)) {
+        return res.status(400).json({ message: "Start date must be before or equal to end date" });
+      }
       
       // Create the batch
       const batch = await storage.createInvoiceBatch({
         batchId,
-        month,
+        startDate: finalStartDate,
+        endDate: finalEndDate,
+        month: finalMonth,
         pricingSnapshotDate: new Date().toISOString().split('T')[0],
         discountPercent: discountPercent || null,
         discountAmount: discountAmount || null,
         totalAmount: "0", // Will be updated after generating invoices
+        invoicingMode: invoicingMode || "client",
         exportedToQBO: false
       });
       
       res.json(batch);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create invoice batch:", error);
-      res.status(500).json({ message: "Failed to create invoice batch" });
+      res.status(500).json({ 
+        message: "Failed to create invoice batch", 
+        error: error.message 
+      });
     }
   });
   
@@ -2383,26 +2415,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.post("/api/invoice-batches/:batchId/generate", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      const { clientIds, month } = req.body;
+      const { clientIds, projectIds, invoicingMode } = req.body;
       
-      if (!clientIds || clientIds.length === 0) {
-        return res.status(400).json({ message: "Please select at least one client" });
+      console.log("[DEBUG] Generating invoices for batch:", { batchId: req.params.batchId, clientIds, projectIds, invoicingMode });
+      
+      // Validate input based on invoicing mode
+      if (!invoicingMode) {
+        return res.status(400).json({ message: "Invoicing mode is required" });
+      }
+      
+      if (invoicingMode === "project") {
+        if (!projectIds || projectIds.length === 0) {
+          return res.status(400).json({ message: "Please select at least one project for project-based invoicing" });
+        }
+        if (clientIds && clientIds.length > 0) {
+          return res.status(400).json({ message: "Cannot specify both projects and clients in project-based mode" });
+        }
+      }
+      
+      if (invoicingMode === "client") {
+        if (!clientIds || clientIds.length === 0) {
+          return res.status(400).json({ message: "Please select at least one client for client-based invoicing" });
+        }
+        if (projectIds && projectIds.length > 0) {
+          return res.status(400).json({ message: "Cannot specify both clients and projects in client-based mode" });
+        }
       }
       
       // Generate invoices for the batch
       const result = await storage.generateInvoicesForBatch(
         req.params.batchId,
-        clientIds,
-        month
+        { 
+          clientIds: clientIds || [], 
+          projectIds: projectIds || [], 
+          invoicingMode: invoicingMode || "client" 
+        }
       );
       
       res.json({
         message: `Generated ${result.invoicesCreated} invoices`,
         ...result
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to generate invoices:", error);
-      res.status(500).json({ message: "Failed to generate invoices for batch" });
+      res.status(500).json({ 
+        message: "Failed to generate invoices for batch", 
+        error: error.message 
+      });
     }
   });
 

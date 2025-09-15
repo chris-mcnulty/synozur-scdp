@@ -398,11 +398,16 @@ export const changeOrders = pgTable("change_orders", {
 export const invoiceBatches = pgTable("invoice_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   batchId: text("batch_id").notNull().unique(),
-  month: date("month").notNull(),
+  // Support custom date ranges instead of just month
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  // Keep month for backward compatibility
+  month: date("month"),
   pricingSnapshotDate: date("pricing_snapshot_date").notNull(),
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
+  invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
   exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
   exportedAt: timestamp("exported_at"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -413,6 +418,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   batchId: varchar("batch_id").notNull().references(() => invoiceBatches.id),
   projectId: varchar("project_id").notNull().references(() => projects.id),
+  clientId: varchar("client_id").notNull().references(() => clients.id), // Track client for grouping
   type: text("type").notNull(), // time, expense, milestone, discount, no-charge
   quantity: decimal("quantity", { precision: 10, scale: 2 }),
   rate: decimal("rate", { precision: 10, scale: 2 }),

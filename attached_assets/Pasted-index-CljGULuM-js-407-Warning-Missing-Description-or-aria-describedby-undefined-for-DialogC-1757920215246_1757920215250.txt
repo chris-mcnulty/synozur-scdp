@@ -1,0 +1,89 @@
+index-CljGULuM.js:407  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-CljGULuM.js:407
+lx @ index-CljGULuM.js:40
+Nu @ index-CljGULuM.js:40
+$q @ index-CljGULuM.js:40
+El @ index-CljGULuM.js:40
+mO @ index-CljGULuM.js:40
+hl @ index-CljGULuM.js:38
+(anonymous) @ index-CljGULuM.js:40
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-CljGULuM.js:407  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-CljGULuM.js:407
+lx @ index-CljGULuM.js:40
+Nu @ index-CljGULuM.js:40
+$q @ index-CljGULuM.js:40
+El @ index-CljGULuM.js:40
+mO @ index-CljGULuM.js:40
+hl @ index-CljGULuM.js:38
+(anonymous) @ index-CljGULuM.js:40
+index-CljGULuM.js:48   POST https://scdp.synozur.com/api/invoice-batches 500 (Internal Server Error)
+tt @ index-CljGULuM.js:48
+mutationFn @ index-CljGULuM.js:490
+fn @ index-CljGULuM.js:48
+v @ index-CljGULuM.js:48
+start @ index-CljGULuM.js:48
+execute @ index-CljGULuM.js:48
+await in execute
+mutate @ index-CljGULuM.js:48
+(anonymous) @ index-CljGULuM.js:48
+g @ index-CljGULuM.js:490
+e9 @ index-CljGULuM.js:37
+r9 @ index-CljGULuM.js:37
+n9 @ index-CljGULuM.js:37
+LC @ index-CljGULuM.js:37
+XR @ index-CljGULuM.js:37
+(anonymous) @ index-CljGULuM.js:37
+wN @ index-CljGULuM.js:40
+jR @ index-CljGULuM.js:37
+o0 @ index-CljGULuM.js:37
+QS @ index-CljGULuM.js:37
+x9 @ index-CljGULuM.js:37
+index-CljGULuM.js:48   POST https://scdp.synozur.com/api/invoice-batches 500 (Internal Server Error)
+tt @ index-CljGULuM.js:48
+mutationFn @ index-CljGULuM.js:490
+fn @ index-CljGULuM.js:48
+v @ index-CljGULuM.js:48
+start @ index-CljGULuM.js:48
+execute @ index-CljGULuM.js:48
+await in execute
+mutate @ index-CljGULuM.js:48
+(anonymous) @ index-CljGULuM.js:48
+g @ index-CljGULuM.js:490
+e9 @ index-CljGULuM.js:37
+r9 @ index-CljGULuM.js:37
+n9 @ index-CljGULuM.js:37
+LC @ index-CljGULuM.js:37
+XR @ index-CljGULuM.js:37
+(anonymous) @ index-CljGULuM.js:37
+wN @ index-CljGULuM.js:40
+jR @ index-CljGULuM.js:37
+o0 @ index-CljGULuM.js:37
+QS @ index-CljGULuM.js:37
+x9 @ index-CljGULuM.js:37
+index-CljGULuM.js:48   POST https://scdp.synozur.com/api/invoice-batches 500 (Internal Server Error)
+tt @ index-CljGULuM.js:48
+mutationFn @ index-CljGULuM.js:490
+fn @ index-CljGULuM.js:48
+v @ index-CljGULuM.js:48
+start @ index-CljGULuM.js:48
+execute @ index-CljGULuM.js:48
+await in execute
+mutate @ index-CljGULuM.js:48
+(anonymous) @ index-CljGULuM.js:48
+g @ index-CljGULuM.js:490
+e9 @ index-CljGULuM.js:37
+r9 @ index-CljGULuM.js:37
+n9 @ index-CljGULuM.js:37
+LC @ index-CljGULuM.js:37
+XR @ index-CljGULuM.js:37
+(anonymous) @ index-CljGULuM.js:37
+wN @ index-CljGULuM.js:40
+jR @ index-CljGULuM.js:37
+o0 @ index-CljGULuM.js:37
+QS @ index-CljGULuM.js:37
+x9 @ index-CljGULuM.js:37

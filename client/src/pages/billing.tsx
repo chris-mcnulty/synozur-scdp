@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
 import { 
   Plus, 
@@ -22,7 +23,10 @@ import {
   Send,
   CheckCircle,
   AlertCircle,
-  Filter
+  Filter,
+  Calendar,
+  Building,
+  FolderOpen
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -31,11 +35,14 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 interface InvoiceBatchData {
   id: string;
   batchId: string;
-  month: string;
+  startDate: string;
+  endDate: string;
+  month?: string; // For backward compatibility
   clientName: string;
   projectCount: number;
   totalAmount: number;
   discountAmount?: number;
+  invoicingMode: 'client' | 'project';
   status: 'draft' | 'exported' | 'sent';
   exportedAt?: string;
   createdAt: string;
@@ -45,10 +52,13 @@ const mockInvoiceBatches: InvoiceBatchData[] = [
   {
     id: "1",
     batchId: "BATCH-2024-03-001",
+    startDate: "2024-03-01",
+    endDate: "2024-03-31",
     month: "2024-03",
     clientName: "TechCorp Inc",
     projectCount: 2,
     totalAmount: 125000,
+    invoicingMode: "client",
     status: "exported",
     exportedAt: "2024-03-01T10:00:00Z",
     createdAt: "2024-03-01T09:30:00Z"
@@ -56,20 +66,26 @@ const mockInvoiceBatches: InvoiceBatchData[] = [
   {
     id: "2",
     batchId: "BATCH-2024-03-002",
+    startDate: "2024-03-01",
+    endDate: "2024-03-15",
     month: "2024-03",
     clientName: "Global Manufacturing",
     projectCount: 1,
     totalAmount: 890000,
     discountAmount: 44500,
+    invoicingMode: "project",
     status: "draft",
     createdAt: "2024-03-15T14:20:00Z"
   }
 ];
 
 export default function Billing() {
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newBatchOpen, setNewBatchOpen] = useState(false);
+  const [invoicingMode, setInvoicingMode] = useState<'client' | 'project'>('client');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
   
@@ -109,20 +125,31 @@ export default function Billing() {
   const unbilledSummary = getUnbilledSummary();
 
   const createBatchMutation = useMutation({
-    mutationFn: async (data: { batchId: string; month: string; discountPercent?: string; discountAmount?: string }) => {
+    mutationFn: async (data: { 
+      batchId: string; 
+      startDate: string; 
+      endDate: string; 
+      invoicingMode: 'client' | 'project';
+      discountPercent?: string; 
+      discountAmount?: string 
+    }) => {
       // First create the batch
       const batchResponse = await apiRequest('/api/invoice-batches', {
         method: 'POST',
         body: JSON.stringify(data)
       });
       
-      // Then generate invoices for selected clients
-      if (selectedClients.length > 0) {
+      // Then generate invoices for selected clients or projects
+      const hasSelections = (data.invoicingMode === 'client' && selectedClients.length > 0) ||
+                           (data.invoicingMode === 'project' && selectedProjects.length > 0);
+      
+      if (hasSelections) {
         const generateResponse = await apiRequest(`/api/invoice-batches/${data.batchId}/generate`, {
           method: 'POST',
           body: JSON.stringify({
-            clientIds: selectedClients,
-            month: data.month
+            clientIds: data.invoicingMode === 'client' ? selectedClients : [],
+            projectIds: data.invoicingMode === 'project' ? selectedProjects : [],
+            invoicingMode: data.invoicingMode
           })
         });
         return generateResponse;
@@ -145,6 +172,7 @@ export default function Billing() {
       });
       setNewBatchOpen(false);
       setSelectedClients([]);
+      setSelectedProjects([]);
       setDiscountValue('');
     },
     onError: (error: any) => {
@@ -157,11 +185,45 @@ export default function Billing() {
   });
 
   const handleCreateBatch = () => {
-    const batchId = `INV-${selectedMonth.replace('-', '')}-${Date.now().toString().slice(-4)}`;
+    // Validate date range
+    if (!startDate || !endDate) {
+      toast({
+        title: "Invalid date range",
+        description: "Please select both start and end dates.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (new Date(startDate) > new Date(endDate)) {
+      toast({
+        title: "Invalid date range",
+        description: "Start date must be before end date.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate selections
+    const hasSelections = (invoicingMode === 'client' && selectedClients.length > 0) ||
+                         (invoicingMode === 'project' && selectedProjects.length > 0);
+    
+    if (!hasSelections) {
+      toast({
+        title: "No selection made",
+        description: `Please select at least one ${invoicingMode}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const batchId = `INV-${startDate.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
     
     createBatchMutation.mutate({
       batchId,
-      month: selectedMonth,
+      startDate,
+      endDate,
+      invoicingMode,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
       discountAmount: discountType === 'amount' ? discountValue : undefined
     });
@@ -211,53 +273,137 @@ export default function Billing() {
                   <DialogTitle>Create Invoice Batch</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Billing Month</Label>
-                      <Input 
-                        type="month" 
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        data-testid="input-billing-month"
-                      />
+                  {/* Date Range */}
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="w-4 h-4" />
+                      <Label className="text-base font-medium">Billing Period</Label>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Batch ID</Label>
-                      <Input 
-                        value={`BATCH-${selectedMonth}-${String(mockInvoiceBatches.length + 1).padStart(3, '0')}`}
-                        disabled
-                        data-testid="input-batch-id"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Start Date</Label>
+                        <Input 
+                          type="date" 
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          data-testid="input-start-date"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>End Date</Label>
+                        <Input 
+                          type="date" 
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          data-testid="input-end-date"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Select Clients</Label>
-                    <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
-                      {projects?.reduce((clients, project) => {
-                        if (!clients.find(c => c.id === project.client.id)) {
-                          clients.push(project.client);
-                        }
-                        return clients;
-                      }, [] as any[]).map((client) => (
-                        <div key={client.id} className="flex items-center space-x-2 py-2">
-                          <Checkbox
-                            id={client.id}
-                            checked={selectedClients.includes(client.id)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedClients([...selectedClients, client.id]);
-                              } else {
-                                setSelectedClients(selectedClients.filter(id => id !== client.id));
-                              }
-                            }}
-                            data-testid={`checkbox-client-${client.id}`}
-                          />
-                          <Label htmlFor={client.id}>{client.name}</Label>
-                        </div>
-                      ))}
-                    </div>
+                  {/* Invoicing Mode */}
+                  <div className="space-y-4">
+                    <Label className="text-base font-medium">Invoicing Mode</Label>
+                    <RadioGroup 
+                      value={invoicingMode} 
+                      onValueChange={(value: 'client' | 'project') => {
+                        setInvoicingMode(value);
+                        setSelectedClients([]);
+                        setSelectedProjects([]);
+                      }}
+                      className="flex space-x-6"
+                      data-testid="radio-invoicing-mode"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="client" id="mode-client" />
+                        <Label htmlFor="mode-client" className="flex items-center cursor-pointer">
+                          <Building className="w-4 h-4 mr-2" />
+                          Client-based (one invoice per client)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="project" id="mode-project" />
+                        <Label htmlFor="mode-project" className="flex items-center cursor-pointer">
+                          <FolderOpen className="w-4 h-4 mr-2" />
+                          Project-based (one invoice per project)
+                        </Label>
+                      </div>
+                    </RadioGroup>
                   </div>
+
+                  {/* Batch ID */}
+                  <div className="space-y-2">
+                    <Label>Batch ID</Label>
+                    <Input 
+                      value={`INV-${startDate.replace(/-/g, '')}-${String(mockInvoiceBatches.length + 1).padStart(3, '0')}`}
+                      disabled
+                      data-testid="input-batch-id"
+                    />
+                  </div>
+
+                  {/* Client/Project Selection */}
+                  {invoicingMode === 'client' ? (
+                    <div className="space-y-2">
+                      <Label>Select Clients</Label>
+                      <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
+                        {projects?.reduce((clients, project) => {
+                          if (!clients.find(c => c.id === project.client.id)) {
+                            clients.push(project.client);
+                          }
+                          return clients;
+                        }, [] as any[]).map((client) => (
+                          <div key={client.id} className="flex items-center space-x-2 py-2">
+                            <Checkbox
+                              id={client.id}
+                              checked={selectedClients.includes(client.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedClients([...selectedClients, client.id]);
+                                } else {
+                                  setSelectedClients(selectedClients.filter(id => id !== client.id));
+                                }
+                              }}
+                              data-testid={`checkbox-client-${client.id}`}
+                            />
+                            <Label htmlFor={client.id} className="flex-1">
+                              <div className="font-medium">{client.name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {projects?.filter(p => p.client.id === client.id).length} project(s)
+                              </div>
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label>Select Projects</Label>
+                      <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
+                        {projects?.map((project) => (
+                          <div key={project.id} className="flex items-center space-x-2 py-2">
+                            <Checkbox
+                              id={project.id}
+                              checked={selectedProjects.includes(project.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedProjects([...selectedProjects, project.id]);
+                                } else {
+                                  setSelectedProjects(selectedProjects.filter(id => id !== project.id));
+                                }
+                              }}
+                              data-testid={`checkbox-project-${project.id}`}
+                            />
+                            <Label htmlFor={project.id} className="flex-1">
+                              <div className="font-medium">{project.name}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {project.client.name} • {project.status}
+                              </div>
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     <Label>Discount (Optional)</Label>
@@ -394,9 +540,17 @@ export default function Billing() {
                           <div className="text-sm text-muted-foreground" data-testid={`batch-client-${batch.id}`}>
                             {batch.clientName}
                           </div>
+                          <Badge variant="outline" className="text-xs">
+                            {batch.invoicingMode === 'client' ? (
+                              <><Building className="w-3 h-3 mr-1" />Client</>  
+                            ) : (
+                              <><FolderOpen className="w-3 h-3 mr-1" />Project</>
+                            )}
+                          </Badge>
                           {getStatusBadge(batch.status)}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
+                          {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
                           {batch.projectCount} project{batch.projectCount !== 1 ? 's' : ''} • 
                           {batch.discountAmount && ` Discount: $${batch.discountAmount.toLocaleString()} • `}
                           Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
@@ -408,7 +562,7 @@ export default function Billing() {
                             {canViewPricing ? `$${batch.totalAmount.toLocaleString()}` : '***'}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {format(new Date(batch.month), 'MMM yyyy')}
+                            {batch.invoicingMode === 'client' ? 'Client billing' : 'Project billing'}
                           </div>
                         </div>
                         <div className="flex space-x-2">
