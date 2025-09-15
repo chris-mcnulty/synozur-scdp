@@ -2352,9 +2352,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      const { batchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode } = req.body;
+      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode } = req.body;
       
-      console.log("[DEBUG] Creating invoice batch with:", { batchId, startDate, endDate, month, invoicingMode });
+      console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode });
       
       // Handle backward compatibility with month parameter
       let finalStartDate = startDate;
@@ -2380,9 +2380,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Start date must be before or equal to end date" });
       }
       
+      // Generate batch ID using configurable system (or use provided one if given)
+      const finalBatchId = providedBatchId || await storage.generateBatchId(finalStartDate, finalEndDate);
+      
       // Create the batch
       const batch = await storage.createInvoiceBatch({
-        batchId,
+        batchId: finalBatchId,
         startDate: finalStartDate,
         endDate: finalEndDate,
         month: finalMonth,
@@ -2403,6 +2406,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Batch ID generation preview endpoint
+  app.post("/api/billing/batch-id-preview", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { startDate, endDate } = req.body;
+      
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "Start date and end date are required" });
+      }
+      
+      const previewId = await storage.generateBatchId(startDate, endDate);
+      res.json({ batchId: previewId });
+    } catch (error: any) {
+      console.error("Failed to generate batch ID preview:", error);
+      res.status(500).json({ 
+        message: "Failed to generate batch ID preview", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Batch numbering settings endpoints
+  app.get("/api/billing/batch-settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const settings = {
+        prefix: await storage.getSystemSettingValue('BATCH_PREFIX', 'BATCH'),
+        useSequential: await storage.getSystemSettingValue('BATCH_USE_SEQUENTIAL', 'false') === 'true',
+        includeDate: await storage.getSystemSettingValue('BATCH_INCLUDE_DATE', 'true') === 'true',
+        dateFormat: await storage.getSystemSettingValue('BATCH_DATE_FORMAT', 'YYYY-MM'),
+        sequencePadding: parseInt(await storage.getSystemSettingValue('BATCH_SEQUENCE_PADDING', '3')),
+        currentSequence: parseInt(await storage.getSystemSettingValue('BATCH_SEQUENCE_COUNTER', '0'))
+      };
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Failed to fetch batch settings:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch batch settings", 
+        error: error.message 
+      });
+    }
+  });
+
+  app.put("/api/billing/batch-settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { prefix, useSequential, includeDate, dateFormat, sequencePadding, resetSequence } = req.body;
+      
+      // Validate inputs
+      if (!prefix || prefix.trim().length === 0) {
+        return res.status(400).json({ message: "Batch prefix is required" });
+      }
+      
+      if (sequencePadding < 1 || sequencePadding > 10) {
+        return res.status(400).json({ message: "Sequence padding must be between 1 and 10" });
+      }
+      
+      const validDateFormats = ['YYYY-MM', 'YYYYMM', 'YYYY-MM-DD', 'YYYYMMDD'];
+      if (!validDateFormats.includes(dateFormat)) {
+        return res.status(400).json({ message: "Invalid date format" });
+      }
+      
+      // Update settings
+      await storage.setSystemSetting('BATCH_PREFIX', prefix.trim());
+      await storage.setSystemSetting('BATCH_USE_SEQUENTIAL', useSequential ? 'true' : 'false');
+      await storage.setSystemSetting('BATCH_INCLUDE_DATE', includeDate ? 'true' : 'false');
+      await storage.setSystemSetting('BATCH_DATE_FORMAT', dateFormat);
+      await storage.setSystemSetting('BATCH_SEQUENCE_PADDING', sequencePadding.toString());
+      
+      if (resetSequence === true) {
+        await storage.setSystemSetting('BATCH_SEQUENCE_COUNTER', '0');
+      }
+      
+      res.json({ message: "Batch settings updated successfully" });
+    } catch (error: any) {
+      console.error("Failed to update batch settings:", error);
+      res.status(500).json({ 
+        message: "Failed to update batch settings", 
+        error: error.message 
+      });
+    }
+  });
   
   app.get("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
@@ -2410,6 +2493,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(batches);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch invoice batches" });
+    }
+  });
+
+  // Unbilled items detail endpoint
+  app.get("/api/billing/unbilled-items", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
+      
+      const filters: any = {};
+      if (personId) filters.personId = personId;
+      if (projectId) filters.projectId = projectId;
+      if (clientId) filters.clientId = clientId;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+
+      const result = await storage.getUnbilledItemsDetail(filters);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error fetching unbilled items detail:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch unbilled items detail", 
+        error: error.message 
+      });
+    }
+  });
+
+  // Project billing summaries endpoint
+  app.get("/api/billing/project-summaries", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const summaries = await storage.getProjectBillingSummaries();
+      res.json(summaries);
+    } catch (error: any) {
+      console.error("Error fetching project billing summaries:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch project billing summaries", 
+        error: error.message 
+      });
     }
   });
   

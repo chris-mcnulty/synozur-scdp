@@ -144,6 +144,47 @@ export interface IStorage {
     expensesBilled: number;
     totalAmount: number;
   }>;
+
+  // Unbilled Items Detail
+  getUnbilledItemsDetail(filters?: {
+    personId?: string;
+    projectId?: string;
+    clientId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    timeEntries: (TimeEntry & { person: User; project: Project & { client: Client }; calculatedAmount: number; rateIssues?: string[] })[];
+    expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+    totals: {
+      timeHours: number;
+      timeAmount: number;
+      expenseAmount: number;
+      totalAmount: number;
+    };
+    rateValidation: {
+      entriesWithMissingRates: number;
+      entriesWithNullRates: number;
+      issues: string[];
+    };
+  }>;
+
+  // Project Billing Summaries
+  getProjectBillingSummaries(): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    unbilledHours: number;
+    unbilledAmount: number;
+    unbilledExpenses: number;
+    totalUnbilled: number;
+    budgetHours?: number;
+    budgetAmount?: number;
+    utilizationPercent?: number;
+    rateIssues: number;
+  }[]>;
+
+  // Batch Numbering
+  generateBatchId(startDate: string, endDate: string): Promise<string>;
   
   // Project Analytics
   getProjectMonthlyMetrics(projectId: string): Promise<{
@@ -3381,6 +3422,243 @@ export class DatabaseStorage implements IStorage {
   async getDefaultCostRate(): Promise<number> {
     const value = await this.getSystemSettingValue('DEFAULT_COST_RATE', '0');
     return parseFloat(value) || 0;
+  }
+
+  async generateBatchId(startDate: string, endDate: string): Promise<string> {
+    // Get batch numbering configuration
+    const prefix = await this.getSystemSettingValue('BATCH_PREFIX', 'BATCH');
+    const useSequential = await this.getSystemSettingValue('BATCH_USE_SEQUENTIAL', 'false') === 'true';
+    const includeDate = await this.getSystemSettingValue('BATCH_INCLUDE_DATE', 'true') === 'true';
+    const dateFormat = await this.getSystemSettingValue('BATCH_DATE_FORMAT', 'YYYY-MM');
+    
+    let batchId = prefix;
+    
+    // Add date component if configured
+    if (includeDate) {
+      const date = new Date(startDate);
+      let dateStr = '';
+      
+      if (dateFormat === 'YYYY-MM') {
+        dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      } else if (dateFormat === 'YYYYMM') {
+        dateStr = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;
+      } else if (dateFormat === 'YYYY-MM-DD') {
+        dateStr = startDate;
+      } else if (dateFormat === 'YYYYMMDD') {
+        dateStr = startDate.replace(/-/g, '');
+      } else {
+        // Default format
+        dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      }
+      
+      batchId = `${batchId}-${dateStr}`;
+    }
+    
+    // Add sequential number if configured
+    if (useSequential) {
+      const currentSeq = await this.getSystemSettingValue('BATCH_SEQUENCE_COUNTER', '0');
+      const nextSeq = parseInt(currentSeq) + 1;
+      const paddingLength = parseInt(await this.getSystemSettingValue('BATCH_SEQUENCE_PADDING', '3'));
+      const seqStr = String(nextSeq).padStart(paddingLength, '0');
+      
+      batchId = `${batchId}-${seqStr}`;
+      
+      // Update the counter
+      await this.setSystemSetting('BATCH_SEQUENCE_COUNTER', nextSeq.toString());
+    } else {
+      // Use timestamp-based suffix for uniqueness
+      const timestamp = Date.now().toString().slice(-4);
+      batchId = `${batchId}-${timestamp}`;
+    }
+    
+    // Ensure uniqueness by checking existing batches
+    const existing = await db.select({ batchId: invoiceBatches.batchId })
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (existing.length > 0) {
+      // Add a unique suffix if collision occurs
+      const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      batchId = `${batchId}-${uniqueSuffix}`;
+    }
+    
+    return batchId;
+  }
+
+  async getUnbilledItemsDetail(filters?: {
+    personId?: string;
+    projectId?: string;
+    clientId?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
+    timeEntries: (TimeEntry & { person: User; project: Project & { client: Client }; calculatedAmount: number; rateIssues?: string[] })[];
+    expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+    totals: {
+      timeHours: number;
+      timeAmount: number;
+      expenseAmount: number;
+      totalAmount: number;
+    };
+    rateValidation: {
+      entriesWithMissingRates: number;
+      entriesWithNullRates: number;
+      issues: string[];
+    };
+  }> {
+    // Get unbilled time entries
+    const timeEntryFilters = { ...filters };
+    const unbilledTimeEntries = (await this.getTimeEntries(timeEntryFilters))
+      .filter(entry => entry.billable && !entry.billedFlag && !entry.locked);
+
+    // Get unbilled expenses
+    const expenseFilters = { ...filters };
+    const unbilledExpenses = (await this.getExpenses(expenseFilters))
+      .filter(expense => expense.billable && !expense.billedFlag);
+
+    // Calculate amounts and identify rate issues
+    let totalTimeHours = 0;
+    let totalTimeAmount = 0;
+    let entriesWithMissingRates = 0;
+    let entriesWithNullRates = 0;
+    const rateIssues: string[] = [];
+
+    const enrichedTimeEntries = await Promise.all(
+      unbilledTimeEntries.map(async (entry) => {
+        const hours = Number(entry.hours);
+        totalTimeHours += hours;
+
+        let calculatedAmount = 0;
+        let entryRateIssues: string[] = [];
+
+        // Get the billing rate using the same logic as invoice generation
+        let billingRate: number | null = null;
+
+        // Check for stored billing rate on entry
+        if (entry.billingRate && Number(entry.billingRate) > 0) {
+          billingRate = Number(entry.billingRate);
+        } else if (entry.person.defaultBillingRate && Number(entry.person.defaultBillingRate) > 0) {
+          billingRate = Number(entry.person.defaultBillingRate);
+        }
+
+        if (!billingRate || billingRate <= 0) {
+          entriesWithMissingRates++;
+          entryRateIssues.push('Missing billing rate');
+          rateIssues.push(`${entry.person.name} on ${entry.date}: No billing rate configured`);
+        }
+
+        if (entry.billingRate === null) {
+          entriesWithNullRates++;
+        }
+
+        if (billingRate && billingRate > 0) {
+          calculatedAmount = hours * billingRate;
+          totalTimeAmount += calculatedAmount;
+        }
+
+        return {
+          ...entry,
+          calculatedAmount,
+          rateIssues: entryRateIssues.length > 0 ? entryRateIssues : undefined
+        };
+      })
+    );
+
+    // Calculate expense totals
+    const totalExpenseAmount = unbilledExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+
+    return {
+      timeEntries: enrichedTimeEntries,
+      expenses: unbilledExpenses,
+      totals: {
+        timeHours: totalTimeHours,
+        timeAmount: totalTimeAmount,
+        expenseAmount: totalExpenseAmount,
+        totalAmount: totalTimeAmount + totalExpenseAmount
+      },
+      rateValidation: {
+        entriesWithMissingRates,
+        entriesWithNullRates,
+        issues: rateIssues
+      }
+    };
+  }
+
+  async getProjectBillingSummaries(): Promise<{
+    projectId: string;
+    projectName: string;
+    clientName: string;
+    unbilledHours: number;
+    unbilledAmount: number;
+    unbilledExpenses: number;
+    totalUnbilled: number;
+    budgetHours?: number;
+    budgetAmount?: number;
+    utilizationPercent?: number;
+    rateIssues: number;
+  }[]> {
+    // Get all projects with client information
+    const projects = await this.getProjects();
+
+    const summaries = await Promise.all(
+      projects.map(async (project) => {
+        // Get unbilled items for this project
+        const unbilledData = await this.getUnbilledItemsDetail({ projectId: project.id });
+
+        // Get budget information
+        let budgetHours: number | undefined;
+        let budgetAmount: number | undefined;
+
+        // Try to get from SOWs first
+        const sowBudget = await this.getProjectTotalBudget(project.id);
+        if (sowBudget > 0) {
+          budgetAmount = sowBudget;
+
+          // Get SOW hours
+          const sows = await this.getSows(project.id);
+          const approvedSows = sows.filter(sow => sow.status === 'approved');
+          budgetHours = approvedSows.reduce((sum, sow) => sum + (Number(sow.hours) || 0), 0);
+        }
+
+        // Fallback to estimates if no SOWs
+        if (!budgetAmount) {
+          const estimates = await this.getEstimatesByProject(project.id);
+          const approvedEstimate = estimates.find(est => est.status === 'approved');
+          if (approvedEstimate) {
+            budgetAmount = Number(approvedEstimate.totalFees) || Number(approvedEstimate.presentedTotal);
+            budgetHours = Number(approvedEstimate.totalHours);
+          }
+        }
+
+        // Fallback to project baseline budget
+        if (!budgetAmount && project.baselineBudget) {
+          budgetAmount = Number(project.baselineBudget);
+        }
+
+        // Calculate utilization percentage
+        let utilizationPercent: number | undefined;
+        if (budgetHours && budgetHours > 0) {
+          utilizationPercent = (unbilledData.totals.timeHours / budgetHours) * 100;
+        }
+
+        return {
+          projectId: project.id,
+          projectName: project.name,
+          clientName: project.client.name,
+          unbilledHours: unbilledData.totals.timeHours,
+          unbilledAmount: unbilledData.totals.timeAmount,
+          unbilledExpenses: unbilledData.totals.expenseAmount,
+          totalUnbilled: unbilledData.totals.totalAmount,
+          budgetHours,
+          budgetAmount,
+          utilizationPercent,
+          rateIssues: unbilledData.rateValidation.entriesWithMissingRates
+        };
+      })
+    );
+
+    // Filter out projects with no unbilled items (optional - keep all for visibility)
+    return summaries.sort((a, b) => b.totalUnbilled - a.totalUnbilled);
   }
 }
 

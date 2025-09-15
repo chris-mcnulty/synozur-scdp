@@ -826,3 +826,58 @@ export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   createdAt: true
 });
 export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
+
+// Billing API Response Types
+export interface BatchSettings {
+  prefix: string;
+  useSequential: boolean;
+  includeDate: boolean;
+  dateFormat: string;
+  sequencePadding: number;
+  currentSequence?: number;
+}
+
+export interface BatchIdPreviewRequest {
+  startDate: string;
+  endDate: string;
+}
+
+export interface BatchIdPreviewResponse {
+  batchId: string;
+}
+
+export interface UnbilledItemsFilters {
+  personId?: string;
+  projectId?: string;
+  clientId?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface EnrichedTimeEntry extends TimeEntry {
+  person: User;
+  project: Project & { client: Client };
+  calculatedAmount: number;
+  rateIssues?: string[];
+}
+
+export interface EnrichedExpense extends Expense {
+  person: User;
+  project: Project & { client: Client };
+}
+
+export interface UnbilledItemsResponse {
+  timeEntries: EnrichedTimeEntry[];
+  expenses: EnrichedExpense[];
+  totals: {
+    timeHours: number;
+    timeAmount: number;
+    expenseAmount: number;
+    totalAmount: number;
+  };
+  rateValidation: {
+    entriesWithMissingRates: number;
+    entriesWithNullRates: number;
+    issues: string[];
+  };
+}

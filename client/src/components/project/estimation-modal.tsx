@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown, Save, FileSpreadsheet, Check, X } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -10,6 +12,7 @@ interface EstimationModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectName: string;
+  projectId?: string;
 }
 
 interface EstimationRow {
@@ -23,42 +26,72 @@ interface EstimationRow {
   cost: number;
 }
 
-const mockEstimationData: EstimationRow[] = [
-  {
-    role: "Principal",
-    person: "Sarah Chen",
-    week1: 20,
-    week2: 25,
-    week3: 15,
-    week4: 10,
-    total: 70,
-    cost: 35000
-  },
-  {
-    role: "Senior Consultant",
-    person: "David Kim",
-    week1: 35,
-    week2: 40,
-    week3: 40,
-    week4: 25,
-    total: 140,
-    cost: 42000
-  },
-  {
-    role: "Analyst",
-    person: "Jennifer Walsh",
-    week1: 25,
-    week2: 40,
-    week3: 40,
-    week4: 35,
-    total: 140,
-    cost: 28000
-  }
-];
+// Mock estimation data removed - now using real estimate data
 
-export function EstimationModal({ isOpen, onClose, projectName }: EstimationModalProps) {
+export function EstimationModal({ isOpen, onClose, projectName, projectId }: EstimationModalProps) {
   const { canViewPricing } = useAuth();
-  const [estimationRows, setEstimationRows] = useState<EstimationRow[]>(mockEstimationData);
+  
+  // Fetch real estimation data from estimates API
+  const { data: estimates = [], isLoading } = useQuery({
+    queryKey: ["/api/projects", projectId, "estimates"],
+    enabled: isOpen && !!projectId,
+  });
+
+  const { data: staff = [] } = useQuery({
+    queryKey: ["/api/staff"],
+    enabled: isOpen,
+  });
+
+  // Get the most recent approved estimate for this project
+  const currentEstimate = (estimates as any[])?.find((est: any) => est.status === 'approved') || (estimates as any[])?.[0];
+
+  // Convert estimate line items to estimation rows
+  const generateEstimationRows = (estimate: any): EstimationRow[] => {
+    if (!estimate || !estimate.lineItems) {
+      return [];
+    }
+
+    // Group line items by week and person/role
+    const weeklyData: { [key: string]: EstimationRow } = {};
+
+    estimate.lineItems.forEach((lineItem: any) => {
+      const key = `${lineItem.assignedUserId || lineItem.roleId || 'unassigned'}`;
+      
+      if (!weeklyData[key]) {
+        const assignedPerson = (staff as any[]).find((s: any) => s.id === lineItem.assignedUserId);
+        const assignedRole = (staff as any[]).find((s: any) => s.roleId === lineItem.roleId);
+        
+        weeklyData[key] = {
+          role: assignedRole?.role || lineItem.resourceName || 'Unknown Role',
+          person: assignedPerson?.name || lineItem.resourceName || 'Unassigned',
+          week1: 0,
+          week2: 0,
+          week3: 0,
+          week4: 0,
+          total: 0,
+          cost: 0
+        };
+      }
+
+      const week = lineItem.week || 1;
+      const hours = Number(lineItem.adjustedHours || lineItem.baseHours || 0);
+      const cost = Number(lineItem.totalAmount || 0);
+
+      if (week >= 1 && week <= 4) {
+        const weekKey = `week${week}` as 'week1' | 'week2' | 'week3' | 'week4';
+        (weeklyData[key] as any)[weekKey] = hours;
+      }
+      
+      weeklyData[key].cost += cost;
+      weeklyData[key].total += hours;
+    });
+
+    return Object.values(weeklyData);
+  };
+
+  const estimationRows = currentEstimate ? generateEstimationRows(currentEstimate) : [];
+  
+  const [currentEstimationRows, setEstimationRows] = useState<EstimationRow[]>([]);
 
   const updateHours = (rowIndex: number, week: string, value: number) => {
     const newRows = [...estimationRows];

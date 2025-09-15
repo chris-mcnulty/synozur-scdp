@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
+import { DetailedUnbilledItems } from "@/components/billing/detailed-unbilled-items";
 import { 
   Plus, 
   FileText, 
@@ -48,36 +49,7 @@ interface InvoiceBatchData {
   createdAt: string;
 }
 
-const mockInvoiceBatches: InvoiceBatchData[] = [
-  {
-    id: "1",
-    batchId: "BATCH-2024-03-001",
-    startDate: "2024-03-01",
-    endDate: "2024-03-31",
-    month: "2024-03",
-    clientName: "TechCorp Inc",
-    projectCount: 2,
-    totalAmount: 125000,
-    invoicingMode: "client",
-    status: "exported",
-    exportedAt: "2024-03-01T10:00:00Z",
-    createdAt: "2024-03-01T09:30:00Z"
-  },
-  {
-    id: "2",
-    batchId: "BATCH-2024-03-002",
-    startDate: "2024-03-01",
-    endDate: "2024-03-15",
-    month: "2024-03",
-    clientName: "Global Manufacturing",
-    projectCount: 1,
-    totalAmount: 890000,
-    discountAmount: 44500,
-    invoicingMode: "project",
-    status: "draft",
-    createdAt: "2024-03-15T14:20:00Z"
-  }
-];
+// Remove mock data - now using real API calls
 
 export default function Billing() {
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -92,28 +64,36 @@ export default function Billing() {
   const { canViewPricing } = useAuth();
   const { toast } = useToast();
 
-  const { data: projects } = useQuery({
+  const { data: projects = [] } = useQuery({
     queryKey: ["/api/projects"],
   });
 
-  const { data: timeEntries } = useQuery({
+  const { data: clients = [] } = useQuery({
+    queryKey: ["/api/clients"],
+  });
+
+  const { data: invoiceBatches = [] } = useQuery({
+    queryKey: ["/api/invoice-batches"],
+  });
+
+  const { data: timeEntries = [] } = useQuery({
     queryKey: ["/api/time-entries"],
   });
 
-  const { data: expenses } = useQuery({
+  const { data: expenses = [] } = useQuery({
     queryKey: ["/api/expenses"],
   });
 
   const getUnbilledSummary = () => {
     if (!timeEntries || !expenses) return { hours: 0, amount: 0, expenses: 0 };
     
-    const unbilledHours = timeEntries
-      .filter(entry => entry.billable && !entry.billedFlag)
-      .reduce((sum, entry) => sum + parseFloat(entry.hours), 0);
+    const unbilledHours = (timeEntries as any[])
+      .filter((entry: any) => entry.billable && !entry.billedFlag)
+      .reduce((sum: number, entry: any) => sum + parseFloat(entry.hours), 0);
     
-    const unbilledExpenses = expenses
-      .filter(expense => expense.billable && !expense.billedFlag)
-      .reduce((sum, expense) => sum + parseFloat(expense.amount), 0);
+    const unbilledExpenses = (expenses as any[])
+      .filter((expense: any) => expense.billable && !expense.billedFlag)
+      .reduce((sum: number, expense: any) => sum + parseFloat(expense.amount), 0);
 
     return {
       hours: unbilledHours,
@@ -123,6 +103,40 @@ export default function Billing() {
   };
 
   const unbilledSummary = getUnbilledSummary();
+
+  // Helper function for status badges
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'draft':
+        return <Badge variant="secondary">Draft</Badge>;
+      case 'exported':
+        return <Badge variant="default">Exported</Badge>;
+      case 'sent':
+        return <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Sent</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  // Helper function for exporting to QuickBooks
+  const handleExportToQBO = async (batchId: string) => {
+    try {
+      const response = await apiRequest(`/api/invoice-batches/${batchId}/export`, {
+        method: 'POST',
+      });
+      
+      toast({
+        title: "Export successful",
+        description: "Invoice batch has been exported to QuickBooks Online.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export failed",
+        description: error.message || "Failed to export to QuickBooks Online.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const createBatchMutation = useMutation({
     mutationFn: async (data: { 
@@ -229,26 +243,6 @@ export default function Billing() {
     });
   };
 
-  const handleExportToQBO = (batchId: string) => {
-    toast({
-      title: "Exporting to QuickBooks",
-      description: "Invoice batch is being exported to QuickBooks Online.",
-    });
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'draft':
-        return <Badge variant="outline" className="bg-chart-3/10 text-chart-3">Draft</Badge>;
-      case 'exported':
-        return <Badge className="bg-chart-4/10 text-chart-4">Exported</Badge>;
-      case 'sent':
-        return <Badge className="bg-primary/10 text-primary">Sent</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
-
   return (
     <Layout>
       <div className="space-y-6">
@@ -335,7 +329,7 @@ export default function Billing() {
                   <div className="space-y-2">
                     <Label>Batch ID</Label>
                     <Input 
-                      value={`INV-${startDate.replace(/-/g, '')}-${String(mockInvoiceBatches.length + 1).padStart(3, '0')}`}
+                      value={`INV-${startDate.replace(/-/g, '')}-${String((invoiceBatches as any[]).length + 1).padStart(3, '0')}`}
                       disabled
                       data-testid="input-batch-id"
                     />
@@ -346,12 +340,12 @@ export default function Billing() {
                     <div className="space-y-2">
                       <Label>Select Clients</Label>
                       <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
-                        {projects?.reduce((clients, project) => {
-                          if (!clients.find(c => c.id === project.client.id)) {
+                        {(projects as any[])?.reduce((clients: any[], project: any) => {
+                          if (!clients.find((c: any) => c.id === project.client.id)) {
                             clients.push(project.client);
                           }
                           return clients;
-                        }, [] as any[]).map((client) => (
+                        }, [] as any[]).map((client: any) => (
                           <div key={client.id} className="flex items-center space-x-2 py-2">
                             <Checkbox
                               id={client.id}
@@ -368,7 +362,7 @@ export default function Billing() {
                             <Label htmlFor={client.id} className="flex-1">
                               <div className="font-medium">{client.name}</div>
                               <div className="text-sm text-muted-foreground">
-                                {projects?.filter(p => p.client.id === client.id).length} project(s)
+                                {(projects as any[])?.filter((p: any) => p.client.id === client.id).length} project(s)
                               </div>
                             </Label>
                           </div>
@@ -379,7 +373,7 @@ export default function Billing() {
                     <div className="space-y-2">
                       <Label>Select Projects</Label>
                       <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
-                        {projects?.map((project) => (
+                        {(projects as any[])?.map((project: any) => (
                           <div key={project.id} className="flex items-center space-x-2 py-2">
                             <Checkbox
                               id={project.id}
@@ -526,7 +520,7 @@ export default function Billing() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockInvoiceBatches.map((batch) => (
+                  {(invoiceBatches as any[]).map((batch: any) => (
                     <div
                       key={batch.id}
                       className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
@@ -551,15 +545,14 @@ export default function Billing() {
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
-                          {batch.projectCount} project{batch.projectCount !== 1 ? 's' : ''} • 
-                          {batch.discountAmount && ` Discount: $${batch.discountAmount.toLocaleString()} • `}
+                          {batch.discountAmount && ` Discount: $${Number(batch.discountAmount).toLocaleString()} • `}
                           Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
                         <div className="text-right">
                           <div className="font-medium text-lg" data-testid={`batch-amount-${batch.id}`}>
-                            {canViewPricing ? `$${batch.totalAmount.toLocaleString()}` : '***'}
+                            {canViewPricing ? `$${Number(batch.totalAmount || 0).toLocaleString()}` : '***'}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             {batch.invoicingMode === 'client' ? 'Client billing' : 'Project billing'}
@@ -593,69 +586,7 @@ export default function Billing() {
           </TabsContent>
 
           <TabsContent value="unbilled" className="space-y-4">
-            <Card data-testid="unbilled-items-table">
-              <CardHeader>
-                <CardTitle>Unbilled Items</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {/* Unbilled Time Entries */}
-                  <div>
-                    <h4 className="font-medium mb-3">Time Entries</h4>
-                    <div className="space-y-2">
-                      {timeEntries?.filter(entry => entry.billable && !entry.billedFlag).slice(0, 5).map((entry) => (
-                        <div
-                          key={entry.id}
-                          className="flex items-center justify-between p-3 border border-border rounded"
-                          data-testid={`unbilled-time-${entry.id}`}
-                        >
-                          <div>
-                            <div className="font-medium">{entry.project.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {entry.person.name} • {format(new Date(entry.date), 'MMM d')}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-medium">{entry.hours}h</div>
-                            {canViewPricing && (
-                              <div className="text-sm text-muted-foreground">
-                                ${(parseFloat(entry.hours) * 150).toFixed(2)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  {/* Unbilled Expenses */}
-                  <div>
-                    <h4 className="font-medium mb-3">Expenses</h4>
-                    <div className="space-y-2">
-                      {expenses?.filter(expense => expense.billable && !expense.billedFlag).slice(0, 5).map((expense) => (
-                        <div
-                          key={expense.id}
-                          className="flex items-center justify-between p-3 border border-border rounded"
-                          data-testid={`unbilled-expense-${expense.id}`}
-                        >
-                          <div>
-                            <div className="font-medium">{expense.project.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {expense.person.name} • {expense.category} • {format(new Date(expense.date), 'MMM d')}
-                            </div>
-                          </div>
-                          <div className="font-medium">
-                            ${parseFloat(expense.amount).toFixed(2)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <DetailedUnbilledItems />
           </TabsContent>
 
           <TabsContent value="history" className="space-y-4">
