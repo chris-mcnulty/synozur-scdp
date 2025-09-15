@@ -330,7 +330,7 @@ export const timeEntries = pgTable("time_entries", {
   milestoneId: varchar("milestone_id").references(() => projectMilestones.id), // Optional milestone reference
   workstreamId: varchar("workstream_id").references(() => projectWorkstreams.id), // Optional workstream reference
   // Invoice batch locking fields
-  invoiceBatchId: varchar("invoice_batch_id").references(() => invoiceBatches.id),
+  invoiceBatchId: text("invoice_batch_id").references(() => invoiceBatches.batchId),
   locked: boolean("locked").notNull().default(false),
   lockedAt: timestamp("locked_at"),
   projectStageId: varchar("project_stage_id").references(() => projectStages.id),
@@ -416,7 +416,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
 // Invoice lines
 export const invoiceLines = pgTable("invoice_lines", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  batchId: varchar("batch_id").notNull().references(() => invoiceBatches.id),
+  batchId: text("batch_id").notNull().references(() => invoiceBatches.batchId),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   clientId: varchar("client_id").notNull().references(() => clients.id), // Track client for grouping
   type: text("type").notNull(), // time, expense, milestone, discount, no-charge
