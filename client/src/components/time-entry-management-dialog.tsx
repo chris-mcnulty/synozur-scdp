@@ -269,13 +269,30 @@ export function TimeEntryManagementDialog({
                   <FormControl>
                     <Input
                       type="number"
-                      step="0.25"
+                      step="any"
                       min="0.01"
                       max="24"
                       placeholder="Enter hours (e.g., 8 or 8.5)"
                       {...field}
                       value={field.value || ''}
-                      onChange={(e) => field.onChange(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // Allow empty string for clearing the field
+                        if (value === '') {
+                          field.onChange('');
+                          return;
+                        }
+                        // Allow typing decimal point
+                        if (value.endsWith('.')) {
+                          field.onChange(value);
+                          return;
+                        }
+                        // Parse and validate the number
+                        const num = parseFloat(value);
+                        if (!isNaN(num)) {
+                          field.onChange(value);
+                        }
+                      }}
                       data-testid="input-hours"
                     />
                   </FormControl>
