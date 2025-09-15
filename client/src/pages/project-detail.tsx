@@ -252,14 +252,21 @@ export default function ProjectDetail() {
       } catch {
         return false;
       }
-    }).map(entry => ({
-      ...entry,
-      hours: Number(entry.hours || 0),
-      billingRate: Number(entry.billingRate || 0),
-      costRate: Number(entry.costRate || 0),
-      isBillable: Boolean(entry.isBillable || entry.billable),
-      isLocked: Boolean(entry.isLocked || entry.locked)
-    }));
+    }).map(entry => {
+      // Resolve workstream name from workstreamId
+      const workstream = entry.workstreamId ? workstreams.find(w => w.id === entry.workstreamId) : null;
+      
+      return {
+        ...entry,
+        hours: Number(entry.hours || 0),
+        billingRate: Number(entry.billingRate || 0),
+        costRate: Number(entry.costRate || 0),
+        isBillable: Boolean(entry.isBillable || entry.billable),
+        isLocked: Boolean(entry.isLocked || entry.locked),
+        workstream: workstream?.name || null,
+        stage: entry.phase || null // Also populate stage from phase field
+      };
+    });
     
     // Apply filters
     let filtered = [...validEntries];
@@ -369,7 +376,7 @@ export default function ProjectDetail() {
     }));
     
     return { groups, summary };
-  }, [timeEntries, timeGrouping, timeFilters]);
+  }, [timeEntries, timeGrouping, timeFilters, workstreams]);
   
   // Get unique people from time entries
   const uniquePeople = useMemo(() => {
