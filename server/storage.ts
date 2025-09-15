@@ -2427,7 +2427,7 @@ export class DatabaseStorage implements IStorage {
           locked: true,
           lockedAt: sql`now()`
         })
-        .where(sql`${timeEntries.id} IN ${sql.raw(`(${timeEntryIds.map(id => `'${id}'`).join(',')})`)}}`);
+        .where(sql`${timeEntries.id} IN (${sql.raw(timeEntryIds.map(id => `'${id}'`).join(','))})`);
       timeEntriesBilled = timeEntryIds.length;
     }
 
@@ -2435,7 +2435,7 @@ export class DatabaseStorage implements IStorage {
     if (expenseIds.length > 0) {
       await tx.update(expenses)
         .set({ billedFlag: true })
-        .where(sql`${expenses.id} IN ${sql.raw(`(${expenseIds.map(id => `'${id}'`).join(',')})`)}}`);
+        .where(sql`${expenses.id} IN (${sql.raw(expenseIds.map(id => `'${id}'`).join(','))})`);
       expensesBilled = expenseIds.length;
     }
 

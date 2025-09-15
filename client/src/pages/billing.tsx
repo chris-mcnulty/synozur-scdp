@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,11 @@ interface InvoiceBatchData {
   createdAt: string;
 }
 
+interface DiscountSettings {
+  defaultDiscountType?: 'percent' | 'amount';
+  defaultDiscountValue?: string;
+}
+
 // Remove mock data - now using real API calls
 
 export default function Billing() {
@@ -83,6 +88,21 @@ export default function Billing() {
   const { data: expenses = [] } = useQuery({
     queryKey: ["/api/expenses"],
   });
+
+  // Fetch default discount settings
+  const { data: discountSettings } = useQuery<DiscountSettings>({
+    queryKey: ["/api/invoice-batches/discount-settings"],
+  });
+
+  // Update discount values when settings are loaded
+  useEffect(() => {
+    if (discountSettings?.defaultDiscountType) {
+      setDiscountType(discountSettings.defaultDiscountType);
+    }
+    if (discountSettings?.defaultDiscountValue) {
+      setDiscountValue(discountSettings.defaultDiscountValue);
+    }
+  }, [discountSettings]);
 
   const getUnbilledSummary = () => {
     if (!timeEntries || !expenses) return { hours: 0, amount: 0, expenses: 0 };

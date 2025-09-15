@@ -2487,6 +2487,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Invoice default discount settings
+  app.get("/api/invoice-batches/discount-settings", requireAuth, async (req, res) => {
+    try {
+      // Initialize default discount settings if they don't exist
+      const discountType = await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_TYPE');
+      if (!discountType) {
+        await storage.setSystemSetting('INVOICE_DEFAULT_DISCOUNT_TYPE', 'percent', 'Default discount type for invoice batches (percent or amount)', 'string');
+      }
+      
+      const discountValue = await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_VALUE');
+      if (!discountValue) {
+        await storage.setSystemSetting('INVOICE_DEFAULT_DISCOUNT_VALUE', '0', 'Default discount value for invoice batches', 'number');
+      }
+      
+      const settings = {
+        defaultDiscountType: await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_TYPE', 'percent'),
+        defaultDiscountValue: await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_VALUE', '0')
+      };
+      res.json(settings);
+    } catch (error: any) {
+      console.error("Failed to fetch discount settings:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch discount settings", 
+        error: error.message 
+      });
+    }
+  });
+
   app.get("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const batches = await storage.getInvoiceBatches();
