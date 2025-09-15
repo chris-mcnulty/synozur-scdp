@@ -137,7 +137,7 @@ export function TimeEntryManagementDialog({
       form.reset({
         personId: timeEntry.personId || "",
         date: timeEntry.date || formatLocalDate(new Date()),
-        hours: timeEntry.hours || "",
+        hours: timeEntry.hours?.toString() || "",
         billable: timeEntry.billable ?? true,
         description: timeEntry.description || "",
         milestoneId: timeEntry.milestoneId || "none",
@@ -274,6 +274,8 @@ export function TimeEntryManagementDialog({
                       max="24"
                       placeholder="Enter hours (e.g., 8 or 8.5)"
                       {...field}
+                      value={field.value || ''}
+                      onChange={(e) => field.onChange(e.target.value)}
                       data-testid="input-hours"
                     />
                   </FormControl>
