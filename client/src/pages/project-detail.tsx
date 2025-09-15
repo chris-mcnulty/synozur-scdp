@@ -193,15 +193,17 @@ export default function ProjectDetail() {
   
   // Check if user can manage time entries
   const canManageTimeEntries = user ? ['admin', 'billing-admin'].includes(user.role) : false;
-  const canManageProjectTimeEntries = user ? (
-    ['admin', 'billing-admin'].includes(user.role) ||
-    (user.role === 'pm' && analytics?.project?.pm === user.id)
-  ) : false;
 
   const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
     queryKey: [`/api/projects/${id}/analytics`],
     enabled: !!id,
   });
+
+  // Check if user can manage time entries for this project (after analytics is loaded)
+  const canManageProjectTimeEntries = user ? (
+    ['admin', 'billing-admin'].includes(user.role) ||
+    (user.role === 'pm' && analytics?.project?.pm === user.id)
+  ) : false;
 
   const { data: sows = [], refetch: refetchSows } = useQuery<Sow[]>({
     queryKey: [`/api/projects/${id}/sows`],
@@ -2674,14 +2676,10 @@ export default function ProjectDetail() {
 
         {/* Time Entry Management Dialog */}
         <TimeEntryManagementDialog
-          entry={selectedTimeEntry}
-          projectId={id || ""}
-          open={timeEntryDialogOpen}
+          isOpen={timeEntryDialogOpen}
           onOpenChange={setTimeEntryDialogOpen}
-          onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: [`/api/time-entries?projectId=${id}`] });
-            queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
-          }}
+          timeEntry={selectedTimeEntry}
+          projectId={id || ""}
         />
 
         {/* Delete Time Entry Confirmation Dialog */}
