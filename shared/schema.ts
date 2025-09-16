@@ -87,6 +87,12 @@ export const projects = pgTable("projects", {
   sowDate: date("sow_date"), // Date SOW was signed
   hasSow: boolean("has_sow").notNull().default(false), // Track if SOW exists
   status: text("status").notNull().default("active"), // active, on-hold, completed
+  // Financial tracking fields
+  estimatedTotal: decimal("estimated_total", { precision: 12, scale: 2 }), // From original estimate
+  sowTotal: decimal("sow_total", { precision: 12, scale: 2 }), // From signed contract  
+  actualCost: decimal("actual_cost", { precision: 12, scale: 2 }), // Calculated from time/expenses
+  billedTotal: decimal("billed_total", { precision: 12, scale: 2 }), // Total invoiced
+  profitMargin: decimal("profit_margin", { precision: 12, scale: 2 }), // Calculated variance
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -407,6 +413,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   discountPercent: decimal("discount_percent", { precision: 5, scale: 2 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
+  aggregateAdjustmentTotal: decimal("aggregate_adjustment_total", { precision: 12, scale: 2 }), // Total of all aggregate adjustments
   invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
   status: text("status").notNull().default("draft"), // draft, reviewed, finalized
   finalizedAt: timestamp("finalized_at"),
@@ -428,7 +435,36 @@ export const invoiceLines = pgTable("invoice_lines", {
   rate: decimal("rate", { precision: 10, scale: 2 }),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description"),
+  // Adjustment tracking fields
+  originalAmount: decimal("original_amount", { precision: 12, scale: 2 }), // Original calculated amount before adjustments
+  billedAmount: decimal("billed_amount", { precision: 12, scale: 2 }), // Final amount being billed to client
+  varianceAmount: decimal("variance_amount", { precision: 12, scale: 2 }), // Difference between original and billed
+  originalRate: decimal("original_rate", { precision: 12, scale: 2 }), // Original rate before adjustment
+  originalQuantity: decimal("original_quantity", { precision: 12, scale: 2 }), // Original quantity before adjustment
+  adjustmentType: text("adjustment_type"), // 'line' | 'aggregate' | null
+  adjustmentReason: text("adjustment_reason"), // Why the adjustment was made
+  editedBy: varchar("edited_by").references(() => users.id), // Who made the adjustment
+  editedAt: timestamp("edited_at"), // When the adjustment was made
+  projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id), // Link to milestone
+  isAdjustment: boolean("is_adjustment").notNull().default(false), // Flag for adjustment lines vs generated lines
+  allocationGroupId: varchar("allocation_group_id"), // Groups related adjustment lines
+  sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW if applicable
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Invoice adjustments
+export const invoiceAdjustments = pgTable("invoice_adjustments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchId: text("batch_id").notNull().references(() => invoiceBatches.batchId),
+  scope: text("scope").notNull(), // 'line' | 'aggregate'
+  method: text("method").notNull(), // 'pro_rata_amount' | 'pro_rata_hours' | 'flat' | 'manual'
+  targetAmount: decimal("target_amount", { precision: 12, scale: 2 }),
+  reason: text("reason"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  metadata: jsonb("metadata"), // For storing allocation details
+  sowId: varchar("sow_id").references(() => sows.id),
+  projectId: varchar("project_id").references(() => projects.id)
 });
 
 // Relations
@@ -616,6 +652,7 @@ export const estimateAllocationsRelations = relations(estimateAllocations, ({ on
 
 export const invoiceBatchesRelations = relations(invoiceBatches, ({ many, one }) => ({
   lines: many(invoiceLines),
+  adjustments: many(invoiceAdjustments),
   finalizer: one(users, {
     fields: [invoiceBatches.finalizedBy],
     references: [users.id],
@@ -625,11 +662,46 @@ export const invoiceBatchesRelations = relations(invoiceBatches, ({ many, one })
 export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
   batch: one(invoiceBatches, {
     fields: [invoiceLines.batchId],
-    references: [invoiceBatches.id],
+    references: [invoiceBatches.batchId],
   }),
   project: one(projects, {
     fields: [invoiceLines.projectId],
     references: [projects.id],
+  }),
+  client: one(clients, {
+    fields: [invoiceLines.clientId],
+    references: [clients.id],
+  }),
+  editor: one(users, {
+    fields: [invoiceLines.editedBy],
+    references: [users.id],
+  }),
+  milestone: one(projectMilestones, {
+    fields: [invoiceLines.projectMilestoneId],
+    references: [projectMilestones.id],
+  }),
+  sow: one(sows, {
+    fields: [invoiceLines.sowId],
+    references: [sows.id],
+  }),
+}));
+
+export const invoiceAdjustmentsRelations = relations(invoiceAdjustments, ({ one }) => ({
+  batch: one(invoiceBatches, {
+    fields: [invoiceAdjustments.batchId],
+    references: [invoiceBatches.batchId],
+  }),
+  creator: one(users, {
+    fields: [invoiceAdjustments.createdBy],
+    references: [users.id],
+  }),
+  project: one(projects, {
+    fields: [invoiceAdjustments.projectId],
+    references: [projects.id],
+  }),
+  sow: one(sows, {
+    fields: [invoiceAdjustments.sowId],
+    references: [sows.id],
   }),
 }));
 
@@ -820,6 +892,7 @@ export type Sow = typeof sows.$inferSelect;
 export type InsertSow = z.infer<typeof insertSowSchema>;
 export type InvoiceBatch = typeof invoiceBatches.$inferSelect;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
+export type InvoiceAdjustment = typeof invoiceAdjustments.$inferSelect;
 export type RateOverride = typeof rateOverrides.$inferSelect;
 
 // Invoice schemas
@@ -831,9 +904,17 @@ export type InsertInvoiceBatch = z.infer<typeof insertInvoiceBatchSchema>;
 
 export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   id: true,
-  createdAt: true
+  createdAt: true,
+  editedAt: true,
+  varianceAmount: true, // Calculated field
 });
 export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
+
+export const insertInvoiceAdjustmentSchema = createInsertSchema(invoiceAdjustments).omit({
+  id: true,
+  createdAt: true
+});
+export type InsertInvoiceAdjustment = z.infer<typeof insertInvoiceAdjustmentSchema>;
 
 // Billing API Response Types
 export interface BatchSettings {
