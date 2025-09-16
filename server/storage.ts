@@ -3186,7 +3186,7 @@ export class DatabaseStorage implements IStorage {
         break;
     }
     
-    // Create adjustment record
+    // Create adjustment record with complete metadata
     const [adjustment] = await db.insert(invoiceAdjustments).values({
       batchId: params.batchId,
       scope: 'aggregate',
@@ -3196,7 +3196,13 @@ export class DatabaseStorage implements IStorage {
       sowId: params.sowId,
       projectId: params.projectId,
       createdBy: params.userId,
-      metadata: allocation
+      metadata: {
+        allocation,
+        originalAmount: currentTotal,
+        affectedLines: lines.length,
+        adjustmentAmount,
+        adjustmentRatio
+      }
     }).returning();
     
     // Update invoice lines with new billed amounts

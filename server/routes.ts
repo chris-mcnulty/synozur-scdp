@@ -2852,33 +2852,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { batchId } = req.params;
       
-      // Mock adjustment history data - replace with actual storage implementation
-      const history = [
-        {
-          id: "adj-1",
-          batchId,
-          type: "aggregate",
-          targetAmount: 7000,
-          originalAmount: 12000,
-          adjustedAmount: 7000,
-          variance: -5000,
-          variancePercent: -41.67,
-          allocationMethod: "pro_rata_amount",
-          reason: "Fixed-price contract adjustment per SOW #12345",
-          appliedAt: new Date().toISOString(),
-          appliedBy: {
-            id: req.user?.id || "user-1",
-            name: req.user?.name || "Admin User",
-            email: req.user?.email || "admin@example.com"
-          },
-          sowReference: {
-            id: "sow-1",
-            sowNumber: "SOW-2024-001",
-            totalValue: 7000
-          },
-          affectedLines: 5
+      // Fetch real adjustments from the database
+      const adjustments = await storage.getInvoiceAdjustments(batchId);
+      
+      // Fetch invoice lines for this batch to calculate totals
+      const invoiceLines = await storage.getInvoiceLinesForBatch(batchId);
+      
+      // Process each adjustment to match frontend format
+      const history = await Promise.all(adjustments.map(async (adjustment) => {
+        // Get user who applied the adjustment
+        const appliedByUser = await storage.getUser(adjustment.createdBy);
+        
+        // Extract metadata if present
+        const metadata = adjustment.metadata as any || {};
+        const originalAmount = metadata.originalAmount || 0;
+        const targetAmount = parseFloat(adjustment.targetAmount || '0');
+        const variance = targetAmount - originalAmount;
+        const variancePercent = originalAmount > 0 ? (variance / originalAmount) * 100 : 0;
+        
+        // Get SOW details if referenced
+        let sowReference = null;
+        if (adjustment.sowId) {
+          const sow = await storage.getSow(adjustment.sowId);
+          if (sow) {
+            sowReference = {
+              id: sow.id,
+              sowNumber: sow.name,
+              totalValue: parseFloat(sow.value)
+            };
+          }
         }
-      ];
+        
+        return {
+          id: adjustment.id,
+          batchId: adjustment.batchId,
+          type: adjustment.scope,
+          targetAmount,
+          originalAmount,
+          adjustedAmount: targetAmount,
+          variance,
+          variancePercent: parseFloat(variancePercent.toFixed(2)),
+          allocationMethod: adjustment.method,
+          reason: adjustment.reason || '',
+          appliedAt: adjustment.createdAt,
+          appliedBy: appliedByUser ? {
+            id: appliedByUser.id,
+            name: appliedByUser.name,
+            email: appliedByUser.email
+          } : null,
+          sowReference,
+          affectedLines: metadata.affectedLines || 0,
+          projectId: adjustment.projectId,
+          metadata: adjustment.metadata
+        };
+      }));
 
       res.json(history);
     } catch (error: any) {
@@ -2893,17 +2920,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { batchId } = req.params;
       
-      // Mock summary data - replace with actual calculation from storage
+      // Fetch real adjustments and invoice lines from the database
+      const adjustments = await storage.getInvoiceAdjustments(batchId);
+      const invoiceLines = await storage.getInvoiceLinesForBatch(batchId);
+      
+      // Calculate original total from invoice lines
+      let originalTotal = 0;
+      let currentTotal = 0;
+      
+      // For each line, use originalAmount if present, otherwise use current amount
+      invoiceLines.forEach(line => {
+        const original = parseFloat(line.originalAmount || line.amount);
+        const current = parseFloat(line.amount);
+        originalTotal += original;
+        currentTotal += current;
+      });
+      
+      // Count adjustment types
+      const aggregateAdjustments = adjustments.filter(adj => adj.scope === 'aggregate').length;
+      const lineItemAdjustments = adjustments.filter(adj => adj.scope === 'line').length;
+      const reversals = adjustments.filter(adj => {
+        const metadata = adj.metadata as any || {};
+        return metadata.isReversal === true;
+      }).length;
+      
+      // Get last adjustment date
+      const lastAdjustment = adjustments.length > 0 ? adjustments[0].createdAt : null;
+      
+      const totalVariance = currentTotal - originalTotal;
+      const variancePercent = originalTotal > 0 ? (totalVariance / originalTotal) * 100 : 0;
+      
       const summary = {
-        originalTotal: 12000,
-        currentTotal: 7000,
-        totalVariance: -5000,
-        variancePercent: -41.67,
-        adjustmentCount: 1,
-        lastAdjustment: new Date().toISOString(),
-        aggregateAdjustments: 1,
-        lineItemAdjustments: 0,
-        reversals: 0
+        originalTotal,
+        currentTotal,
+        totalVariance,
+        variancePercent: parseFloat(variancePercent.toFixed(2)),
+        adjustmentCount: adjustments.length,
+        lastAdjustment,
+        aggregateAdjustments,
+        lineItemAdjustments,
+        reversals
       };
 
       res.json(summary);
