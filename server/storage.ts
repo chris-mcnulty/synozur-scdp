@@ -134,6 +134,15 @@ export interface IStorage {
   // Invoice Batches
   createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch>;
   getInvoiceBatches(): Promise<InvoiceBatch[]>;
+  getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {
+    totalLinesCount: number;
+    clientCount: number;
+    projectCount: number;
+  }) | undefined>;
+  getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
+    project: Project;
+    client: Client;
+  })[]>;
   generateInvoicesForBatch(batchId: string, options: {
     clientIds?: string[];
     projectIds?: string[];
@@ -2253,6 +2262,73 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoiceBatches(): Promise<InvoiceBatch[]> {
     return await db.select().from(invoiceBatches).orderBy(desc(invoiceBatches.createdAt));
+  }
+
+  async getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {
+    totalLinesCount: number;
+    clientCount: number;
+    projectCount: number;
+  }) | undefined> {
+    // Get the batch
+    const [batch] = await db
+      .select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      return undefined;
+    }
+
+    // Get summary statistics for the batch
+    const lines = await db
+      .select({
+        clientId: invoiceLines.clientId,
+        projectId: invoiceLines.projectId,
+        amount: invoiceLines.amount
+      })
+      .from(invoiceLines)
+      .where(eq(invoiceLines.batchId, batchId));
+
+    const totalLinesCount = lines.length;
+    const totalAmount = lines.reduce((sum, line) => sum + parseFloat(line.amount || '0'), 0);
+    const uniqueClients = new Set(lines.map(l => l.clientId));
+    const uniqueProjects = new Set(lines.map(l => l.projectId));
+
+    // Update the batch's totalAmount if it's not already set
+    const updatedBatch = {
+      ...batch,
+      totalAmount: batch.totalAmount || totalAmount.toString()
+    };
+
+    return {
+      ...updatedBatch,
+      totalLinesCount,
+      clientCount: uniqueClients.size,
+      projectCount: uniqueProjects.size
+    };
+  }
+
+  async getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
+    project: Project;
+    client: Client;
+  })[]> {
+    const lines = await db
+      .select({
+        line: invoiceLines,
+        project: projects,
+        client: clients
+      })
+      .from(invoiceLines)
+      .innerJoin(projects, eq(invoiceLines.projectId, projects.id))
+      .innerJoin(clients, eq(invoiceLines.clientId, clients.id))
+      .where(eq(invoiceLines.batchId, batchId))
+      .orderBy(clients.name, projects.name, invoiceLines.type);
+
+    return lines.map(row => ({
+      ...row.line,
+      project: row.project,
+      client: row.client
+    }));
   }
 
   async generateInvoicesForBatch(batchId: string, options: {

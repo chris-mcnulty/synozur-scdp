@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -548,9 +549,11 @@ export default function Billing() {
                     >
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
-                          <div className="font-medium" data-testid={`batch-id-${batch.id}`}>
-                            {batch.batchId}
-                          </div>
+                          <Link href={`/billing/batches/${batch.batchId}`}>
+                            <div className="font-medium text-primary hover:underline cursor-pointer" data-testid={`batch-id-${batch.id}`}>
+                              {batch.batchId}
+                            </div>
+                          </Link>
                           <div className="text-sm text-muted-foreground" data-testid={`batch-client-${batch.id}`}>
                             {batch.clientName}
                           </div>

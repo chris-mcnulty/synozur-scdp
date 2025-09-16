@@ -2524,6 +2524,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/invoice-batches/:batchId/details", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const batchDetails = await storage.getInvoiceBatchDetails(req.params.batchId);
+      
+      if (!batchDetails) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+
+      res.json(batchDetails);
+    } catch (error) {
+      console.error("[ERROR] Failed to fetch batch details:", error);
+      res.status(500).json({ message: "Failed to fetch invoice batch details" });
+    }
+  });
+
+  app.get("/api/invoice-batches/:batchId/lines", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const lines = await storage.getInvoiceLinesForBatch(req.params.batchId);
+      
+      // Group lines by client and project
+      const groupedLines = lines.reduce((acc: any, line) => {
+        const clientKey = line.client.id;
+        const projectKey = line.project.id;
+        
+        if (!acc[clientKey]) {
+          acc[clientKey] = {
+            client: line.client,
+            projects: {},
+            subtotal: 0
+          };
+        }
+        
+        if (!acc[clientKey].projects[projectKey]) {
+          acc[clientKey].projects[projectKey] = {
+            project: line.project,
+            lines: [],
+            subtotal: 0
+          };
+        }
+        
+        const amount = parseFloat(line.amount || '0');
+        acc[clientKey].projects[projectKey].lines.push(line);
+        acc[clientKey].projects[projectKey].subtotal += amount;
+        acc[clientKey].subtotal += amount;
+        
+        return acc;
+      }, {});
+
+      res.json(groupedLines);
+    } catch (error) {
+      console.error("[ERROR] Failed to fetch invoice lines:", error);
+      res.status(500).json({ message: "Failed to fetch invoice lines" });
+    }
+  });
+
   // Unbilled items detail endpoint
   app.get("/api/billing/unbilled-items", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {

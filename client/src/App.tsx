@@ -11,6 +11,7 @@ import EstimateDetail from "@/pages/estimate-detail";
 import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
+import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
 import Staff from "@/pages/staff";
 import Users from "@/pages/users";
@@ -85,6 +86,9 @@ function Router() {
       </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/billing/batches/:batchId">
+        {user ? <BatchDetail /> : <Redirect to="/login" />}
       </Route>
       <Route path="/rates">
         {user ? <RateManagement /> : <Redirect to="/login" />}
