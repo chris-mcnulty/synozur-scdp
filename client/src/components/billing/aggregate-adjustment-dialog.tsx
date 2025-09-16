@@ -199,21 +199,15 @@ export function AggregateAdjustmentDialog({
   // Apply adjustment mutation
   const applyAdjustmentMutation = useMutation({
     mutationFn: async (data: AdjustmentFormData) => {
-      // Calculate line-level adjustments
-      const lineAdjustments = previewData.map(preview => ({
-        lineId: preview.lineId,
-        billedAmount: preview.newAmount,
-        adjustmentReason: data.adjustmentReason,
-      }));
-
-      return await apiRequest(`/api/invoice-batches/${batchId}/aggregate-adjustment`, {
+      // Use the proper backend endpoint that correctly calculates adjustments
+      return await apiRequest(`/api/invoice-batches/${batchId}/adjustments`, {
         method: "POST",
         body: JSON.stringify({
           targetAmount: data.targetAmount,
-          allocationMethod: data.allocationMethod,
+          method: data.allocationMethod,
+          reason: data.adjustmentReason,
           sowId: data.sowId,
-          adjustmentReason: data.adjustmentReason,
-          lineAdjustments,
+          projectId: projectId,
         }),
       });
     },
