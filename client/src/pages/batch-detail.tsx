@@ -540,6 +540,33 @@ export default function BatchDetail() {
     },
   });
 
+  // Remove Adjustment Mutation
+  const removeAdjustmentMutation = useMutation({
+    mutationFn: async (adjustmentId: string) => {
+      return await apiRequest(`/api/invoice-adjustments/${adjustmentId}`, {
+        method: 'DELETE'
+      });
+    },
+    onSuccess: () => {
+      // Refresh the invoice lines and adjustments
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/adjustments`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/adjustments/history`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Adjustment reversed",
+        description: "The adjustment has been removed and amounts have been restored to original values"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to reverse adjustment",
+        description: error.message || "Could not reverse the adjustment",
+        variant: "destructive"
+      });
+    }
+  });
+
   const handleFinalizeBatch = async () => {
     setShowFinalizeDialog(true);
   };
@@ -813,8 +840,9 @@ export default function BatchDetail() {
               batchId={batchId || ''} 
               canReverse={canEditLines() && batchDetails?.status !== 'finalized'}
               onReverse={(adjustmentId) => {
-                // TODO: Implement adjustment reversal
-                console.log('Reversing adjustment:', adjustmentId);
+                if (confirm('Are you sure you want to reverse this adjustment? Invoice amounts will be restored to their original values.')) {
+                  removeAdjustmentMutation.mutate(adjustmentId);
+                }
               }}
             />
           </div>
