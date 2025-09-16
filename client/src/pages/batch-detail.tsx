@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -20,6 +21,20 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { format } from "date-fns";
 import { 
   ArrowLeft, 
@@ -32,7 +47,17 @@ import {
   Building,
   FolderOpen,
   Lock,
-  CheckCircle
+  CheckCircle,
+  Edit,
+  MoreVertical,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  History,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  Info
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -46,8 +71,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { InvoiceLineEditDialog } from "@/components/billing/invoice-line-edit-dialog";
+import { InvoiceLineBulkEditDialog } from "@/components/billing/invoice-line-bulk-edit-dialog";
 
 interface InvoiceBatchDetails {
   id: string;
@@ -83,6 +110,16 @@ interface InvoiceLine {
   rate?: string;
   amount: string;
   description?: string;
+  originalAmount?: string;
+  originalQuantity?: string;
+  originalRate?: string;
+  billedAmount?: string;
+  varianceAmount?: string;
+  adjustmentType?: string;
+  adjustmentReason?: string;
+  editedBy?: { id: string; name: string; email: string };
+  editedAt?: string;
+  isAdjustment?: boolean;
   project: {
     id: string;
     name: string;
@@ -118,6 +155,10 @@ export default function BatchDetail() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
   const [showUnfinalizeDialog, setShowUnfinalizeDialog] = useState(false);
+  const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
+  const [editingLine, setEditingLine] = useState<InvoiceLine | null>(null);
+  const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -129,6 +170,117 @@ export default function BatchDetail() {
   const { data: groupedLines, isLoading: isLoadingLines, error: linesError } = useQuery<GroupedInvoiceLines>({
     queryKey: [`/api/invoice-batches/${batchId}/lines`],
     enabled: !!batchId,
+  });
+
+  // Helper function to get all lines as flat array
+  const getAllLines = (): InvoiceLine[] => {
+    if (!groupedLines) return [];
+    const lines: InvoiceLine[] = [];
+    Object.values(groupedLines).forEach(clientData => {
+      Object.values(clientData.projects).forEach(projectData => {
+        lines.push(...projectData.lines);
+      });
+    });
+    return lines;
+  };
+
+  // Edit Line Mutation
+  const editLineMutation = useMutation({
+    mutationFn: async (data: {
+      lineId: string;
+      quantity?: number;
+      rate?: number;
+      billedAmount: number;
+      description?: string;
+      adjustmentReason: string;
+    }) => {
+      const { lineId, ...body } = data;
+      return await apiRequest(`/api/invoice-lines/${lineId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: "Invoice line updated successfully" 
+      });
+      setShowEditDialog(false);
+      setEditingLine(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update invoice line",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Bulk Edit Mutation
+  const bulkEditMutation = useMutation({
+    mutationFn: async (data: {
+      adjustmentType: string;
+      adjustmentValue: number;
+      adjustmentMode: string;
+      adjustmentReason: string;
+    }) => {
+      const lines = getAllLines().filter(line => selectedLines.has(line.id));
+      const updates: Array<{id: string; billedAmount: number; adjustmentReason: string}> = [];
+
+      lines.forEach(line => {
+        const originalAmount = parseFloat(line.billedAmount || line.amount);
+        let newAmount = originalAmount;
+
+        switch (data.adjustmentType) {
+          case "percentage":
+            const percentChange = (originalAmount * data.adjustmentValue) / 100;
+            const multiplier = data.adjustmentMode === "discount" ? -1 : 1;
+            newAmount = originalAmount + (percentChange * multiplier);
+            break;
+          case "fixed_amount":
+            const amountMultiplier = data.adjustmentMode === "discount" ? -1 : 1;
+            newAmount = originalAmount + (data.adjustmentValue * amountMultiplier);
+            break;
+          case "fixed_rate":
+            if (line.quantity && line.type !== "expense" && line.type !== "milestone") {
+              const qty = parseFloat(line.quantity);
+              newAmount = qty * data.adjustmentValue;
+            }
+            break;
+        }
+
+        updates.push({
+          id: line.id,
+          billedAmount: Math.max(0, newAmount),
+          adjustmentReason: data.adjustmentReason
+        });
+      });
+
+      return await apiRequest(`/api/invoice-batches/${batchId}/bulk-update`, {
+        method: 'POST',
+        body: JSON.stringify({ updates })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: `${selectedLines.size} lines updated successfully` 
+      });
+      setShowBulkEditDialog(false);
+      setSelectedLines(new Set());
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update invoice lines",
+        variant: "destructive" 
+      });
+    }
   });
 
   const toggleClient = (clientId: string) => {
@@ -153,6 +305,67 @@ export default function BatchDetail() {
       }
       return newSet;
     });
+  };
+
+  // Selection handlers
+  const toggleLineSelection = (lineId: string) => {
+    setSelectedLines(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(lineId)) {
+        newSet.delete(lineId);
+      } else {
+        newSet.add(lineId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllInProject = (projectLines: InvoiceLine[]) => {
+    const lineIds = projectLines.map(l => l.id);
+    const allSelected = lineIds.every(id => selectedLines.has(id));
+    
+    setSelectedLines(prev => {
+      const newSet = new Set(prev);
+      lineIds.forEach(id => {
+        if (allSelected) {
+          newSet.delete(id);
+        } else {
+          newSet.add(id);
+        }
+      });
+      return newSet;
+    });
+  };
+
+  const selectAllLines = () => {
+    const allLines = getAllLines();
+    const allSelected = allLines.every(line => selectedLines.has(line.id));
+    
+    if (allSelected) {
+      setSelectedLines(new Set());
+    } else {
+      setSelectedLines(new Set(allLines.map(l => l.id)));
+    }
+  };
+
+  // Edit handlers
+  const handleEditLine = (line: InvoiceLine) => {
+    if (canEditLines()) {
+      setEditingLine(line);
+      setShowEditDialog(true);
+    }
+  };
+
+  const handleBulkEdit = () => {
+    if (selectedLines.size === 0) {
+      toast({
+        title: "No lines selected",
+        description: "Please select lines to edit",
+        variant: "destructive"
+      });
+      return;
+    }
+    setShowBulkEditDialog(true);
   };
 
   const expandAll = () => {
@@ -347,6 +560,22 @@ export default function BatchDetail() {
            user.role === 'admin';
   };
 
+  const canEditLines = () => {
+    if (!batchDetails || !user) return false;
+    return batchDetails.status !== 'finalized' && 
+           !batchDetails.exportedToQBO &&
+           (user.role === 'admin' || user.role === 'billing-admin');
+  };
+
+  const getVarianceIcon = (variance: number) => {
+    if (variance > 0) {
+      return <TrendingUp className="h-3 w-3 text-green-600 dark:text-green-400" />;
+    } else if (variance < 0) {
+      return <TrendingDown className="h-3 w-3 text-red-600 dark:text-red-400" />;
+    }
+    return null;
+  };
+
   if (isLoadingDetails || isLoadingLines) {
     return (
       <Layout>
@@ -415,7 +644,7 @@ export default function BatchDetail() {
         </div>
 
         {/* Actions Bar */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
           <Button
             onClick={handleExportCSV}
             variant="outline"
@@ -424,6 +653,27 @@ export default function BatchDetail() {
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
+          
+          {canEditLines() && selectedLines.size > 0 && (
+            <>
+              <Button
+                onClick={handleBulkEdit}
+                variant="outline"
+                data-testid="button-bulk-edit"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Edit {selectedLines.size} Selected
+              </Button>
+              <Button
+                onClick={() => setSelectedLines(new Set())}
+                variant="ghost"
+                size="sm"
+                data-testid="button-clear-selection"
+              >
+                Clear Selection
+              </Button>
+            </>
+          )}
           {canReview() && (
             <Button
               onClick={handleReviewBatch}
@@ -603,7 +853,32 @@ export default function BatchDetail() {
         {/* Invoice Lines */}
         <Card>
           <CardHeader>
-            <CardTitle>Invoice Lines</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                Invoice Lines
+                {canEditLines() && selectedLines.size > 0 && (
+                  <Badge variant="secondary">
+                    {selectedLines.size} selected
+                  </Badge>
+                )}
+              </CardTitle>
+              {canEditLines() && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={selectAllLines}
+                    data-testid="button-select-all-lines"
+                  >
+                    {getAllLines().every(line => selectedLines.has(line.id)) ? (
+                      <><MinusSquare className="mr-2 h-4 w-4" /> Deselect All</>
+                    ) : (
+                      <><CheckSquare className="mr-2 h-4 w-4" /> Select All</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {groupedLines && Object.keys(groupedLines).length > 0 ? (
@@ -671,35 +946,161 @@ export default function BatchDetail() {
                                     <Table>
                                       <TableHeader>
                                         <TableRow>
+                                          {canEditLines() && (
+                                            <TableHead className="w-12">
+                                              <Checkbox
+                                                checked={projectData.lines.every(l => selectedLines.has(l.id))}
+                                                onCheckedChange={() => selectAllInProject(projectData.lines)}
+                                                data-testid={`checkbox-select-all-project-${projectId}`}
+                                              />
+                                            </TableHead>
+                                          )}
                                           <TableHead>Type</TableHead>
                                           <TableHead>Description</TableHead>
                                           <TableHead className="text-right">Quantity</TableHead>
                                           <TableHead className="text-right">Rate</TableHead>
                                           <TableHead className="text-right">Amount</TableHead>
+                                          <TableHead className="text-right">Billed</TableHead>
+                                          <TableHead className="text-right">Variance</TableHead>
+                                          {canEditLines() && <TableHead className="w-12"></TableHead>}
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
-                                        {projectData.lines.map((line) => (
-                                          <TableRow key={line.id} data-testid={`row-line-${line.id}`}>
-                                            <TableCell>
-                                              <Badge variant={line.type === "time" ? "default" : "secondary"}>
-                                                {line.type}
-                                              </Badge>
-                                            </TableCell>
-                                            <TableCell className="max-w-md truncate">
-                                              {line.description || "-"}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                              {line.quantity ? parseFloat(line.quantity).toFixed(2) : "-"}
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                              {line.rate ? `$${parseFloat(line.rate).toFixed(2)}` : "-"}
-                                            </TableCell>
-                                            <TableCell className="text-right font-medium">
-                                              ${parseFloat(line.amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </TableCell>
-                                          </TableRow>
-                                        ))}
+                                        {projectData.lines.map((line) => {
+                                          const originalAmount = parseFloat(line.originalAmount || line.amount);
+                                          const billedAmount = parseFloat(line.billedAmount || line.amount);
+                                          const variance = billedAmount - originalAmount;
+                                          const hasVariance = Math.abs(variance) > 0.01;
+                                          const isEdited = line.editedAt && line.editedBy;
+
+                                          return (
+                                            <TableRow key={line.id} data-testid={`row-line-${line.id}`} className={isEdited ? "bg-yellow-50 dark:bg-yellow-900/10" : ""}>
+                                              {canEditLines() && (
+                                                <TableCell>
+                                                  <Checkbox
+                                                    checked={selectedLines.has(line.id)}
+                                                    onCheckedChange={() => toggleLineSelection(line.id)}
+                                                    data-testid={`checkbox-line-${line.id}`}
+                                                  />
+                                                </TableCell>
+                                              )}
+                                              <TableCell>
+                                                <div className="flex items-center gap-2">
+                                                  <Badge variant={line.type === "time" ? "default" : "secondary"}>
+                                                    {line.type}
+                                                  </Badge>
+                                                  {isEdited && (
+                                                    <TooltipProvider>
+                                                      <Tooltip>
+                                                        <TooltipTrigger>
+                                                          <History className="h-3 w-3 text-yellow-600 dark:text-yellow-400" />
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                          <div className="text-sm">
+                                                            <p className="font-medium">Edited by {line.editedBy?.name || 'Unknown'}</p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                              {line.editedAt ? format(new Date(line.editedAt), "MMM d, yyyy h:mm a") : 'Unknown date'}
+                                                            </p>
+                                                            {line.adjustmentReason && (
+                                                              <p className="mt-1 italic">"{line.adjustmentReason}"</p>
+                                                            )}
+                                                          </div>
+                                                        </TooltipContent>
+                                                      </Tooltip>
+                                                    </TooltipProvider>
+                                                  )}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="max-w-md">
+                                                <div className="truncate">
+                                                  {line.description || "-"}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                <div>
+                                                  {line.quantity ? parseFloat(line.quantity).toFixed(2) : "-"}
+                                                  {line.originalQuantity && line.quantity !== line.originalQuantity && (
+                                                    <div className="text-xs text-muted-foreground line-through">
+                                                      {parseFloat(line.originalQuantity).toFixed(2)}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                <div>
+                                                  {line.rate ? `$${parseFloat(line.rate).toFixed(2)}` : "-"}
+                                                  {line.originalRate && line.rate !== line.originalRate && (
+                                                    <div className="text-xs text-muted-foreground line-through">
+                                                      ${parseFloat(line.originalRate).toFixed(2)}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                <div className="text-muted-foreground">
+                                                  ${originalAmount.toFixed(2)}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell className="text-right font-medium">
+                                                ${billedAmount.toFixed(2)}
+                                              </TableCell>
+                                              <TableCell className="text-right">
+                                                {hasVariance && (
+                                                  <div className={`flex items-center justify-end gap-1 font-medium ${
+                                                    variance > 0 
+                                                      ? "text-green-600 dark:text-green-400" 
+                                                      : "text-red-600 dark:text-red-400"
+                                                  }`}>
+                                                    {getVarianceIcon(variance)}
+                                                    <span data-testid={`text-variance-${line.id}`}>
+                                                      {variance > 0 ? "+" : ""}${variance.toFixed(2)}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                                {!hasVariance && "-"}
+                                              </TableCell>
+                                              {canEditLines() && (
+                                                <TableCell>
+                                                  <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                      <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8"
+                                                        data-testid={`button-edit-line-${line.id}`}
+                                                      >
+                                                        <MoreVertical className="h-4 w-4" />
+                                                      </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                      <DropdownMenuItem
+                                                        onClick={() => handleEditLine(line)}
+                                                      >
+                                                        <Edit className="mr-2 h-4 w-4" />
+                                                        Edit Line
+                                                      </DropdownMenuItem>
+                                                      {hasVariance && (
+                                                        <DropdownMenuItem
+                                                          onClick={() => {
+                                                            // Reset line to original values
+                                                            editLineMutation.mutate({
+                                                              lineId: line.id,
+                                                              billedAmount: originalAmount,
+                                                              adjustmentReason: "Reset to original amount"
+                                                            });
+                                                          }}
+                                                        >
+                                                          <History className="mr-2 h-4 w-4" />
+                                                          Reset to Original
+                                                        </DropdownMenuItem>
+                                                      )}
+                                                    </DropdownMenuContent>
+                                                  </DropdownMenu>
+                                                </TableCell>
+                                              )}
+                                            </TableRow>
+                                          );
+                                        })}
                                       </TableBody>
                                     </Table>
                                   </div>
@@ -767,6 +1168,31 @@ export default function BatchDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Line Edit Dialog */}
+      {editingLine && (
+        <InvoiceLineEditDialog
+          open={showEditDialog}
+          onClose={() => {
+            setShowEditDialog(false);
+            setEditingLine(null);
+          }}
+          line={editingLine}
+          onSave={(data) => editLineMutation.mutate(data)}
+          isSaving={editLineMutation.isPending}
+        />
+      )}
+
+      {/* Bulk Edit Dialog */}
+      {showBulkEditDialog && (
+        <InvoiceLineBulkEditDialog
+          open={showBulkEditDialog}
+          onClose={() => setShowBulkEditDialog(false)}
+          selectedLines={getAllLines().filter(line => selectedLines.has(line.id))}
+          onApply={(data) => bulkEditMutation.mutate(data)}
+          isApplying={bulkEditMutation.isPending}
+        />
+      )}
     </Layout>
   );
 }
