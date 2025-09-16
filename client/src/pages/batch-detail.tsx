@@ -3,11 +3,12 @@ import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -59,7 +60,9 @@ import {
   MinusSquare,
   Info,
   Calculator,
-  Undo
+  Undo,
+  Milestone,
+  Target
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -79,6 +82,7 @@ import { InvoiceLineEditDialog } from "@/components/billing/invoice-line-edit-di
 import { InvoiceLineBulkEditDialog } from "@/components/billing/invoice-line-bulk-edit-dialog";
 import { AggregateAdjustmentDialog } from "@/components/billing/aggregate-adjustment-dialog";
 import { AdjustmentHistory } from "@/components/billing/adjustment-history";
+import { ProjectMilestonesDialog } from "@/components/billing/project-milestones-dialog";
 
 interface InvoiceBatchDetails {
   id: string;
@@ -124,6 +128,13 @@ interface InvoiceLine {
   editedBy?: { id: string; name: string; email: string };
   editedAt?: string;
   isAdjustment?: boolean;
+  projectMilestoneId?: string;
+  milestone?: {
+    id: string;
+    name: string;
+    status: 'not-started' | 'in-progress' | 'completed';
+    targetAmount?: string;
+  };
   project: {
     id: string;
     name: string;
@@ -165,6 +176,9 @@ export default function BatchDetail() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showAggregateAdjustmentDialog, setShowAggregateAdjustmentDialog] = useState(false);
   const [showAdjustmentHistory, setShowAdjustmentHistory] = useState(false);
+  const [showMilestoneDialog, setShowMilestoneDialog] = useState(false);
+  const [selectedProjectForMilestone, setSelectedProjectForMilestone] = useState<string | null>(null);
+  const [selectedLineForMilestone, setSelectedLineForMilestone] = useState<InvoiceLine | null>(null);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -189,6 +203,39 @@ export default function BatchDetail() {
     });
     return lines;
   };
+
+  // Milestone Mapping Mutation
+  const mapToMilestoneMutation = useMutation({
+    mutationFn: async ({ lineId, milestoneId }: { 
+      lineId: string; 
+      milestoneId: string | null 
+    }) => {
+      return await apiRequest(`/api/invoice-lines/${lineId}/milestone`, {
+        method: 'POST',
+        body: JSON.stringify({ milestoneId })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: selectedLineForMilestone?.milestone 
+          ? "Milestone mapping updated" 
+          : "Line mapped to milestone"
+      });
+      setSelectedLineForMilestone(null);
+      setSelectedProjectForMilestone(null);
+      setShowMilestoneDialog(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to map line to milestone",
+        variant: "destructive" 
+      });
+    }
+  });
 
   // Edit Line Mutation
   const editLineMutation = useMutation({
@@ -890,6 +937,127 @@ export default function BatchDetail() {
           </CardContent>
         </Card>
 
+        {/* Milestone Summary Section */}
+        {groupedLines && (() => {
+          const milestoneSummary = new Map<string, {
+            milestone: { id: string; name: string; status: string; targetAmount?: string };
+            lines: InvoiceLine[];
+            totalAmount: number;
+          }>();
+          
+          // Group lines by milestone
+          getAllLines().forEach(line => {
+            if (line.milestone) {
+              const existing = milestoneSummary.get(line.milestone.id) || {
+                milestone: line.milestone,
+                lines: [],
+                totalAmount: 0
+              };
+              existing.lines.push(line);
+              existing.totalAmount += parseFloat(line.billedAmount || line.amount);
+              milestoneSummary.set(line.milestone.id, existing);
+            }
+          });
+
+          const unmappedLines = getAllLines().filter(line => !line.milestone);
+          const unmappedTotal = unmappedLines.reduce((sum, line) => 
+            sum + parseFloat(line.billedAmount || line.amount), 0
+          );
+
+          return milestoneSummary.size > 0 || unmappedLines.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  Milestone Allocation Summary
+                </CardTitle>
+                <CardDescription>
+                  Distribution of invoice lines across project milestones
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Array.from(milestoneSummary.entries()).map(([id, data]) => {
+                    const percentage = (data.totalAmount / calculateGrandTotal()) * 100;
+                    
+                    return (
+                      <div key={id} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Milestone className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{data.milestone.name}</span>
+                            <Badge 
+                              variant={
+                                data.milestone.status === 'completed' ? 'default' :
+                                data.milestone.status === 'in-progress' ? 'secondary' :
+                                'outline'
+                              }
+                              className="text-xs"
+                            >
+                              {data.milestone.status}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {data.lines.length} lines
+                            </Badge>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium">
+                              ${data.totalAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {percentage.toFixed(1)}% of total
+                            </p>
+                          </div>
+                        </div>
+                        <Progress value={percentage} className="h-2" />
+                        {data.milestone.targetAmount && (
+                          <div className="text-xs text-muted-foreground">
+                            Target: ${parseFloat(data.milestone.targetAmount).toLocaleString()} 
+                            ({(data.totalAmount / parseFloat(data.milestone.targetAmount) * 100).toFixed(0)}% achieved)
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  
+                  {unmappedLines.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                          <span className="font-medium text-muted-foreground">Unmapped Lines</span>
+                          <Badge variant="outline" className="text-xs">
+                            {unmappedLines.length} lines
+                          </Badge>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-muted-foreground">
+                            ${unmappedTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {((unmappedTotal / calculateGrandTotal()) * 100).toFixed(1)}% of total
+                          </p>
+                        </div>
+                      </div>
+                      <Progress value={(unmappedTotal / calculateGrandTotal()) * 100} className="h-2 bg-yellow-100" />
+                    </div>
+                  )}
+                </div>
+                
+                {milestoneSummary.size === 0 && unmappedLines.length > 0 && (
+                  <div className="text-center py-6">
+                    <Milestone className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-muted-foreground">No lines mapped to milestones yet</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Map invoice lines to milestones for better tracking
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null;
+        })()}
+
         {/* Invoice Lines */}
         <Card>
           <CardHeader>
@@ -997,6 +1165,7 @@ export default function BatchDetail() {
                                           )}
                                           <TableHead>Type</TableHead>
                                           <TableHead>Description</TableHead>
+                                          <TableHead>Milestone</TableHead>
                                           <TableHead className="text-right">Quantity</TableHead>
                                           <TableHead className="text-right">Rate</TableHead>
                                           <TableHead className="text-right">Amount</TableHead>
@@ -1055,6 +1224,39 @@ export default function BatchDetail() {
                                                 <div className="truncate">
                                                   {line.description || "-"}
                                                 </div>
+                                              </TableCell>
+                                              <TableCell>
+                                                {line.milestone ? (
+                                                  <TooltipProvider>
+                                                    <Tooltip>
+                                                      <TooltipTrigger>
+                                                        <Badge 
+                                                          variant={
+                                                            line.milestone.status === 'completed' ? 'default' :
+                                                            line.milestone.status === 'in-progress' ? 'secondary' :
+                                                            'outline'
+                                                          }
+                                                          className="cursor-pointer"
+                                                          data-testid={`badge-milestone-${line.id}`}
+                                                        >
+                                                          <Milestone className="h-3 w-3 mr-1" />
+                                                          {line.milestone.name}
+                                                        </Badge>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent>
+                                                        <div className="text-sm">
+                                                          <p className="font-medium mb-1">{line.milestone.name}</p>
+                                                          <p className="text-xs">Status: {line.milestone.status}</p>
+                                                          {line.milestone.targetAmount && (
+                                                            <p className="text-xs">Target: ${parseFloat(line.milestone.targetAmount).toLocaleString()}</p>
+                                                          )}
+                                                        </div>
+                                                      </TooltipContent>
+                                                    </Tooltip>
+                                                  </TooltipProvider>
+                                                ) : (
+                                                  <span className="text-muted-foreground text-sm">-</span>
+                                                )}
                                               </TableCell>
                                               <TableCell className="text-right">
                                                 <div>
@@ -1119,6 +1321,30 @@ export default function BatchDetail() {
                                                         <Edit className="mr-2 h-4 w-4" />
                                                         Edit Line
                                                       </DropdownMenuItem>
+                                                      <DropdownMenuItem
+                                                        onClick={() => {
+                                                          setSelectedLineForMilestone(line);
+                                                          setSelectedProjectForMilestone(line.projectId);
+                                                          setShowMilestoneDialog(true);
+                                                        }}
+                                                      >
+                                                        <Milestone className="mr-2 h-4 w-4" />
+                                                        {line.milestone ? 'Change Milestone' : 'Map to Milestone'}
+                                                      </DropdownMenuItem>
+                                                      {line.milestone && (
+                                                        <DropdownMenuItem
+                                                          onClick={() => {
+                                                            mapToMilestoneMutation.mutate({ 
+                                                              lineId: line.id, 
+                                                              milestoneId: null 
+                                                            });
+                                                          }}
+                                                          className="text-red-600"
+                                                        >
+                                                          <Undo className="mr-2 h-4 w-4" />
+                                                          Remove Milestone
+                                                        </DropdownMenuItem>
+                                                      )}
                                                       {hasVariance && (
                                                         <DropdownMenuItem
                                                           onClick={() => {
@@ -1246,6 +1472,25 @@ export default function BatchDetail() {
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
             queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+          }}
+        />
+      )}
+
+      {/* Project Milestones Dialog */}
+      {showMilestoneDialog && selectedProjectForMilestone && (
+        <ProjectMilestonesDialog
+          open={showMilestoneDialog}
+          onOpenChange={setShowMilestoneDialog}
+          projectId={selectedProjectForMilestone}
+          projectName={selectedLineForMilestone?.project.name}
+          selectionMode={true}
+          onMilestoneSelect={(milestone) => {
+            if (selectedLineForMilestone) {
+              mapToMilestoneMutation.mutate({
+                lineId: selectedLineForMilestone.id,
+                milestoneId: milestone.id
+              });
+            }
           }}
         />
       )}
