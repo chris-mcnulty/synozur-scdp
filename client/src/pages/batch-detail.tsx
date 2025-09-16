@@ -35,6 +35,19 @@ import {
   CheckCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
 interface InvoiceBatchDetails {
   id: string;
@@ -47,12 +60,17 @@ interface InvoiceBatchDetails {
   discountAmount?: string;
   totalAmount?: string;
   invoicingMode: string;
+  status: string;
+  finalizedAt?: string | null;
+  finalizedBy?: string | null;
+  notes?: string | null;
   exportedToQBO: boolean;
   exportedAt?: string;
   createdAt: string;
   totalLinesCount: number;
   clientCount: number;
   projectCount: number;
+  finalizer?: { id: string; name: string; email: string } | null;
 }
 
 interface InvoiceLine {
@@ -94,8 +112,12 @@ export default function BatchDetail() {
   const { batchId } = useParams();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
+  const [showUnfinalizeDialog, setShowUnfinalizeDialog] = useState(false);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -196,12 +218,86 @@ export default function BatchDetail() {
     });
   };
 
+  // Finalization mutations
+  const finalizeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/invoice-batches/${batchId}/finalize`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      toast({
+        title: "Batch finalized",
+        description: "The invoice batch has been finalized and locked.",
+      });
+      setShowFinalizeDialog(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to finalize batch",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async (notes?: string) => {
+      return apiRequest(`/api/invoice-batches/${batchId}/review`, {
+        method: "POST",
+        body: JSON.stringify({ notes }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      toast({
+        title: "Batch reviewed",
+        description: "The batch has been marked as reviewed.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to review batch",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const unfinalizeMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/invoice-batches/${batchId}/unfinalize`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      toast({
+        title: "Batch reverted",
+        description: "The batch has been reverted to draft status.",
+      });
+      setShowUnfinalizeDialog(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to unfinalize batch",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleFinalizeBatch = async () => {
-    // Will be implemented in next step
-    toast({
-      title: "Coming soon",
-      description: "Batch finalization will be implemented in the next phase.",
-    });
+    setShowFinalizeDialog(true);
+  };
+
+  const handleUnfinalizeBatch = async () => {
+    setShowUnfinalizeDialog(true);
+  };
+
+  const handleReviewBatch = async () => {
+    reviewMutation.mutate(undefined);
   };
 
   const calculateGrandTotal = () => {
@@ -214,19 +310,55 @@ export default function BatchDetail() {
     
     if (batchDetails.exportedToQBO) {
       return (
-        <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+        <Badge variant="default" className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100">
           <CheckCircle className="mr-1 h-3 w-3" />
           Exported
         </Badge>
       );
     }
     
-    return (
-      <Badge variant="secondary">
-        <FileText className="mr-1 h-3 w-3" />
-        Draft
-      </Badge>
-    );
+    switch (batchDetails.status) {
+      case 'finalized':
+        return (
+          <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+            <Lock className="mr-1 h-3 w-3" />
+            Finalized
+          </Badge>
+        );
+      case 'reviewed':
+        return (
+          <Badge variant="default" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+            <FileText className="mr-1 h-3 w-3" />
+            Reviewed
+          </Badge>
+        );
+      default:
+        return (
+          <Badge variant="secondary">
+            <FileText className="mr-1 h-3 w-3" />
+            Draft
+          </Badge>
+        );
+    }
+  };
+
+  const canFinalize = () => {
+    if (!batchDetails || !groupedLines) return false;
+    return (batchDetails.status === 'draft' || batchDetails.status === 'reviewed') && 
+           Object.keys(groupedLines).length > 0 &&
+           !batchDetails.exportedToQBO;
+  };
+
+  const canReview = () => {
+    if (!batchDetails) return false;
+    return batchDetails.status === 'draft' && !batchDetails.exportedToQBO;
+  };
+
+  const canUnfinalize = () => {
+    if (!batchDetails || !user) return false;
+    return batchDetails.status === 'finalized' && 
+           !batchDetails.exportedToQBO &&
+           user.role === 'admin';
   };
 
   if (isLoadingDetails || isLoadingLines) {
@@ -306,15 +438,45 @@ export default function BatchDetail() {
             <Download className="mr-2 h-4 w-4" />
             Export CSV
           </Button>
-          <Button
-            onClick={handleFinalizeBatch}
-            variant="default"
-            disabled={batchDetails.exportedToQBO}
-            data-testid="button-finalize"
-          >
-            <Lock className="mr-2 h-4 w-4" />
-            Finalize Batch
-          </Button>
+          {canReview() && (
+            <Button
+              onClick={handleReviewBatch}
+              variant="outline"
+              disabled={reviewMutation.isPending}
+              data-testid="button-review"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Mark as Reviewed
+            </Button>
+          )}
+          {canFinalize() && (
+            <Button
+              onClick={handleFinalizeBatch}
+              variant="default"
+              disabled={finalizeMutation.isPending}
+              data-testid="button-finalize"
+            >
+              <Lock className="mr-2 h-4 w-4" />
+              Finalize Invoice
+            </Button>
+          )}
+          {canUnfinalize() && (
+            <Button
+              onClick={handleUnfinalizeBatch}
+              variant="destructive"
+              disabled={unfinalizeMutation.isPending}
+              data-testid="button-unfinalize"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Revert to Draft
+            </Button>
+          )}
+          {batchDetails.status === 'finalized' && batchDetails.exportedToQBO && (
+            <Badge variant="outline" className="px-3 py-2">
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Exported to QuickBooks
+            </Badge>
+          )}
           <div className="ml-auto flex gap-2">
             <Button
               onClick={expandAll}
@@ -379,6 +541,38 @@ export default function BatchDetail() {
                 <p className="font-medium" data-testid="text-line-count">{batchDetails.totalLinesCount}</p>
               </div>
             </div>
+            
+            {/* Finalization Info */}
+            {batchDetails.status === 'finalized' && batchDetails.finalizedAt && (
+              <>
+                <Separator className="my-4" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="text-sm text-muted-foreground">Finalized By</div>
+                    <p className="font-medium" data-testid="text-finalized-by">
+                      {batchDetails.finalizer?.name || 'System'}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm text-muted-foreground">Finalized At</div>
+                    <p className="font-medium" data-testid="text-finalized-at">
+                      {format(new Date(batchDetails.finalizedAt), "MMM d, yyyy h:mm a")}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+            
+            {/* Review Notes */}
+            {batchDetails.notes && (
+              <>
+                <Separator className="my-4" />
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Review Notes</div>
+                  <p className="text-sm" data-testid="text-review-notes">{batchDetails.notes}</p>
+                </div>
+              </>
+            )}
 
             <Separator className="my-4" />
 
@@ -541,6 +735,52 @@ export default function BatchDetail() {
           </CardContent>
         </Card>
       </div>
+      
+      {/* Finalize Confirmation Dialog */}
+      <AlertDialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Finalize Invoice Batch?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will lock the batch and all associated time entries. 
+              Once finalized, the invoice lines cannot be edited.
+              {batchDetails.status === 'draft' && (
+                <div className="mt-2 text-sm text-yellow-600 dark:text-yellow-400">
+                  Note: This batch has not been reviewed yet. Consider marking it as reviewed first.
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => finalizeMutation.mutate()}>
+              Finalize Batch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Unfinalize Confirmation Dialog */}
+      <AlertDialog open={showUnfinalizeDialog} onOpenChange={setShowUnfinalizeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revert to Draft?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will unlock the batch and allow editing of invoice lines and time entries again.
+              This action should only be used for corrections.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => unfinalizeMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Revert to Draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }

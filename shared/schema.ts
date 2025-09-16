@@ -408,6 +408,10 @@ export const invoiceBatches = pgTable("invoice_batches", {
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
   invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
+  status: text("status").notNull().default("draft"), // draft, reviewed, finalized
+  finalizedAt: timestamp("finalized_at"),
+  finalizedBy: varchar("finalized_by").references(() => users.id),
+  notes: text("notes"), // For review comments
   exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
   exportedAt: timestamp("exported_at"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -610,8 +614,12 @@ export const estimateAllocationsRelations = relations(estimateAllocations, ({ on
   }),
 }));
 
-export const invoiceBatchesRelations = relations(invoiceBatches, ({ many }) => ({
+export const invoiceBatchesRelations = relations(invoiceBatches, ({ many, one }) => ({
   lines: many(invoiceLines),
+  finalizer: one(users, {
+    fields: [invoiceBatches.finalizedBy],
+    references: [users.id],
+  }),
 }));
 
 export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({

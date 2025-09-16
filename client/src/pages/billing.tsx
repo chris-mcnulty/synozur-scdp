@@ -28,7 +28,8 @@ import {
   Filter,
   Calendar,
   Building,
-  FolderOpen
+  FolderOpen,
+  Lock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -45,7 +46,11 @@ interface InvoiceBatchData {
   totalAmount: number;
   discountAmount?: number;
   invoicingMode: 'client' | 'project';
-  status: 'draft' | 'exported' | 'sent';
+  status: string;
+  finalizedAt?: string | null;
+  finalizedBy?: string | null;
+  notes?: string | null;
+  exportedToQBO: boolean;
   exportedAt?: string;
   createdAt: string;
 }
@@ -126,16 +131,38 @@ export default function Billing() {
   const unbilledSummary = getUnbilledSummary();
 
   // Helper function for status badges
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'draft':
-        return <Badge variant="secondary">Draft</Badge>;
-      case 'exported':
-        return <Badge variant="default">Exported</Badge>;
-      case 'sent':
-        return <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Sent</Badge>;
+  const getStatusBadge = (batch: any) => {
+    if (batch.exportedToQBO) {
+      return (
+        <Badge variant="default" className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Exported
+        </Badge>
+      );
+    }
+    
+    switch (batch.status) {
+      case 'finalized':
+        return (
+          <Badge variant="default" className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+            <Lock className="w-3 h-3 mr-1" />
+            Finalized
+          </Badge>
+        );
+      case 'reviewed':
+        return (
+          <Badge variant="default" className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+            <FileText className="w-3 h-3 mr-1" />
+            Reviewed
+          </Badge>
+        );
       default:
-        return <Badge variant="outline">{status}</Badge>;
+        return (
+          <Badge variant="secondary" className="text-xs">
+            <FileText className="w-3 h-3 mr-1" />
+            Draft
+          </Badge>
+        );
     }
   };
 
@@ -564,7 +591,7 @@ export default function Billing() {
                               <><FolderOpen className="w-3 h-3 mr-1" />Project</>
                             )}
                           </Badge>
-                          {getStatusBadge(batch.status)}
+                          {getStatusBadge(batch)}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
@@ -582,7 +609,7 @@ export default function Billing() {
                           </div>
                         </div>
                         <div className="flex space-x-2">
-                          {batch.status === 'draft' && (
+                          {batch.status === 'finalized' && !batch.exportedToQBO && (
                             <Button
                               size="sm"
                               onClick={() => handleExportToQBO(batch.id)}

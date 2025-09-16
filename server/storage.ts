@@ -153,6 +153,17 @@ export interface IStorage {
     expensesBilled: number;
     totalAmount: number;
   }>;
+  
+  // Batch Finalization Workflow
+  finalizeBatch(batchId: string, userId: string): Promise<InvoiceBatch>;
+  reviewBatch(batchId: string, notes?: string): Promise<InvoiceBatch>;
+  unfinalizeBatch(batchId: string): Promise<InvoiceBatch>;
+  getBatchStatus(batchId: string): Promise<{
+    status: string;
+    finalizedAt?: string | null;
+    finalizedBy?: User | null;
+    notes?: string | null;
+  }>;
 
   // Unbilled Items Detail
   getUnbilledItemsDetail(filters?: {
@@ -2393,6 +2404,150 @@ export class DatabaseStorage implements IStorage {
         totalAmount
       };
     });
+  }
+
+  async finalizeBatch(batchId: string, userId: string): Promise<InvoiceBatch> {
+    return await db.transaction(async (tx) => {
+      // Get the batch first
+      const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+      
+      if (!batch) {
+        throw new Error(`Invoice batch ${batchId} not found`);
+      }
+      
+      // Check if batch can be finalized (must be draft or reviewed)
+      if (batch.status === 'finalized') {
+        throw new Error('Batch is already finalized');
+      }
+      
+      // Check if batch has any invoice lines
+      const lines = await tx.select()
+        .from(invoiceLines)
+        .where(eq(invoiceLines.batchId, batchId))
+        .limit(1);
+      
+      if (lines.length === 0) {
+        throw new Error('Cannot finalize batch without any invoice lines');
+      }
+      
+      // Update the batch status
+      const [updatedBatch] = await tx.update(invoiceBatches)
+        .set({
+          status: 'finalized',
+          finalizedAt: sql`now()`,
+          finalizedBy: userId
+        })
+        .where(eq(invoiceBatches.batchId, batchId))
+        .returning();
+      
+      // Lock all associated time entries
+      await tx.update(timeEntries)
+        .set({ 
+          locked: true,
+          invoiceBatchId: batchId,
+          lockedAt: sql`now()`
+        })
+        .where(and(
+          eq(timeEntries.billedFlag, true),
+          eq(timeEntries.invoiceBatchId, batchId)
+        ));
+      
+      console.log(`[STORAGE] Batch ${batchId} finalized by user ${userId}`);
+      
+      return updatedBatch;
+    });
+  }
+  
+  async reviewBatch(batchId: string, notes?: string): Promise<InvoiceBatch> {
+    const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+    
+    if (batch.status !== 'draft') {
+      throw new Error('Only draft batches can be marked as reviewed');
+    }
+    
+    const [updatedBatch] = await db.update(invoiceBatches)
+      .set({
+        status: 'reviewed',
+        notes: notes || batch.notes
+      })
+      .where(eq(invoiceBatches.batchId, batchId))
+      .returning();
+    
+    console.log(`[STORAGE] Batch ${batchId} marked as reviewed`);
+    
+    return updatedBatch;
+  }
+  
+  async unfinalizeBatch(batchId: string): Promise<InvoiceBatch> {
+    return await db.transaction(async (tx) => {
+      const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+      
+      if (!batch) {
+        throw new Error(`Invoice batch ${batchId} not found`);
+      }
+      
+      if (batch.status !== 'finalized') {
+        throw new Error('Only finalized batches can be unfinalized');
+      }
+      
+      // Check if batch has been exported
+      if (batch.exportedToQBO) {
+        throw new Error('Cannot unfinalize a batch that has been exported to QuickBooks');
+      }
+      
+      // Update the batch status back to draft
+      const [updatedBatch] = await tx.update(invoiceBatches)
+        .set({
+          status: 'draft',
+          finalizedAt: null,
+          finalizedBy: null
+        })
+        .where(eq(invoiceBatches.batchId, batchId))
+        .returning();
+      
+      // Unlock associated time entries
+      await tx.update(timeEntries)
+        .set({ 
+          locked: false,
+          invoiceBatchId: null,
+          lockedAt: null
+        })
+        .where(eq(timeEntries.invoiceBatchId, batchId));
+      
+      console.log(`[STORAGE] Batch ${batchId} unfinalized`);
+      
+      return updatedBatch;
+    });
+  }
+  
+  async getBatchStatus(batchId: string): Promise<{
+    status: string;
+    finalizedAt?: string | null;
+    finalizedBy?: User | null;
+    notes?: string | null;
+  }> {
+    const [batch] = await db.select({
+      batch: invoiceBatches,
+      finalizer: users
+    })
+    .from(invoiceBatches)
+    .leftJoin(users, eq(invoiceBatches.finalizedBy, users.id))
+    .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+    
+    return {
+      status: batch.batch.status,
+      finalizedAt: batch.batch.finalizedAt ? batch.batch.finalizedAt.toISOString() : null,
+      finalizedBy: batch.finalizer,
+      notes: batch.batch.notes
+    };
   }
 
   private async generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string) {

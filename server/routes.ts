@@ -2667,6 +2667,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+  
+  // Invoice batch finalization workflow endpoints
+  app.post("/api/invoice-batches/:batchId/finalize", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+      
+      console.log(`[API] Finalizing batch ${batchId} by user ${userId}`);
+      
+      const updatedBatch = await storage.finalizeBatch(batchId, userId);
+      
+      res.json({
+        message: "Batch finalized successfully",
+        batch: updatedBatch
+      });
+    } catch (error: any) {
+      console.error("Failed to finalize batch:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to finalize batch" 
+      });
+    }
+  });
+  
+  app.post("/api/invoice-batches/:batchId/review", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { notes } = req.body;
+      
+      console.log(`[API] Marking batch ${batchId} as reviewed`);
+      
+      const updatedBatch = await storage.reviewBatch(batchId, notes);
+      
+      res.json({
+        message: "Batch marked as reviewed",
+        batch: updatedBatch
+      });
+    } catch (error: any) {
+      console.error("Failed to review batch:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to mark batch as reviewed" 
+      });
+    }
+  });
+  
+  app.post("/api/invoice-batches/:batchId/unfinalize", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      console.log(`[API] Unfinalizing batch ${batchId}`);
+      
+      const updatedBatch = await storage.unfinalizeBatch(batchId);
+      
+      res.json({
+        message: "Batch reverted to draft successfully",
+        batch: updatedBatch
+      });
+    } catch (error: any) {
+      console.error("Failed to unfinalize batch:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to unfinalize batch" 
+      });
+    }
+  });
+  
+  app.get("/api/invoice-batches/:batchId/status", requireAuth, async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      const status = await storage.getBatchStatus(batchId);
+      
+      res.json(status);
+    } catch (error: any) {
+      console.error("Failed to get batch status:", error);
+      res.status(404).json({ 
+        message: error.message || "Failed to get batch status" 
+      });
+    }
+  });
 
   app.delete("/api/estimates/:id", requireAuth, async (req, res) => {
     try {
