@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, sows, timeEntries } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -2746,6 +2746,262 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Failed to get batch status:", error);
       res.status(404).json({ 
         message: error.message || "Failed to get batch status" 
+      });
+    }
+  });
+
+  // Invoice Line Adjustments API Routes
+  
+  // Line-item editing
+  app.patch("/api/invoice-lines/:lineId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { lineId } = req.params;
+      const updates = req.body;
+      
+      // Validate the updates
+      if (updates.billedAmount !== undefined && isNaN(parseFloat(updates.billedAmount))) {
+        return res.status(400).json({ message: "Invalid billedAmount value" });
+      }
+      
+      const updatedLine = await storage.updateInvoiceLine(lineId, updates);
+      res.json(updatedLine);
+    } catch (error: any) {
+      console.error("Failed to update invoice line:", error);
+      res.status(error.message?.includes('not found') ? 404 : 400).json({ 
+        message: error.message || "Failed to update invoice line" 
+      });
+    }
+  });
+  
+  // Bulk line editing
+  app.post("/api/invoice-batches/:batchId/bulk-update", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { updates } = req.body;
+      
+      if (!Array.isArray(updates)) {
+        return res.status(400).json({ message: "Updates must be an array" });
+      }
+      
+      const updatedLines = await storage.bulkUpdateInvoiceLines(batchId, updates);
+      res.json(updatedLines);
+    } catch (error: any) {
+      console.error("Failed to bulk update invoice lines:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to bulk update invoice lines" 
+      });
+    }
+  });
+  
+  // Aggregate adjustment
+  app.post("/api/invoice-batches/:batchId/adjustments", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { targetAmount, method, reason, sowId, projectId, allocation } = req.body;
+      const userId = req.user!.id;
+      
+      // Validate required fields
+      if (!targetAmount || !method) {
+        return res.status(400).json({ 
+          message: "Missing required fields: targetAmount and method are required" 
+        });
+      }
+      
+      if (!['pro_rata_amount', 'pro_rata_hours', 'flat', 'manual'].includes(method)) {
+        return res.status(400).json({ 
+          message: "Invalid adjustment method. Must be: pro_rata_amount, pro_rata_hours, flat, or manual" 
+        });
+      }
+      
+      if (method === 'manual' && !allocation) {
+        return res.status(400).json({ 
+          message: "Manual method requires allocation object" 
+        });
+      }
+      
+      const adjustment = await storage.createAggregateAdjustment({
+        batchId,
+        targetAmount,
+        method,
+        reason,
+        sowId,
+        projectId,
+        userId,
+        allocation
+      });
+      
+      // Get updated batch details to return new totals
+      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
+      
+      res.json({
+        adjustment,
+        batchDetails
+      });
+    } catch (error: any) {
+      console.error("Failed to create aggregate adjustment:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to create aggregate adjustment" 
+      });
+    }
+  });
+  
+  // Remove adjustment
+  app.delete("/api/invoice-adjustments/:adjustmentId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { adjustmentId } = req.params;
+      
+      await storage.removeAggregateAdjustment(adjustmentId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("Failed to remove adjustment:", error);
+      res.status(error.message?.includes('not found') ? 404 : 400).json({ 
+        message: error.message || "Failed to remove adjustment" 
+      });
+    }
+  });
+  
+  // Get adjustments for batch
+  app.get("/api/invoice-batches/:batchId/adjustments", requireAuth, async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      const adjustments = await storage.getInvoiceAdjustments(batchId);
+      res.json(adjustments);
+    } catch (error: any) {
+      console.error("Failed to get adjustments:", error);
+      res.status(500).json({ 
+        message: "Failed to get adjustments" 
+      });
+    }
+  });
+  
+  // Milestone mapping
+  app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { lineId } = req.params;
+      const { milestoneId } = req.body;
+      
+      const updatedLine = await storage.mapLineToMilestone(lineId, milestoneId);
+      res.json(updatedLine);
+    } catch (error: any) {
+      console.error("Failed to map line to milestone:", error);
+      res.status(error.message?.includes('not found') ? 404 : 400).json({ 
+        message: error.message || "Failed to map line to milestone" 
+      });
+    }
+  });
+  
+  // Project milestones (these may already exist, but adding for completeness)
+  app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      
+      const milestones = await storage.getProjectMilestones(projectId);
+      res.json(milestones);
+    } catch (error: any) {
+      console.error("Failed to get project milestones:", error);
+      res.status(500).json({ 
+        message: "Failed to get project milestones" 
+      });
+    }
+  });
+  
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const milestoneData = {
+        ...req.body,
+        projectId
+      };
+      
+      // Validate milestone data
+      const validatedData = insertProjectMilestoneSchema.parse(milestoneData);
+      
+      const milestone = await storage.createProjectMilestone(validatedData);
+      res.json(milestone);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid milestone data", 
+          errors: error.errors 
+        });
+      }
+      console.error("Failed to create project milestone:", error);
+      res.status(500).json({ 
+        message: "Failed to create project milestone" 
+      });
+    }
+  });
+  
+  // Project financials
+  app.get("/api/projects/:projectId/financials", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      
+      const financials = await storage.getProjectFinancials(projectId);
+      res.json(financials);
+    } catch (error: any) {
+      console.error("Failed to get project financials:", error);
+      res.status(500).json({ 
+        message: "Failed to get project financials" 
+      });
+    }
+  });
+  
+  // Financial comparison report
+  app.get("/api/reports/financial-comparison", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+    try {
+      const { startDate, endDate, clientId, status } = req.query;
+      
+      // Get all projects with their financials
+      const projects = await storage.getProjects();
+      
+      const financialComparison = await Promise.all(
+        projects
+          .filter(project => {
+            // Apply filters
+            if (clientId && project.clientId !== clientId) return false;
+            if (status && project.status !== status) return false;
+            if (startDate && project.startDate && new Date(project.startDate) < new Date(startDate as string)) return false;
+            if (endDate && project.endDate && new Date(project.endDate) > new Date(endDate as string)) return false;
+            return true;
+          })
+          .map(async (project) => {
+            const financials = await storage.getProjectFinancials(project.id);
+            return {
+              projectId: project.id,
+              projectName: project.name,
+              projectCode: project.code,
+              clientName: project.client.name,
+              status: project.status,
+              ...financials
+            };
+          })
+      );
+      
+      // Calculate totals
+      const totals = financialComparison.reduce(
+        (acc, proj) => ({
+          estimated: acc.estimated + proj.estimated,
+          contracted: acc.contracted + proj.contracted,
+          actualCost: acc.actualCost + proj.actualCost,
+          billed: acc.billed + proj.billed,
+          variance: acc.variance + proj.variance
+        }),
+        { estimated: 0, contracted: 0, actualCost: 0, billed: 0, variance: 0 }
+      );
+      
+      res.json({
+        projects: financialComparison,
+        totals,
+        averageProfitMargin: financialComparison.length > 0 
+          ? financialComparison.reduce((sum, p) => sum + p.profitMargin, 0) / financialComparison.length 
+          : 0
+      });
+    } catch (error: any) {
+      console.error("Failed to get financial comparison:", error);
+      res.status(500).json({ 
+        message: "Failed to get financial comparison" 
       });
     }
   });

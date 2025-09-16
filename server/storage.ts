@@ -1,7 +1,7 @@
 import { 
   users, clients, projects, roles, staff, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
-  invoiceBatches, invoiceLines, rateOverrides, sows,
+  invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   type User, type InsertUser, type Client, type InsertClient, 
@@ -14,6 +14,7 @@ import {
   type ChangeOrder, type InsertChangeOrder,
   type InvoiceBatch, type InsertInvoiceBatch,
   type InvoiceLine, type InsertInvoiceLine,
+  type InvoiceAdjustment, type InsertInvoiceAdjustment,
   type Sow, type InsertSow,
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
@@ -231,6 +232,37 @@ export interface IStorage {
     totalHours: number;
     revenue: number;
   }[]>;
+  
+  // Invoice Line Adjustments
+  updateInvoiceLine(lineId: string, updates: Partial<InvoiceLine>): Promise<InvoiceLine>;
+  bulkUpdateInvoiceLines(batchId: string, updates: Array<{id: string, changes: Partial<InvoiceLine>}>): Promise<InvoiceLine[]>;
+  
+  // Aggregate Adjustments
+  createAggregateAdjustment(params: {
+    batchId: string;
+    targetAmount: number;
+    method: 'pro_rata_amount' | 'pro_rata_hours' | 'flat' | 'manual';
+    reason?: string;
+    sowId?: string;
+    projectId?: string;
+    userId: string;
+    allocation?: Record<string, number>; // For manual allocation
+  }): Promise<InvoiceAdjustment>;
+  removeAggregateAdjustment(adjustmentId: string): Promise<void>;
+  getInvoiceAdjustments(batchId: string): Promise<InvoiceAdjustment[]>;
+  
+  // Milestone Mapping
+  mapLineToMilestone(lineId: string, milestoneId: string | null): Promise<InvoiceLine>;
+  
+  // Financial Analysis
+  getProjectFinancials(projectId: string): Promise<{
+    estimated: number;
+    contracted: number;
+    actualCost: number;
+    billed: number;
+    variance: number;
+    profitMargin: number;
+  }>;
   
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
@@ -3006,6 +3038,336 @@ export class DatabaseStorage implements IStorage {
       totalHours: Number(metric.totalHours) || 0,
       revenue: Number(metric.revenue) || 0
     }));
+  }
+
+  // Invoice Line Adjustments Implementation
+  async updateInvoiceLine(lineId: string, updates: Partial<InvoiceLine>): Promise<InvoiceLine> {
+    // First check if line exists and get batch status
+    const [existingLine] = await db.select({
+      line: invoiceLines,
+      batch: invoiceBatches
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(eq(invoiceLines.id, lineId));
+    
+    if (!existingLine) {
+      throw new Error(`Invoice line ${lineId} not found`);
+    }
+    
+    // Check if batch is finalized
+    if (existingLine.batch.status === 'finalized') {
+      throw new Error('Cannot edit lines in a finalized batch');
+    }
+    
+    // Calculate variance if billedAmount is being updated
+    const updatesWithCalculations = { ...updates };
+    if (updates.billedAmount !== undefined) {
+      const originalAmount = existingLine.line.originalAmount ? parseFloat(existingLine.line.originalAmount) : 0;
+      updatesWithCalculations.varianceAmount = (originalAmount - parseFloat(updates.billedAmount as any)).toString();
+      updatesWithCalculations.adjustmentType = 'line';
+      updatesWithCalculations.editedAt = new Date();
+    }
+    
+    const [updatedLine] = await db
+      .update(invoiceLines)
+      .set(updatesWithCalculations)
+      .where(eq(invoiceLines.id, lineId))
+      .returning();
+    
+    return updatedLine;
+  }
+
+  async bulkUpdateInvoiceLines(batchId: string, updates: Array<{id: string, changes: Partial<InvoiceLine>}>): Promise<InvoiceLine[]> {
+    // Check if batch is finalized
+    const [batch] = await db.select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Batch ${batchId} not found`);
+    }
+    
+    if (batch.status === 'finalized') {
+      throw new Error('Cannot edit lines in a finalized batch');
+    }
+    
+    // Update each line
+    const updatedLines = [];
+    for (const update of updates) {
+      const line = await this.updateInvoiceLine(update.id, update.changes);
+      updatedLines.push(line);
+    }
+    
+    return updatedLines;
+  }
+
+  // Aggregate Adjustments
+  async createAggregateAdjustment(params: {
+    batchId: string;
+    targetAmount: number;
+    method: 'pro_rata_amount' | 'pro_rata_hours' | 'flat' | 'manual';
+    reason?: string;
+    sowId?: string;
+    projectId?: string;
+    userId: string;
+    allocation?: Record<string, number>;
+  }): Promise<InvoiceAdjustment> {
+    // Check if batch is finalized
+    const [batch] = await db.select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, params.batchId));
+    
+    if (!batch) {
+      throw new Error(`Batch ${params.batchId} not found`);
+    }
+    
+    if (batch.status === 'finalized') {
+      throw new Error('Cannot create adjustments for a finalized batch');
+    }
+    
+    // Get all invoice lines for the batch (optionally filtered by project)
+    let linesQuery = params.projectId
+      ? db.select()
+          .from(invoiceLines)
+          .where(and(
+            eq(invoiceLines.batchId, params.batchId),
+            eq(invoiceLines.projectId, params.projectId)
+          ))
+      : db.select()
+          .from(invoiceLines)
+          .where(eq(invoiceLines.batchId, params.batchId));
+    
+    const lines = await linesQuery;
+    
+    if (lines.length === 0) {
+      throw new Error('No invoice lines found for adjustment');
+    }
+    
+    // Calculate the current total
+    const currentTotal = lines.reduce((sum, line) => sum + (line.originalAmount ? parseFloat(line.originalAmount) : 0), 0);
+    const adjustmentAmount = params.targetAmount - currentTotal;
+    const adjustmentRatio = params.targetAmount / currentTotal;
+    
+    // Calculate allocation based on method
+    const allocation: Record<string, number> = {};
+    const allocationGroupId = `adj_${Date.now()}`;
+    
+    switch (params.method) {
+      case 'pro_rata_amount':
+        for (const line of lines) {
+          const lineAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
+          allocation[line.id] = lineAmount * adjustmentRatio;
+        }
+        break;
+      
+      case 'pro_rata_hours':
+        for (const line of lines) {
+          const lineQuantity = line.quantity ? parseFloat(line.quantity) : 0;
+          const totalQuantity = lines.reduce((sum, l) => sum + (l.quantity ? parseFloat(l.quantity) : 0), 0);
+          if (totalQuantity > 0) {
+            allocation[line.id] = params.targetAmount * (lineQuantity / totalQuantity);
+          }
+        }
+        break;
+      
+      case 'flat':
+        const flatAmount = params.targetAmount / lines.length;
+        for (const line of lines) {
+          allocation[line.id] = flatAmount;
+        }
+        break;
+      
+      case 'manual':
+        if (!params.allocation) {
+          throw new Error('Manual allocation requires allocation parameter');
+        }
+        Object.assign(allocation, params.allocation);
+        break;
+    }
+    
+    // Create adjustment record
+    const [adjustment] = await db.insert(invoiceAdjustments).values({
+      batchId: params.batchId,
+      scope: 'aggregate',
+      method: params.method,
+      targetAmount: params.targetAmount.toString(),
+      reason: params.reason,
+      sowId: params.sowId,
+      projectId: params.projectId,
+      createdBy: params.userId,
+      metadata: allocation
+    }).returning();
+    
+    // Update invoice lines with new billed amounts
+    for (const [lineId, newAmount] of Object.entries(allocation)) {
+      const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
+      if (line) {
+        const originalAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
+        await db.update(invoiceLines).set({
+          billedAmount: newAmount.toString(),
+          varianceAmount: (originalAmount - newAmount).toString(),
+          adjustmentType: 'aggregate',
+          editedBy: params.userId,
+          editedAt: new Date()
+        }).where(eq(invoiceLines.id, lineId));
+      }
+    }
+    
+    return adjustment;
+  }
+
+  async removeAggregateAdjustment(adjustmentId: string): Promise<void> {
+    // Get adjustment details
+    const [adjustment] = await db.select()
+      .from(invoiceAdjustments)
+      .where(eq(invoiceAdjustments.id, adjustmentId));
+    
+    if (!adjustment) {
+      throw new Error(`Adjustment ${adjustmentId} not found`);
+    }
+    
+    // Check if batch is finalized
+    const [batch] = await db.select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, adjustment.batchId));
+    
+    if (!batch) {
+      throw new Error(`Batch ${adjustment.batchId} not found`);
+    }
+    
+    if (batch.status === 'finalized') {
+      throw new Error('Cannot remove adjustments from a finalized batch');
+    }
+    
+    // Get affected lines and revert them
+    if (adjustment.metadata) {
+      const lineIds = Object.keys(adjustment.metadata as Record<string, number>);
+      for (const lineId of lineIds) {
+        const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
+        if (line) {
+          // Revert to original amount
+          await db.update(invoiceLines).set({
+            billedAmount: line.originalAmount,
+            varianceAmount: '0',
+            adjustmentType: null,
+            editedBy: null,
+            editedAt: null
+          }).where(eq(invoiceLines.id, lineId));
+        }
+      }
+    }
+    
+    // Delete the adjustment record
+    await db.delete(invoiceAdjustments)
+      .where(eq(invoiceAdjustments.id, adjustmentId));
+  }
+
+  async getInvoiceAdjustments(batchId: string): Promise<InvoiceAdjustment[]> {
+    return await db.select()
+      .from(invoiceAdjustments)
+      .where(eq(invoiceAdjustments.batchId, batchId))
+      .orderBy(desc(invoiceAdjustments.createdAt));
+  }
+
+  // Milestone Mapping
+  async mapLineToMilestone(lineId: string, milestoneId: string | null): Promise<InvoiceLine> {
+    // Check if line exists
+    const [existingLine] = await db.select({
+      line: invoiceLines,
+      batch: invoiceBatches
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(eq(invoiceLines.id, lineId));
+    
+    if (!existingLine) {
+      throw new Error(`Invoice line ${lineId} not found`);
+    }
+    
+    // Check if batch is finalized
+    if (existingLine.batch.status === 'finalized') {
+      throw new Error('Cannot edit lines in a finalized batch');
+    }
+    
+    // Update milestone mapping
+    const [updatedLine] = await db
+      .update(invoiceLines)
+      .set({ projectMilestoneId: milestoneId })
+      .where(eq(invoiceLines.id, lineId))
+      .returning();
+    
+    return updatedLine;
+  }
+
+  // Financial Analysis
+  async getProjectFinancials(projectId: string): Promise<{
+    estimated: number;
+    contracted: number;
+    actualCost: number;
+    billed: number;
+    variance: number;
+    profitMargin: number;
+  }> {
+    // Get estimated amount from latest approved estimate
+    const projectEstimates = await this.getEstimatesByProject(projectId);
+    let estimated = 0;
+    
+    if (projectEstimates.length > 0) {
+      const approvedEstimate = projectEstimates.find(e => e.status === 'approved');
+      const estimate = approvedEstimate || projectEstimates[0];
+      
+      if (estimate) {
+        const lineItems = await this.getEstimateLineItems(estimate.id);
+        estimated = lineItems.reduce((sum, item) => sum + (parseFloat(item.adjustedHours) * parseFloat(item.rate)), 0);
+      }
+    }
+    
+    // Get contracted amount from SOWs
+    const projectSows = await this.getSows(projectId);
+    const contracted = projectSows.reduce((sum, sow) => sum + parseFloat(sow.value), 0);
+    
+    // Get actual cost from time entries and expenses
+    const timeEntryResult = await db.select({
+      totalCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC)), 0)::float`
+    })
+    .from(timeEntries)
+    .where(eq(timeEntries.projectId, projectId));
+    
+    const expenseResult = await db.select({
+      totalExpenses: sql<number>`COALESCE(SUM(CAST(${expenses.amount} AS NUMERIC)), 0)::float`
+    })
+    .from(expenses)
+    .where(eq(expenses.projectId, projectId));
+    
+    const actualCost = (timeEntryResult[0]?.totalCost || 0) + (expenseResult[0]?.totalExpenses || 0);
+    
+    // Get billed amount from invoice lines
+    const billedResult = await db.select({
+      totalBilled: sql<number>`COALESCE(SUM(CAST(${invoiceLines.billedAmount} AS NUMERIC)), 0)::float`
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(and(
+      eq(invoiceLines.projectId, projectId),
+      eq(invoiceBatches.status, 'finalized')
+    ));
+    
+    const billed = billedResult[0]?.totalBilled || 0;
+    
+    // Calculate variance and profit margin
+    const effectiveRevenue = contracted > 0 ? contracted : estimated;
+    const variance = effectiveRevenue - actualCost;
+    const profitMargin = effectiveRevenue > 0 ? ((effectiveRevenue - actualCost) / effectiveRevenue) * 100 : 0;
+    
+    return {
+      estimated,
+      contracted,
+      actualCost,
+      billed,
+      variance,
+      profitMargin
+    };
   }
 
   async getPortfolioMetrics(filters?: { 
