@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import type { UnbilledItemsResponse } from "@shared/schema";
 
 interface InvoiceBatchData {
   id: string;
@@ -90,12 +91,9 @@ export default function Billing() {
     queryKey: ["/api/invoice-batches"],
   });
 
-  const { data: timeEntries = [] } = useQuery({
-    queryKey: ["/api/time-entries"],
-  });
-
-  const { data: expenses = [] } = useQuery({
-    queryKey: ["/api/expenses"],
+  // Fetch unbilled items summary from the same API endpoint as the detailed view
+  const { data: unbilledData } = useQuery<UnbilledItemsResponse>({
+    queryKey: ["/api/billing/unbilled-items"],
   });
 
   // Fetch default discount settings
@@ -112,26 +110,6 @@ export default function Billing() {
       setDiscountValue(discountSettings.defaultDiscountValue);
     }
   }, [discountSettings]);
-
-  const getUnbilledSummary = () => {
-    if (!timeEntries || !expenses) return { hours: 0, amount: 0, expenses: 0 };
-    
-    const unbilledHours = (timeEntries as any[])
-      .filter((entry: any) => entry.billable && !entry.billedFlag)
-      .reduce((sum: number, entry: any) => sum + parseFloat(entry.hours), 0);
-    
-    const unbilledExpenses = (expenses as any[])
-      .filter((expense: any) => expense.billable && !expense.billedFlag)
-      .reduce((sum: number, expense: any) => sum + parseFloat(expense.amount), 0);
-
-    return {
-      hours: unbilledHours,
-      amount: unbilledHours * 150, // Estimated rate
-      expenses: unbilledExpenses
-    };
-  };
-
-  const unbilledSummary = getUnbilledSummary();
 
   // Helper function for status badges
   const getStatusBadge = (batch: any) => {
@@ -224,8 +202,7 @@ export default function Billing() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/time-entries'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
       
       const message = data.invoicesCreated 
         ? `Generated ${data.invoicesCreated} invoices. Billed ${data.timeEntriesBilled} time entries and ${data.expensesBilled} expenses for a total of $${Math.round(data.totalAmount).toLocaleString()}.`
@@ -504,7 +481,7 @@ export default function Billing() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Unbilled Hours</p>
                   <p className="text-2xl font-bold" data-testid="value-unbilled-hours">
-                    {unbilledSummary.hours}
+                    {unbilledData?.totals?.timeHours?.toFixed(2) || '0'}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center">
@@ -521,7 +498,7 @@ export default function Billing() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Unbilled Revenue</p>
                   <p className="text-2xl font-bold" data-testid="value-unbilled-revenue">
-                    {canViewPricing ? `$${unbilledSummary.amount.toLocaleString()}` : '***'}
+                    {canViewPricing ? `$${(unbilledData?.totals?.timeAmount || 0).toLocaleString()}` : '***'}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
@@ -538,7 +515,7 @@ export default function Billing() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Unbilled Expenses</p>
                   <p className="text-2xl font-bold" data-testid="value-unbilled-expenses">
-                    ${unbilledSummary.expenses.toFixed(2)}
+                    ${(unbilledData?.totals?.expenseAmount || 0).toFixed(2)}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-secondary/10 rounded-lg flex items-center justify-center">
