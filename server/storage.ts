@@ -2271,8 +2271,69 @@ export class DatabaseStorage implements IStorage {
     return newBatch;
   }
 
-  async getInvoiceBatches(): Promise<InvoiceBatch[]> {
-    return await db.select().from(invoiceBatches).orderBy(desc(invoiceBatches.createdAt));
+  async getInvoiceBatches(): Promise<(InvoiceBatch & {
+    clientCount?: number;
+    projectCount?: number;
+    clientNames?: string[];
+    projectNames?: string[];
+  })[]> {
+    // Get all batches
+    const batches = await db.select().from(invoiceBatches).orderBy(desc(invoiceBatches.createdAt));
+    
+    // For each batch, get client and project information
+    const batchesWithDetails = await Promise.all(batches.map(async (batch) => {
+      // Get unique clients and projects for this batch
+      const lines = await db
+        .select({
+          clientId: invoiceLines.clientId,
+          projectId: invoiceLines.projectId,
+        })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.batchId, batch.batchId));
+      
+      if (lines.length === 0) {
+        return {
+          ...batch,
+          clientCount: 0,
+          projectCount: 0,
+          clientNames: [],
+          projectNames: []
+        };
+      }
+      
+      const uniqueClientIds = Array.from(new Set(lines.map(l => l.clientId)));
+      const uniqueProjectIds = Array.from(new Set(lines.map(l => l.projectId)));
+      
+      // Get client names if there are 3 or fewer
+      let clientNames: string[] = [];
+      if (uniqueClientIds.length <= 3) {
+        const clientData = await db
+          .select({ name: clients.name })
+          .from(clients)
+          .where(sql`${clients.id} IN ${uniqueClientIds}`);
+        clientNames = clientData.map(c => c.name);
+      }
+      
+      // Get project names if there are 3 or fewer
+      let projectNames: string[] = [];
+      if (uniqueProjectIds.length <= 3) {
+        const projectData = await db
+          .select({ name: projects.name })
+          .from(projects)
+          .where(sql`${projects.id} IN ${uniqueProjectIds}`);
+        projectNames = projectData.map(p => p.name);
+      }
+      
+      return {
+        ...batch,
+        clientCount: uniqueClientIds.length,
+        projectCount: uniqueProjectIds.length,
+        clientNames,
+        projectNames
+      };
+    }));
+    
+    return batchesWithDetails;
   }
 
   async getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {

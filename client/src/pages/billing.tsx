@@ -43,6 +43,9 @@ interface InvoiceBatchData {
   month?: string; // For backward compatibility
   clientName: string;
   projectCount: number;
+  clientCount?: number; // Number of clients in the batch
+  clientNames?: string[]; // Names of clients if <= 3
+  projectNames?: string[]; // Names of projects if <= 3
   totalAmount: number;
   discountAmount?: number;
   invoicingMode: 'client' | 'project';
@@ -582,7 +585,29 @@ export default function Billing() {
                             </div>
                           </Link>
                           <div className="text-sm text-muted-foreground" data-testid={`batch-client-${batch.id}`}>
-                            {batch.clientName}
+                            {batch.clientNames && batch.clientNames.length > 0 && batch.clientNames.length <= 3 ? (
+                              <span>
+                                <Building className="w-3 h-3 mr-1 inline" />
+                                {batch.clientNames.join(", ")}
+                              </span>
+                            ) : (
+                              <span>
+                                <Building className="w-3 h-3 mr-1 inline" />
+                                {batch.clientCount || 0} client{batch.clientCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            <span className="mx-2">•</span>
+                            {batch.projectNames && batch.projectNames.length > 0 && batch.projectNames.length <= 3 ? (
+                              <span>
+                                <FolderOpen className="w-3 h-3 mr-1 inline" />
+                                {batch.projectNames.join(", ")}
+                              </span>
+                            ) : (
+                              <span>
+                                <FolderOpen className="w-3 h-3 mr-1 inline" />
+                                {batch.projectCount || 0} project{batch.projectCount !== 1 ? 's' : ''}
+                              </span>
+                            )}
                           </div>
                           <Badge variant="outline" className="text-xs">
                             {batch.invoicingMode === 'client' ? (

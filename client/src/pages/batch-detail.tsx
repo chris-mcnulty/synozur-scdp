@@ -121,27 +121,13 @@ export default function BatchDetail() {
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
-    queryKey: ["/api/invoice-batches", batchId, "details"],
-    queryFn: async () => {
-      const response = await fetch(`/api/invoice-batches/${batchId}/details`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch batch details");
-      }
-      return response.json();
-    },
+    queryKey: [`/api/invoice-batches/${batchId}/details`],
     enabled: !!batchId,
   });
 
   // Fetch invoice lines grouped by client and project
   const { data: groupedLines, isLoading: isLoadingLines, error: linesError } = useQuery<GroupedInvoiceLines>({
-    queryKey: ["/api/invoice-batches", batchId, "lines"],
-    queryFn: async () => {
-      const response = await fetch(`/api/invoice-batches/${batchId}/lines`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch invoice lines");
-      }
-      return response.json();
-    },
+    queryKey: [`/api/invoice-batches/${batchId}/lines`],
     enabled: !!batchId,
   });
 
