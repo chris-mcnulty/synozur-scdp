@@ -2794,6 +2794,128 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Aggregate adjustment
+  app.post("/api/invoice-batches/:batchId/aggregate-adjustment", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { targetAmount, allocationMethod, sowId, adjustmentReason, lineAdjustments } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+
+      console.log(`[API] Applying aggregate adjustment to batch ${batchId} by user ${userId}`);
+      console.log(`[API] Target amount: ${targetAmount}, Method: ${allocationMethod}`);
+
+      // Apply adjustments to each line
+      const updatedLines = [];
+      for (const adjustment of lineAdjustments) {
+        const updatedLine = await storage.updateInvoiceLine(adjustment.lineId, {
+          billedAmount: adjustment.billedAmount,
+          adjustmentReason: adjustment.adjustmentReason,
+          editedBy: userId,
+          editedAt: new Date()
+        });
+        updatedLines.push(updatedLine);
+      }
+
+      // Create adjustment record
+      const adjustmentRecord = {
+        batchId,
+        type: "aggregate",
+        targetAmount,
+        allocationMethod,
+        sowId,
+        reason: adjustmentReason,
+        appliedBy: userId,
+        appliedAt: new Date().toISOString(),
+        affectedLines: lineAdjustments.length,
+        originalAmount: updatedLines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount), 0),
+        adjustedAmount: targetAmount,
+        variance: targetAmount - updatedLines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount), 0)
+      };
+
+      res.json({
+        message: "Aggregate adjustment applied successfully",
+        adjustment: adjustmentRecord,
+        updatedLines
+      });
+    } catch (error: any) {
+      console.error("Failed to apply aggregate adjustment:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to apply aggregate adjustment"
+      });
+    }
+  });
+
+  app.get("/api/invoice-batches/:batchId/adjustments/history", requireAuth, async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Mock adjustment history data - replace with actual storage implementation
+      const history = [
+        {
+          id: "adj-1",
+          batchId,
+          type: "aggregate",
+          targetAmount: 7000,
+          originalAmount: 12000,
+          adjustedAmount: 7000,
+          variance: -5000,
+          variancePercent: -41.67,
+          allocationMethod: "pro_rata_amount",
+          reason: "Fixed-price contract adjustment per SOW #12345",
+          appliedAt: new Date().toISOString(),
+          appliedBy: {
+            id: req.user?.id || "user-1",
+            name: req.user?.name || "Admin User",
+            email: req.user?.email || "admin@example.com"
+          },
+          sowReference: {
+            id: "sow-1",
+            sowNumber: "SOW-2024-001",
+            totalValue: 7000
+          },
+          affectedLines: 5
+        }
+      ];
+
+      res.json(history);
+    } catch (error: any) {
+      console.error("Failed to fetch adjustment history:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to fetch adjustment history"
+      });
+    }
+  });
+
+  app.get("/api/invoice-batches/:batchId/adjustments/summary", requireAuth, async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Mock summary data - replace with actual calculation from storage
+      const summary = {
+        originalTotal: 12000,
+        currentTotal: 7000,
+        totalVariance: -5000,
+        variancePercent: -41.67,
+        adjustmentCount: 1,
+        lastAdjustment: new Date().toISOString(),
+        aggregateAdjustments: 1,
+        lineItemAdjustments: 0,
+        reversals: 0
+      };
+
+      res.json(summary);
+    } catch (error: any) {
+      console.error("Failed to fetch adjustment summary:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to fetch adjustment summary"
+      });
+    }
+  });
+
+  // Legacy aggregate adjustment endpoint (keep for compatibility)
   app.post("/api/invoice-batches/:batchId/adjustments", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
       const { batchId } = req.params;

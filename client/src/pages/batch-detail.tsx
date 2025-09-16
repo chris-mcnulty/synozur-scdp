@@ -57,7 +57,9 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
-  Info
+  Info,
+  Calculator,
+  Undo
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -75,6 +77,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { InvoiceLineEditDialog } from "@/components/billing/invoice-line-edit-dialog";
 import { InvoiceLineBulkEditDialog } from "@/components/billing/invoice-line-bulk-edit-dialog";
+import { AggregateAdjustmentDialog } from "@/components/billing/aggregate-adjustment-dialog";
+import { AdjustmentHistory } from "@/components/billing/adjustment-history";
 
 interface InvoiceBatchDetails {
   id: string;
@@ -159,6 +163,8 @@ export default function BatchDetail() {
   const [editingLine, setEditingLine] = useState<InvoiceLine | null>(null);
   const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showAggregateAdjustmentDialog, setShowAggregateAdjustmentDialog] = useState(false);
+  const [showAdjustmentHistory, setShowAdjustmentHistory] = useState(false);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -674,6 +680,26 @@ export default function BatchDetail() {
               </Button>
             </>
           )}
+          {canEditLines() && (
+            <>
+              <Button
+                onClick={() => setShowAggregateAdjustmentDialog(true)}
+                variant="outline"
+                data-testid="button-aggregate-adjustment"
+              >
+                <Calculator className="mr-2 h-4 w-4" />
+                Apply Contract Adjustment
+              </Button>
+              <Button
+                onClick={() => setShowAdjustmentHistory(!showAdjustmentHistory)}
+                variant="outline"
+                data-testid="button-adjustment-history"
+              >
+                <History className="mr-2 h-4 w-4" />
+                {showAdjustmentHistory ? "Hide" : "View"} History
+              </Button>
+            </>
+          )}
           {canReview() && (
             <Button
               onClick={handleReviewBatch}
@@ -732,6 +758,20 @@ export default function BatchDetail() {
             </Button>
           </div>
         </div>
+
+        {/* Adjustment History (conditionally shown) */}
+        {showAdjustmentHistory && (
+          <div className="mb-6">
+            <AdjustmentHistory 
+              batchId={batchId || ''} 
+              canReverse={canEditLines() && batchDetails?.status !== 'finalized'}
+              onReverse={(adjustmentId) => {
+                // TODO: Implement adjustment reversal
+                console.log('Reversing adjustment:', adjustmentId);
+              }}
+            />
+          </div>
+        )}
 
         {/* Batch Summary Card */}
         <Card className="mb-6">
@@ -1191,6 +1231,22 @@ export default function BatchDetail() {
           selectedLines={getAllLines().filter(line => selectedLines.has(line.id))}
           onApply={(data) => bulkEditMutation.mutate(data)}
           isApplying={bulkEditMutation.isPending}
+        />
+      )}
+
+      {/* Aggregate Adjustment Dialog */}
+      {showAggregateAdjustmentDialog && (
+        <AggregateAdjustmentDialog
+          open={showAggregateAdjustmentDialog}
+          onOpenChange={setShowAggregateAdjustmentDialog}
+          batchId={batchId || ''}
+          currentTotal={parseFloat(batchDetails?.totalAmount || '0')}
+          lineCount={batchDetails?.totalLinesCount || 0}
+          lines={getAllLines()}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+            queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+          }}
         />
       )}
     </Layout>
