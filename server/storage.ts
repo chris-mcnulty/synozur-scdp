@@ -3408,7 +3408,8 @@ export class DatabaseStorage implements IStorage {
       .set({
         invoiceBatchId: null,
         locked: false,
-        lockedAt: null
+        lockedAt: null,
+        billedFlag: false  // Reset billing flag so entries can be used in new batches
       })
       .where(eq(timeEntries.invoiceBatchId, batchId));
     
