@@ -125,7 +125,7 @@ const milestoneFormSchema = z.object({
   endDate: z.string().optional(),
   budgetHours: z.string().optional(),
   status: z.enum(["not-started", "in-progress", "completed"]),
-  projectEpicId: z.string().min(1, "Epic is required"),
+  projectEpicId: z.string().optional(),
   order: z.number().int().default(0)
 });
 
@@ -544,12 +544,17 @@ export default function ProjectDetail() {
   // Milestone mutations
   const createMilestoneMutation = useMutation({
     mutationFn: async (data: MilestoneFormData) => {
+      const processedData = {
+        ...data,
+        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        projectEpicId: data.projectEpicId || null,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        description: data.description || null
+      };
       return apiRequest(`/api/projects/${id}/milestones`, {
         method: "POST",
-        body: JSON.stringify({
-          ...data,
-          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
-        })
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -572,12 +577,17 @@ export default function ProjectDetail() {
 
   const updateMilestoneMutation = useMutation({
     mutationFn: async ({ id: milestoneId, data }: { id: string; data: MilestoneFormData }) => {
+      const processedData = {
+        ...data,
+        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        projectEpicId: data.projectEpicId || null,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        description: data.description || null
+      };
       return apiRequest(`/api/milestones/${milestoneId}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          ...data,
-          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
-        })
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -625,12 +635,14 @@ export default function ProjectDetail() {
   // Workstream mutations
   const createWorkstreamMutation = useMutation({
     mutationFn: async (data: WorkstreamFormData) => {
+      const processedData = {
+        ...data,
+        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        description: data.description || null
+      };
       return apiRequest(`/api/projects/${id}/workstreams`, {
         method: "POST",
-        body: JSON.stringify({
-          ...data,
-          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
-        })
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -653,12 +665,14 @@ export default function ProjectDetail() {
 
   const updateWorkstreamMutation = useMutation({
     mutationFn: async ({ id: workstreamId, data }: { id: string; data: WorkstreamFormData }) => {
+      const processedData = {
+        ...data,
+        budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null,
+        description: data.description || null
+      };
       return apiRequest(`/api/workstreams/${workstreamId}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          ...data,
-          budgetHours: data.budgetHours ? parseFloat(data.budgetHours) : null
-        })
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -706,9 +720,13 @@ export default function ProjectDetail() {
   // Epic mutations
   const createEpicMutation = useMutation({
     mutationFn: async (data: EpicFormData) => {
+      const processedData = {
+        ...data,
+        description: data.description || null
+      };
       return apiRequest(`/api/projects/${id}/epics`, {
         method: "POST",
-        body: JSON.stringify(data)
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -731,9 +749,13 @@ export default function ProjectDetail() {
 
   const updateEpicMutation = useMutation({
     mutationFn: async ({ id: epicId, data }: { id: string; data: EpicFormData }) => {
+      const processedData = {
+        ...data,
+        description: data.description || null
+      };
       return apiRequest(`/api/epics/${epicId}`, {
         method: "PATCH",
-        body: JSON.stringify(data)
+        body: JSON.stringify(processedData)
       });
     },
     onSuccess: () => {
@@ -857,6 +879,57 @@ export default function ProjectDetail() {
     } else {
       createSowMutation.mutate(data);
     }
+  };
+
+  const handleOpenMilestoneDialog = (milestone?: any) => {
+    if (milestone) {
+      setEditingMilestone(milestone);
+      milestoneForm.reset({
+        name: milestone.name,
+        description: milestone.description || "",
+        startDate: milestone.startDate || "",
+        endDate: milestone.endDate || "",
+        budgetHours: milestone.budgetHours?.toString() || "",
+        status: milestone.status || "not-started",
+        projectEpicId: milestone.projectEpicId || "",
+        order: milestone.order || 0
+      });
+    } else {
+      setEditingMilestone(null);
+      milestoneForm.reset();
+    }
+    setShowMilestoneDialog(true);
+  };
+
+  const handleOpenWorkstreamDialog = (workstream?: any) => {
+    if (workstream) {
+      setEditingWorkstream(workstream);
+      workstreamForm.reset({
+        name: workstream.name,
+        description: workstream.description || "",
+        budgetHours: workstream.budgetHours?.toString() || "",
+        order: workstream.order || 0
+      });
+    } else {
+      setEditingWorkstream(null);
+      workstreamForm.reset();
+    }
+    setShowWorkstreamDialog(true);
+  };
+
+  const handleOpenEpicDialog = (epic?: any) => {
+    if (epic) {
+      setEditingEpic(epic);
+      epicForm.reset({
+        name: epic.name,
+        description: epic.description || "",
+        order: epic.order || 0
+      });
+    } else {
+      setEditingEpic(null);
+      epicForm.reset();
+    }
+    setShowEpicDialog(true);
   };
 
   const handleSubmitMilestone = (data: MilestoneFormData) => {
@@ -1116,6 +1189,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
+            <TabsTrigger value="epics" data-testid="tab-epics">Epics</TabsTrigger>
             <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
             <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
             {canViewTime && (
@@ -1627,6 +1701,78 @@ export default function ProjectDetail() {
             </Card>
           </TabsContent>
 
+          {/* Epics Tab */}
+          <TabsContent value="epics" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Project Epics</CardTitle>
+                  <Button
+                    onClick={() => handleOpenEpicDialog()}
+                    data-testid="button-add-epic"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Epic
+                  </Button>
+                </div>
+                <CardDescription>
+                  Epics organize your project work and can be optionally associated with milestones
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Order</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {epics.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          No epics found. Click "Add Epic" to create one.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      epics.map((epic: any) => (
+                        <TableRow key={epic.id} data-testid={`epic-row-${epic.id}`}>
+                          <TableCell className="font-medium">{epic.name}</TableCell>
+                          <TableCell>{epic.description || '-'}</TableCell>
+                          <TableCell>{epic.order}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  handleOpenEpicDialog(epic);
+                                }}
+                                data-testid={`button-edit-epic-${epic.id}`}
+                              >
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setDeletingEpicId(epic.id)}
+                                data-testid={`button-delete-epic-${epic.id}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* Milestones Tab */}
           <TabsContent value="milestones" className="space-y-6">
             <Card>
@@ -1634,11 +1780,7 @@ export default function ProjectDetail() {
                 <div className="flex items-center justify-between">
                   <CardTitle>Project Milestones</CardTitle>
                   <Button
-                    onClick={() => {
-                      setEditingMilestone(null);
-                      milestoneForm.reset();
-                      setShowMilestoneDialog(true);
-                    }}
+                    onClick={() => handleOpenMilestoneDialog()}
                     data-testid="button-add-milestone"
                   >
                     <Plus className="w-4 h-4 mr-2" />
@@ -1690,18 +1832,7 @@ export default function ProjectDetail() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => {
-                                  setEditingMilestone(milestone);
-                                  milestoneForm.reset({
-                                    name: milestone.name,
-                                    description: milestone.description || '',
-                                    startDate: milestone.startDate || '',
-                                    endDate: milestone.endDate || '',
-                                    budgetHours: milestone.budgetHours?.toString() || '',
-                                    status: milestone.status,
-                                    projectEpicId: milestone.projectEpicId,
-                                    order: milestone.order
-                                  });
-                                  setShowMilestoneDialog(true);
+                                  handleOpenMilestoneDialog(milestone);
                                 }}
                                 data-testid={`button-edit-milestone-${milestone.id}`}
                               >
@@ -1733,11 +1864,7 @@ export default function ProjectDetail() {
                 <div className="flex items-center justify-between">
                   <CardTitle>Project Workstreams</CardTitle>
                   <Button
-                    onClick={() => {
-                      setEditingWorkstream(null);
-                      workstreamForm.reset();
-                      setShowWorkstreamDialog(true);
-                    }}
+                    onClick={() => handleOpenWorkstreamDialog()}
                     data-testid="button-add-workstream"
                   >
                     <Plus className="w-4 h-4 mr-2" />
@@ -1786,14 +1913,7 @@ export default function ProjectDetail() {
                                   size="sm"
                                   variant="outline"
                                   onClick={() => {
-                                    setEditingWorkstream(workstream);
-                                    workstreamForm.reset({
-                                      name: workstream.name,
-                                      description: workstream.description || '',
-                                      budgetHours: workstream.budgetHours?.toString() || '',
-                                      order: workstream.order
-                                    });
-                                    setShowWorkstreamDialog(true);
+                                    handleOpenWorkstreamDialog(workstream);
                                   }}
                                   data-testid={`button-edit-workstream-${workstream.id}`}
                                 >
@@ -2439,14 +2559,18 @@ export default function ProjectDetail() {
                   name="projectEpicId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Epic</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <FormLabel>Epic (optional)</FormLabel>
+                      <Select 
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)} 
+                        value={field.value || "none"}
+                      >
                         <FormControl>
                           <SelectTrigger data-testid="select-milestone-epic">
-                            <SelectValue placeholder="Select an epic" />
+                            <SelectValue placeholder="Select an epic (optional)" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
                           {epics.map((epic: any) => (
                             <SelectItem key={epic.id} value={epic.id}>
                               {epic.name}
@@ -2720,6 +2844,103 @@ export default function ProjectDetail() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Epic Dialog */}
+        <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingEpic ? "Edit Epic" : "Create New Epic"}</DialogTitle>
+              <DialogDescription>
+                {editingEpic 
+                  ? "Update the epic details." 
+                  : "Add a new epic to organize your project structure"}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...epicForm}>
+              <form onSubmit={epicForm.handleSubmit(handleSubmitEpic)} className="space-y-4">
+                <FormField
+                  control={epicForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="e.g., Phase 1 Development" data-testid="input-epic-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={epicForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea {...field} placeholder="Epic description..." data-testid="textarea-epic-description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={epicForm.control}
+                  name="order"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Order</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="number" placeholder="1" data-testid="input-epic-order" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setShowEpicDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createEpicMutation.isPending || updateEpicMutation.isPending}>
+                    {editingEpic ? "Update" : "Create"} Epic
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Epic Confirmation Dialog */}
+        <Dialog open={!!deletingEpicId} onOpenChange={() => setDeletingEpicId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Epic</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this epic? This action cannot be undone and will affect any associated milestones.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeletingEpicId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deletingEpicId) {
+                    deleteEpicMutation.mutate(deletingEpicId);
+                  }
+                }}
+                disabled={deleteEpicMutation.isPending}
+                data-testid="button-confirm-delete-epic"
+              >
+                Delete Epic
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
