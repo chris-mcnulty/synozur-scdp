@@ -1,5 +1,4 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
@@ -21,7 +20,7 @@ declare global {
   }
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   // Session storage (in-memory for demo, use Redis in production)
   const sessions: Map<string, any> = new Map();
   
@@ -3734,6 +3733,4 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
 }

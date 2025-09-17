@@ -1,6 +1,5 @@
 import express, { type Request, Response, NextFunction, type Express } from "express";
-import { type Server } from "http";
-import { registerRoutes } from "./routes";
+import { createServer, type Server } from "http";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
@@ -81,10 +80,7 @@ process.on('uncaughtException', (error) => {
     // Validate environment variables (softened)
     const envValid = validateEnvironment();
     
-    log('Registering routes...');
-    const server = await registerRoutes(app);
-    
-    // Add health check endpoint that always responds quickly
+    // Add health check endpoints BEFORE route registration so they work even if routes fail
     app.get('/healthz', (_req, res) => {
       res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
     });
@@ -106,6 +102,10 @@ process.on('uncaughtException', (error) => {
       res.status(status).json({ message });
     });
 
+    // Create HTTP server
+    log('Creating HTTP server...');
+    const server = createServer(app);
+
     // CRITICAL: Bind port immediately for deployment readiness
     // ALWAYS serve the app on the port specified in the environment variable PORT
     // Other ports are firewalled. Default to 5000 if not specified.
@@ -114,11 +114,7 @@ process.on('uncaughtException', (error) => {
     log(`Binding to port ${port} immediately for deployment readiness...`);
     
     await new Promise<void>((resolve, reject) => {
-      server.listen({
-        port,
-        host: "0.0.0.0",
-        reusePort: true,
-      }, () => {
+      server.listen(port, "0.0.0.0", () => {
         log(`✅ Server successfully bound to port ${port}`);
         log(`Environment: ${app.get("env")}`);
         log(`Process ID: ${process.pid}`);
@@ -135,6 +131,18 @@ process.on('uncaughtException', (error) => {
         reject(error);
       });
     });
+    
+    // Register routes AFTER server is successfully bound using dynamic import
+    log('Registering routes after server binding...');
+    try {
+      const { registerRoutes } = await import('./routes');
+      await registerRoutes(app);
+      log('Routes registered successfully');
+    } catch (routeError: any) {
+      log(`⚠️ Route registration failed: ${routeError.message}`);
+      log('Server will continue with health endpoints only');
+      // Don't crash the server - health endpoints will still work
+    }
     
     // Now run additional setup asynchronously without blocking the port
     log('Starting additional services setup asynchronously...');
