@@ -25,7 +25,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import Layout from "@/components/layout/layout";
+import { Layout } from "@/components/layout/layout";
 import { Building, Image, Mail, Phone, Globe, FileText } from "lucide-react";
 
 const companySettingsSchema = z.object({

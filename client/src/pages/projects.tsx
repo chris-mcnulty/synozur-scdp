@@ -314,8 +314,8 @@ export default function Projects() {
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Utilization</p>
                       <p className={`font-medium ${
-                        project.utilizationRate > 90 ? 'text-red-600 dark:text-red-400' : 
-                        project.utilizationRate > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                        (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                        (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
                         'text-green-600 dark:text-green-400'
                       }`} data-testid={`project-utilization-${project.id}`}>
                         {project.utilizationRate || 0}%
