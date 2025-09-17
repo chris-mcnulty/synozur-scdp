@@ -9,7 +9,6 @@ import {
   DollarSign, 
   Users,
   UsersRound,
-  Palette,
   BarChart3,
   Settings
 } from "lucide-react";
@@ -140,12 +139,6 @@ export function Sidebar() {
             requiredRoles={["admin"]}
           />
           
-          <SidebarItem
-            href="/branding"
-            icon={<Palette />}
-            label="Branding"
-            requiredRoles={["admin"]}
-          />
         </nav>
       </div>
     </aside>

@@ -9,9 +9,10 @@ import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
@@ -38,11 +39,22 @@ const rateSettingsSchema = z.object({
   }, "Cost rate must be a valid number 0 or greater"),
 });
 
+const companySettingsSchema = z.object({
+  companyName: z.string().min(1, "Company name is required"),
+  companyLogoUrl: z.string().url().optional().or(z.literal("")),
+  companyAddress: z.string().optional(),
+  companyPhone: z.string().optional(),
+  companyEmail: z.string().email("Invalid email format").optional().or(z.literal("")),
+  companyWebsite: z.string().url("Invalid website URL").optional().or(z.literal("")),
+  paymentTerms: z.string().optional(),
+});
+
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
+type CompanySettingsData = z.infer<typeof companySettingsSchema>;
 
 export default function SystemSettings() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState("rates");
+  const [activeTab, setActiveTab] = useState("company");
 
   // Fetch system settings
   const { data: settings = [], isLoading } = useQuery<SystemSetting[]>({
@@ -52,6 +64,9 @@ export default function SystemSettings() {
   // Get current rate settings
   const defaultBillingRate = settings.find(s => s.settingKey === 'DEFAULT_BILLING_RATE')?.settingValue || '0';
   const defaultCostRate = settings.find(s => s.settingKey === 'DEFAULT_COST_RATE')?.settingValue || '0';
+
+  // Get current company settings
+  const settingsMap = Object.fromEntries(settings.map(s => [s.settingKey, s.settingValue]));
 
   // Form setup
   const rateForm = useForm<RateSettingsData>({
@@ -63,6 +78,28 @@ export default function SystemSettings() {
     values: {
       defaultBillingRate: defaultBillingRate,
       defaultCostRate: defaultCostRate,
+    },
+  });
+
+  const companyForm = useForm<CompanySettingsData>({
+    resolver: zodResolver(companySettingsSchema),
+    defaultValues: {
+      companyName: "",
+      companyLogoUrl: "",
+      companyAddress: "",
+      companyPhone: "",
+      companyEmail: "",
+      companyWebsite: "",
+      paymentTerms: "",
+    },
+    values: {
+      companyName: settingsMap.COMPANY_NAME || "",
+      companyLogoUrl: settingsMap.COMPANY_LOGO_URL || "",
+      companyAddress: settingsMap.COMPANY_ADDRESS || "",
+      companyPhone: settingsMap.COMPANY_PHONE || "",
+      companyEmail: settingsMap.COMPANY_EMAIL || "",
+      companyWebsite: settingsMap.COMPANY_WEBSITE || "",
+      paymentTerms: settingsMap.PAYMENT_TERMS || "Payment due within 30 days",
     },
   });
 
@@ -107,8 +144,55 @@ export default function SystemSettings() {
     },
   });
 
+  const updateCompanyMutation = useMutation({
+    mutationFn: async (data: CompanySettingsData) => {
+      // Save each company setting
+      const settingsToSave = [
+        { key: 'COMPANY_NAME', value: data.companyName, description: 'Company name for invoices and branding' },
+        { key: 'COMPANY_LOGO_URL', value: data.companyLogoUrl || '', description: 'URL to company logo image for invoices' },
+        { key: 'COMPANY_ADDRESS', value: data.companyAddress || '', description: 'Company address for invoices' },
+        { key: 'COMPANY_PHONE', value: data.companyPhone || '', description: 'Company phone number for invoices' },
+        { key: 'COMPANY_EMAIL', value: data.companyEmail || '', description: 'Company email address for invoices' },
+        { key: 'COMPANY_WEBSITE', value: data.companyWebsite || '', description: 'Company website URL for invoices' },
+        { key: 'PAYMENT_TERMS', value: data.paymentTerms || 'Payment due within 30 days', description: 'Payment terms displayed on invoices' },
+      ];
+
+      await Promise.all(
+        settingsToSave.map(setting => 
+          apiRequest("/api/settings", {
+            method: "POST",
+            body: JSON.stringify({
+              settingKey: setting.key,
+              settingValue: setting.value,
+              settingType: "string",
+              description: setting.description
+            }),
+          })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Company settings saved",
+        description: "Company information has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save company settings",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleRateSubmit = (data: RateSettingsData) => {
     updateRatesMutation.mutate(data);
+  };
+
+  const handleCompanySubmit = (data: CompanySettingsData) => {
+    updateCompanyMutation.mutate(data);
   };
 
   if (isLoading) {
@@ -139,15 +223,222 @@ export default function SystemSettings() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
+            <TabsTrigger value="company" className="flex items-center space-x-2">
+              <Building className="w-4 h-4" />
+              <span>Company Information</span>
+            </TabsTrigger>
             <TabsTrigger value="rates" className="flex items-center space-x-2">
               <DollarSign className="w-4 h-4" />
               <span>Default Rates</span>
             </TabsTrigger>
             <TabsTrigger value="general" className="flex items-center space-x-2">
               <Settings className="w-4 h-4" />
-              <span>General</span>
+              <span>All Settings</span>
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="company" className="space-y-6">
+            <Form {...companyForm}>
+              <form onSubmit={companyForm.handleSubmit(handleCompanySubmit)} className="space-y-6">
+                {/* Basic Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Building className="h-5 w-5" />
+                      Basic Information
+                    </CardTitle>
+                    <CardDescription>
+                      Your company's basic information that appears on invoices
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={companyForm.control}
+                      name="companyName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Company Name*</FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="Your Company Name" 
+                              data-testid="input-company-name"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="companyLogoUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            <Image className="h-4 w-4" />
+                            Logo URL (optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="https://example.com/logo.png" 
+                              data-testid="input-company-logo"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Enter a URL to your logo image. For best results, use a PNG with transparent background.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="companyAddress"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address (optional)</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              {...field} 
+                              placeholder="123 Main Street&#10;Suite 100&#10;City, ST 12345" 
+                              className="min-h-[80px]"
+                              data-testid="textarea-company-address"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Contact Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Contact Information</CardTitle>
+                    <CardDescription>
+                      Contact details that appear on your invoices
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={companyForm.control}
+                      name="companyPhone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            <Phone className="h-4 w-4" />
+                            Phone Number (optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="(555) 123-4567" 
+                              data-testid="input-company-phone"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="companyEmail"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            <Mail className="h-4 w-4" />
+                            Email Address (optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              type="email"
+                              placeholder="contact@yourcompany.com" 
+                              data-testid="input-company-email"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="companyWebsite"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            <Globe className="h-4 w-4" />
+                            Website (optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="https://www.yourcompany.com" 
+                              data-testid="input-company-website"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Invoice Settings */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Invoice Settings
+                    </CardTitle>
+                    <CardDescription>
+                      Configure how your invoices are formatted
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <FormField
+                      control={companyForm.control}
+                      name="paymentTerms"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Payment Terms</FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="Payment due within 30 days" 
+                              data-testid="input-payment-terms"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Terms displayed at the bottom of invoices (e.g., "Net 30", "Payment due within 15 days")
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Submit Button */}
+                <div className="flex justify-end">
+                  <Button 
+                    type="submit" 
+                    disabled={updateCompanyMutation.isPending}
+                    data-testid="button-save-company-settings"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {updateCompanyMutation.isPending ? "Saving..." : "Save Company Settings"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </TabsContent>
 
           <TabsContent value="rates" className="space-y-6">
             <Card>
