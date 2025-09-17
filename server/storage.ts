@@ -3403,7 +3403,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(invoiceLines)
       .where(eq(invoiceLines.batchId, batchId));
     
-    // 3. Delete the batch itself
+    // 3. Clear time entry references and unlock them
+    await db.update(timeEntries)
+      .set({
+        invoiceBatchId: null,
+        locked: false,
+        lockedAt: null
+      })
+      .where(eq(timeEntries.invoiceBatchId, batchId));
+    
+    // 4. Delete the batch itself
     await db.delete(invoiceBatches)
       .where(eq(invoiceBatches.batchId, batchId));
   }
