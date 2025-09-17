@@ -3052,6 +3052,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Delete invoice batch
+  app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      await storage.deleteInvoiceBatch(batchId);
+      
+      res.status(204).send(); // No content response for successful deletion
+    } catch (error: any) {
+      console.error("Failed to delete invoice batch:", error);
+      res.status(error.message?.includes('finalized') ? 403 : 
+                 error.message?.includes('not found') ? 404 : 400).json({ 
+        message: error.message || "Failed to delete invoice batch"
+      });
+    }
+  });
   
   // Milestone mapping
   app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {

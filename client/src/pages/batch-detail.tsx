@@ -62,7 +62,8 @@ import {
   Calculator,
   Undo,
   Milestone,
-  Target
+  Target,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -170,6 +171,8 @@ export default function BatchDetail() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
   const [showUnfinalizeDialog, setShowUnfinalizeDialog] = useState(false);
+  const [showDeleteBatchDialog, setShowDeleteBatchDialog] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
   const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
   const [editingLine, setEditingLine] = useState<InvoiceLine | null>(null);
   const [showBulkEditDialog, setShowBulkEditDialog] = useState(false);
@@ -567,6 +570,29 @@ export default function BatchDetail() {
     }
   });
 
+  const deleteBatchMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/invoice-batches/${batchId}`, {
+        method: 'DELETE'
+      });
+    },
+    onSuccess: () => {
+      toast({ 
+        title: "Batch deleted",
+        description: "The invoice batch has been successfully deleted"
+      });
+      // Navigate back to billing page
+      navigate('/billing');
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete batch",
+        description: error.message || "Could not delete the batch",
+        variant: "destructive"
+      });
+    }
+  });
+
   const handleFinalizeBatch = async () => {
     setShowFinalizeDialog(true);
   };
@@ -577,6 +603,25 @@ export default function BatchDetail() {
 
   const handleReviewBatch = async () => {
     reviewMutation.mutate(undefined);
+  };
+
+  const handleDeleteBatch = () => {
+    const confirmMessage = `Are you sure you want to delete batch ${batchId}?\n\nThis will permanently remove:\n• All invoice lines\n• All adjustments\n• The batch itself\n\nThis action cannot be undone.`;
+    
+    if (confirm(confirmMessage)) {
+      // Double confirmation for safety
+      const secondConfirm = prompt(`To confirm deletion, type the batch ID: ${batchId}`);
+      
+      if (secondConfirm === batchId) {
+        deleteBatchMutation.mutate();
+      } else if (secondConfirm !== null) {
+        toast({
+          title: "Deletion cancelled",
+          description: "Batch ID did not match",
+          variant: "destructive"
+        });
+      }
+    }
   };
 
   const calculateGrandTotal = () => {
@@ -773,6 +818,18 @@ export default function BatchDetail() {
                 {showAdjustmentHistory ? "Hide" : "View"} History
               </Button>
             </>
+          )}
+          
+          {canEditLines() && batchDetails?.status !== 'finalized' && (
+            <Button
+              onClick={handleDeleteBatch}
+              variant="destructive"
+              disabled={deleteBatchMutation.isPending}
+              data-testid="button-delete-batch"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {deleteBatchMutation.isPending ? 'Deleting...' : 'Delete Batch'}
+            </Button>
           )}
           {canReview() && (
             <Button

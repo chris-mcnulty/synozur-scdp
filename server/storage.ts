@@ -264,6 +264,9 @@ export interface IStorage {
     profitMargin: number;
   }>;
   
+  // Delete Invoice Batch
+  deleteInvoiceBatch(batchId: string): Promise<void>;
+  
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
   createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
@@ -3374,6 +3377,35 @@ export class DatabaseStorage implements IStorage {
       variance,
       profitMargin
     };
+  }
+
+  async deleteInvoiceBatch(batchId: string): Promise<void> {
+    // Check if batch exists
+    const [batch] = await db.select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Batch ${batchId} not found`);
+    }
+    
+    // Prevent deletion of finalized batches
+    if (batch.status === 'finalized') {
+      throw new Error('Cannot delete a finalized batch');
+    }
+    
+    // Delete in correct order due to foreign key constraints
+    // 1. Delete adjustments
+    await db.delete(invoiceAdjustments)
+      .where(eq(invoiceAdjustments.batchId, batchId));
+    
+    // 2. Delete invoice lines
+    await db.delete(invoiceLines)
+      .where(eq(invoiceLines.batchId, batchId));
+    
+    // 3. Delete the batch itself
+    await db.delete(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
   }
 
   async getPortfolioMetrics(filters?: { 
