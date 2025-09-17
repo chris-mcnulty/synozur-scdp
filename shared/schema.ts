@@ -30,6 +30,8 @@ export const clients = pgTable("clients", {
   name: text("name").notNull(),
   currency: text("currency").notNull().default("USD"),
   billingContact: text("billing_contact"),
+  contactName: text("contact_name"),
+  contactAddress: text("contact_address"),
   vocabularyOverrides: text("vocabulary_overrides"), // JSON string
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });

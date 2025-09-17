@@ -538,6 +538,8 @@ export default function Projects() {
                 name: formData.get('name'),
                 currency: formData.get('currency') || 'USD',
                 billingContact: formData.get('billingContact'),
+                contactName: formData.get('contactName'),
+                contactAddress: formData.get('contactAddress'),
               });
             }}>
               <div className="grid gap-4 py-4">
@@ -560,6 +562,26 @@ export default function Projects() {
                     type="email"
                     placeholder="billing@acme.com"
                     data-testid="input-billing-contact"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="contactName">Contact Name</Label>
+                  <Input
+                    id="contactName"
+                    name="contactName"
+                    placeholder="e.g., John Smith"
+                    data-testid="input-contact-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="contactAddress">Contact Address</Label>
+                  <Input
+                    id="contactAddress"
+                    name="contactAddress"
+                    placeholder="e.g., 123 Main St, City, State 12345"
+                    data-testid="input-contact-address"
                   />
                 </div>
                 
