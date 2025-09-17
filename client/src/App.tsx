@@ -17,6 +17,7 @@ import Staff from "@/pages/staff";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import SystemSettings from "@/pages/system-settings";
+import CompanySettings from "@/pages/company-settings";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
@@ -101,6 +102,9 @@ function Router() {
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/company-settings">
+        {user ? <CompanySettings /> : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}

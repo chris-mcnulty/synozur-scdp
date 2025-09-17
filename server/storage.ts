@@ -25,6 +25,10 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import * as fs from 'fs';
+import * as path from 'path';
+import * as Handlebars from 'handlebars';
+import puppeteer from 'puppeteer';
 
 export interface IStorage {
   // Users
@@ -428,6 +432,22 @@ export interface IStorage {
   setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
+  
+  // PDF Generation
+  generateInvoicePDF(params: {
+    batch: InvoiceBatch & { totalLinesCount: number; clientCount: number; projectCount: number };
+    lines: (InvoiceLine & { project: Project; client: Client })[];
+    adjustments: InvoiceAdjustment[];
+    companySettings: {
+      companyName: string | undefined;
+      companyLogo?: string | undefined;
+      companyAddress?: string | undefined;  
+      companyPhone?: string | undefined;
+      companyEmail?: string | undefined;
+      companyWebsite?: string | undefined;
+      paymentTerms?: string | undefined;
+    };
+  }): Promise<Buffer>;
   getDefaultBillingRate(): Promise<number>;
   getDefaultCostRate(): Promise<number>;
 }
@@ -4131,6 +4151,23 @@ export class DatabaseStorage implements IStorage {
     return parseFloat(value) || 0;
   }
 
+  async generateInvoicePDF(params: {
+    batch: InvoiceBatch & { totalLinesCount: number; clientCount: number; projectCount: number };
+    lines: (InvoiceLine & { project: Project; client: Client })[];
+    adjustments: InvoiceAdjustment[];
+    companySettings: {
+      companyName: string | undefined;
+      companyLogo?: string | undefined;
+      companyAddress?: string | undefined;  
+      companyPhone?: string | undefined;
+      companyEmail?: string | undefined;
+      companyWebsite?: string | undefined;
+      paymentTerms?: string | undefined;
+    };
+  }): Promise<Buffer> {
+    return generateInvoicePDF(params);
+  }
+
   async generateBatchId(startDate: string, endDate: string): Promise<string> {
     // Get batch numbering configuration
     const prefix = await this.getSystemSettingValue('BATCH_PREFIX', 'BATCH');
@@ -4443,6 +4480,158 @@ export async function resolveRatesForTimeEntry(
   }
   
   return { billingRate, costRate };
+}
+
+// PDF Generation implementation
+export async function generateInvoicePDF(params: {
+  batch: InvoiceBatch & { totalLinesCount: number; clientCount: number; projectCount: number };
+  lines: (InvoiceLine & { project: Project; client: Client })[];
+  adjustments: InvoiceAdjustment[];
+  companySettings: {
+    companyName: string | undefined;
+    companyLogo?: string | undefined;
+    companyAddress?: string | undefined;  
+    companyPhone?: string | undefined;
+    companyEmail?: string | undefined;
+    companyWebsite?: string | undefined;
+    paymentTerms?: string | undefined;
+  };
+}): Promise<Buffer> {
+  const { batch, lines, adjustments, companySettings } = params;
+
+  // Group lines by client and project
+  const groupedLines: { client: Client; project: Project; lines: any[] }[] = [];
+  const clientProjectMap: { [key: string]: { client: Client; project: Project; lines: any[] } } = {};
+  
+  for (const line of lines) {
+    const key = `${line.client.id}-${line.project.id}`;
+    if (!clientProjectMap[key]) {
+      clientProjectMap[key] = {
+        client: line.client,
+        project: line.project,
+        lines: []
+      };
+    }
+    
+    // Prepare line data for template
+    const lineData = {
+      ...line,
+      originalAmount: parseFloat(line.originalAmount || line.amount || '0').toFixed(2),
+      billedAmount: line.billedAmount ? parseFloat(line.billedAmount).toFixed(2) : parseFloat(line.amount || '0').toFixed(2),
+      varianceAmount: line.varianceAmount ? parseFloat(line.varianceAmount).toFixed(2) : '0',
+      varianceIsPositive: line.varianceAmount ? parseFloat(line.varianceAmount) >= 0 : true,
+      amount: parseFloat(line.amount || '0').toFixed(2),
+      rate: line.rate ? parseFloat(line.rate).toFixed(2) : null
+    };
+    
+    clientProjectMap[key].lines.push(lineData);
+  }
+
+  // Convert to array
+  for (const group of Object.values(clientProjectMap)) {
+    groupedLines.push(group);
+  }
+
+  // Calculate totals
+  const subtotal = lines.reduce((sum, line) => {
+    const amount = line.billedAmount || line.amount || '0';
+    return sum + parseFloat(amount);
+  }, 0);
+
+  const discountAmount = batch.discountAmount ? parseFloat(batch.discountAmount) : 0;
+  const originalTotal = lines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount || '0'), 0);
+  const totalAdjustments = subtotal - originalTotal;
+  const total = subtotal - discountAmount;
+
+  // Get unique clients
+  const uniqueClients = Array.from(new Set(lines.map(l => l.client.id))).map(clientId => {
+    return lines.find(l => l.client.id === clientId)!.client;
+  });
+
+  const hasAdjustments = adjustments.length > 0 || lines.some(l => l.billedAmount && l.billedAmount !== l.amount);
+
+  // Prepare template data
+  const templateData = {
+    // Company info
+    companyName: companySettings.companyName || 'Your Company Name',
+    companyLogo: companySettings.companyLogo,
+    companyAddress: companySettings.companyAddress,
+    companyPhone: companySettings.companyPhone,
+    companyEmail: companySettings.companyEmail,
+    companyWebsite: companySettings.companyWebsite,
+    paymentTerms: companySettings.paymentTerms,
+    
+    // Batch info
+    batchId: batch.batchId,
+    startDate: batch.startDate,
+    endDate: batch.endDate,
+    status: batch.status,
+    generatedDate: new Date().toLocaleDateString(),
+    totalProjects: batch.projectCount,
+    totalLines: batch.totalLinesCount,
+    
+    // Client info
+    uniqueClients,
+    
+    // Line items
+    groupedLines,
+    hasAdjustments,
+    columnCount: hasAdjustments ? 8 : 7,
+    
+    // Adjustments
+    adjustments: adjustments.map(adj => ({
+      reason: adj.reason,
+      targetAmount: adj.targetAmount ? parseFloat(adj.targetAmount).toFixed(2) : '0',
+      method: adj.method,
+      sowNumber: adj.metadata ? (adj.metadata as any).sowNumber : null
+    })),
+    
+    // Totals
+    subtotal: subtotal.toFixed(2),
+    discountAmount: discountAmount > 0 ? discountAmount.toFixed(2) : null,
+    discountPercent: batch.discountPercent ? parseFloat(batch.discountPercent).toFixed(1) : null,
+    originalTotal: originalTotal.toFixed(2),
+    totalAdjustments: totalAdjustments.toFixed(2),
+    totalAdjustmentIsPositive: totalAdjustments >= 0,
+    total: total.toFixed(2)
+  };
+
+  // Load template
+  const templatePath = path.join(__dirname, 'invoice-template.html');
+  const templateSource = fs.readFileSync(templatePath, 'utf8');
+  const template = Handlebars.compile(templateSource);
+  
+  // Generate HTML
+  const html = template(templateData);
+  
+  // Generate PDF using Puppeteer
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '0.5in',
+        right: '0.5in',
+        bottom: '0.5in',  
+        left: '0.5in'
+      }
+    });
+    
+    return Buffer.from(pdf);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
 }
 
 export { db };

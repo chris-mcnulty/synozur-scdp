@@ -779,6 +779,15 @@ export default function BatchDetail() {
             Export CSV
           </Button>
           
+          <Button
+            onClick={() => window.open(`/api/invoice-batches/${batchId}/pdf`, '_blank')}
+            variant="outline"
+            data-testid="button-download-pdf"
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Download PDF
+          </Button>
+          
           {canEditLines() && selectedLines.size > 0 && (
             <>
               <Button

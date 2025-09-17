@@ -2750,6 +2750,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // PDF Invoice Generation
+  app.get("/api/invoice-batches/:batchId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Get batch details and lines
+      const batch = await storage.getInvoiceBatchDetails(batchId);
+      if (!batch) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const adjustments = await storage.getInvoiceAdjustments(batchId);
+      
+      // Get company settings
+      const companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
+      const companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
+      const companyAddress = await storage.getSystemSettingValue('COMPANY_ADDRESS');
+      const companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
+      const companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
+      const companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
+      const paymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
+
+      // Generate PDF
+      const pdfBuffer = await storage.generateInvoicePDF({
+        batch,
+        lines,
+        adjustments,
+        companySettings: {
+          companyName,
+          companyLogo,
+          companyAddress,
+          companyPhone,
+          companyEmail,
+          companyWebsite,
+          paymentTerms
+        }
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice-${batchId}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Failed to generate PDF:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to generate PDF" 
+      });
+    }
+  });
+
   // Invoice Line Adjustments API Routes
   
   // Line-item editing

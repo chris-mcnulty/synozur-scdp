@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice {{batchId}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #333;
+      background: white;
+    }
+
+    .invoice-container {
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 0.5in;
+      background: white;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 30px;
+    }
+
+    .company-info {
+      flex: 1;
+    }
+
+    .company-logo {
+      max-width: 200px;
+      max-height: 80px;
+      margin-bottom: 20px;
+    }
+
+    .company-name {
+      font-size: 24px;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 10px;
+    }
+
+    .company-details {
+      font-size: 10px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+
+    .invoice-info {
+      text-align: right;
+      flex: 0 0 auto;
+      min-width: 200px;
+    }
+
+    .invoice-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 10px;
+    }
+
+    .invoice-details {
+      font-size: 11px;
+    }
+
+    .invoice-details div {
+      margin-bottom: 5px;
+    }
+
+    .invoice-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 40px;
+    }
+
+    .bill-to {
+      flex: 1;
+      padding-right: 40px;
+    }
+
+    .batch-info {
+      flex: 1;
+      text-align: right;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #374151;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .client-name {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+
+    .invoice-table th {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      padding: 12px 8px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #374151;
+    }
+
+    .invoice-table td {
+      border: 1px solid #e5e7eb;
+      padding: 10px 8px;
+      font-size: 10px;
+      vertical-align: top;
+    }
+
+    .invoice-table tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    .text-right {
+      text-align: right;
+    }
+
+    .font-mono {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    }
+
+    .project-header {
+      background: #1f2937;
+      color: white;
+    }
+
+    .project-header td {
+      font-weight: bold;
+      font-size: 11px;
+      border-color: #374151;
+    }
+
+    .totals-section {
+      margin-top: 40px;
+      text-align: right;
+    }
+
+    .totals-table {
+      margin-left: auto;
+      width: 300px;
+      border-collapse: collapse;
+    }
+
+    .totals-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+    }
+
+    .totals-table .total-row {
+      font-weight: bold;
+      font-size: 14px;
+      border-top: 2px solid #1f2937;
+      border-bottom: 2px solid #1f2937;
+    }
+
+    .subtotal-row {
+      font-weight: 600;
+      border-top: 1px solid #9ca3af;
+    }
+
+    .amount {
+      font-weight: 600;
+      color: #059669;
+    }
+
+    .footer {
+      margin-top: 50px;
+      padding-top: 30px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 10px;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    .adjustment-note {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin: 10px 0;
+      font-size: 10px;
+      color: #92400e;
+    }
+
+    @media print {
+      body {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      
+      .invoice-container {
+        padding: 0.25in;
+        box-shadow: none;
+      }
+
+      .page-break {
+        page-break-before: always;
+      }
+    }
+
+    .variance-positive {
+      color: #059669;
+    }
+
+    .variance-negative {
+      color: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="company-info">
+        {{#if companyLogo}}
+        <img src="{{companyLogo}}" alt="{{companyName}} Logo" class="company-logo">
+        {{/if}}
+        <div class="company-name">{{companyName}}</div>
+        <div class="company-details">
+          {{#if companyAddress}}
+          <div>{{companyAddress}}</div>
+          {{/if}}
+          {{#if companyPhone}}
+          <div>Phone: {{companyPhone}}</div>
+          {{/if}}
+          {{#if companyEmail}}
+          <div>Email: {{companyEmail}}</div>
+          {{/if}}
+          {{#if companyWebsite}}
+          <div>{{companyWebsite}}</div>
+          {{/if}}
+        </div>
+      </div>
+      <div class="invoice-info">
+        <div class="invoice-title">INVOICE</div>
+        <div class="invoice-details">
+          <div><strong>Batch ID:</strong> {{batchId}}</div>
+          <div><strong>Generated:</strong> {{generatedDate}}</div>
+          {{#if dueDate}}
+          <div><strong>Due Date:</strong> {{dueDate}}</div>
+          {{/if}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoice Meta Information -->
+    <div class="invoice-meta">
+      <div class="bill-to">
+        <div class="section-title">Bill To</div>
+        {{#each uniqueClients}}
+        <div class="client-name">{{this.name}}</div>
+        {{#if this.address}}
+        <div>{{this.address}}</div>
+        {{/if}}
+        {{#if this.email}}
+        <div>{{this.email}}</div>
+        {{/if}}
+        {{#if this.phone}}
+        <div>{{this.phone}}</div>
+        {{/if}}
+        {{#unless @last}}<br>{{/unless}}
+        {{/each}}
+      </div>
+      <div class="batch-info">
+        <div class="section-title">Batch Information</div>
+        <div><strong>Period:</strong> {{startDate}} to {{endDate}}</div>
+        <div><strong>Status:</strong> {{status}}</div>
+        {{#if totalProjects}}
+        <div><strong>Projects:</strong> {{totalProjects}}</div>
+        {{/if}}
+        {{#if totalLines}}
+        <div><strong>Line Items:</strong> {{totalLines}}</div>
+        {{/if}}
+      </div>
+    </div>
+
+    <!-- Line Items Table -->
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th style="width: 20%">Description</th>
+          <th style="width: 12%">Type</th>
+          <th style="width: 10%">Quantity</th>
+          <th style="width: 12%">Rate</th>
+          <th style="width: 12%">Original Amount</th>
+          {{#if hasAdjustments}}
+          <th style="width: 12%">Billed Amount</th>
+          <th style="width: 10%">Variance</th>
+          {{else}}
+          <th style="width: 12%">Amount</th>
+          {{/if}}
+          <th style="width: 12%">Project</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each groupedLines}}
+        <tr class="project-header">
+          <td colspan="{{../columnCount}}">{{this.client.name}} - {{this.project.name}}</td>
+        </tr>
+        {{#each this.lines}}
+        <tr>
+          <td>{{this.description}}</td>
+          <td>{{this.type}}</td>
+          <td class="text-right font-mono">{{#if this.quantity}}{{this.quantity}}{{else}}-{{/if}}</td>
+          <td class="text-right font-mono">{{#if this.rate}}${{this.rate}}{{else}}-{{/if}}</td>
+          <td class="text-right font-mono amount">${{this.originalAmount}}</td>
+          {{#if ../hasAdjustments}}
+          <td class="text-right font-mono amount">${{this.billedAmount}}</td>
+          <td class="text-right font-mono {{#if this.varianceIsPositive}}variance-positive{{else}}variance-negative{{/if}}">
+            {{#if this.varianceAmount}}${{this.varianceAmount}}{{else}}-{{/if}}
+          </td>
+          {{else}}
+          <td class="text-right font-mono amount">${{this.amount}}</td>
+          {{/if}}
+          <td>{{../project.name}}</td>
+        </tr>
+        {{/each}}
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Adjustments Section -->
+    {{#if adjustments}}
+    {{#each adjustments}}
+    <div class="adjustment-note">
+      <strong>Adjustment:</strong> {{this.reason}}
+      {{#if this.sowNumber}} (SOW: {{this.sowNumber}}){{/if}}
+      - Target: ${{this.targetAmount}} ({{this.method}})
+    </div>
+    {{/each}}
+    {{/if}}
+
+    <!-- Totals -->
+    <div class="totals-section">
+      <table class="totals-table">
+        <tr>
+          <td>Subtotal:</td>
+          <td class="text-right font-mono">${{subtotal}}</td>
+        </tr>
+        {{#if discountAmount}}
+        <tr>
+          <td>Discount {{#if discountPercent}}({{discountPercent}}%){{/if}}:</td>
+          <td class="text-right font-mono">-${{discountAmount}}</td>
+        </tr>
+        {{/if}}
+        {{#if hasAdjustments}}
+        <tr class="subtotal-row">
+          <td>Original Total:</td>
+          <td class="text-right font-mono">${{originalTotal}}</td>
+        </tr>
+        <tr>
+          <td>Total Adjustments:</td>
+          <td class="text-right font-mono {{#if totalAdjustmentIsPositive}}variance-positive{{else}}variance-negative{{/if}}">
+            ${{totalAdjustments}}
+          </td>
+        </tr>
+        {{/if}}
+        <tr class="total-row">
+          <td><strong>Total Amount:</strong></td>
+          <td class="text-right font-mono"><strong>${{total}}</strong></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>This invoice was generated automatically by {{companyName}} billing system.</p>
+      {{#if paymentTerms}}
+      <p>{{paymentTerms}}</p>
+      {{/if}}
+      <p>Generated on {{generatedDate}}</p>
+    </div>
+  </div>
+</body>
+</html>
