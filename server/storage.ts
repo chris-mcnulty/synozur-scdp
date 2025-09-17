@@ -2391,13 +2391,18 @@ export class DatabaseStorage implements IStorage {
       .select({
         clientId: invoiceLines.clientId,
         projectId: invoiceLines.projectId,
-        amount: invoiceLines.amount
+        amount: invoiceLines.amount,
+        billedAmount: invoiceLines.billedAmount
       })
       .from(invoiceLines)
       .where(eq(invoiceLines.batchId, batchId));
 
     const totalLinesCount = lines.length;
-    const totalAmount = lines.reduce((sum, line) => sum + parseFloat(line.amount || '0'), 0);
+    const totalAmount = lines.reduce((sum, line) => {
+      // Use billedAmount if available (adjusted), otherwise use amount (original)
+      const effectiveAmount = line.billedAmount || line.amount || '0';
+      return sum + parseFloat(effectiveAmount);
+    }, 0);
     const uniqueClients = new Set(lines.map(l => l.clientId));
     const uniqueProjects = new Set(lines.map(l => l.projectId));
 
