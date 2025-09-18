@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -97,11 +97,21 @@ interface SOW {
 }
 
 const adjustmentFormSchema = z.object({
-  targetAmount: z.number().positive("Target amount must be positive"),
+  targetAmount: z.coerce.number().positive("Target amount must be positive"),
   allocationMethod: z.enum(["pro_rata_amount", "pro_rata_hours", "flat", "manual"]),
   sowId: z.string().optional(),
   adjustmentReason: z.string().min(10, "Please provide a detailed reason (min 10 characters)"),
 });
+
+// Utility function to normalize amount strings and convert to number
+function normalizeAmount(value: string | number | undefined): number {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  // Remove currency symbols and convert to number
+  const cleanedValue = value.toString().replace(/[^0-9.-]/g, '');
+  const parsed = parseFloat(cleanedValue);
+  return isNaN(parsed) ? 0 : parsed;
+}
 
 type AdjustmentFormData = z.infer<typeof adjustmentFormSchema>;
 
@@ -140,66 +150,85 @@ export function AggregateAdjustmentDialog({
     enabled: !!projectId && open,
   });
 
-  // Calculate preview when target amount or allocation method changes
-  useEffect(() => {
-    const targetAmount = form.watch("targetAmount");
-    const allocationMethod = form.watch("allocationMethod");
-    
-    if (!targetAmount || !lines.length) {
-      setPreviewData([]);
-      return;
+  // Watch form values for preview calculation
+  const targetAmount = form.watch("targetAmount");
+  const allocationMethod = form.watch("allocationMethod");
+
+  // Calculate preview using useMemo for better performance and accuracy
+  const calculatedPreview = useMemo(() => {
+    if (!targetAmount || !lines.length || targetAmount <= 0) {
+      return [];
     }
 
-    const variance = targetAmount - currentTotal;
-    const adjustmentRatio = currentTotal > 0 ? targetAmount / currentTotal : 1;
+    const numericTargetAmount = normalizeAmount(targetAmount);
+    const numericCurrentTotal = normalizeAmount(currentTotal);
     
     const preview = lines.map(line => {
-      const originalAmount = parseFloat(line.billedAmount || line.amount) || 0;
-      let newAmount = isNaN(originalAmount) ? 0 : originalAmount;
+      const originalAmount = normalizeAmount(line.billedAmount || line.amount);
+      let newAmount = 0;
       
       switch (allocationMethod) {
-        case "pro_rata_amount":
+        case "pro_rata_amount": {
           // Distribute proportionally based on original amounts
-          if (currentTotal > 0) {
-            newAmount = originalAmount * adjustmentRatio;
+          if (numericCurrentTotal > 0) {
+            const proportion = originalAmount / numericCurrentTotal;
+            newAmount = numericTargetAmount * proportion;
           } else {
             // If current total is 0, distribute equally
-            newAmount = targetAmount / lines.length;
+            newAmount = numericTargetAmount / lines.length;
           }
           break;
+        }
           
-        case "pro_rata_hours":
+        case "pro_rata_hours": {
           // Distribute proportionally based on hours/quantity
-          const quantity = parseFloat(line.quantity || "1") || 1;
+          const quantity = normalizeAmount(line.quantity || 1);
           const totalQuantity = lines.reduce((sum, l) => 
-            sum + (parseFloat(l.quantity || "1") || 1), 0
+            sum + normalizeAmount(l.quantity || 1), 0
           );
-          const quantityRatio = totalQuantity > 0 ? quantity / totalQuantity : 1 / lines.length;
-          newAmount = targetAmount * quantityRatio;
+          if (totalQuantity > 0) {
+            const proportion = quantity / totalQuantity;
+            newAmount = numericTargetAmount * proportion;
+          } else {
+            // If total quantity is 0, distribute equally
+            newAmount = numericTargetAmount / lines.length;
+          }
           break;
+        }
           
-        case "flat":
+        case "flat": {
           // Equal distribution across all lines
-          newAmount = targetAmount / lines.length;
+          newAmount = numericTargetAmount / lines.length;
           break;
+        }
           
-        case "manual":
+        case "manual": {
           // Keep original for now, will handle manual allocation separately
           newAmount = originalAmount;
           break;
+        }
       }
+      
+      // Ensure we handle rounding to 2 decimal places
+      const roundedNewAmount = Math.round(newAmount * 100) / 100;
+      const roundedVariance = Math.round((roundedNewAmount - originalAmount) * 100) / 100;
       
       return {
         lineId: line.id,
-        originalAmount,
-        newAmount: Math.max(0, isNaN(newAmount) ? 0 : newAmount), // Ensure non-negative and not NaN
-        variance: isNaN(newAmount) ? 0 : newAmount - originalAmount,
+        originalAmount: originalAmount,
+        newAmount: Math.max(0, roundedNewAmount),
+        variance: roundedVariance,
         description: line.description || `${line.type} item`,
       };
     });
     
-    setPreviewData(preview);
-  }, [form.watch("targetAmount"), form.watch("allocationMethod"), lines, currentTotal]);
+    return preview;
+  }, [targetAmount, allocationMethod, lines, currentTotal]);
+
+  // Update preview data when calculated preview changes
+  useEffect(() => {
+    setPreviewData(calculatedPreview);
+  }, [calculatedPreview]);
 
   // Apply adjustment mutation
   const applyAdjustmentMutation = useMutation({
@@ -217,10 +246,14 @@ export function AggregateAdjustmentDialog({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}`] });
+      // Invalidate all relevant queries to ensure UI updates immediately
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
       toast({
         title: "Contract adjustment applied",
-        description: `Invoice adjusted to match contract amount of $${form.getValues("targetAmount").toLocaleString()}`,
+        description: `Invoice adjusted to match contract amount of $${normalizeAmount(form.getValues("targetAmount")).toLocaleString()}`,
       });
       onOpenChange(false);
       onSuccess?.();
@@ -255,8 +288,10 @@ export function AggregateAdjustmentDialog({
     }
   };
 
-  const variance = form.watch("targetAmount") - currentTotal;
-  const variancePercent = currentTotal > 0 ? (variance / currentTotal) * 100 : 0;
+  const numericTargetAmount = normalizeAmount(targetAmount);
+  const numericCurrentTotal = normalizeAmount(currentTotal);
+  const variance = numericTargetAmount - numericCurrentTotal;
+  const variancePercent = numericCurrentTotal > 0 ? (variance / numericCurrentTotal) * 100 : 0;
   const isNegativeVariance = variance < 0;
 
   return (
@@ -284,13 +319,13 @@ export function AggregateAdjustmentDialog({
                   <div>
                     <Label className="text-xs text-muted-foreground">Current Total</Label>
                     <div className="text-lg font-semibold">
-                      ${currentTotal.toLocaleString()}
+                      ${numericCurrentTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Target Amount</Label>
                     <div className="text-lg font-semibold text-primary">
-                      ${form.watch("targetAmount")?.toLocaleString() || "0"}
+                      ${numericTargetAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                   </div>
                   <div>
@@ -299,7 +334,7 @@ export function AggregateAdjustmentDialog({
                       isNegativeVariance ? "text-destructive" : "text-green-600"
                     }`}>
                       {isNegativeVariance ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
-                      ${Math.abs(variance).toLocaleString()}
+                      ${Math.abs(variance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       <span className="text-xs">({variancePercent.toFixed(1)}%)</span>
                     </div>
                   </div>
@@ -353,9 +388,10 @@ export function AggregateAdjustmentDialog({
                     <Input
                       type="number"
                       step="0.01"
+                      min="0.01"
                       data-testid="input-target-amount"
                       {...field}
-                      onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                      onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : 0)}
                     />
                   </FormControl>
                   <FormDescription>

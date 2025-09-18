@@ -287,7 +287,7 @@ export default function BatchDetail() {
       const updates: Array<{id: string; billedAmount: number; adjustmentReason: string}> = [];
 
       lines.forEach(line => {
-        const originalAmount = parseFloat(line.billedAmount || line.amount);
+        const originalAmount = parseFloat(line.billedAmount || line.amount || '0') || 0;
         let newAmount = originalAmount;
 
         switch (data.adjustmentType) {
@@ -1114,14 +1114,14 @@ export default function BatchDetail() {
                 totalAmount: 0
               };
               existing.lines.push(line);
-              existing.totalAmount += parseFloat(line.billedAmount || line.amount);
+              existing.totalAmount += parseFloat(line.billedAmount || line.amount || '0') || 0;
               milestoneSummary.set(line.milestone.id, existing);
             }
           });
 
           const unmappedLines = getAllLines().filter(line => !line.milestone);
           const unmappedTotal = unmappedLines.reduce((sum, line) => 
-            sum + parseFloat(line.billedAmount || line.amount), 0
+            sum + parseFloat(line.billedAmount || line.amount || '0') || 0, 0
           );
 
           return milestoneSummary.size > 0 || unmappedLines.length > 0 ? (
@@ -1336,8 +1336,8 @@ export default function BatchDetail() {
                                       </TableHeader>
                                       <TableBody>
                                         {projectData.lines.map((line) => {
-                                          const originalAmount = parseFloat(line.originalAmount || line.amount);
-                                          const billedAmount = parseFloat(line.billedAmount || line.amount);
+                                          const originalAmount = parseFloat(line.originalAmount || line.amount || '0') || 0;
+                                          const billedAmount = parseFloat(line.billedAmount || line.amount || '0') || 0;
                                           const variance = billedAmount - originalAmount;
                                           const hasVariance = Math.abs(variance) > 0.01;
                                           const isEdited = line.editedAt && line.editedBy;
@@ -1440,11 +1440,11 @@ export default function BatchDetail() {
                                               </TableCell>
                                               <TableCell className="text-right">
                                                 <div className="text-muted-foreground">
-                                                  ${originalAmount.toFixed(2)}
+                                                  ${originalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </div>
                                               </TableCell>
                                               <TableCell className="text-right font-medium">
-                                                ${billedAmount.toFixed(2)}
+                                                ${billedAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                               </TableCell>
                                               <TableCell className="text-right">
                                                 {hasVariance && (
@@ -1455,7 +1455,7 @@ export default function BatchDetail() {
                                                   }`}>
                                                     {getVarianceIcon(variance)}
                                                     <span data-testid={`text-variance-${line.id}`}>
-                                                      {variance > 0 ? "+" : ""}${variance.toFixed(2)}
+                                                      {variance > 0 ? "+" : ""}${variance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                     </span>
                                                   </div>
                                                 )}
