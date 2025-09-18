@@ -2979,8 +2979,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // For each line, use originalAmount if present, otherwise use current amount
       invoiceLines.forEach(line => {
-        const original = parseFloat(line.originalAmount || line.amount);
-        const current = parseFloat(line.amount);
+        const original = parseFloat(line.originalAmount || line.amount || '0');
+        const current = parseFloat(line.billedAmount || line.amount || '0');
         originalTotal += original;
         currentTotal += current;
       });
