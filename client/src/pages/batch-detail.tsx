@@ -473,6 +473,72 @@ export default function BatchDetail() {
     });
   };
 
+  const handleDownloadPDF = async () => {
+    if (!batchId) return;
+    
+    try {
+      // Get session ID from localStorage for authenticated request
+      const sessionId = localStorage.getItem('sessionId');
+      
+      if (!sessionId) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to download PDFs.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Make authenticated request to PDF endpoint
+      const response = await fetch(`/api/invoice-batches/${batchId}/pdf`, {
+        method: 'GET',
+        headers: {
+          'X-Session-Id': sessionId,
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          toast({
+            title: "Authentication failed",
+            description: "Session expired. Please log in again.",
+            variant: "destructive"
+          });
+          return;
+        }
+        
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      // Get the PDF blob
+      const pdfBlob = await response.blob();
+      
+      // Create download link
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${batchId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "PDF download started",
+        description: "The invoice PDF is being downloaded.",
+      });
+    } catch (error: any) {
+      console.error("PDF download error:", error);
+      toast({
+        title: "Download failed",
+        description: error.message || "Failed to download PDF. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   // Finalization mutations
   const finalizeMutation = useMutation({
     mutationFn: async () => {
@@ -780,7 +846,7 @@ export default function BatchDetail() {
           </Button>
           
           <Button
-            onClick={() => window.open(`/api/invoice-batches/${batchId}/pdf`, '_blank')}
+            onClick={handleDownloadPDF}
             variant="outline"
             data-testid="button-download-pdf"
           >

@@ -614,6 +614,8 @@ export class DatabaseStorage implements IStorage {
           name: 'No Client Assigned',
           currency: 'USD',
           billingContact: null,
+          contactName: null,
+          contactAddress: null,
           vocabularyOverrides: null,
           createdAt: new Date()
         };
@@ -672,6 +674,8 @@ export class DatabaseStorage implements IStorage {
       name: 'No Client Assigned',
       currency: 'USD',
       billingContact: null,
+      contactName: null,
+      contactAddress: null,
       vocabularyOverrides: null,
       createdAt: new Date()
     };
@@ -834,6 +838,8 @@ export class DatabaseStorage implements IStorage {
         name: 'Unknown Client', 
         currency: 'USD',
         billingContact: null,
+        contactName: null,
+        contactAddress: null,
         vocabularyOverrides: null,
         createdAt: new Date()
       },
