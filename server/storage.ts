@@ -4795,7 +4795,8 @@ export async function generateInvoicePDF(params: {
   // Load template
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const templatePath = path.join(__dirname, 'invoice-template.html');
+  const projectRoot = path.resolve(__dirname, '..');
+  const templatePath = path.join(projectRoot, 'server', 'invoice-template.html');
   const templateSource = fs.readFileSync(templatePath, 'utf8');
   const template = Handlebars.compile(templateSource);
   
