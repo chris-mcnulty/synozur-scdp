@@ -233,6 +233,7 @@ export interface IStorage {
     clientCount: number;
     projectCount: number;
   }) | undefined>;
+  updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch>;
   getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
     project: Project;
     client: Client;
@@ -2536,6 +2537,32 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch> {
+    // First check if the batch exists and is not finalized
+    const [batch] = await db
+      .select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+
+    // Check if batch is finalized
+    if (batch.status === 'finalized') {
+      throw new Error(`Invoice batch ${batchId} is finalized and cannot be updated`);
+    }
+
+    // Update the batch with the provided fields
+    const [updatedBatch] = await db
+      .update(invoiceBatches)
+      .set(updates)
+      .where(eq(invoiceBatches.batchId, batchId))
+      .returning();
+
+    return convertDecimalFieldsToNumbers(updatedBatch);
+  }
+
   async getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
     project: Project;
     client: Client;
@@ -4726,7 +4753,8 @@ export async function generateInvoicePDF(params: {
     companyPhone: companySettings.companyPhone,
     companyEmail: companySettings.companyEmail,
     companyWebsite: companySettings.companyWebsite,
-    paymentTerms: companySettings.paymentTerms,
+    // Use batch-specific payment terms if available, otherwise fall back to global setting
+    paymentTerms: batch.paymentTerms || companySettings.paymentTerms,
     
     // Batch info
     batchId: batch.batchId,

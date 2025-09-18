@@ -3113,6 +3113,47 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Update invoice batch
+  app.patch("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Define validation schema for batch updates
+      const updateSchema = z.object({
+        paymentTerms: z.string().optional(),
+        discountPercent: z.coerce.number().optional().transform(val => val?.toString()),
+        discountAmount: z.coerce.number().optional().transform(val => val?.toString()),
+        invoicingMode: z.enum(["client", "project"]).optional(),
+        notes: z.string().optional()
+      }).strict(); // strict ensures no extra fields are accepted
+      
+      // Validate request body
+      const validatedUpdates = updateSchema.parse(req.body);
+      
+      // Update the batch
+      const updatedBatch = await storage.updateInvoiceBatch(batchId, validatedUpdates);
+      
+      // Get the full batch details to return
+      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
+      
+      res.json(batchDetails);
+    } catch (error: any) {
+      console.error("Failed to update invoice batch:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid update data", 
+          errors: error.errors 
+        });
+      }
+      
+      res.status(error.message?.includes('finalized') ? 403 : 
+                 error.message?.includes('not found') ? 404 : 400).json({ 
+        message: error.message || "Failed to update invoice batch"
+      });
+    }
+  });
+
   // Delete invoice batch
   app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
