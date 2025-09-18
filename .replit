@@ -3,6 +3,7 @@ modules = ["nodejs-20", "web", "postgresql-16"]
 
 [nix]
 channel = "stable-24_05"
+packages = ["chromium"]
 
 [deployment]
 run = ["sh", "-c", "npm run build && npm start"]
