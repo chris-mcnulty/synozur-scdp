@@ -30,6 +30,95 @@ import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 
+// Numeric utility functions for safe operations
+function normalizeAmount(value: any): number {
+  if (value === null || value === undefined) return 0;
+  
+  // Convert to string and strip currency formatting
+  const str = String(value).replace(/[$,]/g, '').trim();
+  const num = parseFloat(str);
+  
+  return isNaN(num) ? 0 : num;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function safeDivide(numerator: number, denominator: number, defaultValue: number = 0): number {
+  if (denominator === 0 || isNaN(denominator)) return defaultValue;
+  const result = numerator / denominator;
+  return isNaN(result) ? defaultValue : result;
+}
+
+function distributeResidual(targetAmount: number, allocations: Record<string, number>): Record<string, number> {
+  // Round all allocations to 2 decimal places
+  const rounded: Record<string, number> = {};
+  let totalRounded = 0;
+  
+  for (const [key, value] of Object.entries(allocations)) {
+    rounded[key] = round2(value);
+    totalRounded += rounded[key];
+  }
+  
+  // Calculate residual
+  const residual = round2(targetAmount - totalRounded);
+  
+  // If there's a residual, distribute it to the largest allocation
+  if (Math.abs(residual) > 0.001) {
+    const entries = Object.entries(rounded);
+    if (entries.length > 0) {
+      // Find the entry with the largest allocation
+      const [largestKey] = entries.reduce((max, curr) => 
+        curr[1] > max[1] ? curr : max
+      );
+      rounded[largestKey] = round2(rounded[largestKey] + residual);
+    }
+  }
+  
+  return rounded;
+}
+
+// Helper to convert Decimal strings to numbers in objects
+function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T {
+  const result = { ...obj } as any;
+  
+  // List of known decimal/numeric fields that should be converted
+  const numericFields = [
+    'amount', 'billedAmount', 'originalAmount', 'varianceAmount',
+    'totalAmount', 'aggregateAdjustmentTotal', 'subtotal',
+    'quantity', 'rate', 'billingRate', 'costRate',
+    'defaultBillingRate', 'defaultCostRate', 'defaultChargeRate',
+    'value', 'baselineBudget', 'sowValue', 'retainerBalance', 'retainerTotal',
+    'hours', 'hoursEstimated', 'adjustedHours', 'calculatedAmount',
+    'totalCost', 'totalRevenue', 'revenue', 'cost', 'profit',
+    'burnedAmount', 'utilizationRate', 'monthlyRevenue', 'unbilledHours'
+  ];
+  
+  for (const key in result) {
+    const value = result[key];
+    
+    // Convert known numeric fields
+    if (numericFields.includes(key) && value !== null && value !== undefined) {
+      result[key] = normalizeAmount(value);
+    }
+    // Handle nested objects
+    else if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = convertDecimalFieldsToNumbers(value);
+    }
+    // Handle arrays of objects
+    else if (Array.isArray(value)) {
+      result[key] = value.map(item => 
+        (item && typeof item === 'object' && !(item instanceof Date)) 
+          ? convertDecimalFieldsToNumbers(item) 
+          : item
+      );
+    }
+  }
+  
+  return result;
+}
+
 export interface IStorage {
   // Users
   getUsers(): Promise<User[]>;
@@ -242,7 +331,7 @@ export interface IStorage {
   bulkUpdateInvoiceLines(batchId: string, updates: Array<{id: string, changes: Partial<InvoiceLine>}>): Promise<InvoiceLine[]>;
   
   // Aggregate Adjustments
-  createAggregateAdjustment(params: {
+  applyAggregateAdjustment(params: {
     batchId: string;
     targetAmount: number;
     method: 'pro_rata_amount' | 'pro_rata_hours' | 'flat' | 'manual';
@@ -2385,13 +2474,13 @@ export class DatabaseStorage implements IStorage {
         projectNames = projectData.map(p => p.name);
       }
       
-      return {
+      return convertDecimalFieldsToNumbers({
         ...batch,
         clientCount: uniqueClientIds.length,
         projectCount: uniqueProjectIds.length,
         clientNames,
         projectNames
-      };
+      });
     }));
     
     return batchesWithDetails;
@@ -2426,8 +2515,8 @@ export class DatabaseStorage implements IStorage {
     const totalLinesCount = lines.length;
     const totalAmount = lines.reduce((sum, line) => {
       // Use billedAmount if available (adjusted), otherwise use amount (original)
-      const effectiveAmount = line.billedAmount || line.amount || '0';
-      return sum + parseFloat(effectiveAmount);
+      const effectiveAmount = normalizeAmount(line.billedAmount || line.amount);
+      return sum + effectiveAmount;
     }, 0);
     const uniqueClients = new Set(lines.map(l => l.clientId));
     const uniqueProjects = new Set(lines.map(l => l.projectId));
@@ -2435,15 +2524,16 @@ export class DatabaseStorage implements IStorage {
     // Update the batch's totalAmount if it's not already set
     const updatedBatch = {
       ...batch,
-      totalAmount: batch.totalAmount || totalAmount.toString()
+      totalAmount: batch.totalAmount || round2(totalAmount).toString()
     };
 
-    return {
+    // Convert decimal fields to numbers before returning
+    return convertDecimalFieldsToNumbers({
       ...updatedBatch,
       totalLinesCount,
       clientCount: uniqueClients.size,
       projectCount: uniqueProjects.size
-    };
+    });
   }
 
   async getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
@@ -2462,9 +2552,9 @@ export class DatabaseStorage implements IStorage {
       .where(eq(invoiceLines.batchId, batchId))
       .orderBy(clients.name, projects.name, invoiceLines.type);
 
-    return lines.map(row => ({
+    return lines.map(row => convertDecimalFieldsToNumbers({
       ...row.line,
-      project: row.project,
+      project: convertDecimalFieldsToNumbers(row.project),
       client: row.client
     }));
   }
@@ -3137,7 +3227,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Aggregate Adjustments
-  async createAggregateAdjustment(params: {
+  async applyAggregateAdjustment(params: {
     batchId: string;
     targetAmount: number;
     method: 'pro_rata_amount' | 'pro_rata_hours' | 'flat' | 'manual';
@@ -3178,67 +3268,70 @@ export class DatabaseStorage implements IStorage {
       throw new Error('No invoice lines found for adjustment');
     }
     
-    // Calculate the current total with proper numeric validation
+    // Store original amounts on first adjustment
+    for (const line of lines) {
+      if (!line.originalAmount) {
+        await db.update(invoiceLines)
+          .set({ originalAmount: line.amount })
+          .where(eq(invoiceLines.id, line.id));
+        // Update the line object for calculations
+        line.originalAmount = line.amount;
+      }
+    }
+    
+    // Calculate the current total with proper numeric normalization
     const currentTotal = lines.reduce((sum, line) => {
-      const amount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
-      return sum + (isNaN(amount) ? 0 : amount);
+      const amount = normalizeAmount(line.originalAmount || line.amount);
+      return sum + amount;
     }, 0);
     
     const adjustmentAmount = params.targetAmount - currentTotal;
     
-    // Prevent division by zero and invalid ratios
-    const adjustmentRatio = currentTotal > 0 ? params.targetAmount / currentTotal : 1;
-    
     // Calculate allocation based on method
-    const allocation: Record<string, number> = {};
-    const allocationGroupId = `adj_${Date.now()}`;
+    let rawAllocation: Record<string, number> = {};
     
     switch (params.method) {
       case 'pro_rata_amount':
         if (currentTotal > 0) {
           // Proportional allocation based on original amounts
           for (const line of lines) {
-            const lineAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
-            const safeLineAmount = isNaN(lineAmount) ? 0 : lineAmount;
-            const newAmount = safeLineAmount * adjustmentRatio;
-            allocation[line.id] = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
+            const lineAmount = normalizeAmount(line.originalAmount || line.amount);
+            const ratio = safeDivide(lineAmount, currentTotal);
+            rawAllocation[line.id] = params.targetAmount * ratio;
           }
         } else {
           // If current total is 0, distribute equally
-          const equalAmount = params.targetAmount / lines.length;
+          const equalAmount = safeDivide(params.targetAmount, lines.length);
           for (const line of lines) {
-            allocation[line.id] = Math.max(0, equalAmount);
+            rawAllocation[line.id] = equalAmount;
           }
         }
         break;
       
       case 'pro_rata_hours':
         const totalQuantity = lines.reduce((sum, l) => {
-          const qty = l.quantity ? parseFloat(l.quantity) : 0;
-          return sum + (isNaN(qty) ? 0 : qty);
+          return sum + normalizeAmount(l.quantity);
         }, 0);
         
         if (totalQuantity > 0) {
           for (const line of lines) {
-            const lineQuantity = line.quantity ? parseFloat(line.quantity) : 0;
-            const safeLineQuantity = isNaN(lineQuantity) ? 0 : lineQuantity;
-            const newAmount = params.targetAmount * (safeLineQuantity / totalQuantity);
-            allocation[line.id] = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
+            const lineQuantity = normalizeAmount(line.quantity);
+            const ratio = safeDivide(lineQuantity, totalQuantity);
+            rawAllocation[line.id] = params.targetAmount * ratio;
           }
         } else {
           // If no quantities, fall back to equal distribution
-          const equalAmount = params.targetAmount / lines.length;
+          const equalAmount = safeDivide(params.targetAmount, lines.length);
           for (const line of lines) {
-            allocation[line.id] = Math.max(0, equalAmount);
+            rawAllocation[line.id] = equalAmount;
           }
         }
         break;
       
       case 'flat':
-        const flatAmount = params.targetAmount / lines.length;
-        const safeFlatAmount = isNaN(flatAmount) ? 0 : Math.max(0, flatAmount);
+        const flatAmount = safeDivide(params.targetAmount, lines.length);
         for (const line of lines) {
-          allocation[line.id] = safeFlatAmount;
+          rawAllocation[line.id] = flatAmount;
         }
         break;
       
@@ -3246,15 +3339,19 @@ export class DatabaseStorage implements IStorage {
         if (!params.allocation) {
           throw new Error('Manual allocation requires allocation parameter');
         }
-        // Validate manual allocation values
+        // Normalize manual allocation values
         for (const [lineId, amount] of Object.entries(params.allocation)) {
-          const safeAmount = isNaN(amount) ? 0 : Math.max(0, amount);
-          allocation[lineId] = safeAmount;
+          rawAllocation[lineId] = normalizeAmount(amount);
         }
         break;
     }
     
+    // Use distributeResidual to ensure the sum exactly equals target
+    const allocation = distributeResidual(params.targetAmount, rawAllocation);
+    
     // Create adjustment record with complete metadata
+    const adjustmentRatio = safeDivide(params.targetAmount, currentTotal, 1);
+    
     const [adjustment] = await db.insert(invoiceAdjustments).values({
       batchId: params.batchId,
       scope: 'aggregate',
@@ -3266,32 +3363,57 @@ export class DatabaseStorage implements IStorage {
       createdBy: params.userId,
       metadata: {
         allocation,
-        originalAmount: isNaN(currentTotal) ? 0 : currentTotal,
+        originalAmount: currentTotal,
         affectedLines: lines.length,
-        adjustmentAmount: isNaN(adjustmentAmount) ? 0 : adjustmentAmount,
-        adjustmentRatio: isNaN(adjustmentRatio) ? 1 : adjustmentRatio
+        adjustmentAmount: adjustmentAmount,
+        adjustmentRatio: adjustmentRatio
       }
     }).returning();
     
-    // Update invoice lines with new billed amounts (with NaN prevention)
+    // Update invoice lines with new billed amounts
+    let totalBilledAmount = 0;
     for (const [lineId, newAmount] of Object.entries(allocation)) {
       const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
       if (line) {
-        const originalAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
-        const safeOriginalAmount = isNaN(originalAmount) ? 0 : originalAmount;
-        const safeNewAmount = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
-        const variance = safeOriginalAmount - safeNewAmount;
-        const safeVariance = isNaN(variance) ? 0 : variance;
+        const originalAmount = normalizeAmount(line.originalAmount || line.amount);
+        const billedAmount = round2(newAmount);
+        const varianceAmount = round2(billedAmount - originalAmount);
         
         await db.update(invoiceLines).set({
-          billedAmount: safeNewAmount.toString(),
-          varianceAmount: safeVariance.toString(),
+          billedAmount: billedAmount.toString(),
+          varianceAmount: varianceAmount.toString(),
           adjustmentType: 'aggregate',
           editedBy: params.userId,
           editedAt: new Date()
         }).where(eq(invoiceLines.id, lineId));
+        
+        totalBilledAmount += billedAmount;
       }
     }
+    
+    // Recalculate and update batch totals
+    const allBatchLines = await db.select()
+      .from(invoiceLines)
+      .where(eq(invoiceLines.batchId, params.batchId));
+    
+    const batchTotal = allBatchLines.reduce((sum, line) => {
+      const amount = normalizeAmount(line.billedAmount || line.amount);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate aggregate adjustment total for the batch
+    const aggregateAdjustmentTotal = batchTotal - allBatchLines.reduce((sum, line) => {
+      const amount = normalizeAmount(line.originalAmount || line.amount);
+      return sum + amount;
+    }, 0);
+    
+    // Update batch with new totals
+    await db.update(invoiceBatches)
+      .set({
+        totalAmount: round2(batchTotal).toString(),
+        aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString()
+      })
+      .where(eq(invoiceBatches.batchId, params.batchId));
     
     return adjustment;
   }

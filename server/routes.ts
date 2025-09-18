@@ -3024,29 +3024,40 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/invoice-batches/:batchId/adjustments", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
       const { batchId } = req.params;
-      const { targetAmount, method, reason, sowId, projectId, allocation } = req.body;
       const userId = req.user!.id;
       
-      // Validate required fields
-      if (!targetAmount || !method) {
+      // Create a validation schema with coercion for numeric fields
+      const adjustmentSchema = z.object({
+        targetAmount: z.coerce.number().positive("Target amount must be positive"),
+        method: z.enum(['pro_rata_amount', 'pro_rata_hours', 'flat', 'manual'], {
+          errorMap: () => ({ message: "Invalid adjustment method. Must be: pro_rata_amount, pro_rata_hours, flat, or manual" })
+        }),
+        reason: z.string().optional(),
+        sowId: z.string().optional(),
+        projectId: z.string().optional(),
+        allocation: z.record(z.coerce.number()).optional()
+      }).refine(data => {
+        if (data.method === 'manual' && !data.allocation) {
+          return false;
+        }
+        return true;
+      }, {
+        message: "Manual method requires allocation object"
+      });
+      
+      // Validate and coerce the request body
+      const validationResult = adjustmentSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
         return res.status(400).json({ 
-          message: "Missing required fields: targetAmount and method are required" 
+          message: "Validation error",
+          errors: validationResult.error.errors
         });
       }
       
-      if (!['pro_rata_amount', 'pro_rata_hours', 'flat', 'manual'].includes(method)) {
-        return res.status(400).json({ 
-          message: "Invalid adjustment method. Must be: pro_rata_amount, pro_rata_hours, flat, or manual" 
-        });
-      }
+      const { targetAmount, method, reason, sowId, projectId, allocation } = validationResult.data;
       
-      if (method === 'manual' && !allocation) {
-        return res.status(400).json({ 
-          message: "Manual method requires allocation object" 
-        });
-      }
-      
-      const adjustment = await storage.createAggregateAdjustment({
+      const adjustment = await storage.applyAggregateAdjustment({
         batchId,
         targetAmount,
         method,
