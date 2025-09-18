@@ -27,6 +27,7 @@ import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import * as Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 
@@ -4792,7 +4793,9 @@ export async function generateInvoicePDF(params: {
   };
 
   // Load template
-  const templatePath = path.join(path.dirname(new URL(import.meta.url).pathname), 'invoice-template.html');
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const templatePath = path.join(__dirname, 'invoice-template.html');
   const templateSource = fs.readFileSync(templatePath, 'utf8');
   const template = Handlebars.compile(templateSource);
   
