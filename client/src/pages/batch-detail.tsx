@@ -84,6 +84,9 @@ import { InvoiceLineBulkEditDialog } from "@/components/billing/invoice-line-bul
 import { AggregateAdjustmentDialog } from "@/components/billing/aggregate-adjustment-dialog";
 import { AdjustmentHistory } from "@/components/billing/adjustment-history";
 import { ProjectMilestonesDialog } from "@/components/billing/project-milestones-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface InvoiceBatchDetails {
   id: string;
@@ -106,6 +109,7 @@ interface InvoiceBatchDetails {
   totalLinesCount: number;
   clientCount: number;
   projectCount: number;
+  paymentTerms?: string | null;
   finalizer?: { id: string; name: string; email: string } | null;
 }
 
@@ -182,6 +186,9 @@ export default function BatchDetail() {
   const [showMilestoneDialog, setShowMilestoneDialog] = useState(false);
   const [selectedProjectForMilestone, setSelectedProjectForMilestone] = useState<string | null>(null);
   const [selectedLineForMilestone, setSelectedLineForMilestone] = useState<InvoiceLine | null>(null);
+  const [useCustomPaymentTerms, setUseCustomPaymentTerms] = useState(false);
+  const [customPaymentTerms, setCustomPaymentTerms] = useState("");
+  const [isEditingPaymentTerms, setIsEditingPaymentTerms] = useState(false);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -193,6 +200,21 @@ export default function BatchDetail() {
   const { data: groupedLines, isLoading: isLoadingLines, error: linesError } = useQuery<GroupedInvoiceLines>({
     queryKey: [`/api/invoice-batches/${batchId}/lines`],
     enabled: !!batchId,
+  });
+
+  // Fetch default payment terms from system settings
+  const { data: defaultPaymentTerms } = useQuery<string>({
+    queryKey: ['/api/system-settings/PAYMENT_TERMS'],
+    queryFn: async () => {
+      const response = await fetch('/api/system-settings/PAYMENT_TERMS');
+      if (!response.ok) {
+        // Return default if not found
+        return 'Payment due within 30 days';
+      }
+      const data = await response.json();
+      return data.value || 'Payment due within 30 days';
+    },
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour
   });
 
   // Helper function to get all lines as flat array
@@ -270,6 +292,31 @@ export default function BatchDetail() {
       toast({ 
         title: "Error",
         description: error.message || "Failed to update invoice line",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Payment Terms Update Mutation
+  const updatePaymentTermsMutation = useMutation({
+    mutationFn: async (paymentTerms: string | null) => {
+      return await apiRequest(`/api/invoice-batches/${batchId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ paymentTerms })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: "Payment terms updated successfully" 
+      });
+      setIsEditingPaymentTerms(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update payment terms",
         variant: "destructive" 
       });
     }
@@ -1057,6 +1104,27 @@ export default function BatchDetail() {
               </>
             )}
 
+            {/* Payment Terms Display */}
+            <Separator className="my-4" />
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">Payment Terms</div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium" data-testid="text-payment-terms">
+                  {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                </p>
+                {batchDetails.paymentTerms && (
+                  <Badge variant="secondary" className="text-xs">
+                    Custom
+                  </Badge>
+                )}
+                {!batchDetails.paymentTerms && (
+                  <Badge variant="outline" className="text-xs">
+                    Default
+                  </Badge>
+                )}
+              </div>
+            </div>
+
             <Separator className="my-4" />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1096,6 +1164,169 @@ export default function BatchDetail() {
             )}
           </CardContent>
         </Card>
+
+        {/* Payment Terms Card - Only show if not finalized */}
+        {batchDetails.status !== 'finalized' && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Payment Terms</CardTitle>
+              <CardDescription>
+                Configure payment terms for this invoice batch
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!isEditingPaymentTerms ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">
+                        Current Payment Terms
+                      </Label>
+                      {batchDetails.paymentTerms && (
+                        <Badge variant="secondary" className="text-xs">
+                          Custom
+                        </Badge>
+                      )}
+                      {!batchDetails.paymentTerms && (
+                        <Badge variant="outline" className="text-xs">
+                          Using Default
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground" data-testid="text-current-payment-terms">
+                      {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                    </p>
+                  </div>
+                  {canEditLines() && (
+                    <Button
+                      onClick={() => {
+                        setIsEditingPaymentTerms(true);
+                        setUseCustomPaymentTerms(!!batchDetails.paymentTerms);
+                        setCustomPaymentTerms(batchDetails.paymentTerms || '');
+                      }}
+                      variant="outline"
+                      data-testid="button-edit-payment-terms"
+                    >
+                      <Edit className="mr-2 h-4 w-4" />
+                      Edit Payment Terms
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-3">
+                    <Switch
+                      id="custom-payment-terms"
+                      checked={useCustomPaymentTerms}
+                      onCheckedChange={(checked) => {
+                        setUseCustomPaymentTerms(checked);
+                        if (!checked) {
+                          setCustomPaymentTerms('');
+                        }
+                      }}
+                      data-testid="switch-custom-payment-terms"
+                    />
+                    <Label htmlFor="custom-payment-terms" className="cursor-pointer">
+                      Use custom payment terms for this batch
+                    </Label>
+                  </div>
+                  
+                  {useCustomPaymentTerms && (
+                    <div className="space-y-2">
+                      <Label htmlFor="payment-terms-input">
+                        Custom Payment Terms
+                      </Label>
+                      <Textarea
+                        id="payment-terms-input"
+                        value={customPaymentTerms}
+                        onChange={(e) => setCustomPaymentTerms(e.target.value)}
+                        placeholder={defaultPaymentTerms || 'Payment due within 30 days'}
+                        className="min-h-[80px]"
+                        data-testid="textarea-payment-terms"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Enter the payment terms that will appear on invoices for this batch.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {!useCustomPaymentTerms && (
+                    <div className="rounded-lg bg-muted/50 p-3">
+                      <p className="text-sm text-muted-foreground">
+                        This batch will use the default payment terms:
+                      </p>
+                      <p className="text-sm font-medium mt-1">
+                        {defaultPaymentTerms || 'Payment due within 30 days'}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        const newPaymentTerms = useCustomPaymentTerms ? customPaymentTerms.trim() : null;
+                        updatePaymentTermsMutation.mutate(newPaymentTerms);
+                      }}
+                      disabled={updatePaymentTermsMutation.isPending || (useCustomPaymentTerms && !customPaymentTerms.trim())}
+                      data-testid="button-save-payment-terms"
+                    >
+                      {updatePaymentTermsMutation.isPending ? 'Saving...' : 'Save Payment Terms'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIsEditingPaymentTerms(false);
+                        setUseCustomPaymentTerms(false);
+                        setCustomPaymentTerms('');
+                      }}
+                      variant="outline"
+                      disabled={updatePaymentTermsMutation.isPending}
+                      data-testid="button-cancel-payment-terms"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+        
+        {/* Payment Terms Read-Only for Finalized Batches */}
+        {batchDetails.status === 'finalized' && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Payment Terms</CardTitle>
+              <CardDescription>
+                Payment terms for this finalized invoice batch
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg border p-4 bg-muted/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="text-sm font-medium">
+                    Payment Terms (Locked)
+                  </Label>
+                  {batchDetails.paymentTerms ? (
+                    <Badge variant="secondary" className="text-xs">
+                      Custom
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      Default
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm" data-testid="text-finalized-payment-terms">
+                  {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                </p>
+                <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+                  <Lock className="h-3 w-3" />
+                  <span>Payment terms cannot be modified for finalized batches</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Milestone Summary Section */}
         {groupedLines && (() => {
