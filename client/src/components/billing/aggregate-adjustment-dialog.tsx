@@ -151,25 +151,30 @@ export function AggregateAdjustmentDialog({
     }
 
     const variance = targetAmount - currentTotal;
-    const adjustmentRatio = targetAmount / currentTotal;
+    const adjustmentRatio = currentTotal > 0 ? targetAmount / currentTotal : 1;
     
     const preview = lines.map(line => {
-      const originalAmount = parseFloat(line.billedAmount || line.amount);
-      let newAmount = originalAmount;
+      const originalAmount = parseFloat(line.billedAmount || line.amount) || 0;
+      let newAmount = isNaN(originalAmount) ? 0 : originalAmount;
       
       switch (allocationMethod) {
         case "pro_rata_amount":
           // Distribute proportionally based on original amounts
-          newAmount = originalAmount * adjustmentRatio;
+          if (currentTotal > 0) {
+            newAmount = originalAmount * adjustmentRatio;
+          } else {
+            // If current total is 0, distribute equally
+            newAmount = targetAmount / lines.length;
+          }
           break;
           
         case "pro_rata_hours":
           // Distribute proportionally based on hours/quantity
-          const quantity = parseFloat(line.quantity || "1");
+          const quantity = parseFloat(line.quantity || "1") || 1;
           const totalQuantity = lines.reduce((sum, l) => 
-            sum + parseFloat(l.quantity || "1"), 0
+            sum + (parseFloat(l.quantity || "1") || 1), 0
           );
-          const quantityRatio = quantity / totalQuantity;
+          const quantityRatio = totalQuantity > 0 ? quantity / totalQuantity : 1 / lines.length;
           newAmount = targetAmount * quantityRatio;
           break;
           
@@ -187,8 +192,8 @@ export function AggregateAdjustmentDialog({
       return {
         lineId: line.id,
         originalAmount,
-        newAmount: Math.max(0, newAmount), // Ensure non-negative
-        variance: newAmount - originalAmount,
+        newAmount: Math.max(0, isNaN(newAmount) ? 0 : newAmount), // Ensure non-negative and not NaN
+        variance: isNaN(newAmount) ? 0 : newAmount - originalAmount,
         description: line.description || `${line.type} item`,
       };
     });

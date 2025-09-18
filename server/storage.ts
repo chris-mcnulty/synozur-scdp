@@ -3172,10 +3172,16 @@ export class DatabaseStorage implements IStorage {
       throw new Error('No invoice lines found for adjustment');
     }
     
-    // Calculate the current total
-    const currentTotal = lines.reduce((sum, line) => sum + (line.originalAmount ? parseFloat(line.originalAmount) : 0), 0);
+    // Calculate the current total with proper numeric validation
+    const currentTotal = lines.reduce((sum, line) => {
+      const amount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
+      return sum + (isNaN(amount) ? 0 : amount);
+    }, 0);
+    
     const adjustmentAmount = params.targetAmount - currentTotal;
-    const adjustmentRatio = params.targetAmount / currentTotal;
+    
+    // Prevent division by zero and invalid ratios
+    const adjustmentRatio = currentTotal > 0 ? params.targetAmount / currentTotal : 1;
     
     // Calculate allocation based on method
     const allocation: Record<string, number> = {};
@@ -3183,26 +3189,50 @@ export class DatabaseStorage implements IStorage {
     
     switch (params.method) {
       case 'pro_rata_amount':
-        for (const line of lines) {
-          const lineAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
-          allocation[line.id] = lineAmount * adjustmentRatio;
+        if (currentTotal > 0) {
+          // Proportional allocation based on original amounts
+          for (const line of lines) {
+            const lineAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
+            const safeLineAmount = isNaN(lineAmount) ? 0 : lineAmount;
+            const newAmount = safeLineAmount * adjustmentRatio;
+            allocation[line.id] = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
+          }
+        } else {
+          // If current total is 0, distribute equally
+          const equalAmount = params.targetAmount / lines.length;
+          for (const line of lines) {
+            allocation[line.id] = Math.max(0, equalAmount);
+          }
         }
         break;
       
       case 'pro_rata_hours':
-        for (const line of lines) {
-          const lineQuantity = line.quantity ? parseFloat(line.quantity) : 0;
-          const totalQuantity = lines.reduce((sum, l) => sum + (l.quantity ? parseFloat(l.quantity) : 0), 0);
-          if (totalQuantity > 0) {
-            allocation[line.id] = params.targetAmount * (lineQuantity / totalQuantity);
+        const totalQuantity = lines.reduce((sum, l) => {
+          const qty = l.quantity ? parseFloat(l.quantity) : 0;
+          return sum + (isNaN(qty) ? 0 : qty);
+        }, 0);
+        
+        if (totalQuantity > 0) {
+          for (const line of lines) {
+            const lineQuantity = line.quantity ? parseFloat(line.quantity) : 0;
+            const safeLineQuantity = isNaN(lineQuantity) ? 0 : lineQuantity;
+            const newAmount = params.targetAmount * (safeLineQuantity / totalQuantity);
+            allocation[line.id] = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
+          }
+        } else {
+          // If no quantities, fall back to equal distribution
+          const equalAmount = params.targetAmount / lines.length;
+          for (const line of lines) {
+            allocation[line.id] = Math.max(0, equalAmount);
           }
         }
         break;
       
       case 'flat':
         const flatAmount = params.targetAmount / lines.length;
+        const safeFlatAmount = isNaN(flatAmount) ? 0 : Math.max(0, flatAmount);
         for (const line of lines) {
-          allocation[line.id] = flatAmount;
+          allocation[line.id] = safeFlatAmount;
         }
         break;
       
@@ -3210,7 +3240,11 @@ export class DatabaseStorage implements IStorage {
         if (!params.allocation) {
           throw new Error('Manual allocation requires allocation parameter');
         }
-        Object.assign(allocation, params.allocation);
+        // Validate manual allocation values
+        for (const [lineId, amount] of Object.entries(params.allocation)) {
+          const safeAmount = isNaN(amount) ? 0 : Math.max(0, amount);
+          allocation[lineId] = safeAmount;
+        }
         break;
     }
     
@@ -3226,21 +3260,26 @@ export class DatabaseStorage implements IStorage {
       createdBy: params.userId,
       metadata: {
         allocation,
-        originalAmount: currentTotal,
+        originalAmount: isNaN(currentTotal) ? 0 : currentTotal,
         affectedLines: lines.length,
-        adjustmentAmount,
-        adjustmentRatio
+        adjustmentAmount: isNaN(adjustmentAmount) ? 0 : adjustmentAmount,
+        adjustmentRatio: isNaN(adjustmentRatio) ? 1 : adjustmentRatio
       }
     }).returning();
     
-    // Update invoice lines with new billed amounts
+    // Update invoice lines with new billed amounts (with NaN prevention)
     for (const [lineId, newAmount] of Object.entries(allocation)) {
       const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
       if (line) {
         const originalAmount = line.originalAmount ? parseFloat(line.originalAmount) : 0;
+        const safeOriginalAmount = isNaN(originalAmount) ? 0 : originalAmount;
+        const safeNewAmount = isNaN(newAmount) ? 0 : Math.max(0, newAmount);
+        const variance = safeOriginalAmount - safeNewAmount;
+        const safeVariance = isNaN(variance) ? 0 : variance;
+        
         await db.update(invoiceLines).set({
-          billedAmount: newAmount.toString(),
-          varianceAmount: (originalAmount - newAmount).toString(),
+          billedAmount: safeNewAmount.toString(),
+          varianceAmount: safeVariance.toString(),
           adjustmentType: 'aggregate',
           editedBy: params.userId,
           editedAt: new Date()
