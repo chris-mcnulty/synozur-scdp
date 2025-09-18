@@ -28,7 +28,7 @@ import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import * as Handlebars from 'handlebars';
+import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 
 // Numeric utility functions for safe operations
