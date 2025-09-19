@@ -1,5 +1,45 @@
 import { msalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
 
+// SharePoint Embedded container interfaces
+export interface FileStorageContainer {
+  id: string;
+  displayName: string;
+  description?: string;
+  containerTypeId: string;
+  createdDateTime: string;
+  drive?: {
+    id: string;
+    webUrl: string;
+  };
+  status: 'active' | 'inactive';
+  viewpoint?: {
+    effectiveRole: string;
+  };
+}
+
+export interface ContainerPermission {
+  id: string;
+  roles: string[];
+  grantedToV2?: {
+    user?: {
+      id: string;
+      displayName: string;
+    };
+    application?: {
+      id: string;
+      displayName: string;
+    };
+  };
+}
+
+export interface ContainerType {
+  id: string;
+  displayName: string;
+  description?: string;
+  isBuiltIn: boolean;
+  applicationId?: string;
+}
+
 // TypeScript interfaces for Microsoft Graph API responses
 export interface DriveItem {
   id: string;
@@ -47,18 +87,53 @@ export interface GraphResponse<T> {
   '@odata.nextLink'?: string;
 }
 
-// Main GraphClient class for SharePoint operations
+// Main GraphClient class for SharePoint Embedded operations
 export class GraphClient {
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
   private readonly maxRetries = 3;
   private readonly baseDelay = 1000; // 1 second
   private readonly graphBaseUrl = 'https://graph.microsoft.com/v1.0';
+  
+  // Cache for container information to reduce API calls
+  private containerCache = new Map<string, FileStorageContainer>();
+  private cacheExpiry = new Map<string, number>();
+  private readonly cacheLifetime = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
     if (!msalInstance) {
       console.warn('[GraphClient] MSAL instance not configured. Please check Azure AD environment variables.');
     }
+  }
+
+  /**
+   * Get container from cache or fetch from API
+   */
+  private async getCachedContainer(containerId: string): Promise<FileStorageContainer | null> {
+    const now = Date.now();
+    const expiry = this.cacheExpiry.get(containerId);
+    
+    if (expiry && now < expiry && this.containerCache.has(containerId)) {
+      return this.containerCache.get(containerId)!;
+    }
+    
+    try {
+      const container = await this.getFileStorageContainer(containerId);
+      this.containerCache.set(containerId, container);
+      this.cacheExpiry.set(containerId, now + this.cacheLifetime);
+      return container;
+    } catch (error) {
+      console.warn(`[GraphClient] Failed to fetch container ${containerId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear container cache
+   */
+  private clearContainerCache(): void {
+    this.containerCache.clear();
+    this.cacheExpiry.clear();
   }
 
   /**
@@ -250,6 +325,54 @@ export class GraphClient {
     return new Error(`Graph Client Error: ${error.message || 'Unknown error'}`);
   }
 
+  // ============ SHAREPOINT EMBEDDED CONTAINER OPERATIONS ============
+
+  /**
+   * List all file storage containers accessible to the application
+   */
+  async listFileStorageContainers(): Promise<FileStorageContainer[]> {
+    return this.withRetry(async () => {
+      const response = await this.makeGraphRequest<GraphResponse<FileStorageContainer>>(
+        'GET',
+        '/storage/fileStorage/containers'
+      );
+      return response.value || [];
+    }, 'listFileStorageContainers');
+  }
+
+  /**
+   * Get a specific file storage container
+   */
+  async getFileStorageContainer(containerId: string): Promise<FileStorageContainer> {
+    return this.withRetry(async () => {
+      return await this.makeGraphRequest<FileStorageContainer>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}`
+      );
+    }, `getFileStorageContainer(${containerId})`);
+  }
+
+  /**
+   * Create a new file storage container (for multitenant support)
+   */
+  async createFileStorageContainer(
+    displayName: string,
+    containerTypeId: string,
+    description?: string
+  ): Promise<FileStorageContainer> {
+    return this.withRetry(async () => {
+      return await this.makeGraphRequest<FileStorageContainer>(
+        'POST',
+        '/storage/fileStorage/containers',
+        {
+          displayName,
+          description,
+          containerTypeId
+        }
+      );
+    }, `createFileStorageContainer(${displayName})`);
+  }
+
   /**
    * Validate and normalize folder path to prevent path traversal attacks
    * When expenseId is provided, ignore arbitrary folderPath and use canonical structure
@@ -422,17 +545,20 @@ export class GraphClient {
   }
 
   /**
-   * Upload a file to SharePoint with security validation
+   * Upload a file to SharePoint Embedded container with security validation
+   * Maintains backward compatibility by accepting legacy parameters
    */
   async uploadFile(
-    siteId: string,
-    driveId: string,
+    siteIdOrContainerId: string, // For backward compatibility, this can be either siteId (ignored) or containerId
+    driveIdOrContainerId: string, // This will be the containerId in new usage, driveId for backward compatibility
     folderPath: string,
     fileName: string,
     fileBuffer: Buffer,
     projectCode?: string,
     expenseId?: string
   ): Promise<DriveItem> {
+    // For SharePoint Embedded, use the second parameter as containerId
+    const containerId = driveIdOrContainerId;
     // Validate and sanitize inputs
     const sanitizedFileName = this.validateAndSanitizeFileName(fileName);
     this.validateFileProperties(fileBuffer, sanitizedFileName);
@@ -440,20 +566,20 @@ export class GraphClient {
     
     return this.withRetry(async () => {
       // First, ensure the folder structure exists
-      await this.ensureFolderExists(driveId, normalizedFolderPath);
+      await this.ensureFolderExists(containerId, normalizedFolderPath);
       
       // Construct the upload path
       const uploadPath = `${normalizedFolderPath}/${sanitizedFileName}`.replace(/\/+/g, '/');
       
       // For large files (>4MB), use resumable upload
       if (fileBuffer.length > 4 * 1024 * 1024) {
-        return this.uploadLargeFileWithRetry(driveId, uploadPath, fileBuffer);
+        return this.uploadLargeFileWithRetry(containerId, uploadPath, fileBuffer);
       }
       
-      // For small files, use simple upload
+      // For small files, use simple upload with container endpoint
       return await this.makeGraphRequest<DriveItem>(
         'PUT',
-        `/drives/${driveId}/root:${uploadPath}:/content`,
+        `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`,
         fileBuffer,
         { 'Content-Type': 'application/octet-stream' }
       );
@@ -463,11 +589,11 @@ export class GraphClient {
   /**
    * Upload large file using resumable upload with proper retry logic
    */
-  private async uploadLargeFileWithRetry(driveId: string, uploadPath: string, fileBuffer: Buffer): Promise<DriveItem> {
-    // Create upload session
+  private async uploadLargeFileWithRetry(containerId: string, uploadPath: string, fileBuffer: Buffer): Promise<DriveItem> {
+    // Create upload session with container endpoint
     const uploadSession = await this.makeGraphRequest<{uploadUrl: string}>(
       'POST',
-      `/drives/${driveId}/root:${uploadPath}:/createUploadSession`,
+      `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/createUploadSession`,
       {
         item: {
           '@microsoft.graph.conflictBehavior': 'replace'
@@ -561,7 +687,7 @@ export class GraphClient {
   /**
    * Ensure folder structure exists, creating folders as needed with sanitized names
    */
-  private async ensureFolderExists(driveId: string, folderPath: string): Promise<void> {
+  private async ensureFolderExists(containerId: string, folderPath: string): Promise<void> {
     const pathParts = folderPath.split('/').filter(part => part.length > 0);
     let currentPath = '';
 
@@ -571,8 +697,8 @@ export class GraphClient {
       currentPath += `/${sanitizedPart}`;
       
       try {
-        // Check if folder exists
-        await this.makeGraphRequest<DriveItem>('GET', `/drives/${driveId}/root:${currentPath}`);
+        // Check if folder exists using container endpoint
+        await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/root:${currentPath}`);
       } catch (error: any) {
         if (error.status === 404) {
           // Folder doesn't exist, create it
@@ -581,7 +707,7 @@ export class GraphClient {
           
           await this.makeGraphRequest<DriveItem>(
             'POST',
-            `/drives/${driveId}/root${parentPathForApi}/children`,
+            `/storage/fileStorage/containers/${containerId}/drive/root${parentPathForApi}/children`,
             {
               name: sanitizedPart,
               folder: {},
@@ -596,22 +722,26 @@ export class GraphClient {
   }
 
   /**
-   * Download a file from SharePoint with proper validation and metadata
+   * Download a file from SharePoint Embedded container with proper validation and metadata
+   * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
-  async downloadFile(driveId: string, itemId: string): Promise<{ 
+  async downloadFile(driveIdOrContainerId: string, itemId: string): Promise<{ 
     buffer: Buffer; 
     fileName: string; 
     mimeType: string; 
     size: number 
   }> {
+    // For SharePoint Embedded, use the first parameter as containerId
+    const containerId = driveIdOrContainerId;
+    
     // Validate itemId
     if (!itemId || typeof itemId !== 'string' || itemId.trim().length === 0) {
       throw new Error('Invalid item ID: must be a non-empty string');
     }
 
     return this.withRetry(async () => {
-      // Get the file metadata first
-      const driveItem = await this.makeGraphRequest<DriveItem>('GET', `/drives/${driveId}/items/${itemId}`);
+      // Get the file metadata first using container endpoint
+      const driveItem = await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
       
       // Validate it's actually a file
       if (!driveItem.file) {
@@ -681,24 +811,32 @@ export class GraphClient {
   }
 
   /**
-   * Delete a file from SharePoint
+   * Delete a file from SharePoint Embedded container
+   * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
-  async deleteFile(driveId: string, itemId: string): Promise<void> {
+  async deleteFile(driveIdOrContainerId: string, itemId: string): Promise<void> {
+    // For SharePoint Embedded, use the first parameter as containerId
+    const containerId = driveIdOrContainerId;
+    
     return this.withRetry(async () => {
-      await this.makeGraphRequest<void>('DELETE', `/drives/${driveId}/items/${itemId}`);
+      await this.makeGraphRequest<void>('DELETE', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
     }, `deleteFile(${itemId})`);
   }
 
   /**
-   * Create a folder in SharePoint
+   * Create a folder in SharePoint Embedded container
+   * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
-  async createFolder(driveId: string, parentPath: string, folderName: string): Promise<DriveItem> {
+  async createFolder(driveIdOrContainerId: string, parentPath: string, folderName: string): Promise<DriveItem> {
+    // For SharePoint Embedded, use the first parameter as containerId
+    const containerId = driveIdOrContainerId;
+    
     return this.withRetry(async () => {
       const parentPathForApi = parentPath === '/' ? '' : `:${parentPath}:`;
       
       return await this.makeGraphRequest<DriveItem>(
         'POST',
-        `/drives/${driveId}/root${parentPathForApi}/children`,
+        `/storage/fileStorage/containers/${containerId}/drive/root${parentPathForApi}/children`,
         {
           name: folderName,
           folder: {},
@@ -709,15 +847,19 @@ export class GraphClient {
   }
 
   /**
-   * List files in a folder
+   * List files in a folder in SharePoint Embedded container
+   * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
-  async listFiles(driveId: string, folderPath: string = '/'): Promise<DriveItem[]> {
+  async listFiles(driveIdOrContainerId: string, folderPath: string = '/'): Promise<DriveItem[]> {
+    // For SharePoint Embedded, use the first parameter as containerId
+    const containerId = driveIdOrContainerId;
+    
     return this.withRetry(async () => {
       const pathForApi = folderPath === '/' ? '' : `:${folderPath}:`;
       
       const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
         'GET',
-        `/drives/${driveId}/root${pathForApi}/children`
+        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children`
       );
       
       return response.value || [];
@@ -725,21 +867,27 @@ export class GraphClient {
   }
 
   /**
-   * Get file/folder information
+   * Get file/folder information from SharePoint Embedded container
+   * Maintains backward compatibility by accepting driveId parameter but uses containerId internally
    */
-  async getItem(driveId: string, itemId: string): Promise<DriveItem> {
+  async getItem(driveIdOrContainerId: string, itemId: string): Promise<DriveItem> {
+    // For SharePoint Embedded, use the first parameter as containerId
+    const containerId = driveIdOrContainerId;
+    
     return this.withRetry(async () => {
-      return await this.makeGraphRequest<DriveItem>('GET', `/drives/${driveId}/items/${itemId}`);
+      return await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
     }, `getItem(${itemId})`);
   }
 
   /**
-   * Test connectivity to SharePoint
+   * Test connectivity to SharePoint Embedded containers
+   * Maintains backward compatibility but tests container access instead of site/drive access
    */
-  async testConnectivity(siteId?: string, driveId?: string): Promise<{ 
+  async testConnectivity(siteIdOrContainerId?: string, driveIdOrContainerId?: string): Promise<{ 
     authenticated: boolean; 
     siteAccessible: boolean; 
     driveAccessible: boolean; 
+    containerAccessible?: boolean;
     error?: string 
   }> {
     try {
@@ -748,30 +896,32 @@ export class GraphClient {
       
       const result = {
         authenticated: true,
-        siteAccessible: false,
+        siteAccessible: true, // For backward compatibility, set to true since we don't use sites anymore
         driveAccessible: false,
+        containerAccessible: false,
         error: undefined as string | undefined
       };
 
-      // Test site access if siteId provided
-      if (siteId) {
+      // Test container access - use second parameter as containerId for compatibility
+      const containerId = driveIdOrContainerId || siteIdOrContainerId;
+      
+      if (containerId) {
         try {
-          await this.makeGraphRequest<any>('GET', `/sites/${siteId}`);
-          result.siteAccessible = true;
+          // Test container access
+          await this.makeGraphRequest<FileStorageContainer>('GET', `/storage/fileStorage/containers/${containerId}`);
+          result.driveAccessible = true; // For backward compatibility
+          result.containerAccessible = true;
         } catch (error) {
-          result.error = `Site access failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          result.error = `Container access failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
-      }
-
-      // Test drive access if driveId provided
-      if (driveId) {
+      } else {
+        // If no container ID provided, test that we can list containers
         try {
-          await this.makeGraphRequest<any>('GET', `/drives/${driveId}`);
-          result.driveAccessible = true;
+          await this.listFileStorageContainers();
+          result.driveAccessible = true; // For backward compatibility
+          result.containerAccessible = true;
         } catch (error) {
-          if (!result.error) {
-            result.error = `Drive access failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
-          }
+          result.error = `Container listing failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       }
 
@@ -781,6 +931,7 @@ export class GraphClient {
         authenticated: false,
         siteAccessible: false,
         driveAccessible: false,
+        containerAccessible: false,
         error: `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }

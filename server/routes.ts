@@ -55,23 +55,43 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Check if Entra ID is configured
   const isEntraConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET;
   
-  // Helper function to get SharePoint configuration
+  // Helper function to get SharePoint Embedded container configuration
   const getSharePointConfig = async () => {
     try {
-      // Try to get from system settings first, fallback to environment variables
-      const siteId = await storage.getSystemSettingValue('SHAREPOINT_SITE_ID') || process.env.SHAREPOINT_SITE_ID;
-      const driveId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID;
+      // Try to get container ID from system settings first, fallback to environment variables
+      // For SharePoint Embedded, we primarily need the container ID
+      let containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || process.env.SHAREPOINT_CONTAINER_ID;
+      
+      // For backward compatibility with existing installations, if no container ID is set,
+      // use the drive ID as container ID (admin will need to update this)
+      if (!containerId) {
+        containerId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID;
+      }
+      
+      // Legacy site ID for backward compatibility (will be ignored by new container APIs)
+      const legacySiteId = await storage.getSystemSettingValue('SHAREPOINT_SITE_ID') || process.env.SHAREPOINT_SITE_ID;
       
       return {
-        siteId,
-        driveId,
-        configured: !!(siteId && driveId)
+        containerId,
+        // For backward compatibility, keep these properties but they'll use containerId internally
+        siteId: legacySiteId || 'legacy-not-used',
+        driveId: containerId, // Map driveId to containerId for backward compatibility
+        configured: !!containerId
       };
     } catch (error) {
+      // Fallback to environment variables
+      let containerId = process.env.SHAREPOINT_CONTAINER_ID;
+      
+      // For backward compatibility
+      if (!containerId) {
+        containerId = process.env.SHAREPOINT_DRIVE_ID;
+      }
+      
       return {
-        siteId: process.env.SHAREPOINT_SITE_ID,
-        driveId: process.env.SHAREPOINT_DRIVE_ID,
-        configured: !!(process.env.SHAREPOINT_SITE_ID && process.env.SHAREPOINT_DRIVE_ID)
+        containerId,
+        siteId: process.env.SHAREPOINT_SITE_ID || 'legacy-not-used',
+        driveId: containerId,
+        configured: !!containerId
       };
     }
   };

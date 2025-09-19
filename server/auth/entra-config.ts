@@ -29,10 +29,9 @@ export const graphScopes = ["https://graph.microsoft.com/user.read"];
 // App-only scopes for Microsoft Graph (client credentials flow)
 export const appOnlyGraphScopes = ["https://graph.microsoft.com/.default"];
 
-// SharePoint-specific scopes for file operations
-export const sharePointScopes = [
-  "https://graph.microsoft.com/Sites.ReadWrite.All",
-  "https://graph.microsoft.com/Files.ReadWrite.All"
+// SharePoint Embedded container-specific scopes for file operations
+export const sharePointEmbeddedScopes = [
+  "https://graph.microsoft.com/FileStorageContainer.Selected"
 ];
 
 // Client credentials request for app-only authentication
