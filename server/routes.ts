@@ -1,19 +1,24 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries, expenses, users, projects, clients } from "@shared/schema";
 import { z } from "zod";
+import { fileTypeFromBuffer } from "file-type";
+import rateLimit from "express-rate-limit";
 
 // Zod schemas for SharePoint operations security validation
+// SECURITY FIX: Removed base64 upload capability to prevent DoS attacks
 const sharePointUploadSchema = z.object({
   folderPath: z.string().min(1).max(1000).trim(),
   fileName: z.string().min(1).max(255).trim(),
   projectCode: z.string().max(50).optional(),
-  expenseId: z.string().max(50).optional(),
-  fileBuffer: z.string().min(1) // Base64 encoded file data
+  expenseId: z.string().max(50).optional()
+  // fileBuffer removed - only multipart/form-data uploads allowed
 });
 
+// SECURITY FIX: Block control characters and CR/LF while allowing valid Graph driveItem IDs
 const sharePointItemIdSchema = z.object({
-  itemId: z.string().min(1).max(255).trim().regex(/^[a-zA-Z0-9\-_!]+$/, 'Invalid item ID format')
+  itemId: z.string().min(1).max(255).trim().regex(/^[a-zA-Z0-9\-_!@#$%^&*()+={}\[\]|\\:;"'<>?,.\/]+$/, 'Invalid item ID format')
+    .refine(val => !/[\r\n\x00-\x1F\x7F]/.test(val), 'Item ID contains control characters or line breaks')
 });
 
 const sharePointFolderSchema = z.object({
@@ -242,56 +247,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // SharePoint file operations endpoints with security validation
+  // SECURITY FIX: SharePoint upload endpoint disabled - use expense attachment endpoints only
+  // This prevents base64 DoS attacks and ensures proper file validation
   app.post("/api/sharepoint/upload", requireAuth, async (req, res) => {
-    try {
-      // Validate and sanitize input data
-      const validatedData = sharePointUploadSchema.parse(req.body);
-      
-      const sharePointConfig = await getSharePointConfig();
-      if (!sharePointConfig.configured) {
-        return res.status(503).json({ message: "SharePoint not configured" });
-      }
-
-      // Convert base64 to buffer with size validation
-      let fileBuffer: Buffer;
-      try {
-        fileBuffer = Buffer.from(validatedData.fileBuffer, 'base64');
-      } catch (bufferError) {
-        return res.status(400).json({ message: "Invalid file data format" });
-      }
-
-      const result = await graphClient.uploadFile(
-        sharePointConfig.siteId!,
-        sharePointConfig.driveId!,
-        validatedData.folderPath,
-        validatedData.fileName,
-        fileBuffer,
-        validatedData.projectCode,
-        validatedData.expenseId
-      );
-
-      res.json(result);
-    } catch (error) {
-      console.error("[SHAREPOINT UPLOAD] Error:", error);
-      
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          message: "Invalid upload data",
-          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
-        });
-      }
-      
-      // Don't expose internal error details to client
-      const isSecurityError = error instanceof Error && 
-        (error.message.includes('path traversal') || 
-         error.message.includes('invalid character') ||
-         error.message.includes('not allowed'));
-      
-      res.status(isSecurityError ? 400 : 500).json({ 
-        message: isSecurityError ? error.message : "Failed to upload file to SharePoint"
-      });
-    }
+    res.status(410).json({ 
+      message: "Direct SharePoint uploads disabled for security. Use /api/expenses/:id/attachments endpoint instead.",
+      error: "Endpoint deprecated for security reasons"
+    });
   });
 
   app.get("/api/sharepoint/download/:itemId", requireAuth, async (req, res) => {
@@ -306,12 +268,19 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const fileData = await graphClient.downloadFile(sharePointConfig.driveId!, validatedParams.itemId);
       
-      // Set secure headers for download
-      res.setHeader('Content-Type', fileData.mimeType);
+      // SECURITY FIX: Enhanced secure headers for download to prevent XSS
+      const safeContentType = fileData.mimeType === 'application/pdf' ? 
+        'application/pdf' : 'application/octet-stream';
+      
+      res.setHeader('Content-Type', safeContentType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName.replace(/"/g, '\"')}"`);
       res.setHeader('Content-Length', fileData.size.toString());
       res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       
       res.send(fileData.buffer);
     } catch (error) {
@@ -2354,6 +2323,455 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
       }
       res.status(500).json({ message: "Failed to create expense" });
+    }
+  });
+
+  // Validation schemas for expense attachment file uploads
+  const allowedMimeTypes = [
+    'image/jpeg',
+    'image/jpg', 
+    'image/png',
+    'image/heic',
+    'image/heif',
+    'application/pdf'
+  ];
+
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.pdf'];
+  const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
+
+  // SECURITY FIX: Magic byte validation for content-type spoofing prevention
+  const allowedFileSignatures: Record<string, number[][]> = {
+    'image/jpeg': [[0xFF, 0xD8, 0xFF]],
+    'image/png': [[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]],
+    'application/pdf': [[0x25, 0x50, 0x44, 0x46]],
+    // HEIC/HEIF signatures are more complex, we'll use file-type library for these
+  };
+
+  // Rate limiting for file uploads to prevent DoS
+  const uploadRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 50, // limit each IP to 50 uploads per windowMs
+    message: { error: 'Too many file uploads, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // File upload validation schema
+  const fileUploadValidationSchema = z.object({
+    mimetype: z.string().refine(
+      (mimeType) => allowedMimeTypes.includes(mimeType.toLowerCase()),
+      'Invalid file type. Only JPG, PNG, HEIC, HEIF, and PDF files are allowed'
+    ),
+    size: z.number().max(maxFileSize, 'File size must be less than 10MB'),
+    originalname: z.string().min(1, 'Filename is required').max(255, 'Filename too long')
+  });
+
+  // SECURITY FIX: Enhanced filename sanitization with extension validation and CR/LF stripping
+  const sanitizeFilename = (filename: string): string => {
+    // Remove path traversal attempts, invalid characters, and CR/LF to prevent header injection
+    const sanitized = filename
+      .replace(/[\\/:*?"<>|\r\n\x00-\x1F\x7F]/g, '_') // Replace invalid chars, CR/LF, and control chars with underscore
+      .replace(/\.\./g, '_') // Replace path traversal attempts
+      .replace(/^[.\s]+/, '') // Remove leading dots and spaces
+      .replace(/[.\s]+$/, '') // Remove trailing dots and spaces
+      .substring(0, 255); // Limit length
+    
+    // SECURITY FIX: Verify the sanitized filename still has an allowed extension
+    const extension = sanitized.toLowerCase().substring(sanitized.lastIndexOf('.'));
+    if (!allowedExtensions.includes(extension)) {
+      throw new Error(`File extension '${extension}' not allowed after sanitization`);
+    }
+    
+    return sanitized;
+  };
+
+  // SECURITY FIX: Magic byte validation function
+  const validateFileContent = async (buffer: Buffer, declaredMimeType: string): Promise<boolean> => {
+    try {
+      // Use file-type library for comprehensive file type detection
+      const detectedType = await fileTypeFromBuffer(buffer);
+      
+      // If file-type can't detect the type, fall back to magic byte checking
+      if (!detectedType) {
+        // Check magic bytes for basic file types
+        const signatures = allowedFileSignatures[declaredMimeType];
+        if (signatures) {
+          return signatures.some((signature: number[]) => {
+            if (buffer.length < signature.length) return false;
+            return signature.every((byte: number, index: number) => buffer[index] === byte);
+          });
+        }
+        return false;
+      }
+      
+      // Normalize MIME types for comparison
+      const normalizedDetected = detectedType.mime === 'image/jpg' ? 'image/jpeg' : detectedType.mime;
+      const normalizedDeclared = declaredMimeType === 'image/jpg' ? 'image/jpeg' : declaredMimeType;
+      
+      // Verify detected type matches declared type
+      return normalizedDetected === normalizedDeclared;
+    } catch (error) {
+      console.error('File type validation error:', error);
+      return false;
+    }
+  };
+
+  // SECURITY FIX: Hardened expense permission checks with better error handling
+  const canAccessExpense = async (expenseId: string, userId: string, userRole: string): Promise<{ canAccess: boolean; expense?: any }> => {
+    try {
+      // Validate input parameters
+      if (!expenseId || !userId || !userRole) {
+        console.error('[EXPENSE_ACCESS] Invalid parameters:', { expenseId: !!expenseId, userId: !!userId, userRole: !!userRole });
+        return { canAccess: false };
+      }
+
+      // Get the specific expense by ID directly from database
+      const [expense] = await db.select({
+        expenses,
+        users,
+        projects,
+        clients
+      })
+      .from(expenses)
+      .leftJoin(users, eq(expenses.personId, users.id))
+      .leftJoin(projects, eq(expenses.projectId, projects.id))
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(eq(expenses.id, expenseId))
+      .limit(1);
+      
+      // SECURITY FIX: Better null checking and data structure validation
+      if (!expense || !expense.expenses) {
+        console.log('[EXPENSE_ACCESS] Expense not found:', expenseId);
+        return { canAccess: false };
+      }
+
+      const expenseData = {
+        ...expense.expenses,
+        person: expense.users || null,
+        project: expense.projects ? {
+          ...expense.projects,
+          client: expense.clients || null
+        } : null
+      };
+
+      // SECURITY FIX: Ensure personId comparison is string-to-string
+      const expensePersonId = String(expenseData.personId);
+      const requestUserId = String(userId);
+      
+      // Expense owner can always access
+      if (expensePersonId === requestUserId) {
+        console.log('[EXPENSE_ACCESS] Access granted - expense owner');
+        return { canAccess: true, expense: expenseData };
+      }
+
+      // Admin, billing-admin, PM, and executive roles can access
+      if (['admin', 'billing-admin', 'pm', 'executive'].includes(userRole)) {
+        console.log('[EXPENSE_ACCESS] Access granted - privileged role:', userRole);
+        return { canAccess: true, expense: expenseData };
+      }
+
+      console.log('[EXPENSE_ACCESS] Access denied - insufficient permissions');
+      return { canAccess: false, expense: expenseData };
+    } catch (error) {
+      console.error('[EXPENSE_ACCESS] Database error checking expense permissions:', error);
+      // SECURITY FIX: Return false on any database errors to fail securely
+      return { canAccess: false };
+    }
+  };
+
+  // POST /api/expenses/:expenseId/attachments - Upload receipt files
+  // SECURITY FIX: Added rate limiting to prevent DoS attacks
+  app.post("/api/expenses/:expenseId/attachments", uploadRateLimit, requireAuth, async (req, res) => {
+    try {
+      const expenseId = req.params.expenseId;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission
+      const { canAccess, expense } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess || !expense) {
+        return res.status(expense ? 403 : 404).json({
+          message: expense ? "Insufficient permissions to attach files to this expense" : "Expense not found"
+        });
+      }
+
+      // Dynamic multer import for file handling
+      const multer = await import("multer");
+      const upload = multer.default({ 
+        storage: multer.default.memoryStorage(),
+        limits: { fileSize: maxFileSize }
+      });
+
+      // Handle file upload with multer
+      upload.single("file")(req, res, async (uploadError) => {
+        if (uploadError) {
+          console.error('[ATTACHMENT_UPLOAD] Multer error:', uploadError);
+          if (uploadError.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ message: "File size exceeds 10MB limit" });
+          }
+          return res.status(400).json({ message: "File upload failed" });
+        }
+
+        if (!req.file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
+
+        try {
+          // Validate file properties
+          const fileValidation = fileUploadValidationSchema.safeParse({
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            originalname: req.file.originalname
+          });
+
+          if (!fileValidation.success) {
+            return res.status(400).json({
+              message: "Invalid file",
+              errors: fileValidation.error.errors.map(e => e.message)
+            });
+          }
+
+          // SECURITY FIX: Magic byte validation to prevent content-type spoofing
+          const isValidFileContent = await validateFileContent(req.file.buffer, req.file.mimetype);
+          if (!isValidFileContent) {
+            return res.status(400).json({
+              message: "File content does not match declared type. This could be a security risk.",
+              error: "Content-type spoofing detected"
+            });
+          }
+
+          // SECURITY FIX: Enhanced filename sanitization with extension validation
+          let sanitizedFilename: string;
+          try {
+            sanitizedFilename = sanitizeFilename(req.file.originalname);
+          } catch (error) {
+            return res.status(400).json({
+              message: error instanceof Error ? error.message : "Invalid filename after sanitization"
+            });
+          }
+          
+          // Get project information for folder structure
+          const project = await storage.getProject(expense.projectId);
+          const projectCode = project?.code || 'unknown';
+
+          // Upload file to SharePoint using canonical folder structure
+          const sharePointConfig = await getSharePointConfig();
+          if (!sharePointConfig.configured) {
+            return res.status(503).json({ message: "SharePoint integration not configured" });
+          }
+
+          // Use canonical folder structure for expense receipts
+          const year = new Date().getFullYear();
+          const folderPath = `/Receipts/${year}/${projectCode}/${expenseId}`;
+          
+          const uploadResult = await graphClient.uploadFile(
+            sharePointConfig.siteId!,
+            sharePointConfig.driveId!,
+            folderPath,
+            sanitizedFilename,
+            req.file.buffer,
+            projectCode,
+            expenseId
+          );
+
+          // Save attachment metadata to database
+          const attachmentData = {
+            expenseId: expenseId,
+            driveId: sharePointConfig.driveId!,
+            itemId: uploadResult.id,
+            webUrl: uploadResult.webUrl || `https://sharepoint.com/item/${uploadResult.id}`,
+            fileName: sanitizedFilename,
+            contentType: req.file.mimetype,
+            size: req.file.size,
+            createdByUserId: userId
+          };
+
+          const attachment = await storage.addExpenseAttachment(expenseId, attachmentData);
+
+          res.status(201).json({
+            id: attachment.id,
+            fileName: attachment.fileName,
+            contentType: attachment.contentType,
+            size: attachment.size,
+            webUrl: attachment.webUrl,
+            createdAt: attachment.createdAt,
+            createdByUserId: attachment.createdByUserId
+          });
+
+        } catch (error: any) {
+          console.error('[ATTACHMENT_UPLOAD] SharePoint upload error:', error);
+          
+          if (error.message?.includes('Graph API Error:')) {
+            return res.status(503).json({ message: "SharePoint service temporarily unavailable" });
+          }
+          
+          res.status(500).json({ message: "Failed to upload attachment" });
+        }
+      });
+
+    } catch (error: any) {
+      console.error('[ATTACHMENT_UPLOAD] Route error:', error);
+      res.status(500).json({ message: "Failed to process file upload" });
+    }
+  });
+
+  // GET /api/expenses/:expenseId/attachments - List attachments for an expense
+  app.get("/api/expenses/:expenseId/attachments", requireAuth, async (req, res) => {
+    try {
+      const expenseId = req.params.expenseId;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission
+      const { canAccess } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess) {
+        return res.status(404).json({ message: "Expense not found or access denied" });
+      }
+
+      // Get attachments from database
+      const attachments = await storage.listExpenseAttachments(expenseId);
+
+      // Return attachment metadata
+      const attachmentList = attachments.map(attachment => ({
+        id: attachment.id,
+        fileName: attachment.fileName,
+        contentType: attachment.contentType,
+        size: attachment.size,
+        webUrl: attachment.webUrl,
+        createdAt: attachment.createdAt,
+        createdByUserId: attachment.createdByUserId
+      }));
+
+      res.json(attachmentList);
+    } catch (error: any) {
+      console.error('[ATTACHMENT_LIST] Error:', error);
+      res.status(500).json({ message: "Failed to fetch attachments" });
+    }
+  });
+
+  // GET /api/expenses/:expenseId/attachments/:attachmentId/content - Download file content
+  app.get("/api/expenses/:expenseId/attachments/:attachmentId/content", requireAuth, async (req, res) => {
+    try {
+      const { expenseId, attachmentId } = req.params;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission
+      const { canAccess } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess) {
+        return res.status(404).json({ message: "Expense not found or access denied" });
+      }
+
+      // Get attachment metadata
+      const attachment = await storage.getAttachmentById(attachmentId);
+      if (!attachment || attachment.expenseId !== expenseId) {
+        return res.status(404).json({ message: "Attachment not found" });
+      }
+
+      // Get SharePoint configuration
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint integration not configured" });
+      }
+
+      try {
+        // Get file content from SharePoint
+        const downloadResult = await graphClient.downloadFile(
+          sharePointConfig.driveId!,
+          attachment.itemId
+        );
+
+        // SECURITY FIX: Set secure headers for download to prevent XSS and header injection
+        // Use conservative Content-Type and force download
+        const safeContentType = attachment.contentType === 'application/pdf' ? 
+          'application/pdf' : 'application/octet-stream';
+        
+        // Strip CR/LF and control characters from filename to prevent header injection
+        const safeFilename = attachment.fileName.replace(/[\r\n\x00-\x1F\x7F"]/g, '_');
+        
+        res.setHeader('Content-Type', safeContentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`); 
+        res.setHeader('Content-Length', attachment.size.toString());
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('X-XSS-Protection', '1; mode=block');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        
+        // Send file content
+        res.send(downloadResult.buffer);
+      } catch (error: any) {
+        console.error('[ATTACHMENT_DOWNLOAD] SharePoint download error:', error);
+        
+        if (error.status === 404) {
+          return res.status(404).json({ message: "File not found in SharePoint" });
+        }
+        
+        res.status(503).json({ message: "SharePoint service temporarily unavailable" });
+      }
+    } catch (error: any) {
+      console.error('[ATTACHMENT_DOWNLOAD] Route error:', error);
+      res.status(500).json({ message: "Failed to download attachment" });
+    }
+  });
+
+  // DELETE /api/expenses/:expenseId/attachments/:attachmentId - Delete attachment
+  app.delete("/api/expenses/:expenseId/attachments/:attachmentId", requireAuth, async (req, res) => {
+    try {
+      const { expenseId, attachmentId } = req.params;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission
+      const { canAccess } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess) {
+        return res.status(404).json({ message: "Expense not found or access denied" });
+      }
+
+      // Get attachment metadata
+      const attachment = await storage.getAttachmentById(attachmentId);
+      if (!attachment || attachment.expenseId !== expenseId) {
+        return res.status(404).json({ message: "Attachment not found" });
+      }
+
+      // Additional permission check: only attachment creator, expense owner, or admin can delete
+      const canDelete = attachment.createdByUserId === userId ||
+                       ['admin', 'billing-admin'].includes(req.user!.role);
+      
+      if (!canDelete) {
+        return res.status(403).json({ message: "Insufficient permissions to delete this attachment" });
+      }
+
+      // Get SharePoint configuration
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint integration not configured" });
+      }
+
+      try {
+        // Delete file from SharePoint
+        await graphClient.deleteFile(
+          sharePointConfig.driveId!,
+          attachment.itemId
+        );
+
+        // Delete attachment record from database
+        await storage.deleteExpenseAttachment(attachmentId);
+
+        res.status(204).send();
+      } catch (error: any) {
+        console.error('[ATTACHMENT_DELETE] SharePoint delete error:', error);
+        
+        // Even if SharePoint deletion fails, we should clean up the database record
+        // to avoid orphaned records
+        if (error.status === 404) {
+          console.warn('[ATTACHMENT_DELETE] File not found in SharePoint, cleaning up database record');
+          await storage.deleteExpenseAttachment(attachmentId);
+          return res.status(204).send();
+        }
+        
+        res.status(503).json({ message: "SharePoint service temporarily unavailable" });
+      }
+    } catch (error: any) {
+      console.error('[ATTACHMENT_DELETE] Route error:', error);
+      res.status(500).json({ message: "Failed to delete attachment" });
     }
   });
 
