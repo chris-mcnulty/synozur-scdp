@@ -77,7 +77,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { InvoiceLineEditDialog } from "@/components/billing/invoice-line-edit-dialog";
 import { InvoiceLineBulkEditDialog } from "@/components/billing/invoice-line-bulk-edit-dialog";
@@ -321,6 +321,36 @@ export default function BatchDetail() {
       });
     }
   });
+
+  // Export to QuickBooks Mutation
+  const exportToQBOMutation = useMutation({
+    mutationFn: async (batchId: string) => {
+      return await apiRequest(`/api/invoice-batches/${batchId}/export`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      toast({
+        title: "Export successful",
+        description: "Invoice batch has been exported to QuickBooks Online.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Export failed",
+        description: error.message || "Failed to export to QuickBooks Online.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Helper function for exporting to QuickBooks
+  const handleExportToQBO = async () => {
+    if (!batchDetails?.id) return;
+    exportToQBOMutation.mutate(batchDetails.id);
+  };
 
   // Bulk Edit Mutation
   const bulkEditMutation = useMutation({
@@ -900,6 +930,27 @@ export default function BatchDetail() {
             <FileText className="mr-2 h-4 w-4" />
             Download PDF
           </Button>
+
+          {batchDetails?.status === 'finalized' && (
+            <Button
+              onClick={handleExportToQBO}
+              variant="outline"
+              disabled={batchDetails.exportedToQBO || exportToQBOMutation.isPending}
+              data-testid="button-export-qbo"
+            >
+              {batchDetails.exportedToQBO ? (
+                <>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Exported to QBO
+                </>
+              ) : (
+                <>
+                  <Building className="mr-2 h-4 w-4" />
+                  {exportToQBOMutation.isPending ? 'Exporting...' : 'Export to QBO'}
+                </>
+              )}
+            </Button>
+          )}
           
           {canEditLines() && selectedLines.size > 0 && (
             <>
