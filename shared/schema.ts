@@ -333,6 +333,7 @@ export const expenses = pgTable("expenses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   personId: varchar("person_id").notNull().references(() => users.id),
   projectId: varchar("project_id").notNull().references(() => projects.id),
+  projectResourceId: varchar("project_resource_id").references(() => users.id), // User assigned to this expense within the project
   date: date("date").notNull(),
   category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
