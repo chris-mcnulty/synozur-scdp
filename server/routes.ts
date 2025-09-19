@@ -2,8 +2,31 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
+
+// Zod schemas for SharePoint operations security validation
+const sharePointUploadSchema = z.object({
+  folderPath: z.string().min(1).max(1000).trim(),
+  fileName: z.string().min(1).max(255).trim(),
+  projectCode: z.string().max(50).optional(),
+  expenseId: z.string().max(50).optional(),
+  fileBuffer: z.string().min(1) // Base64 encoded file data
+});
+
+const sharePointItemIdSchema = z.object({
+  itemId: z.string().min(1).max(255).trim().regex(/^[a-zA-Z0-9\-_!]+$/, 'Invalid item ID format')
+});
+
+const sharePointFolderSchema = z.object({
+  parentPath: z.string().max(1000).trim().optional(),
+  folderName: z.string().min(1).max(255).trim()
+});
+
+const sharePointListFilesSchema = z.object({
+  folderPath: z.string().max(1000).trim().optional()
+});
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
+import { graphClient } from "./services/graph-client.js";
 
 // Extend Express Request interface to include user
 declare global {
@@ -27,18 +50,72 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Check if Entra ID is configured
   const isEntraConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET;
   
+  // Helper function to get SharePoint configuration
+  const getSharePointConfig = async () => {
+    try {
+      // Try to get from system settings first, fallback to environment variables
+      const siteId = await storage.getSystemSettingValue('SHAREPOINT_SITE_ID') || process.env.SHAREPOINT_SITE_ID;
+      const driveId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID;
+      
+      return {
+        siteId,
+        driveId,
+        configured: !!(siteId && driveId)
+      };
+    } catch (error) {
+      return {
+        siteId: process.env.SHAREPOINT_SITE_ID,
+        driveId: process.env.SHAREPOINT_DRIVE_ID,
+        configured: !!(process.env.SHAREPOINT_SITE_ID && process.env.SHAREPOINT_DRIVE_ID)
+      };
+    }
+  };
+
   // Health check endpoint
   app.get("/api/health", async (req, res) => {
     try {
       // Test database connection
       const dbTest = await storage.getUsers();
-      res.json({ 
+      
+      const healthStatus = { 
         status: "healthy",
         database: "connected",
         userCount: dbTest.length,
         entraConfigured: !!isEntraConfigured,
+        sharepoint: {
+          configured: false,
+          accessible: false,
+          error: undefined as string | undefined
+        },
         environment: process.env.NODE_ENV || "development"
-      });
+      };
+
+      // Test SharePoint connectivity if configured
+      if (isEntraConfigured) {
+        const sharePointConfig = await getSharePointConfig();
+        healthStatus.sharepoint.configured = sharePointConfig.configured;
+        
+        if (sharePointConfig.configured) {
+          try {
+            const connectivity = await graphClient.testConnectivity(
+              sharePointConfig.siteId,
+              sharePointConfig.driveId
+            );
+            
+            healthStatus.sharepoint.accessible = connectivity.authenticated && 
+                                               connectivity.siteAccessible && 
+                                               connectivity.driveAccessible;
+            
+            if (connectivity.error) {
+              healthStatus.sharepoint.error = connectivity.error;
+            }
+          } catch (error) {
+            healthStatus.sharepoint.error = `SharePoint connectivity test failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          }
+        }
+      }
+
+      res.json(healthStatus);
     } catch (error: any) {
       console.error("[HEALTH] Database connection error:", error);
       res.status(503).json({ 
@@ -113,6 +190,247 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.error("Error deleting user:", error);
       res.status(400).json({ 
         message: error instanceof Error ? error.message : "Failed to delete user" 
+      });
+    }
+  });
+
+  // SharePoint health check endpoint
+  app.get("/api/sharepoint/health", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      if (!isEntraConfigured) {
+        return res.status(503).json({
+          status: "error",
+          message: "Azure AD not configured. Please configure AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET."
+        });
+      }
+
+      const sharePointConfig = await getSharePointConfig();
+      
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({
+          status: "error",
+          message: "SharePoint not configured. Please configure SHAREPOINT_SITE_ID and SHAREPOINT_DRIVE_ID."
+        });
+      }
+
+      const connectivity = await graphClient.testConnectivity(
+        sharePointConfig.siteId,
+        sharePointConfig.driveId
+      );
+
+      res.json({
+        status: connectivity.authenticated && connectivity.siteAccessible && connectivity.driveAccessible ? "healthy" : "error",
+        authentication: {
+          configured: true,
+          authenticated: connectivity.authenticated
+        },
+        sharepoint: {
+          siteId: sharePointConfig.siteId,
+          driveId: sharePointConfig.driveId,
+          siteAccessible: connectivity.siteAccessible,
+          driveAccessible: connectivity.driveAccessible
+        },
+        error: connectivity.error
+      });
+    } catch (error) {
+      console.error("[SHAREPOINT HEALTH] Error:", error);
+      res.status(503).json({
+        status: "error",
+        message: error instanceof Error ? error.message : "Unknown error",
+        error: "SharePoint health check failed"
+      });
+    }
+  });
+
+  // SharePoint file operations endpoints with security validation
+  app.post("/api/sharepoint/upload", requireAuth, async (req, res) => {
+    try {
+      // Validate and sanitize input data
+      const validatedData = sharePointUploadSchema.parse(req.body);
+      
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint not configured" });
+      }
+
+      // Convert base64 to buffer with size validation
+      let fileBuffer: Buffer;
+      try {
+        fileBuffer = Buffer.from(validatedData.fileBuffer, 'base64');
+      } catch (bufferError) {
+        return res.status(400).json({ message: "Invalid file data format" });
+      }
+
+      const result = await graphClient.uploadFile(
+        sharePointConfig.siteId!,
+        sharePointConfig.driveId!,
+        validatedData.folderPath,
+        validatedData.fileName,
+        fileBuffer,
+        validatedData.projectCode,
+        validatedData.expenseId
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("[SHAREPOINT UPLOAD] Error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: "Invalid upload data",
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      // Don't expose internal error details to client
+      const isSecurityError = error instanceof Error && 
+        (error.message.includes('path traversal') || 
+         error.message.includes('invalid character') ||
+         error.message.includes('not allowed'));
+      
+      res.status(isSecurityError ? 400 : 500).json({ 
+        message: isSecurityError ? error.message : "Failed to upload file to SharePoint"
+      });
+    }
+  });
+
+  app.get("/api/sharepoint/download/:itemId", requireAuth, async (req, res) => {
+    try {
+      // Validate item ID parameter
+      const validatedParams = sharePointItemIdSchema.parse({ itemId: req.params.itemId });
+      
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint not configured" });
+      }
+
+      const fileData = await graphClient.downloadFile(sharePointConfig.driveId!, validatedParams.itemId);
+      
+      // Set secure headers for download
+      res.setHeader('Content-Type', fileData.mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName.replace(/"/g, '\"')}"`);
+      res.setHeader('Content-Length', fileData.size.toString());
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      
+      res.send(fileData.buffer);
+    } catch (error) {
+      console.error("[SHAREPOINT DOWNLOAD] Error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: "Invalid item ID format",
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to download file from SharePoint"
+      });
+    }
+  });
+
+  app.delete("/api/sharepoint/files/:itemId", requireAuth, async (req, res) => {
+    try {
+      // Validate item ID parameter
+      const validatedParams = sharePointItemIdSchema.parse({ itemId: req.params.itemId });
+      
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint not configured" });
+      }
+
+      await graphClient.deleteFile(sharePointConfig.driveId!, validatedParams.itemId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("[SHAREPOINT DELETE] Error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: "Invalid item ID format",
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to delete file from SharePoint"
+      });
+    }
+  });
+
+  app.post("/api/sharepoint/folders", requireAuth, async (req, res) => {
+    try {
+      // Validate and sanitize input data
+      const validatedData = sharePointFolderSchema.parse(req.body);
+
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint not configured" });
+      }
+
+      const result = await graphClient.createFolder(
+        sharePointConfig.driveId!,
+        validatedData.parentPath || '/',
+        validatedData.folderName
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("[SHAREPOINT CREATE FOLDER] Error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: "Invalid folder data",
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      // Don't expose internal error details to client
+      const isSecurityError = error instanceof Error && 
+        (error.message.includes('path traversal') || 
+         error.message.includes('invalid character') ||
+         error.message.includes('not allowed'));
+      
+      res.status(isSecurityError ? 400 : 500).json({ 
+        message: isSecurityError ? error.message : "Failed to create folder in SharePoint"
+      });
+    }
+  });
+
+  app.get("/api/sharepoint/files", requireAuth, async (req, res) => {
+    try {
+      // Validate query parameters
+      const validatedQuery = sharePointListFilesSchema.parse(req.query);
+      
+      const sharePointConfig = await getSharePointConfig();
+      if (!sharePointConfig.configured) {
+        return res.status(503).json({ message: "SharePoint not configured" });
+      }
+
+      const files = await graphClient.listFiles(
+        sharePointConfig.driveId!,
+        validatedQuery.folderPath || '/'
+      );
+
+      res.json(files);
+    } catch (error) {
+      console.error("[SHAREPOINT LIST FILES] Error:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          message: "Invalid query parameters",
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      // Don't expose internal error details to client
+      const isSecurityError = error instanceof Error && 
+        (error.message.includes('path traversal') || 
+         error.message.includes('invalid character') ||
+         error.message.includes('not allowed'));
+      
+      res.status(isSecurityError ? 400 : 500).json({ 
+        message: isSecurityError ? error.message : "Failed to list files from SharePoint"
       });
     }
   });

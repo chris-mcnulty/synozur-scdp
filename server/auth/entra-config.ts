@@ -23,7 +23,23 @@ export const msalConfig: Configuration = {
   }
 };
 
-// Scopes for Microsoft Graph API
+// Scopes for Microsoft Graph API - User delegated
+export const graphScopes = ["https://graph.microsoft.com/user.read"];
+
+// App-only scopes for Microsoft Graph (client credentials flow)
+export const appOnlyGraphScopes = ["https://graph.microsoft.com/.default"];
+
+// SharePoint-specific scopes for file operations
+export const sharePointScopes = [
+  "https://graph.microsoft.com/Sites.ReadWrite.All",
+  "https://graph.microsoft.com/Files.ReadWrite.All"
+];
+
+// Client credentials request for app-only authentication
+export const clientCredentialsRequest = {
+  scopes: appOnlyGraphScopes,
+};
+
 // Determine the base URL - always use HTTPS in production
 const getBaseUrl = () => {
   // If explicit redirect URI is set, extract base URL from it
