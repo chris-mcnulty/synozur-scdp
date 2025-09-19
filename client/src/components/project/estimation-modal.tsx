@@ -37,8 +37,8 @@ export function EstimationModal({ isOpen, onClose, projectName, projectId }: Est
     enabled: isOpen && !!projectId,
   });
 
-  const { data: staff = [] } = useQuery({
-    queryKey: ["/api/staff"],
+  const { data: users = [] } = useQuery({
+    queryKey: ["/api/users"],
     enabled: isOpen,
   });
 
@@ -58,8 +58,8 @@ export function EstimationModal({ isOpen, onClose, projectName, projectId }: Est
       const key = `${lineItem.assignedUserId || lineItem.roleId || 'unassigned'}`;
       
       if (!weeklyData[key]) {
-        const assignedPerson = (staff as any[]).find((s: any) => s.id === lineItem.assignedUserId);
-        const assignedRole = (staff as any[]).find((s: any) => s.roleId === lineItem.roleId);
+        const assignedPerson = (users as any[]).find((u: any) => u.id === lineItem.assignedUserId);
+        const assignedRole = (users as any[]).find((u: any) => u.roleId === lineItem.roleId);
         
         weeklyData[key] = {
           role: assignedRole?.role || lineItem.resourceName || 'Unknown Role',

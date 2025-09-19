@@ -13,7 +13,6 @@ import Expenses from "@/pages/expenses";
 import Billing from "@/pages/billing";
 import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
-import Staff from "@/pages/staff";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import SystemSettings from "@/pages/system-settings";
@@ -92,9 +91,6 @@ function Router() {
       </Route>
       <Route path="/rates">
         {user ? <RateManagement /> : <Redirect to="/login" />}
-      </Route>
-      <Route path="/staff">
-        {user ? <Staff /> : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}

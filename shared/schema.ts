@@ -44,23 +44,6 @@ export const roles = pgTable("roles", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Staff (employee rate management)
-export const staff = pgTable("staff", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").notNull(),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  name: text("name").notNull(),
-  initials: text("initials").notNull(),
-  role: text("role").notNull(), // Legacy field - to be removed after migration
-  roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
-  customRole: text("custom_role"), // For non-standard roles
-  defaultChargeRate: decimal("default_charge_rate", { precision: 10, scale: 2 }).notNull(),
-  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }).notNull(),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
-
 // System Settings (configurable default values)
 export const systemSettings = pgTable("system_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -613,7 +596,6 @@ export const projectRateOverridesRelations = relations(projectRateOverrides, ({ 
 
 export const rolesRelations = relations(roles, ({ many }) => ({
   allocations: many(estimateAllocations),
-  staff: many(staff),
 }));
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
@@ -705,13 +687,6 @@ export const invoiceAdjustmentsRelations = relations(invoiceAdjustments, ({ one 
   sow: one(sows, {
     fields: [invoiceAdjustments.sowId],
     references: [sows.id],
-  }),
-}));
-
-export const staffRelations = relations(staff, ({ one }) => ({
-  role: one(roles, {
-    fields: [staff.roleId],
-    references: [roles.id],
   }),
 }));
 
@@ -823,11 +798,6 @@ export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
   createdAt: true,
 });
 
-export const insertStaffSchema = createInsertSchema(staff).omit({
-  id: true,
-  createdAt: true,
-});
-
 export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
   id: true,
   createdAt: true,
@@ -846,9 +816,6 @@ export type InsertProject = z.infer<typeof insertProjectSchema>;
 
 export type Role = typeof roles.$inferSelect;
 export type InsertRole = z.infer<typeof insertRoleSchema>;
-
-export type Staff = typeof staff.$inferSelect;
-export type InsertStaff = z.infer<typeof insertStaffSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;

@@ -1,12 +1,11 @@
 import { 
-  users, clients, projects, roles, staff, estimates, estimateLineItems, estimateEpics, estimateStages, 
+  users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
-  type Staff, type InsertStaff,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
@@ -152,14 +151,6 @@ export interface IStorage {
   createRole(role: InsertRole): Promise<Role>;
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
   deleteRole(id: string): Promise<void>;
-  
-  // Staff
-  getStaff(): Promise<(Staff & { standardRole?: Role })[]>;
-  getStaffMember(id: string): Promise<(Staff & { standardRole?: Role }) | undefined>;
-  createStaffMember(staffMember: InsertStaff): Promise<Staff>;
-  updateStaffMember(id: string, staffMember: Partial<InsertStaff>): Promise<Staff>;
-  deleteStaffMember(id: string): Promise<void>;
-  applyStaffRatesToLineItems(estimateId: string, staffId: string): Promise<void>;
   
   // Estimates
   getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]>;
@@ -853,66 +844,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRole(id: string): Promise<void> {
     await db.delete(roles).where(eq(roles.id, id));
-  }
-
-  async getStaff(): Promise<(Staff & { standardRole?: Role })[]> {
-    const result = await db.select({
-      staff: staff,
-      role: roles,
-    })
-    .from(staff)
-    .leftJoin(roles, eq(staff.roleId, roles.id))
-    .where(eq(staff.isActive, true))
-    .orderBy(staff.name);
-    
-    return result.map(r => ({
-      ...r.staff,
-      standardRole: r.role || undefined,
-    }));
-  }
-
-  async getStaffMember(id: string): Promise<(Staff & { standardRole?: Role }) | undefined> {
-    const [result] = await db.select({
-      staff: staff,
-      role: roles,
-    })
-    .from(staff)
-    .leftJoin(roles, eq(staff.roleId, roles.id))
-    .where(eq(staff.id, id));
-    
-    if (!result) return undefined;
-    
-    return {
-      ...result.staff,
-      standardRole: result.role || undefined,
-    };
-  }
-
-  async createStaffMember(insertStaff: InsertStaff): Promise<Staff> {
-    const [staffMember] = await db.insert(staff).values(insertStaff).returning();
-    return staffMember;
-  }
-
-  async updateStaffMember(id: string, updateStaff: Partial<InsertStaff>): Promise<Staff> {
-    const [staffMember] = await db.update(staff).set(updateStaff).where(eq(staff.id, id)).returning();
-    return staffMember;
-  }
-
-  async deleteStaffMember(id: string): Promise<void> {
-    await db.update(staff).set({ isActive: false }).where(eq(staff.id, id));
-  }
-
-  async applyStaffRatesToLineItems(estimateId: string, staffId: string): Promise<void> {
-    const [staffMember] = await db.select().from(staff).where(eq(staff.id, staffId));
-    if (!staffMember) return;
-
-    // Update all line items for this estimate with the staff member's default charge rate
-    await db.update(estimateLineItems)
-      .set({ 
-        rate: staffMember.defaultChargeRate,
-        totalAmount: sql`adjusted_hours * ${staffMember.defaultChargeRate}`
-      })
-      .where(eq(estimateLineItems.estimateId, estimateId));
   }
 
   async getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]> {

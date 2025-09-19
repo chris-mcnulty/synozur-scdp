@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertStaffSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries } from "@shared/schema";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -754,13 +754,13 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/roles/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      // Check if role is being used in staff or estimate line items
-      const staff = await storage.getStaff();
-      const roleInUse = staff.some(s => s.roleId === req.params.id);
+      // Check if role is being used in users or estimate line items
+      const users = await storage.getUsers();
+      const roleInUse = users.some(u => u.roleId === req.params.id);
       
       if (roleInUse) {
         return res.status(400).json({ 
-          message: "Cannot delete role that is assigned to staff members" 
+          message: "Cannot delete role that is assigned to users" 
         });
       }
       
@@ -772,64 +772,6 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Staff management
-  app.get("/api/staff", requireAuth, async (req, res) => {
-    try {
-      const staffMembers = await storage.getStaff();
-      // Filter cost rates for non-admin/executive users
-      if (req.user && !['admin', 'executive'].includes(req.user.role)) {
-        const filteredStaff = staffMembers.map(s => ({
-          ...s,
-          defaultCostRate: undefined
-        }));
-        res.json(filteredStaff);
-      } else {
-        res.json(staffMembers);
-      }
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch staff" });
-    }
-  });
-
-  app.post("/api/staff", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      const validatedData = insertStaffSchema.parse(req.body);
-      const staffMember = await storage.createStaffMember(validatedData);
-      res.status(201).json(staffMember);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid staff data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to create staff member" });
-    }
-  });
-
-  app.patch("/api/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      const staffMember = await storage.updateStaffMember(req.params.id, req.body);
-      res.json(staffMember);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update staff member" });
-    }
-  });
-
-  app.delete("/api/staff/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      await storage.deleteStaffMember(req.params.id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ message: "Failed to delete staff member" });
-    }
-  });
-
-  app.post("/api/estimates/:estimateId/apply-staff-rates/:staffId", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
-    try {
-      await storage.applyStaffRatesToLineItems(req.params.estimateId, req.params.staffId);
-      res.json({ message: "Staff rates applied successfully" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to apply staff rates" });
-    }
-  });
 
   // Rate Management Endpoints
   app.get("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
