@@ -1,12 +1,12 @@
-# Azure AD & SharePoint Setup Guide for SCDP Expense Attachments
+# Azure AD & SharePoint Embedded Setup Guide for SCDP Expense Attachments
 
-This comprehensive guide will walk you through setting up Azure AD app registration and SharePoint configuration required for the SCDP expense attachment system.
+This comprehensive guide will walk you through setting up Azure AD app registration and SharePoint Embedded container configuration required for the SCDP expense attachment system.
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
 2. [Azure AD App Registration](#azure-ad-app-registration)
-3. [SharePoint Site & Library Setup](#sharepoint-site--library-setup)
+3. [SharePoint Embedded Container Setup](#sharepoint-embedded-container-setup)
 4. [Environment Configuration](#environment-configuration)
 5. [Security Best Practices](#security-best-practices)
 6. [Configuration Checklist](#configuration-checklist)
@@ -18,8 +18,8 @@ This comprehensive guide will walk you through setting up Azure AD app registrat
 Before starting, ensure you have:
 
 - **Azure Subscription** with admin access to create app registrations
-- **Microsoft 365 tenant** with SharePoint Online
-- **SharePoint Admin privileges** to create sites and manage permissions
+- **Microsoft 365 tenant** with SharePoint Embedded capabilities
+- **SharePoint Admin privileges** to create and manage containers
 - **Global Administrator** or **Application Administrator** role in Azure AD
 - Access to the SCDP application environment variables
 
@@ -28,7 +28,7 @@ Before starting, ensure you have:
 | Component | Required Role | Purpose |
 |-----------|---------------|---------|
 | Azure AD | Application Administrator | Create app registrations, manage permissions |
-| SharePoint | SharePoint Administrator | Create sites, manage document libraries |
+| SharePoint Embedded | SharePoint Administrator | Create and manage containers |
 | Application | System Administrator | Configure environment variables |
 
 ## Azure AD App Registration
@@ -103,33 +103,32 @@ The application requires specific Microsoft Graph permissions for SharePoint fil
    - Click "Add a permission"
 
 2. **Add Microsoft Graph Permissions**
-   **RECOMMENDED (Least Privilege)**: Add **Sites.Selected** permission:
+   **RECOMMENDED (SharePoint Embedded)**: Add **FileStorageContainer.Selected** permission:
    
    | Permission | Type | Purpose | Scope |
    |------------|------|---------|-------|
-   | `Sites.Selected` | Application | Access specific SharePoint sites only | Site-specific |
+   | `FileStorageContainer.Selected` | Application | Access specific SharePoint Embedded containers only | Container-specific |
 
-   **Steps to add Sites.Selected:**
+   **Steps to add FileStorageContainer.Selected:**
    - Click "Add a permission" > "Microsoft Graph" > "Application permissions"
-   - Search for "Sites.Selected"
+   - Search for "FileStorageContainer.Selected"
    - Check the permission box
    - Click "Add permissions"
 
-   ⚠️ **SECURITY WARNING**: Alternative Broad Permissions (NOT RECOMMENDED)
+   ⚠️ **LEGACY PERMISSIONS**: SharePoint Online Permissions (NOT FOR EMBEDDED)
    
-   If you must use tenant-wide permissions (only in development or special cases):
+   **DO NOT USE** these SharePoint Online permissions for SharePoint Embedded containers:
    
-   | Permission | Type | Purpose | ⚠️ Security Risk |
-   |------------|------|---------|------------------|
-   | `Sites.ReadWrite.All` | Application | Access ALL SharePoint sites | **HIGH** - Tenant-wide access |
-   | `Files.ReadWrite.All` | Application | Access ALL files in SharePoint | **CRITICAL** - Can access any file |
+   | Permission | Type | ⚠️ Issue |
+   |------------|------|---------|
+   | `Sites.ReadWrite.All` | Application | **Legacy** - For SharePoint Online sites only |
+   | `Files.ReadWrite.All` | Application | **Legacy** - For SharePoint Online files only |
+   | `Sites.Selected` | Application | **Legacy** - For SharePoint Online site-specific access |
    
-   **These permissions grant access to ALL SharePoint sites and files in your tenant. Only use for:**
-   - Development/testing environments
-   - Applications requiring multi-site access
-   - Migration or backup scenarios
+   **For SharePoint Embedded containers, use only:**
+   - `FileStorageContainer.Selected` - Container-specific access
    
-   **Production environments should use Sites.Selected + site-specific assignment.**
+   **SharePoint Embedded provides isolated containers with built-in security boundaries.**
 
 3. **Grant Admin Consent**
    ```
@@ -153,50 +152,58 @@ The application requires specific Microsoft Graph permissions for SharePoint fil
    - Go to "App roles" 
    - You can define custom roles like "ExpenseManager", "FileUploader" etc.
 
-## SharePoint Site & Library Setup
+## SharePoint Embedded Container Setup
 
-### Step 1: Create or Identify Target Site
+### Step 1: Create SharePoint Embedded Container
 
-1. **Option A: Create New Site**
-   ```
-   1. Go to SharePoint Admin Center
-   2. Click "Sites" > "Active sites"
-   3. Click "Create" > "Team site"
-   4. Site name: "SCDP Expense Management"
-   5. Description: "Document storage for SCDP expense receipts"
-   6. Privacy setting: Private (recommended)
-   ```
+SharePoint Embedded containers provide isolated storage environments with built-in security and access control.
 
-2. **Option B: Use Existing Site**
-   - Identify an existing SharePoint site
-   - Ensure you have Owner or Full Control permissions
-   - Note the site URL for later configuration
-
-### Step 2: Identify Document Library
-
-**RECOMMENDED APPROACH**: Use the existing **"Documents"** library with a dedicated folder structure.
-
-1. **Locate Documents Library**
-   ```
-   1. Navigate to your SharePoint site
-   2. The "Documents" library should already exist by default
-   3. If not, click "New" > "Document library" and name it "Documents"
+1. **Create Container via Graph API**
+   ```bash
+   # Get access token with FileStorageContainer.Selected permission
+   curl -X POST "https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token" \
+     -H "Content-Type: application/x-www-form-urlencoded" \
+     -d "grant_type=client_credentials&client_id={client-id}&client_secret={client-secret}&scope=https://graph.microsoft.com/.default"
+   
+   # Create new container
+   curl -X POST "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" \
+     -H "Authorization: Bearer {access-token}" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "displayName": "SCDP Expense Attachments",
+       "description": "Container for SCDP expense receipt storage",
+       "containerTypeId": "{container-type-id}"
+     }'
    ```
 
-2. **Configure Library Settings**
-   - Go to Library Settings (gear icon > Library settings)
-   - Under "General Settings" > "Versioning settings":
-     ```
-     Create a version each time you edit a file: Yes
-     Keep drafts for items that require approval: No
-     Require documents to be checked out: No
-     ```
+2. **Alternative: Use Existing Container**
+   - Identify an existing SharePoint Embedded container
+   - Ensure your application has access to the container
+   - Note the container ID for configuration
+
+### Step 2: Verify Container Access
+
+Confirm your application can access the SharePoint Embedded container:
+
+```bash
+# List accessible containers
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" \
+  -H "Authorization: Bearer {access-token}"
+
+# Get specific container details
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}" \
+  -H "Authorization: Bearer {access-token}"
+
+# Test container drive access
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}/drive/root/children" \
+  -H "Authorization: Bearer {access-token}"
+```
 
 ### Step 3: Set Up Folder Structure
 
-The system automatically creates folders in the **Documents** library using this structure:
+The system automatically creates folders in the **container** using this structure:
 ```
-/Documents/
+/Container Root/
   └── Receipts/
       ├── 2025/
       │   ├── PROJECT1/
@@ -209,82 +216,40 @@ The system automatically creates folders in the **Documents** library using this
 ```
 
 **Initial Setup:**
-1. ✅ Use the default "Documents" library (no additional library creation needed)
+1. ✅ Use the SharePoint Embedded container (isolated storage)
 2. 🤖 The application will automatically create the "/Receipts" folder and year/project/expense subfolders as needed
+3. 🔒 Built-in security boundaries and access control
 
-### Step 4: Assign App to Specific SharePoint Site (Sites.Selected)
+### Step 4: Container Access and Permissions
 
-⚠️ **Important**: This step is required when using Sites.Selected permission (recommended for security).
+⚠️ **Important**: SharePoint Embedded containers use FileStorageContainer.Selected permission with automatic container access.
 
-**Option A: Using Microsoft Graph API (Recommended)**
+**SharePoint Embedded Container Access**
 
-Use the Microsoft Graph API to assign your application access to the specific SharePoint site:
+SharePoint Embedded containers automatically grant access when using FileStorageContainer.Selected permission:
 
 ```bash
-# Step 1: Get an admin access token (requires Sites.FullControl.All for setup)
-# You can use Azure CLI or Graph Explorer for this
-az account get-access-token --resource https://graph.microsoft.com/
+# Container access is automatically granted when:
+# 1. Application has FileStorageContainer.Selected permission with admin consent
+# 2. Application creates or is assigned to specific containers
+# 3. No manual site permission assignment needed
 
-# Step 2: Grant site access to your application
-curl -X POST "https://graph.microsoft.com/v1.0/sites/{site-id}/permissions" \
-  -H "Authorization: Bearer {admin-access-token}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "roles": ["write"],
-    "grantedToIdentities": [{
-      "application": {
-        "id": "{your-app-id}",
-        "displayName": "SCDP Expense Attachments"
-      }
-    }]
-  }'
+# To list accessible containers:
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" \
+  -H "Authorization: Bearer {app-access-token}"
+
+# To get specific container details:
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}" \
+  -H "Authorization: Bearer {app-access-token}"
+
+# To access container drive:
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}/drive/root/children" \
+  -H "Authorization: Bearer {app-access-token}"
 ```
 
 **Replace the placeholders:**
-- `{site-id}`: Your SharePoint site ID
-- `{admin-access-token}`: Access token with Sites.FullControl.All
-- `{your-app-id}`: Your Azure AD application ID
-
-**Option B: Using PnP PowerShell (Alternative)**
-
-For administrators who prefer PowerShell, use PnP PowerShell commands:
-
-```powershell
-# Install PnP PowerShell (if not already installed)
-Install-Module -Name PnP.PowerShell -Force
-
-# Connect to your SharePoint site
-Connect-PnPOnline -Url "https://{tenant}.sharepoint.com/sites/{sitename}" -Interactive
-
-# Grant application permissions to the site
-Grant-PnPAzureADAppSitePermission -AppId "{your-app-id}" -DisplayName "SCDP Expense Attachments" -Site "https://{tenant}.sharepoint.com/sites/{sitename}" -Permissions Write
-
-# Verify the permission was granted
-Get-PnPAzureADAppSitePermission
-```
-
-**Replace the placeholders:**
-- `{tenant}`: Your SharePoint tenant name
-- `{sitename}`: Your SharePoint site name
-- `{your-app-id}`: Your Azure AD application ID
-
-**Verification Steps:**
-
-After granting permissions, verify access using these Graph API calls:
-
-```bash
-# Test 1: Verify site access with your app's token
-curl -X GET "https://graph.microsoft.com/v1.0/sites/{site-id}" \
-  -H "Authorization: Bearer {app-access-token}"
-
-# Test 2: Verify drive (Documents library) access
-curl -X GET "https://graph.microsoft.com/v1.0/sites/{site-id}/drives" \
-  -H "Authorization: Bearer {app-access-token}"
-
-# Test 3: Verify you can list items in the Documents library
-curl -X GET "https://graph.microsoft.com/v1.0/drives/{drive-id}/root/children" \
-  -H "Authorization: Bearer {app-access-token}"
-```
+- `{app-access-token}`: Access token with FileStorageContainer.Selected
+- `{container-id}`: Your SharePoint Embedded container ID
 
 **Get app access token for testing:**
 ```bash
@@ -293,37 +258,31 @@ curl -X POST "https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token" \
   -d "grant_type=client_credentials&client_id={your-app-id}&client_secret={your-app-secret}&scope=https://graph.microsoft.com/.default"
 ```
 
-### Step 5: Get SharePoint Site and Drive IDs
+### Step 5: Get SharePoint Embedded Container ID
 
-You'll need these IDs for environment configuration:
+You'll need the container ID for environment configuration:
 
-1. **Get Site ID**
-   ```powershell
+1. **Get Container ID via Graph API**
+   ```bash
    # Using Microsoft Graph Explorer (recommended)
    # Go to: https://developer.microsoft.com/en-us/graph/graph-explorer
-   # Query: GET https://graph.microsoft.com/v1.0/sites/[tenant].sharepoint.com:/sites/[sitename]
+   # Query: GET https://graph.microsoft.com/v1.0/storage/fileStorage/containers
+   # Find your container in the response and note the 'id' field
    ```
 
-2. **Get Drive ID**
-   ```powershell
-   # After getting Site ID, query:
-   # GET https://graph.microsoft.com/v1.0/sites/[SITE_ID]/drives
-   # Look for the drive with name "Documents" (this is the default document library)
+2. **Get Container ID via cURL**
+   ```bash
+   # List all accessible containers
+   curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" \
+     -H "Authorization: Bearer {access-token}"
+   
+   # Find your container by displayName and note the 'id' field
    ```
 
-3. **Alternative: PowerShell Method**
-   ```powershell
-   # Connect to SharePoint
-   Connect-PnPOnline -Url "https://[tenant].sharepoint.com/sites/[sitename]" -Interactive
-   
-   # Get Site ID
-   $site = Get-PnPSite -Includes Id
-   Write-Host "Site ID: $($site.Id)"
-   
-   # Get Document Library ID (using the Documents library)
-   $list = Get-PnPList -Identity "Documents"
-   Write-Host "List ID: $($list.Id)"
-   ```
+3. **Container Information**
+   - Container ID: Use this as SHAREPOINT_CONTAINER_ID
+   - Container Type ID: Optional, use as CONTAINER_TYPE_ID if needed
+   - Display Name: For reference and identification
 
 ## Environment Configuration
 
@@ -341,12 +300,11 @@ AZURE_CLIENT_SECRET="[Client Secret from Step 3]"
 AZURE_REDIRECT_URI="https://yourdomain.com/api/auth/callback"
 POST_LOGOUT_REDIRECT_URI="https://yourdomain.com"
 
-# SharePoint Configuration
-SHAREPOINT_SITE_ID="[Site ID from Step 5]"
-SHAREPOINT_DRIVE_ID="[Drive ID from Step 5]"
+# SharePoint Embedded Configuration
+SHAREPOINT_CONTAINER_ID="[Container ID from Step 5]"
 
-# Optional: SharePoint site URL for reference
-SHAREPOINT_SITE_URL="https://[tenant].sharepoint.com/sites/[sitename]"
+# Optional: Container Type ID for reference
+CONTAINER_TYPE_ID="[Container Type ID if needed]"
 ```
 
 ### Environment-Specific Configuration
@@ -358,8 +316,7 @@ SHAREPOINT_SITE_URL="https://[tenant].sharepoint.com/sites/[sitename]"
 AZURE_CLIENT_ID="your-dev-app-id"
 AZURE_TENANT_ID="your-tenant-id"
 AZURE_CLIENT_SECRET="your-dev-secret"
-SHAREPOINT_SITE_ID="your-site-id"
-SHAREPOINT_DRIVE_ID="your-drive-id"
+SHAREPOINT_CONTAINER_ID="your-container-id"
 NODE_ENV="development"
 ```
 
@@ -370,8 +327,7 @@ NODE_ENV="development"
 AZURE_CLIENT_ID="your-replit-app-id"
 AZURE_TENANT_ID="your-tenant-id"
 AZURE_CLIENT_SECRET="your-replit-secret"
-SHAREPOINT_SITE_ID="your-site-id"
-SHAREPOINT_DRIVE_ID="your-drive-id"
+SHAREPOINT_CONTAINER_ID="your-container-id"
 REPL_SLUG="your-repl-name"
 REPL_OWNER="your-username"
 ```
@@ -383,69 +339,70 @@ REPL_OWNER="your-username"
 AZURE_CLIENT_ID="your-prod-app-id"
 AZURE_TENANT_ID="your-tenant-id"
 AZURE_CLIENT_SECRET="your-prod-secret"
-SHAREPOINT_SITE_ID="your-site-id"
-SHAREPOINT_DRIVE_ID="your-drive-id"
+SHAREPOINT_CONTAINER_ID="your-container-id"
 NODE_ENV="production"
 REPLIT_DOMAINS="1" # if using Replit for production
 ```
 
-### How to Find SharePoint IDs
+### How to Find SharePoint Embedded Container ID
 
 #### Method 1: Microsoft Graph Explorer (Easiest)
 
 1. Go to [Microsoft Graph Explorer](https://developer.microsoft.com/en-us/graph/graph-explorer)
 2. Sign in with your admin account
-3. **Get Site ID:**
+3. **List Accessible Containers:**
    ```
-   GET https://graph.microsoft.com/v1.0/sites/[tenant].sharepoint.com:/sites/[sitename]
+   GET https://graph.microsoft.com/v1.0/storage/fileStorage/containers
    ```
-   Look for the `id` field in the response
+   Look for your container in the response and note the `id` field
 
-4. **Get Drive ID:**
+4. **Get Specific Container Details:**
    ```
-   GET https://graph.microsoft.com/v1.0/sites/[SITE_ID]/drives
+   GET https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}
    ```
-   Find the drive with name "Documents" (this is the default document library)
+   Verify container details and access
 
-#### Method 2: Browser Developer Tools
+#### Method 2: cURL Commands
 
-1. Navigate to your SharePoint site
-2. Open Developer Tools (F12)
-3. In Console, run:
-   ```javascript
-   _spPageContextInfo.siteId
-   _spPageContextInfo.webId
-   ```
+```bash
+# Get access token first
+curl -X POST "https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id={client-id}&client_secret={client-secret}&scope=https://graph.microsoft.com/.default"
 
-#### Method 3: PowerShell PnP
+# List containers
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" \
+  -H "Authorization: Bearer {access-token}"
+```
+
+#### Method 3: PowerShell with Graph API
 
 ```powershell
-# Install PnP PowerShell if not already installed
-Install-Module -Name PnP.PowerShell
+# Install Microsoft Graph PowerShell
+Install-Module Microsoft.Graph -Force
 
-# Connect to SharePoint
-Connect-PnPOnline -Url "https://[tenant].sharepoint.com/sites/[sitename]" -Interactive
+# Connect with appropriate scopes
+Connect-MgGraph -Scopes "FileStorageContainer.Selected"
 
-# Get Site information
-Get-PnPSite -Includes Id
-Get-PnPList -Identity "Documents" | Select Id
+# List containers
+Get-MgStorageFileStorageContainer
 ```
 
 ## Security Best Practices
 
 ### 1. Principle of Least Privilege
 
-**RECOMMENDED: Site-Specific Permissions (Sites.Selected)**
-- ✅ Use `Sites.Selected` application permission
-- ✅ Assign app access to specific SharePoint sites only
-- ✅ Grant minimal required access (Write for file operations)
-- ✅ No tenant-wide permissions
+**RECOMMENDED: SharePoint Embedded Container Permissions**
+- ✅ Use `FileStorageContainer.Selected` application permission
+- ✅ Automatic access to assigned containers only
+- ✅ Built-in isolation and security boundaries
+- ✅ No tenant-wide permissions needed
 
-**⚠️ AVOID: Broad Tenant-Wide Permissions**
-- ❌ `Sites.ReadWrite.All` (accesses ALL SharePoint sites)
-- ❌ `Files.ReadWrite.All` (accesses ALL files in tenant)
-- ❌ `Sites.FullControl.All` (full control of ALL sites)
-- ❌ `Sites.Manage.All` (can create/delete sites)
+**⚠️ AVOID: Legacy SharePoint Online Permissions**
+- ❌ `Sites.ReadWrite.All` (for SharePoint Online sites)
+- ❌ `Files.ReadWrite.All` (for SharePoint Online files)
+- ❌ `Sites.Selected` (for SharePoint Online site-specific)
+- ❌ `Sites.FullControl.All` (for SharePoint Online administration)
 
 **Modern SharePoint App Security Model:**
 - Use Graph API permissions instead of classic SharePoint permissions
@@ -548,29 +505,27 @@ Test/Staging: Rotate every 18 months
 - [ ] Configured redirect URIs for all environments
 - [ ] Generated client secret and recorded value securely
 - [ ] Added Microsoft Graph application permissions:
-  - [ ] Sites.Selected (with site-specific assignment)
+  - [ ] FileStorageContainer.Selected (for container access)
 - [ ] Granted admin consent for all permissions
 - [ ] Verified permissions show "Granted" status
 - [ ] Configured authentication settings (allowPublicClient: false)
 
-### SharePoint Setup Checklist
+### SharePoint Embedded Container Setup Checklist
 
-- [ ] Created or identified target SharePoint site
-- [ ] Use default "Documents" library (application auto-creates /Receipts folder)
-- [ ] Configured library versioning settings
-- [ ] Granted app permissions to SharePoint site
-- [ ] Obtained Site ID using Graph Explorer or PowerShell
-- [ ] Obtained Drive ID for the Documents library
-- [ ] Verified app can access the site (using test query)
-- [ ] Documented site URL and library name
+- [ ] Created or identified target SharePoint Embedded container
+- [ ] Container automatically provides isolated storage (application auto-creates /Receipts folder)
+- [ ] Verified FileStorageContainer.Selected permission granted with admin consent
+- [ ] Obtained Container ID using Graph Explorer or PowerShell
+- [ ] Verified app can access the container (using test query)
+- [ ] Documented container ID and display name
+- [ ] Confirmed container-based file operations work
 
 ### Environment Configuration Checklist
 
 - [ ] Set AZURE_CLIENT_ID environment variable
 - [ ] Set AZURE_TENANT_ID environment variable
 - [ ] Set AZURE_CLIENT_SECRET environment variable (securely)
-- [ ] Set SHAREPOINT_SITE_ID environment variable
-- [ ] Set SHAREPOINT_DRIVE_ID environment variable
+- [ ] Set SHAREPOINT_CONTAINER_ID environment variable
 - [ ] Configured environment-specific redirect URIs (if needed)
 - [ ] Verified all environment variables are loaded correctly
 - [ ] Tested configuration with test API call
@@ -606,8 +561,7 @@ node test-azure-setup.js
    ✅ AZURE_CLIENT_ID: Set (36 characters)
    ✅ AZURE_TENANT_ID: Set (36 characters)
    ✅ AZURE_CLIENT_SECRET: Set (40 characters)
-   ✅ SHAREPOINT_SITE_ID: Set (36 characters)
-   ✅ SHAREPOINT_DRIVE_ID: Set (36 characters)
+   ✅ SHAREPOINT_CONTAINER_ID: Set (36 characters)
 
 🔐 Testing MSAL Configuration...
    ✅ Azure AD configured: Yes
@@ -617,12 +571,13 @@ node test-azure-setup.js
    ✅ Graph authentication successful
    ✅ Token obtained: 1234 characters
 
-📁 Testing SharePoint Connectivity...
-   ✅ Site Access: Success
-   ✅ Drive Access: Success
+📁 Testing SharePoint Embedded Container Connectivity...
+   ✅ Containers List: Success 
+   ✅ Container Access: Success
+   ✅ Container Drive Access: Success
 
 📤 Testing File Operations...
-   ✅ Successfully listed X items in Documents library
+   ✅ Successfully listed X items in container
    ✅ Folder creation: Success
 
 📊 Configuration Report
@@ -630,10 +585,10 @@ node test-azure-setup.js
 Environment Variables     ✅ PASS
 MSAL Configuration        ✅ PASS
 Graph Authentication      ✅ PASS
-SharePoint Connectivity   ✅ PASS
+SharePoint Embedded Connectivity   ✅ PASS
 File Operations          ✅ PASS
 ==================================================
-🎉 All tests passed! Your Azure AD and SharePoint configuration is ready.
+🎉 All tests passed! Your Azure AD and SharePoint Embedded container configuration is ready.
 ```
 
 **Manual Verification (Alternative):**
@@ -646,12 +601,12 @@ curl -X POST "https://login.microsoftonline.com/{tenant-id}/oauth2/v2.0/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id={client-id}&client_secret={client-secret}&scope=https://graph.microsoft.com/.default"
 
-# 2. Test site access
-curl -X GET "https://graph.microsoft.com/v1.0/sites/{site-id}" \
+# 2. Test container access
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}" \
   -H "Authorization: Bearer {access-token}"
 
-# 3. Test Documents library access
-curl -X GET "https://graph.microsoft.com/v1.0/drives/{drive-id}/root/children" \
+# 3. Test container drive access
+curl -X GET "https://graph.microsoft.com/v1.0/storage/fileStorage/containers/{container-id}/drive/root/children" \
   -H "Authorization: Bearer {access-token}"
 ```
 
@@ -667,13 +622,15 @@ curl -X GET "https://graph.microsoft.com/v1.0/drives/{drive-id}/root/children" \
 **Solution:**
 - Verify admin consent was granted for all permissions
 - Check that permissions are "Application" type, not "Delegated"
-- Ensure SharePoint app permissions were configured correctly
+- Ensure FileStorageContainer.Selected permission was configured correctly
 
 #### Issue: "MSAL instance not configured"
 **Solution:**
-- Verify all three required environment variables are set:
+- Verify all four required environment variables are set:
   - AZURE_CLIENT_ID
-  - AZURE_TENANT_ID  
+  - AZURE_TENANT_ID
+  - AZURE_CLIENT_SECRET
+  - SHAREPOINT_CONTAINER_ID  
   - AZURE_CLIENT_SECRET
 - Check environment variable values don't contain extra spaces or quotes
 
@@ -917,13 +874,13 @@ Graph Authentication     ✅ PASS
 SharePoint Connectivity  ✅ PASS
 File Operations         ✅ PASS
 ==================================================
-🎉 All tests passed! Your Azure AD and SharePoint configuration is ready.
+🎉 All tests passed! Your Azure AD and SharePoint Embedded container configuration is ready.
 ```
 
 **Troubleshooting Test Failures:**
 - **"Health endpoint not found"** → Application not running, start with `npm run dev`
 - **"Authentication failed"** → Check Azure AD environment variables and permissions
-- **"SharePoint connectivity failed"** → Verify Sites.Selected assignment and Site/Drive IDs
+- **"SharePoint connectivity failed"** → Verify FileStorageContainer.Selected permission and container IDs
 
 ### Common Error Scenarios
 

@@ -58,14 +58,13 @@ function testEnvironmentVariables() {
     'AZURE_CLIENT_ID': 'Azure AD Application (Client) ID',
     'AZURE_TENANT_ID': 'Azure AD Directory (Tenant) ID', 
     'AZURE_CLIENT_SECRET': 'Azure AD Client Secret',
-    'SHAREPOINT_SITE_ID': 'SharePoint Site ID',
-    'SHAREPOINT_DRIVE_ID': 'SharePoint Drive ID (Document Library)'
+    'SHAREPOINT_CONTAINER_ID': 'SharePoint Embedded Container ID'
   };
   
   const optionalEnvVars = {
     'AZURE_REDIRECT_URI': 'Custom redirect URI (optional)',
     'POST_LOGOUT_REDIRECT_URI': 'Custom logout redirect URI (optional)',
-    'SHAREPOINT_SITE_URL': 'SharePoint site URL for reference (optional)'
+    'CONTAINER_TYPE_ID': 'SharePoint Embedded Container Type ID (optional)'
   };
   
   let allRequired = true;
@@ -221,18 +220,17 @@ async function testGraphAuthentication() {
   }
 }
 
-// Test SharePoint connectivity via direct Graph API calls
+// Test SharePoint Embedded container connectivity via direct Graph API calls
 async function testSharePointConnectivity() {
-  console.log('📁 Testing SharePoint Connectivity...\n');
+  console.log('📁 Testing SharePoint Embedded Container Connectivity...\n');
   
   try {
-    console.log('   🔄 Testing SharePoint site and drive access...');
+    console.log('   🔄 Testing SharePoint Embedded container access...');
     
-    const siteId = process.env.SHAREPOINT_SITE_ID;
-    const driveId = process.env.SHAREPOINT_DRIVE_ID;
+    const containerId = process.env.SHAREPOINT_CONTAINER_ID;
     
-    if (!siteId || !driveId) {
-      console.log('   ❌ Missing SharePoint configuration (SHAREPOINT_SITE_ID or SHAREPOINT_DRIVE_ID)');
+    if (!containerId) {
+      console.log('   ❌ Missing SharePoint configuration (SHAREPOINT_CONTAINER_ID)');
       return false;
     }
     
@@ -263,52 +261,80 @@ async function testSharePointConnectivity() {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
     
-    console.log('   ✅ Access token obtained for SharePoint testing');
-    console.log(`   ✅ Site ID: ${siteId.substring(0, 20)}...`);
-    console.log(`   ✅ Drive ID: ${driveId.substring(0, 20)}...`);
+    console.log('   ✅ Access token obtained for SharePoint Embedded container testing');
+    console.log(`   ✅ Container ID: ${containerId.substring(0, 20)}...`);
     
-    let siteAccessible = false;
-    let driveAccessible = false;
+    let containersAccessible = false;
+    let containerAccessible = false;
+    let containerDriveAccessible = false;
     let errorDetails = null;
     
-    // Test 1: Access the SharePoint site
+    // Test 1: List accessible containers
     try {
-      const siteResponse = await fetch(`https://graph.microsoft.com/v1.0/sites/${siteId}`, {
+      const containersResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
       
-      if (siteResponse.ok) {
-        const siteData = await siteResponse.json();
-        console.log(`   ✅ Site Access: Success (${siteData.displayName})`);
-        siteAccessible = true;
+      if (containersResponse.ok) {
+        const containersData = await containersResponse.json();
+        console.log(`   ✅ Containers List: Success (${containersData.value?.length || 0} containers found)`);
+        containersAccessible = true;
+        
+        // Check if our specific container is in the list
+        const ourContainer = containersData.value?.find(c => c.id === containerId);
+        if (ourContainer) {
+          console.log(`   ✅ Target Container Found: ${ourContainer.displayName || ourContainer.id}`);
+        } else {
+          console.log(`   ⚠️  Target Container Not Found in accessible containers list`);
+        }
       } else {
-        const errorText = await siteResponse.text();
-        console.log(`   ❌ Site Access: Failed (HTTP ${siteResponse.status})`);
+        const errorText = await containersResponse.text();
+        console.log(`   ❌ Containers List: Failed (HTTP ${containersResponse.status})`);
         errorDetails = errorText;
       }
-    } catch (siteError) {
-      console.log(`   ❌ Site Access: Error - ${siteError.message}`);
-      errorDetails = siteError.message;
+    } catch (containersError) {
+      console.log(`   ❌ Containers List: Error - ${containersError.message}`);
+      errorDetails = containersError.message;
     }
     
-    // Test 2: Access the SharePoint drive (only if site access works)
-    if (siteAccessible) {
+    // Test 2: Access the specific container
+    try {
+      const containerResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      
+      if (containerResponse.ok) {
+        const containerData = await containerResponse.json();
+        console.log(`   ✅ Container Access: Success (${containerData.displayName || containerData.id})`);
+        containerAccessible = true;
+      } else {
+        const errorText = await containerResponse.text();
+        console.log(`   ❌ Container Access: Failed (HTTP ${containerResponse.status})`);
+        errorDetails = errorText;
+      }
+    } catch (containerError) {
+      console.log(`   ❌ Container Access: Error - ${containerError.message}`);
+      errorDetails = containerError.message;
+    }
+    
+    // Test 3: Access the container's drive root (only if container access works)
+    if (containerAccessible) {
       try {
-        const driveResponse = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}`, {
+        const driveRootResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/drive/root/children`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         
-        if (driveResponse.ok) {
-          const driveData = await driveResponse.json();
-          console.log(`   ✅ Drive Access: Success (${driveData.name})`);
-          driveAccessible = true;
+        if (driveRootResponse.ok) {
+          const driveData = await driveRootResponse.json();
+          console.log(`   ✅ Container Drive Access: Success (${driveData.value?.length || 0} items found)`);
+          containerDriveAccessible = true;
         } else {
-          const errorText = await driveResponse.text();
-          console.log(`   ❌ Drive Access: Failed (HTTP ${driveResponse.status})`);
+          const errorText = await driveRootResponse.text();
+          console.log(`   ❌ Container Drive Access: Failed (HTTP ${driveRootResponse.status})`);
           errorDetails = errorText;
         }
       } catch (driveError) {
-        console.log(`   ❌ Drive Access: Error - ${driveError.message}`);
+        console.log(`   ❌ Container Drive Access: Error - ${driveError.message}`);
         errorDetails = driveError.message;
       }
     }
@@ -316,20 +342,22 @@ async function testSharePointConnectivity() {
     // Provide specific guidance based on errors
     if (errorDetails) {
       if (errorDetails.includes('Forbidden') || errorDetails.includes('403')) {
-        console.log('   💡 This suggests permission issues. Check Sites.Selected assignment.');
-        console.log('   💡 Use: POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions');
+        console.log('   💡 This suggests permission issues. Check FileStorageContainer.Selected assignment.');
+        console.log('   💡 Ensure your app has FileStorageContainer.Selected permission and admin consent.');
       } else if (errorDetails.includes('NotFound') || errorDetails.includes('404')) {
-        console.log('   💡 This suggests incorrect Site ID or Drive ID.');
-        console.log('   💡 Verify IDs using Graph Explorer or PnP PowerShell.');
+        console.log('   💡 This suggests incorrect Container ID or container not accessible.');
+        console.log('   💡 Run: GET https://graph.microsoft.com/v1.0/storage/fileStorage/containers');
+        console.log('   💡 Verify the SHAREPOINT_CONTAINER_ID exists and is accessible.');
       } else if (errorDetails.includes('Unauthorized') || errorDetails.includes('401')) {
-        console.log('   💡 This suggests authentication issues. Check app registration permissions.');
+        console.log('   💡 This suggests token or permission issues.');
+        console.log('   💡 Verify FileStorageContainer.Selected permission is granted with admin consent.');
       }
     }
     
-    const success = siteAccessible && driveAccessible;
+    const success = containersAccessible && containerAccessible && containerDriveAccessible;
     
     if (success) {
-      console.log('   🎉 SharePoint connectivity test passed!');
+      console.log('   🎉 SharePoint Embedded container connectivity test passed!');
     }
     
     return success;
@@ -340,17 +368,17 @@ async function testSharePointConnectivity() {
   }
 }
 
-// Test file operations via direct Graph API calls
+// Test file operations via SharePoint Embedded container endpoints
 async function testFileOperations() {
   console.log('📤 Testing File Operations...\n');
   
   try {
-    console.log('   🔄 Testing file operations capabilities...');
+    console.log('   🔄 Testing SharePoint Embedded container file operations capabilities...');
     
-    const driveId = process.env.SHAREPOINT_DRIVE_ID;
+    const containerId = process.env.SHAREPOINT_CONTAINER_ID;
     
-    if (!driveId) {
-      console.log('   ❌ Missing SHAREPOINT_DRIVE_ID environment variable');
+    if (!containerId) {
+      console.log('   ❌ Missing SHAREPOINT_CONTAINER_ID environment variable');
       return false;
     }
     
@@ -381,15 +409,15 @@ async function testFileOperations() {
     const tokenData = await tokenResponse.json();
     const accessToken = tokenData.access_token;
     
-    // Test 1: List items in the Documents library root
+    // Test 1: List items in the container root
     try {
-      const listResponse = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`, {
+      const listResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/drive/root/children`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
       
       if (listResponse.ok) {
         const listData = await listResponse.json();
-        console.log(`   ✅ Successfully listed ${listData.value.length} items in Documents library`);
+        console.log(`   ✅ Successfully listed ${listData.value.length} items in container`);
         
         if (listData.value.length > 0) {
           const sampleItem = listData.value[0];
@@ -405,16 +433,16 @@ async function testFileOperations() {
         }
       } else {
         const errorText = await listResponse.text();
-        console.log(`   ❌ File listing failed: HTTP ${listResponse.status}`);
+        console.log(`   ❌ Container file listing failed: HTTP ${listResponse.status}`);
         
         if (listResponse.status === 403) {
           console.log('   💡 This suggests insufficient permissions for file operations.');
-          console.log('      Check that Sites.Selected permission is assigned to your site.');
+          console.log('      Check that FileStorageContainer.Selected permission is assigned to your container.');
         }
         return false;
       }
     } catch (listError) {
-      console.log(`   ❌ File listing error: ${listError.message}`);
+      console.log(`   ❌ Container file listing error: ${listError.message}`);
       return false;
     }
     
@@ -422,8 +450,8 @@ async function testFileOperations() {
     try {
       const testFolderName = `test-folder-${Date.now()}`;
       
-      // Create test folder
-      const createResponse = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`, {
+      // Create test folder in container
+      const createResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/drive/root/children`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -438,10 +466,10 @@ async function testFileOperations() {
       
       if (createResponse.ok) {
         const createdFolder = await createResponse.json();
-        console.log('   ✅ Folder creation: Success');
+        console.log('   ✅ Folder creation in container: Success');
         
-        // Clean up: delete the test folder
-        const deleteResponse = await fetch(`https://graph.microsoft.com/v1.0/drives/${driveId}/items/${createdFolder.id}`, {
+        // Clean up: delete the test folder using container endpoint
+        const deleteResponse = await fetch(`https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${containerId}/drive/items/${createdFolder.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
@@ -460,11 +488,11 @@ async function testFileOperations() {
       return false;
     }
     
-    console.log('   🎉 File operations test completed successfully!');
+    console.log('   🎉 SharePoint Embedded container file operations test completed successfully!');
     return true;
   } catch (error) {
-    console.log(`   ❌ File operations test failed: ${error.message}`);
-    console.log('   💡 Check your Azure and SharePoint configuration');
+    console.log(`   ❌ Container file operations test failed: ${error.message}`);
+    console.log('   💡 Check your Azure and SharePoint Embedded container configuration');
     return false;
   }
 }
@@ -478,7 +506,7 @@ function generateConfigReport(results) {
     { name: 'Environment Variables', status: results.env },
     { name: 'MSAL Configuration', status: results.msal },
     { name: 'Graph Authentication', status: results.auth },
-    { name: 'SharePoint Connectivity', status: results.sharepoint },
+    { name: 'SharePoint Embedded Connectivity', status: results.sharepoint },
     { name: 'File Operations', status: results.fileOps }
   ];
   
@@ -493,11 +521,11 @@ function generateConfigReport(results) {
   const totalTests = testResults.length;
   
   if (passedTests === totalTests) {
-    console.log('🎉 All tests passed! Your Azure AD and SharePoint configuration is ready.');
-    console.log('🚀 You can now use the expense attachment features in SCDP.');
+    console.log('🎉 All tests passed! Your Azure AD and SharePoint Embedded container configuration is ready.');
+    console.log('🚀 You can now use the expense attachment features in SCDP with SharePoint Embedded containers.');
   } else {
     console.log(`⚠️  ${passedTests}/${totalTests} tests passed. Please review failed tests above.`);
-    console.log('📖 See docs/azure-sharepoint-setup.md for troubleshooting guidance.');
+    console.log('📖 See docs/azure-sharepoint-setup.md for SharePoint Embedded troubleshooting guidance.');
   }
   
   console.log('\n📋 Next Steps:');
@@ -507,19 +535,19 @@ function generateConfigReport(results) {
     console.log('   3. Set up secret rotation schedule');
     console.log('   4. Train users on new functionality');
     console.log('\n🚀 Ready for Production:');
-    console.log('   - All Azure AD and SharePoint configurations are working');
-    console.log('   - Sites.Selected permission is properly assigned');
-    console.log('   - Documents library is accessible with /Receipts folder support');
-    console.log('   - File operations (create, read, delete) are functional');
+    console.log('   - All Azure AD and SharePoint Embedded container configurations are working');
+    console.log('   - FileStorageContainer.Selected permission is properly assigned');
+    console.log('   - SharePoint Embedded container is accessible with /Receipts folder support');
+    console.log('   - Container file operations (create, read, delete) are functional');
   } else {
     console.log('   1. Fix the failed configuration issues');
     console.log('   2. Re-run this test script: node test-azure-setup.js');
     console.log('   3. Check the setup guide: docs/azure-sharepoint-setup.md');
     console.log('\n🔧 Common Issues:');
-    console.log('   - Missing environment variables (check .env file)');
-    console.log('   - Sites.Selected permission not assigned to SharePoint site');
-    console.log('   - Invalid Site ID or Drive ID (verify with Graph Explorer)');
-    console.log('   - Admin consent not granted for application permissions');
+    console.log('   - Missing environment variables (check SHAREPOINT_CONTAINER_ID)');
+    console.log('   - FileStorageContainer.Selected permission not assigned or lacking admin consent');
+    console.log('   - Invalid Container ID (verify with Graph Explorer: /storage/fileStorage/containers)');
+    console.log('   - Container not created or not accessible by the application');
   }
 }
 
@@ -529,9 +557,9 @@ function showHelp() {
   console.log('=============================================\n');
   console.log('This script validates your SCDP expense attachment system configuration.\n');
   console.log('Prerequisites:');
-  console.log('  - Complete Azure AD app registration');
-  console.log('  - Configure SharePoint site and document library');
-  console.log('  - Set all required environment variables\n');
+  console.log('  - Complete Azure AD app registration with FileStorageContainer.Selected permission');
+  console.log('  - Configure SharePoint Embedded container');
+  console.log('  - Set all required environment variables (including SHAREPOINT_CONTAINER_ID)\n');
   console.log('Usage:');
   console.log('  npm run dev                     Start the application (required first)');
   console.log('  node test-azure-setup.js        Run all configuration tests');
@@ -575,7 +603,7 @@ async function runAllTests() {
       results.auth = await testGraphAuthentication();
     }
     
-    // Test 4: SharePoint Connectivity (only if auth works)
+    // Test 4: SharePoint Embedded Container Connectivity (only if auth works)
     if (results.auth) {
       results.sharepoint = await testSharePointConnectivity();
     }

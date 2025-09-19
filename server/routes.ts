@@ -234,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!sharePointConfig.configured) {
         return res.status(503).json({
           status: "error",
-          message: "SharePoint not configured. Please configure SHAREPOINT_SITE_ID and SHAREPOINT_DRIVE_ID."
+          message: "SharePoint Embedded container not configured. Please configure SHAREPOINT_CONTAINER_ID."
         });
       }
 
