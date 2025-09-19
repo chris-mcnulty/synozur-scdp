@@ -37,6 +37,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Intelligent environment detection to work around global settings
+function detectEnvironment() {
+  // Check multiple indicators to determine if we're in development
+  const isDevelopmentCommand = process.argv.some(arg => arg.includes('tsx'));
+  const isReplitDev = !process.env.REPLIT_DOMAINS && !process.env.REPL_SLUG;
+  const hasDevScript = process.title && process.title.includes('tsx');
+  const isLocalPort = process.env.PORT === undefined || process.env.PORT === '5000';
+  
+  // If running with tsx (dev command) or in local Replit without deployment domains
+  if (isDevelopmentCommand || (isReplitDev && isLocalPort)) {
+    // Force development mode regardless of NODE_ENV global setting
+    process.env.NODE_ENV = 'development';
+    log('🔧 Detected development environment - overriding NODE_ENV to development');
+  }
+  
+  log(`Environment mode: ${process.env.NODE_ENV}`);
+  return process.env.NODE_ENV;
+}
+
 // Environment validation function - softened for deployment resilience
 function validateEnvironment() {
   const requiredVars = ['DATABASE_URL'];
@@ -76,6 +95,9 @@ process.on('uncaughtException', (error) => {
 (async () => {
   try {
     log('Starting server initialization...');
+    
+    // Detect and set correct environment mode
+    detectEnvironment();
     
     // Validate environment variables (softened)
     const envValid = validateEnvironment();
@@ -193,10 +215,10 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
   const isProduction = process.env.NODE_ENV === 'production';
   const isDeployment = Boolean(process.env.REPLIT_DOMAINS || process.env.REPL_SLUG);
   const isViteDisabled = process.env.DISABLE_VITE_DEV === '1';
-  const isDevelopment = app.get("env") === "development";
+  const isDevelopment = process.env.NODE_ENV === 'development';
   
-  // Tightened guard: only use Vite in true local development
-  if (isDevelopment && !isProduction && !isDeployment && !isViteDisabled) {
+  // Use detected environment mode for proper Vite setup
+  if (isDevelopment && !isDeployment && !isViteDisabled) {
     log('Setting up Vite development server...');
     try {
       await setupVite(app, server);
