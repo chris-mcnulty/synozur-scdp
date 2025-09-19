@@ -1,6 +1,6 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
-  estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, changeOrders,
+  estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
@@ -10,6 +10,7 @@ import {
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense,
+  type ExpenseAttachment, type InsertExpenseAttachment,
   type ChangeOrder, type InsertChangeOrder,
   type InvoiceBatch, type InsertInvoiceBatch,
   type InvoiceLine, type InsertInvoiceLine,
@@ -194,6 +195,12 @@ export interface IStorage {
   getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
+  
+  // Expense Attachments
+  listExpenseAttachments(expenseId: string): Promise<ExpenseAttachment[]>;
+  addExpenseAttachment(expenseId: string, attachment: InsertExpenseAttachment): Promise<ExpenseAttachment>;
+  deleteExpenseAttachment(id: string): Promise<void>;
+  getAttachmentById(id: string): Promise<ExpenseAttachment | undefined>;
   
   // Change Orders
   getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
@@ -1919,6 +1926,36 @@ export class DatabaseStorage implements IStorage {
   async updateExpense(id: string, updateExpense: Partial<InsertExpense>): Promise<Expense> {
     const [expense] = await db.update(expenses).set(updateExpense).where(eq(expenses.id, id)).returning();
     return expense;
+  }
+
+  // Expense Attachments
+  async listExpenseAttachments(expenseId: string): Promise<ExpenseAttachment[]> {
+    return await db.select()
+      .from(expenseAttachments)
+      .where(eq(expenseAttachments.expenseId, expenseId))
+      .orderBy(desc(expenseAttachments.createdAt));
+  }
+
+  async addExpenseAttachment(expenseId: string, attachment: InsertExpenseAttachment): Promise<ExpenseAttachment> {
+    // Ensure the expenseId in the attachment object matches the parameter
+    const attachmentData = {
+      ...attachment,
+      expenseId: expenseId
+    };
+    
+    const [created] = await db.insert(expenseAttachments).values(attachmentData).returning();
+    return created;
+  }
+
+  async deleteExpenseAttachment(id: string): Promise<void> {
+    await db.delete(expenseAttachments).where(eq(expenseAttachments.id, id));
+  }
+
+  async getAttachmentById(id: string): Promise<ExpenseAttachment | undefined> {
+    const [attachment] = await db.select()
+      .from(expenseAttachments)
+      .where(eq(expenseAttachments.id, id));
+    return attachment || undefined;
   }
 
   // Change Orders

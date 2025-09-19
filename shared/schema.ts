@@ -345,6 +345,20 @@ export const expenses = pgTable("expenses", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Expense Attachments (for SharePoint file integration)
+export const expenseAttachments = pgTable("expense_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  expenseId: varchar("expense_id").notNull().references(() => expenses.id),
+  driveId: text("drive_id").notNull(), // SharePoint drive ID
+  itemId: text("item_id").notNull(), // SharePoint item ID
+  webUrl: text("web_url").notNull(), // SharePoint web URL
+  fileName: text("file_name").notNull(), // Original filename
+  contentType: text("content_type").notNull(), // MIME type
+  size: integer("size").notNull(), // File size in bytes
+  createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
   CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx 
@@ -609,7 +623,7 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
   }),
 }));
 
-export const expensesRelations = relations(expenses, ({ one }) => ({
+export const expensesRelations = relations(expenses, ({ one, many }) => ({
   person: one(users, {
     fields: [expenses.personId],
     references: [users.id],
@@ -617,6 +631,18 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
   project: one(projects, {
     fields: [expenses.projectId],
     references: [projects.id],
+  }),
+  attachments: many(expenseAttachments),
+}));
+
+export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one }) => ({
+  expense: one(expenses, {
+    fields: [expenseAttachments.expenseId],
+    references: [expenses.id],
+  }),
+  createdByUser: one(users, {
+    fields: [expenseAttachments.createdByUserId],
+    references: [users.id],
   }),
 }));
 
@@ -785,6 +811,11 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({
   createdAt: true,
 });
 
+export const insertExpenseAttachmentSchema = createInsertSchema(expenseAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertSowSchema = createInsertSchema(sows).omit({
   id: true,
   createdAt: true,
@@ -854,6 +885,9 @@ export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 
 export type Expense = typeof expenses.$inferSelect;
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
+
+export type ExpenseAttachment = typeof expenseAttachments.$inferSelect;
+export type InsertExpenseAttachment = z.infer<typeof insertExpenseAttachmentSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
