@@ -1,6 +1,6 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
-  estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, changeOrders,
+  estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
@@ -12,6 +12,7 @@ import {
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense,
   type ExpenseAttachment, type InsertExpenseAttachment,
+  type PendingReceipt, type InsertPendingReceipt,
   type ChangeOrder, type InsertChangeOrder,
   type InvoiceBatch, type InsertInvoiceBatch,
   type InvoiceLine, type InsertInvoiceLine,
@@ -199,16 +200,64 @@ export interface IStorage {
   deleteTimeEntry(id: string): Promise<void>;
   lockTimeEntriesForBatch(batchId: string, entryIds: string[]): Promise<void>;
   
-  // Expenses
-  getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
+  // Expenses with Project Resource Support
+  getExpenses(filters: { 
+    personId?: string; 
+    projectId?: string; 
+    projectResourceId?: string; 
+    startDate?: string; 
+    endDate?: string 
+  }): Promise<(Expense & { 
+    person: User; 
+    project: Project & { client: Client }; 
+    projectResource?: User; 
+  })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
   
-  // Expense Attachments
+  // Container-based Expense Attachments (SharePoint Embedded)
   listExpenseAttachments(expenseId: string): Promise<ExpenseAttachment[]>;
   addExpenseAttachment(expenseId: string, attachment: InsertExpenseAttachment): Promise<ExpenseAttachment>;
   deleteExpenseAttachment(id: string): Promise<void>;
   getAttachmentById(id: string): Promise<ExpenseAttachment | undefined>;
+  
+  // Container-based File Operations for Expenses
+  uploadExpenseAttachmentToContainer(
+    expenseId: string, 
+    clientId: string, 
+    fileName: string, 
+    fileBuffer: Buffer, 
+    contentType: string,
+    projectCode?: string
+  ): Promise<ExpenseAttachment>;
+  getExpenseAttachmentFromContainer(attachmentId: string): Promise<{
+    fileName: string;
+    contentType: string;
+    buffer: Buffer;
+    webUrl: string;
+  }>;
+  deleteExpenseAttachmentFromContainer(attachmentId: string): Promise<void>;
+  
+  // Pending Receipts
+  getPendingReceipts(filters: {
+    uploadedBy?: string;
+    projectId?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<(PendingReceipt & { project?: Project; uploadedByUser: User })[]>;
+  getPendingReceipt(id: string): Promise<PendingReceipt | undefined>;
+  createPendingReceipt(receipt: InsertPendingReceipt): Promise<PendingReceipt>;
+  updatePendingReceipt(id: string, receipt: Partial<InsertPendingReceipt>): Promise<PendingReceipt>;
+  deletePendingReceipt(id: string): Promise<void>;
+  updatePendingReceiptStatus(id: string, status: string, expenseId?: string, assignedBy?: string): Promise<PendingReceipt>;
+  bulkCreatePendingReceipts(receipts: InsertPendingReceipt[]): Promise<PendingReceipt[]>;
+  convertPendingReceiptToExpense(receiptId: string, expenseData: InsertExpense, userId: string): Promise<{
+    expense: Expense;
+    receipt: PendingReceipt;
+  }>;
   
   // Change Orders
   getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
@@ -560,6 +609,14 @@ export interface IStorage {
   createTenantContainer(clientId: string, containerTypeId: string, displayName?: string): Promise<ClientContainer>;
   ensureClientHasContainer(clientId: string, containerTypeId?: string): Promise<ClientContainer>;
   getClientContainerIdForUser(userId: string): Promise<string | null>;
+  
+  // Container Integration Methods
+  initializeContainerTypesIfNeeded(): Promise<void>;
+  syncContainerTypesWithSharePoint(): Promise<void>;
+  createDefaultContainerType(): Promise<ContainerType>;
+  ensureContainerTypeExists(containerTypeId: string, displayName?: string): Promise<ContainerType>;
+  getContainerForProject(projectId: string): Promise<ClientContainer | undefined>;
+  validateContainerAccess(userId: string, containerId: string): Promise<boolean>;
   
   // Container Metadata Management
   checkContainerAccess(userId: string, containerId: string, userRole: string): Promise<boolean>;
@@ -1957,15 +2014,29 @@ export class DatabaseStorage implements IStorage {
     return Math.round((profit / revenue) * 100);
   }
 
-  async getExpenses(filters: { personId?: string; projectId?: string; startDate?: string; endDate?: string }): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
+  async getExpenses(filters: { 
+    personId?: string; 
+    projectId?: string; 
+    projectResourceId?: string; 
+    startDate?: string; 
+    endDate?: string 
+  }): Promise<(Expense & { 
+    person: User; 
+    project: Project & { client: Client }; 
+    projectResource?: User; 
+  })[]> {
+    // OPTIMIZED: Use single query with all necessary joins to avoid N+1 problem
+    // We'll use separate queries but batch them efficiently to get all project resources at once
     const baseQuery = db.select().from(expenses)
       .leftJoin(users, eq(expenses.personId, users.id))
       .leftJoin(projects, eq(expenses.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id));
 
+    // Apply filters with proper conditions
     const conditions = [];
     if (filters.personId) conditions.push(eq(expenses.personId, filters.personId));
     if (filters.projectId) conditions.push(eq(expenses.projectId, filters.projectId));
+    if (filters.projectResourceId) conditions.push(eq(expenses.projectResourceId, filters.projectResourceId));
     if (filters.startDate) conditions.push(gte(expenses.date, filters.startDate));
     if (filters.endDate) conditions.push(lte(expenses.date, filters.endDate));
 
@@ -1973,16 +2044,101 @@ export class DatabaseStorage implements IStorage {
       ? baseQuery.where(and(...conditions))
       : baseQuery;
 
+    // Execute the main query with person, project, and client joins
     const rows = await query.orderBy(desc(expenses.date));
     
-    return rows.map(row => ({
-      ...row.expenses,
-      person: row.users!,
-      project: {
-        ...row.projects!,
-        client: row.clients!
-      }
-    }));
+    // OPTIMIZATION: Batch fetch all unique project resource users in one query
+    const uniqueProjectResourceIds = [...new Set(
+      rows
+        .map(row => row.expenses.projectResourceId)
+        .filter(id => id !== null && id !== undefined)
+    )] as string[];
+    
+    let projectResourceMap = new Map<string, User>();
+    if (uniqueProjectResourceIds.length > 0) {
+      const projectResources = await db.select()
+        .from(users)
+        .where(sql`${users.id} IN (${uniqueProjectResourceIds.map(id => `'${id}'`).join(',')})`);
+      
+      projectResources.forEach(resource => {
+        projectResourceMap.set(resource.id, resource);
+      });
+    }
+    
+    // Transform results to expected format with batched project resources
+    return rows.map(row => {
+      // Handle case where person might not exist (deleted user, etc.)
+      const person = row.users || {
+        id: row.expenses.personId,
+        email: 'unknown@example.com',
+        name: 'Unknown User',
+        firstName: null,
+        lastName: null,
+        initials: null,
+        title: null,
+        role: 'employee',
+        canLogin: false,
+        isAssignable: false,
+        roleId: null,
+        customRole: null,
+        defaultBillingRate: null,
+        defaultCostRate: null,
+        isActive: false,
+        createdAt: new Date()
+      };
+
+      // Handle case where project might not exist
+      const project = row.projects || {
+        id: row.expenses.projectId,
+        clientId: 'unknown',
+        name: 'Unknown Project',
+        code: 'UNKNOWN',
+        pm: null,
+        startDate: null,
+        endDate: null,
+        commercialScheme: 'tm',
+        retainerBalance: null,
+        retainerTotal: null,
+        baselineBudget: null,
+        sowValue: null,
+        sowDate: null,
+        hasSow: false,
+        status: 'active',
+        estimatedTotal: null,
+        sowTotal: null,
+        actualCost: null,
+        billedTotal: null,
+        profitMargin: null,
+        createdAt: new Date()
+      };
+
+      // Handle case where client might not exist
+      const client = row.clients || {
+        id: 'unknown',
+        name: 'Unknown Client',
+        currency: 'USD',
+        billingContact: null,
+        contactName: null,
+        contactAddress: null,
+        vocabularyOverrides: null,
+        createdAt: new Date()
+      };
+
+      // Get project resource from our batched fetch
+      const projectResource = row.expenses.projectResourceId 
+        ? projectResourceMap.get(row.expenses.projectResourceId) 
+        : undefined;
+
+      return {
+        ...row.expenses,
+        person,
+        project: {
+          ...project,
+          client
+        },
+        projectResource
+      };
+    });
   }
 
   async createExpense(insertExpense: InsertExpense): Promise<Expense> {
@@ -2023,6 +2179,273 @@ export class DatabaseStorage implements IStorage {
       .from(expenseAttachments)
       .where(eq(expenseAttachments.id, id));
     return attachment || undefined;
+  }
+
+  // Container-based expense attachment operations
+  async uploadExpenseAttachmentToContainer(
+    expenseId: string, 
+    clientId: string, 
+    fileName: string, 
+    fileBuffer: Buffer, 
+    contentType: string,
+    projectCode?: string
+  ): Promise<ExpenseAttachment> {
+    try {
+      // Get the container for the client
+      const clientContainer = await this.ensureClientHasContainer(clientId);
+      
+      // Create canonical folder path for expense attachments
+      const year = new Date().getFullYear();
+      const folderPath = projectCode 
+        ? `/Expenses/${year}/${projectCode}/${expenseId}`
+        : `/Expenses/${year}/${expenseId}`;
+      
+      // Upload file to SharePoint Embedded container
+      const uploadResult = await graphClient.uploadFileToContainer(
+        clientContainer.containerId,
+        folderPath,
+        fileName,
+        fileBuffer,
+        contentType,
+        projectCode,
+        expenseId
+      );
+      
+      // Create expense attachment record with container information
+      const attachmentData: InsertExpenseAttachment = {
+        expenseId,
+        driveId: clientContainer.containerId, // Use containerId for backward compatibility
+        itemId: uploadResult.id,
+        webUrl: uploadResult.webUrl,
+        fileName: uploadResult.name,
+        contentType: uploadResult.file?.mimeType || contentType,
+        size: uploadResult.size || fileBuffer.length,
+        createdByUserId: '', // This should be set by the caller
+      };
+      
+      const [attachment] = await db.insert(expenseAttachments).values(attachmentData).returning();
+      return attachment;
+      
+    } catch (error) {
+      console.error('[STORAGE] Failed to upload expense attachment to container:', error);
+      throw new Error(`Failed to upload expense attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async getExpenseAttachmentFromContainer(attachmentId: string): Promise<{
+    fileName: string;
+    contentType: string;
+    buffer: Buffer;
+    webUrl: string;
+  }> {
+    try {
+      // Get attachment metadata
+      const attachment = await this.getAttachmentById(attachmentId);
+      if (!attachment) {
+        throw new Error('Attachment not found');
+      }
+      
+      // Download file from SharePoint Embedded container
+      const fileData = await graphClient.downloadFileFromContainer(
+        attachment.driveId, // This is actually the containerId
+        attachment.itemId
+      );
+      
+      return {
+        fileName: attachment.fileName,
+        contentType: attachment.contentType,
+        buffer: fileData,
+        webUrl: attachment.webUrl
+      };
+      
+    } catch (error) {
+      console.error('[STORAGE] Failed to get expense attachment from container:', error);
+      throw new Error(`Failed to retrieve expense attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async deleteExpenseAttachmentFromContainer(attachmentId: string): Promise<void> {
+    try {
+      // Get attachment metadata
+      const attachment = await this.getAttachmentById(attachmentId);
+      if (!attachment) {
+        throw new Error('Attachment not found');
+      }
+      
+      // Delete file from SharePoint Embedded container
+      await graphClient.deleteFileFromContainer(
+        attachment.driveId, // This is actually the containerId
+        attachment.itemId
+      );
+      
+      // Delete attachment record from database
+      await this.deleteExpenseAttachment(attachmentId);
+      
+    } catch (error) {
+      console.error('[STORAGE] Failed to delete expense attachment from container:', error);
+      throw new Error(`Failed to delete expense attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Pending Receipts
+  async getPendingReceipts(filters: {
+    uploadedBy?: string;
+    projectId?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<(PendingReceipt & { project?: Project; uploadedByUser: User })[]> {
+    // Build conditions array - always include a base condition to avoid empty array
+    const conditions = [];
+    
+    if (filters.uploadedBy) {
+      conditions.push(eq(pendingReceipts.uploadedBy, filters.uploadedBy));
+    }
+    if (filters.projectId) {
+      conditions.push(eq(pendingReceipts.projectId, filters.projectId));
+    }
+    if (filters.status) {
+      conditions.push(eq(pendingReceipts.status, filters.status));
+    }
+    if (filters.startDate) {
+      conditions.push(gte(pendingReceipts.receiptDate, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(pendingReceipts.receiptDate, filters.endDate));
+    }
+
+    // Use the pattern from existing successful queries
+    let query = db.select({
+      pendingReceipt: pendingReceipts,
+      project: projects,
+      uploadedByUser: users
+    })
+    .from(pendingReceipts)
+    .leftJoin(projects, eq(pendingReceipts.projectId, projects.id))
+    .innerJoin(users, eq(pendingReceipts.uploadedBy, users.id));
+
+    // Apply conditions if any exist
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    // Apply ordering
+    query = query.orderBy(desc(pendingReceipts.createdAt));
+
+    // Apply pagination
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+    if (filters.offset) {
+      query = query.offset(filters.offset);
+    }
+
+    const results = await query;
+    
+    // Transform results
+    return results.map(row => ({
+      ...row.pendingReceipt,
+      project: row.project || undefined,
+      uploadedByUser: row.uploadedByUser
+    }));
+  }
+
+  async getPendingReceipt(id: string): Promise<PendingReceipt | undefined> {
+    const [receipt] = await db.select()
+      .from(pendingReceipts)
+      .where(eq(pendingReceipts.id, id));
+    return receipt || undefined;
+  }
+
+  async createPendingReceipt(receipt: InsertPendingReceipt): Promise<PendingReceipt> {
+    const [created] = await db.insert(pendingReceipts).values(receipt).returning();
+    return created;
+  }
+
+  async updatePendingReceipt(id: string, receipt: Partial<InsertPendingReceipt>): Promise<PendingReceipt> {
+    const updateData = {
+      ...receipt,
+      updatedAt: new Date()
+    };
+    const [updated] = await db.update(pendingReceipts)
+      .set(updateData)
+      .where(eq(pendingReceipts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePendingReceipt(id: string): Promise<void> {
+    await db.delete(pendingReceipts).where(eq(pendingReceipts.id, id));
+  }
+
+  async updatePendingReceiptStatus(id: string, status: string, expenseId?: string, assignedBy?: string): Promise<PendingReceipt> {
+    const updateData: Partial<InsertPendingReceipt> = {
+      status,
+      updatedAt: new Date()
+    };
+    
+    if (status === 'assigned' && expenseId) {
+      updateData.expenseId = expenseId;
+      updateData.assignedAt = new Date();
+      if (assignedBy) {
+        updateData.assignedBy = assignedBy;
+      }
+    }
+
+    const [updated] = await db.update(pendingReceipts)
+      .set(updateData)
+      .where(eq(pendingReceipts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async bulkCreatePendingReceipts(receipts: InsertPendingReceipt[]): Promise<PendingReceipt[]> {
+    if (receipts.length === 0) return [];
+    
+    const created = await db.insert(pendingReceipts).values(receipts).returning();
+    return created;
+  }
+
+  async convertPendingReceiptToExpense(receiptId: string, expenseData: InsertExpense, userId: string): Promise<{
+    expense: Expense;
+    receipt: PendingReceipt;
+  }> {
+    // Get the pending receipt first
+    const receipt = await this.getPendingReceipt(receiptId);
+    if (!receipt) {
+      throw new Error('Pending receipt not found');
+    }
+
+    if (receipt.status !== 'pending') {
+      throw new Error('Receipt has already been processed');
+    }
+
+    // Create the expense
+    const [expense] = await db.insert(expenses).values(expenseData).returning();
+
+    // Create expense attachment from the pending receipt
+    const expenseAttachmentData: InsertExpenseAttachment = {
+      expenseId: expense.id,
+      driveId: receipt.driveId,
+      itemId: receipt.itemId,
+      webUrl: receipt.webUrl,
+      fileName: receipt.fileName,
+      contentType: receipt.contentType,
+      size: receipt.size,
+      createdByUserId: receipt.uploadedBy
+    };
+
+    await db.insert(expenseAttachments).values(expenseAttachmentData);
+
+    // Update the pending receipt status
+    const updatedReceipt = await this.updatePendingReceiptStatus(receiptId, 'assigned', expense.id, userId);
+
+    return {
+      expense,
+      receipt: updatedReceipt
+    };
   }
 
   // Change Orders
@@ -5602,6 +6025,70 @@ export class DatabaseStorage implements IStorage {
 
         return containerType;
       }
+    }
+  }
+
+  // Initialize container types if they don't exist
+  async initializeContainerTypesIfNeeded(): Promise<void> {
+    try {
+      console.log('[CONTAINER_INIT] Initializing container types if needed...');
+      
+      // Check if we have any container types
+      const existingTypes = await this.getContainerTypes();
+      
+      if (existingTypes.length === 0) {
+        console.log('[CONTAINER_INIT] No container types found, creating default type...');
+        await this.createDefaultContainerType();
+      } else {
+        console.log(`[CONTAINER_INIT] Found ${existingTypes.length} existing container types, skipping initialization`);
+      }
+      
+      // Sync with SharePoint to ensure consistency
+      await this.syncContainerTypesWithSharePoint();
+      
+    } catch (error) {
+      console.error('[CONTAINER_INIT] Failed to initialize container types:', error);
+      throw new Error(`Failed to initialize container types: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Get container for a specific project
+  async getContainerForProject(projectId: string): Promise<ClientContainer | undefined> {
+    try {
+      // Get the project with client information
+      const [project] = await db.select()
+        .from(projects)
+        .where(eq(projects.id, projectId));
+      
+      if (!project?.clientId) {
+        return undefined;
+      }
+      
+      // Get the client's container
+      const clientContainers = await this.getClientContainers(project.clientId);
+      return clientContainers[0]?.client ? clientContainers[0] : undefined;
+      
+    } catch (error) {
+      console.error('[CONTAINER_PROJECT] Failed to get container for project:', error);
+      return undefined;
+    }
+  }
+
+  // Validate if a user has access to a container
+  async validateContainerAccess(userId: string, containerId: string): Promise<boolean> {
+    try {
+      // Get the container with client information
+      const container = await this.getClientContainer(containerId);
+      if (!container) {
+        return false;
+      }
+      
+      // Check if user has access to the client through their work
+      return await this.checkUserClientAccess(userId, container.client.id);
+      
+    } catch (error) {
+      console.error('[CONTAINER_ACCESS] Failed to validate container access:', error);
+      return false;
     }
   }
 

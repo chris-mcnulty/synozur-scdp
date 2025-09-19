@@ -360,6 +360,42 @@ export const expenseAttachments = pgTable("expense_attachments", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Pending Receipts (for bulk upload before expense assignment)
+export const pendingReceipts = pgTable("pending_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // SharePoint file information
+  driveId: text("drive_id").notNull(), // SharePoint drive ID
+  itemId: text("item_id").notNull(), // SharePoint item ID
+  webUrl: text("web_url").notNull(), // SharePoint web URL
+  fileName: text("file_name").notNull(), // Original filename
+  contentType: text("content_type").notNull(), // MIME type
+  size: integer("size").notNull(), // File size in bytes
+  
+  // Receipt metadata
+  projectId: varchar("project_id").references(() => projects.id), // Optional project assignment
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id), // User who uploaded
+  status: text("status").notNull().default("pending"), // pending, assigned, processed
+  
+  // Receipt details (extracted/assigned)
+  receiptDate: date("receipt_date"), // Date from receipt
+  amount: decimal("amount", { precision: 10, scale: 2 }), // Receipt amount
+  currency: text("currency").default("USD"), // Currency
+  category: text("category"), // Expense category
+  vendor: text("vendor"), // Merchant/vendor name
+  description: text("description"), // Receipt description
+  isReimbursable: boolean("is_reimbursable").default(true), // Whether reimbursable
+  tags: text("tags"), // Additional categorization tags
+  
+  // Conversion tracking
+  expenseId: varchar("expense_id").references(() => expenses.id), // Set when converted to expense
+  assignedAt: timestamp("assigned_at"), // When converted to expense
+  assignedBy: varchar("assigned_by").references(() => users.id), // Who converted it
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
   CREATE UNIQUE INDEX IF NOT EXISTS project_rate_overrides_unique_idx 
@@ -647,6 +683,25 @@ export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one 
   }),
 }));
 
+export const pendingReceiptsRelations = relations(pendingReceipts, ({ one }) => ({
+  project: one(projects, {
+    fields: [pendingReceipts.projectId],
+    references: [projects.id],
+  }),
+  uploadedByUser: one(users, {
+    fields: [pendingReceipts.uploadedBy],
+    references: [users.id],
+  }),
+  assignedByUser: one(users, {
+    fields: [pendingReceipts.assignedBy],
+    references: [users.id],
+  }),
+  expense: one(expenses, {
+    fields: [pendingReceipts.expenseId],
+    references: [expenses.id],
+  }),
+}));
+
 export const estimateAllocationsRelations = relations(estimateAllocations, ({ one }) => ({
   activity: one(estimateActivities, {
     fields: [estimateAllocations.activityId],
@@ -817,6 +872,12 @@ export const insertExpenseAttachmentSchema = createInsertSchema(expenseAttachmen
   createdAt: true,
 });
 
+export const insertPendingReceiptSchema = createInsertSchema(pendingReceipts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertSowSchema = createInsertSchema(sows).omit({
   id: true,
   createdAt: true,
@@ -889,6 +950,9 @@ export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 
 export type ExpenseAttachment = typeof expenseAttachments.$inferSelect;
 export type InsertExpenseAttachment = z.infer<typeof insertExpenseAttachmentSchema>;
+
+export type PendingReceipt = typeof pendingReceipts.$inferSelect;
+export type InsertPendingReceipt = z.infer<typeof insertPendingReceiptSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;

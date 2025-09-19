@@ -232,12 +232,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           try {
             const connectivity = await graphClient.testConnectivity(
               sharePointConfig.siteId,
-              sharePointConfig.driveId
+              sharePointConfig.containerId
             );
             
             healthStatus.sharepoint.accessible = connectivity.authenticated && 
-                                               connectivity.siteAccessible && 
-                                               connectivity.driveAccessible;
+                                               connectivity.containerAccessible;
             
             if (connectivity.error) {
               healthStatus.sharepoint.error = connectivity.error;
@@ -348,20 +347,19 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const connectivity = await graphClient.testConnectivity(
         sharePointConfig.siteId,
-        sharePointConfig.driveId
+        sharePointConfig.containerId
       );
 
       res.json({
-        status: connectivity.authenticated && connectivity.siteAccessible && connectivity.driveAccessible ? "healthy" : "error",
+        status: connectivity.authenticated && connectivity.containerAccessible ? "healthy" : "error",
         authentication: {
           configured: true,
           authenticated: connectivity.authenticated
         },
         sharepoint: {
           siteId: sharePointConfig.siteId,
-          driveId: sharePointConfig.driveId,
-          siteAccessible: connectivity.siteAccessible,
-          driveAccessible: connectivity.driveAccessible
+          containerId: sharePointConfig.containerId,
+          containerAccessible: connectivity.containerAccessible
         },
         error: connectivity.error
       });
@@ -394,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(503).json({ message: "SharePoint not configured" });
       }
 
-      const fileData = await graphClient.downloadFile(sharePointConfig.driveId!, validatedParams.itemId);
+      const fileData = await graphClient.downloadFile(sharePointConfig.containerId!, validatedParams.itemId);
       
       // SECURITY FIX: Enhanced secure headers for download to prevent XSS
       const safeContentType = fileData.mimeType === 'application/pdf' ? 
@@ -437,7 +435,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(503).json({ message: "SharePoint not configured" });
       }
 
-      await graphClient.deleteFile(sharePointConfig.driveId!, validatedParams.itemId);
+      await graphClient.deleteFile(sharePointConfig.containerId!, validatedParams.itemId);
       res.status(204).send();
     } catch (error) {
       console.error("[SHAREPOINT DELETE] Error:", error);
@@ -466,7 +464,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const result = await graphClient.createFolder(
-        sharePointConfig.driveId!,
+        sharePointConfig.containerId!,
         validatedData.parentPath || '/',
         validatedData.folderName
       );
@@ -505,7 +503,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const files = await graphClient.listFiles(
-        sharePointConfig.driveId!,
+        sharePointConfig.containerId!,
         validatedQuery.folderPath || '/'
       );
 
@@ -3355,7 +3353,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                 if (!sharePointConfig.configured) {
                   return res.status(503).json({ message: "SharePoint integration not configured and no tenant container available" });
                 }
-                tenantContainerId = sharePointConfig.driveId!;
+                tenantContainerId = sharePointConfig.containerId!;
               }
             }
           } catch (containerError) {
@@ -3364,7 +3362,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             if (!sharePointConfig.configured) {
               return res.status(503).json({ message: "SharePoint integration not configured" });
             }
-            tenantContainerId = sharePointConfig.driveId!;
+            tenantContainerId = sharePointConfig.containerId!;
           }
 
           // Use canonical folder structure for expense receipts
@@ -3623,6 +3621,564 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error('[ATTACHMENT_DELETE] Route error:', error);
       res.status(500).json({ message: "Failed to delete attachment" });
+    }
+  });
+
+  // ========== PENDING RECEIPTS API ==========
+  
+  // Validation schemas for pending receipts
+  const bulkReceiptUploadSchema = z.object({
+    projectId: z.string().optional(),
+    receipts: z.array(z.object({
+      fileName: z.string().min(1).max(255),
+      contentType: z.string().min(1),
+      size: z.number().positive(),
+      receiptDate: z.coerce.date().optional(),
+      amount: z.number().positive().optional(),
+      currency: z.string().min(3).max(3).optional().default("USD"),
+      category: z.string().optional(),
+      vendor: z.string().max(255).optional(),
+      description: z.string().max(500).optional(),
+      isReimbursable: z.boolean().optional().default(true),
+      tags: z.string().max(500).optional()
+    })).min(1).max(20) // Limit to 20 receipts per bulk upload
+  });
+
+  const pendingReceiptUpdateSchema = z.object({
+    projectId: z.string().optional().nullable(),
+    receiptDate: z.coerce.date().optional(),
+    amount: z.number().positive().optional(),
+    currency: z.string().min(3).max(3).optional(),
+    category: z.string().optional(),
+    vendor: z.string().max(255).optional(),
+    description: z.string().max(500).optional(),
+    isReimbursable: z.boolean().optional(),
+    tags: z.string().max(500).optional()
+  });
+
+  const receiptToExpenseSchema = z.object({
+    personId: z.string().min(1),
+    projectId: z.string().min(1),
+    date: z.coerce.date(),
+    category: z.string().min(1),
+    amount: z.number().positive(),
+    currency: z.string().min(3).max(3).default("USD"),
+    billable: z.boolean().default(true),
+    reimbursable: z.boolean().default(true),
+    description: z.string().optional()
+  });
+
+  // POST /api/pending-receipts/bulk-upload - Bulk upload receipts without expense assignment
+  app.post("/api/pending-receipts/bulk-upload", uploadRateLimit, requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+
+      // Dynamic multer import for bulk file handling
+      const multer = await import("multer");
+      const upload = multer.default({ 
+        storage: multer.default.memoryStorage(),
+        limits: { fileSize: maxFileSize }
+      });
+
+      // Handle bulk file upload with multer
+      upload.array("files", 20)(req, res, async (uploadError) => {
+        if (uploadError) {
+          console.error('[BULK_UPLOAD] Multer error:', uploadError);
+          if (uploadError.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ message: "One or more files exceed the 10MB limit" });
+          }
+          if (uploadError.code === 'LIMIT_FILE_COUNT') {
+            return res.status(400).json({ message: "Maximum 20 files allowed per bulk upload" });
+          }
+          return res.status(400).json({ message: "File upload failed" });
+        }
+
+        if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+          return res.status(400).json({ message: "No files provided" });
+        }
+
+        // Validate request body against schema
+        let validatedBody;
+        try {
+          // Parse multipart fields that come as strings
+          const parsedBody = {
+            projectId: req.body.projectId || undefined,
+            receipts: req.files.map((file: Express.Multer.File, index: number) => ({
+              fileName: file.originalname,
+              contentType: file.mimetype,
+              size: file.size,
+              receiptDate: req.body[`receiptDate_${index}`] ? new Date(req.body[`receiptDate_${index}`]) : undefined,
+              amount: req.body[`amount_${index}`] ? parseFloat(req.body[`amount_${index}`]) : undefined,
+              currency: req.body[`currency_${index}`] || 'USD',
+              category: req.body[`category_${index}`] || undefined,
+              vendor: req.body[`vendor_${index}`] || undefined,
+              description: req.body[`description_${index}`] || undefined,
+              isReimbursable: req.body[`isReimbursable_${index}`] ? req.body[`isReimbursable_${index}`] === 'true' : true,
+              tags: req.body[`tags_${index}`] || undefined
+            }))
+          };
+          
+          validatedBody = bulkReceiptUploadSchema.parse(parsedBody);
+        } catch (validationError: any) {
+          console.error('[BULK_UPLOAD] Validation error:', validationError);
+          return res.status(400).json({
+            message: "Invalid request data",
+            errors: validationError.errors || validationError.message
+          });
+        }
+
+        const sharePointConfig = await getSharePointConfig();
+        if (!sharePointConfig.configured) {
+          return res.status(503).json({ message: "File storage not configured" });
+        }
+
+        const successful: any[] = [];
+        const failed: any[] = [];
+
+        // Process each file
+        for (let i = 0; i < req.files.length; i++) {
+          const file = req.files[i] as Express.Multer.File;
+          const receiptMetadata = validatedBody.receipts[i];
+          
+          try {
+            // Validate file properties
+            const fileValidation = fileUploadValidationSchema.safeParse({
+              mimetype: file.mimetype,
+              size: file.size,
+              originalname: file.originalname
+            });
+
+            if (!fileValidation.success) {
+              failed.push({
+                fileName: file.originalname,
+                error: `Invalid file: ${fileValidation.error.errors.map(e => e.message).join(', ')}`
+              });
+              continue;
+            }
+
+            // Validate file content (magic bytes)
+            const isValidFileContent = await validateFileContent(file.buffer, file.mimetype);
+            if (!isValidFileContent) {
+              failed.push({
+                fileName: file.originalname,
+                error: "File content does not match declared type"
+              });
+              continue;
+            }
+
+            // Sanitize filename
+            let sanitizedFilename: string;
+            try {
+              sanitizedFilename = sanitizeFilename(file.originalname);
+            } catch (sanitizeError) {
+              failed.push({
+                fileName: file.originalname,
+                error: sanitizeError instanceof Error ? sanitizeError.message : "Invalid filename"
+              });
+              continue;
+            }
+
+            // Upload to SharePoint with proper folder structure
+            const year = new Date().getFullYear();
+            const uploadPath = `pending-receipts/${year}/${userId}/${Date.now()}-${sanitizedFilename}`;
+            const driveItem = await graphClient.uploadFile(
+              sharePointConfig.containerId!,
+              uploadPath,
+              file.buffer
+            );
+
+            // Create pending receipt record with validated metadata
+            const receiptData: InsertPendingReceipt = {
+              driveId: sharePointConfig.containerId!,
+              itemId: driveItem.id,
+              webUrl: driveItem.webUrl || '',
+              fileName: sanitizedFilename,
+              contentType: file.mimetype,
+              size: file.size,
+              uploadedBy: userId,
+              status: 'pending',
+              // Add validated metadata
+              projectId: validatedBody.projectId || receiptMetadata.projectId || undefined,
+              receiptDate: receiptMetadata.receiptDate || undefined,
+              amount: receiptMetadata.amount || undefined,
+              currency: receiptMetadata.currency || 'USD',
+              category: receiptMetadata.category || undefined,
+              vendor: receiptMetadata.vendor || undefined,
+              description: receiptMetadata.description || undefined,
+              isReimbursable: receiptMetadata.isReimbursable ?? true,
+              tags: receiptMetadata.tags || undefined
+            };
+
+          const createdReceipt = await storage.createPendingReceipt(receiptData);
+
+            // Assign receipt metadata to SharePoint with validated data
+            try {
+              const metadata = {
+                projectId: receiptData.projectId || '',
+                uploadedBy: userId,
+                expenseCategory: receiptData.category || 'Other',
+                receiptDate: receiptData.receiptDate || new Date(),
+                amount: receiptData.amount || 0,
+                currency: receiptData.currency || 'USD',
+                status: 'pending',
+                vendor: receiptData.vendor || '',
+                description: receiptData.description || `Receipt: ${sanitizedFilename}`,
+                isReimbursable: receiptData.isReimbursable ?? true,
+                tags: receiptData.tags || ''
+              };
+
+            await graphClient.assignReceiptMetadata(
+              sharePointConfig.containerId!,
+              driveItem.id,
+              metadata
+            );
+          } catch (metadataError) {
+            console.warn('[BULK_UPLOAD] Failed to assign metadata:', metadataError);
+            // Continue - metadata assignment is not critical
+          }
+
+            successful.push({
+              id: createdReceipt.id,
+              fileName: createdReceipt.fileName,
+              size: createdReceipt.size,
+              status: createdReceipt.status,
+              projectId: createdReceipt.projectId,
+              amount: createdReceipt.amount,
+              category: createdReceipt.category
+            });
+
+          } catch (error: any) {
+            console.error(`[BULK_UPLOAD] Failed to process file ${file.originalname}:`, error);
+            failed.push({
+              fileName: file.originalname,
+              error: error.message || 'Upload failed'
+            });
+          }
+        }
+
+        res.status(200).json({
+          successful,
+          failed,
+          totalUploaded: successful.length,
+          totalFailed: failed.length
+        });
+
+      }); // End of multer middleware
+    } catch (error: any) {
+      console.error('[BULK_UPLOAD] Route error:', error);
+      res.status(500).json({ message: "Bulk upload failed" });
+    }
+  });
+
+  // GET /api/pending-receipts - List pending receipts with filtering
+  app.get("/api/pending-receipts", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      // Parse query parameters
+      const filters: any = {
+        limit: Math.min(parseInt(req.query.limit as string) || 100, 1000),
+        offset: parseInt(req.query.offset as string) || 0
+      };
+
+      // Apply filters
+      if (req.query.status) {
+        filters.status = req.query.status as string;
+      }
+      if (req.query.projectId) {
+        filters.projectId = req.query.projectId as string;
+      }
+      if (req.query.startDate) {
+        filters.startDate = req.query.startDate as string;
+      }
+      if (req.query.endDate) {
+        filters.endDate = req.query.endDate as string;
+      }
+
+      // Role-based filtering
+      if (!['admin', 'billing-admin'].includes(userRole)) {
+        // Non-admin users can only see their own receipts
+        filters.uploadedBy = userId;
+      } else if (req.query.uploadedBy) {
+        filters.uploadedBy = req.query.uploadedBy as string;
+      }
+
+      const receipts = await storage.getPendingReceipts(filters);
+
+      res.json({
+        receipts,
+        pagination: {
+          limit: filters.limit,
+          offset: filters.offset,
+          total: receipts.length
+        }
+      });
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPTS_LIST] Error:', error);
+      res.status(500).json({ message: "Failed to fetch pending receipts" });
+    }
+  });
+
+  // GET /api/pending-receipts/:id - Get single pending receipt
+  app.get("/api/pending-receipts/:id", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only access their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      res.json(receipt);
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPT_GET] Error:', error);
+      res.status(500).json({ message: "Failed to fetch pending receipt" });
+    }
+  });
+
+  // PUT /api/pending-receipts/:id - Update pending receipt metadata
+  app.put("/api/pending-receipts/:id", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const updateData = pendingReceiptUpdateSchema.parse(req.body);
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only update their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Don't allow updating receipts that have already been assigned
+      if (receipt.status === 'assigned') {
+        return res.status(400).json({ message: "Cannot update receipt that has been assigned to an expense" });
+      }
+
+      const updatedReceipt = await storage.updatePendingReceipt(receiptId, updateData);
+
+      // Update SharePoint metadata if possible
+      try {
+        const sharePointConfig = await getSharePointConfig();
+        if (sharePointConfig.configured) {
+          const metadata = {
+            projectId: updatedReceipt.projectId || '',
+            uploadedBy: updatedReceipt.uploadedBy,
+            expenseCategory: updatedReceipt.category || 'Other',
+            receiptDate: updatedReceipt.receiptDate || new Date(),
+            amount: Number(updatedReceipt.amount) || 0,
+            currency: updatedReceipt.currency || 'USD',
+            status: updatedReceipt.status,
+            vendor: updatedReceipt.vendor || '',
+            description: updatedReceipt.description || '',
+            isReimbursable: updatedReceipt.isReimbursable ?? true,
+            tags: updatedReceipt.tags || ''
+          };
+
+          await graphClient.assignReceiptMetadata(
+            sharePointConfig.containerId!,
+            receipt.itemId,
+            metadata
+          );
+        }
+      } catch (metadataError) {
+        console.warn('[PENDING_RECEIPT_UPDATE] Failed to update metadata:', metadataError);
+        // Continue - metadata update is not critical
+      }
+
+      res.json(updatedReceipt);
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPT_UPDATE] Error:', error);
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({
+          message: "Invalid request data",
+          errors: error.errors
+        });
+      }
+
+      res.status(500).json({ message: "Failed to update pending receipt" });
+    }
+  });
+
+  // PUT /api/pending-receipts/:id/status - Update receipt status
+  app.put("/api/pending-receipts/:id/status", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const { status, expenseId } = receiptStatusUpdateSchema.parse(req.body);
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only update their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const updatedReceipt = await storage.updatePendingReceiptStatus(receiptId, status, expenseId, userId);
+
+      res.json(updatedReceipt);
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPT_STATUS] Error:', error);
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({
+          message: "Invalid request data",
+          errors: error.errors
+        });
+      }
+
+      res.status(500).json({ message: "Failed to update receipt status" });
+    }
+  });
+
+  // POST /api/pending-receipts/:id/convert-to-expense - Convert pending receipt to expense
+  app.post("/api/pending-receipts/:id/convert-to-expense", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const expenseData = receiptToExpenseSchema.parse(req.body);
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only convert their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (receipt.status !== 'pending') {
+        return res.status(400).json({ message: "Receipt has already been processed" });
+      }
+
+      // Convert receipt to expense
+      const result = await storage.convertPendingReceiptToExpense(receiptId, expenseData, userId);
+
+      res.status(201).json({
+        expense: result.expense,
+        receipt: result.receipt,
+        message: "Receipt successfully converted to expense"
+      });
+
+    } catch (error: any) {
+      console.error('[CONVERT_RECEIPT] Error:', error);
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({
+          message: "Invalid expense data",
+          errors: error.errors
+        });
+      }
+
+      res.status(500).json({ message: "Failed to convert receipt to expense" });
+    }
+  });
+
+  // GET /api/pending-receipts/:id/content - Download receipt file
+  app.get("/api/pending-receipts/:id/content", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only download their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Get file from SharePoint using container operations
+      // Note: receipt.driveId contains the tenant-specific container ID for proper isolation
+      const fileData = await graphClient.downloadFile(receipt.driveId, receipt.itemId);
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', receipt.contentType);
+      res.setHeader('Content-Length', receipt.size);
+      res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName.replace(/"/g, '\"')}"`);
+
+      // Send file data
+      res.send(fileData.buffer);
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPT_DOWNLOAD] Error:', error);
+      
+      if (error.status === 404) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.status(503).json({ message: "File download service temporarily unavailable" });
+    }
+  });
+
+  // DELETE /api/pending-receipts/:id - Delete pending receipt
+  app.delete("/api/pending-receipts/:id", requireAuth, async (req, res) => {
+    try {
+      const receiptId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+
+      const receipt = await storage.getPendingReceipt(receiptId);
+      if (!receipt) {
+        return res.status(404).json({ message: "Pending receipt not found" });
+      }
+
+      // Permission check: users can only delete their own receipts unless admin
+      if (!['admin', 'billing-admin'].includes(userRole) && receipt.uploadedBy !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Don't allow deleting receipts that have been assigned to expenses
+      if (receipt.status === 'assigned') {
+        return res.status(400).json({ message: "Cannot delete receipt that has been assigned to an expense" });
+      }
+
+      try {
+        // Delete file from SharePoint using container operations
+        // Note: receipt.driveId contains the tenant-specific container ID for proper isolation
+        await graphClient.deleteFile(receipt.driveId, receipt.itemId);
+      } catch (sharePointError: any) {
+        console.warn('[PENDING_RECEIPT_DELETE] SharePoint delete failed:', sharePointError);
+        // Continue with database deletion even if SharePoint fails
+      }
+
+      // Delete from database
+      await storage.deletePendingReceipt(receiptId);
+
+      res.status(204).send();
+
+    } catch (error: any) {
+      console.error('[PENDING_RECEIPT_DELETE] Error:', error);
+      res.status(500).json({ message: "Failed to delete pending receipt" });
     }
   });
 
