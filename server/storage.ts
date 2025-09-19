@@ -4776,7 +4776,7 @@ export async function generateInvoicePDF(params: {
     // Line items
     groupedLines,
     hasAdjustments,
-    columnCount: hasAdjustments ? 8 : 7,
+    columnCount: hasAdjustments ? 7 : 6,
     
     // Adjustments
     adjustments: adjustments.map(adj => ({
