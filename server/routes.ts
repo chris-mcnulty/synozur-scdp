@@ -45,6 +45,98 @@ const containerPermissionCreationSchema = insertContainerPermissionSchema.extend
   containerId: z.string().min(1),
   roles: z.array(z.string()).min(1)
 });
+
+// Container metadata management validation schemas
+const columnDefinitionSchema = z.object({
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Invalid column name format'),
+  displayName: z.string().min(1).max(255),
+  description: z.string().max(500).optional(),
+  columnType: z.enum(['text', 'choice', 'dateTime', 'number', 'currency', 'boolean', 'personOrGroup', 'hyperlinkOrPicture']),
+  required: z.boolean().optional().default(false),
+  indexed: z.boolean().optional().default(false),
+  hidden: z.boolean().optional().default(false),
+  readOnly: z.boolean().optional().default(false),
+  enforceUniqueValues: z.boolean().optional().default(false),
+  // Type-specific configurations
+  text: z.object({
+    allowMultipleLines: z.boolean().optional(),
+    maxLength: z.number().min(1).max(255).optional()
+  }).optional(),
+  choice: z.object({
+    choices: z.array(z.string().min(1)).min(1),
+    allowFillInChoice: z.boolean().optional(),
+    displayAs: z.enum(['dropDownMenu', 'radioButtons', 'checkboxes']).optional()
+  }).optional(),
+  dateTime: z.object({
+    displayAs: z.enum(['DateTime', 'DateOnly']).optional(),
+    includeTime: z.boolean().optional()
+  }).optional(),
+  number: z.object({
+    decimalPlaces: z.number().min(0).max(5).optional(),
+    minimum: z.number().optional(),
+    maximum: z.number().optional(),
+    showAsPercentage: z.boolean().optional()
+  }).optional(),
+  currency: z.object({
+    lcid: z.number().optional()
+  }).optional(),
+  boolean: z.object({}).optional(),
+  personOrGroup: z.object({
+    allowMultipleSelection: z.boolean().optional(),
+    chooseFromType: z.enum(['peopleOnly', 'peopleAndGroups']).optional()
+  }).optional(),
+  hyperlinkOrPicture: z.object({
+    isPicture: z.boolean().optional()
+  }).optional()
+});
+
+const columnUpdateSchema = z.object({
+  displayName: z.string().min(1).max(255).optional(),
+  description: z.string().max(500).optional(),
+  required: z.boolean().optional(),
+  hidden: z.boolean().optional()
+});
+
+const documentMetadataUpdateSchema = z.record(z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.coerce.date(),
+  z.array(z.string()),
+  z.null()
+]));
+
+const receiptMetadataAssignmentSchema = z.object({
+  projectId: z.string().min(1).max(50),
+  uploadedBy: z.string().min(1).max(255),
+  expenseCategory: z.string().min(1),
+  receiptDate: z.coerce.date(),
+  amount: z.number().positive(),
+  currency: z.string().min(3).max(3).optional().default("USD"),
+  status: z.enum(['pending', 'assigned', 'processed']).optional().default('pending'),
+  expenseId: z.string().max(50).optional(),
+  vendor: z.string().max(255).optional(),
+  description: z.string().max(500).optional(),
+  isReimbursable: z.boolean().optional().default(true),
+  tags: z.string().max(500).optional()
+});
+
+const receiptStatusUpdateSchema = z.object({
+  status: z.enum(['pending', 'assigned', 'processed']),
+  expenseId: z.string().max(50).optional()
+});
+
+const metadataQuerySchema = z.object({
+  status: z.enum(['pending', 'assigned', 'processed']).optional(),
+  projectId: z.string().max(50).optional(),
+  uploadedBy: z.string().max(255).optional(),
+  expenseCategory: z.string().optional(),
+  startDate: z.coerce.date().optional(),
+  endDate: z.coerce.date().optional(),
+  limit: z.coerce.number().min(1).max(1000).optional().default(100),
+  skip: z.coerce.number().min(0).optional().default(0)
+});
+
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient } from "./services/graph-client.js";
@@ -685,6 +777,413 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.error("[CONTAINER SYNC] Error syncing container types:", error);
       res.status(500).json({ 
         message: error instanceof Error ? error.message : "Failed to sync container types"
+      });
+    }
+  });
+
+  // ============ CONTAINER METADATA MANAGEMENT ENDPOINTS ============
+
+  // Container Column Management
+
+  // List all columns in a container
+  app.get("/api/containers/:containerId/columns", requireAuth, async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const columns = await graphClient.listContainerColumns(containerId);
+      res.json(columns);
+    } catch (error: any) {
+      console.error("[CONTAINER_COLUMNS] Error listing columns:", error);
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to list container columns",
+        error: error.message 
+      });
+    }
+  });
+
+  // Create a new column in a container
+  app.post("/api/containers/:containerId/columns", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      const columnDef = columnDefinitionSchema.parse(req.body);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const column = await graphClient.createContainerColumn(containerId, columnDef);
+      res.status(201).json(column);
+    } catch (error: any) {
+      console.error("[CONTAINER_COLUMNS] Error creating column:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid column definition", errors: error.errors });
+      }
+      const statusCode = error.status === 409 ? 409 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to create container column",
+        error: error.message 
+      });
+    }
+  });
+
+  // Get a specific column from a container
+  app.get("/api/containers/:containerId/columns/:columnId", requireAuth, async (req, res) => {
+    try {
+      const { containerId, columnId } = req.params;
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const column = await graphClient.getContainerColumn(containerId, columnId);
+      res.json(column);
+    } catch (error: any) {
+      console.error("[CONTAINER_COLUMNS] Error getting column:", error);
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to get container column",
+        error: error.message 
+      });
+    }
+  });
+
+  // Update a column in a container
+  app.patch("/api/containers/:containerId/columns/:columnId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { containerId, columnId } = req.params;
+      const updates = columnUpdateSchema.parse(req.body);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const column = await graphClient.updateContainerColumn(containerId, columnId, updates);
+      res.json(column);
+    } catch (error: any) {
+      console.error("[CONTAINER_COLUMNS] Error updating column:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid column updates", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to update container column",
+        error: error.message 
+      });
+    }
+  });
+
+  // Delete a column from a container
+  app.delete("/api/containers/:containerId/columns/:columnId", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { containerId, columnId } = req.params;
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      await graphClient.deleteContainerColumn(containerId, columnId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[CONTAINER_COLUMNS] Error deleting column:", error);
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to delete container column",
+        error: error.message 
+      });
+    }
+  });
+
+  // Receipt Metadata Management
+
+  // Initialize receipt metadata schema for a container
+  app.post("/api/containers/:containerId/receipt-schema", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const columns = await graphClient.initializeReceiptMetadataSchema(containerId);
+      res.status(201).json({
+        message: "Receipt metadata schema initialized successfully",
+        columnsCreated: columns.length,
+        columns
+      });
+    } catch (error: any) {
+      console.error("[RECEIPT_SCHEMA] Error initializing receipt schema:", error);
+      res.status(500).json({ 
+        message: "Failed to initialize receipt metadata schema",
+        error: error.message 
+      });
+    }
+  });
+
+  // Assign receipt metadata to an uploaded file
+  app.post("/api/containers/:containerId/items/:itemId/receipt-metadata", requireAuth, async (req, res) => {
+    try {
+      const { containerId, itemId } = req.params;
+      const receiptData = receiptMetadataAssignmentSchema.parse(req.body);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const metadata = await graphClient.assignReceiptMetadata(containerId, itemId, receiptData);
+      
+      // Also sync to local database for caching and reporting
+      try {
+        await storage.syncDocumentMetadata(containerId, itemId, {
+          fileName: `item_${itemId}`, // Will be updated with actual filename during file sync
+          projectId: receiptData.projectId,
+          expenseId: receiptData.expenseId || null,
+          uploadedBy: req.user!.id,
+          expenseCategory: receiptData.expenseCategory,
+          receiptDate: receiptData.receiptDate,
+          amount: receiptData.amount,
+          currency: receiptData.currency || 'USD',
+          status: receiptData.status || 'pending',
+          vendor: receiptData.vendor || null,
+          description: receiptData.description || null,
+          isReimbursable: receiptData.isReimbursable !== false,
+          tags: receiptData.tags ? [receiptData.tags] : null,
+          rawMetadata: metadata
+        });
+      } catch (syncError) {
+        console.warn("[RECEIPT_METADATA] Failed to sync to local database:", syncError);
+        // Continue - the main operation succeeded
+      }
+
+      res.status(201).json({
+        message: "Receipt metadata assigned successfully",
+        metadata
+      });
+    } catch (error: any) {
+      console.error("[RECEIPT_METADATA] Error assigning metadata:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid receipt data", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to assign receipt metadata",
+        error: error.message 
+      });
+    }
+  });
+
+  // Update receipt status (workflow transition)
+  app.patch("/api/containers/:containerId/items/:itemId/receipt-status", requireAuth, async (req, res) => {
+    try {
+      const { containerId, itemId } = req.params;
+      const statusUpdate = receiptStatusUpdateSchema.parse(req.body);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const metadata = await graphClient.updateReceiptStatus(
+        containerId, 
+        itemId, 
+        statusUpdate.status,
+        statusUpdate.expenseId
+      );
+      
+      // Also sync to local database
+      try {
+        await storage.updateDocumentMetadataStatus(containerId, itemId, statusUpdate.status, statusUpdate.expenseId);
+      } catch (syncError) {
+        console.warn("[RECEIPT_STATUS] Failed to sync status to local database:", syncError);
+      }
+
+      res.json({
+        message: "Receipt status updated successfully",
+        metadata
+      });
+    } catch (error: any) {
+      console.error("[RECEIPT_STATUS] Error updating status:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid status update", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to update receipt status",
+        error: error.message 
+      });
+    }
+  });
+
+  // Document Metadata Operations
+
+  // Get metadata for a specific document
+  app.get("/api/containers/:containerId/items/:itemId/metadata", requireAuth, async (req, res) => {
+    try {
+      const { containerId, itemId } = req.params;
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const metadata = await graphClient.getDocumentMetadata(containerId, itemId);
+      res.json(metadata);
+    } catch (error: any) {
+      console.error("[DOCUMENT_METADATA] Error getting metadata:", error);
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to get document metadata",
+        error: error.message 
+      });
+    }
+  });
+
+  // Update metadata for a specific document
+  app.patch("/api/containers/:containerId/items/:itemId/metadata", requireAuth, async (req, res) => {
+    try {
+      const { containerId, itemId } = req.params;
+      const metadataUpdates = documentMetadataUpdateSchema.parse(req.body);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      const metadata = await graphClient.updateDocumentMetadata(containerId, itemId, metadataUpdates);
+      res.json({
+        message: "Document metadata updated successfully",
+        metadata
+      });
+    } catch (error: any) {
+      console.error("[DOCUMENT_METADATA] Error updating metadata:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid metadata updates", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to update document metadata",
+        error: error.message 
+      });
+    }
+  });
+
+  // List documents with metadata from a container
+  app.get("/api/containers/:containerId/documents", requireAuth, async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      const query = metadataQuerySchema.parse(req.query);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      // Build metadata query filters
+      const filters: any[] = [];
+      if (query.status) filters.push({ field: 'Status', operator: 'eq', value: query.status });
+      if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
+      if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
+      if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
+      
+      const options = {
+        filters: filters.length > 0 ? filters : undefined,
+        top: query.limit,
+        skip: query.skip
+      };
+
+      const documents = await graphClient.listDocumentsWithMetadata(containerId, '/', options);
+      res.json({
+        documents,
+        count: documents.length,
+        hasMore: documents.length === query.limit
+      });
+    } catch (error: any) {
+      console.error("[CONTAINER_DOCUMENTS] Error listing documents:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid query parameters", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to list container documents",
+        error: error.message 
+      });
+    }
+  });
+
+  // Get receipts from a container (specialized document listing)
+  app.get("/api/containers/:containerId/receipts", requireAuth, async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      const query = metadataQuerySchema.parse(req.query);
+      
+      // Check container access
+      const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied to container" });
+      }
+
+      let receipts;
+      
+      // Use specialized receipt methods when possible for better performance
+      if (query.status && !query.projectId && !query.uploadedBy) {
+        receipts = await graphClient.getReceiptsByStatus(containerId, query.status, query.limit);
+      } else if (query.projectId && !query.uploadedBy) {
+        receipts = await graphClient.getReceiptsByProject(containerId, query.projectId, query.status);
+      } else if (query.uploadedBy && !query.projectId) {
+        receipts = await graphClient.getReceiptsByUploader(containerId, query.uploadedBy, query.status);
+      } else {
+        // Fallback to general metadata query
+        const filters: any[] = [];
+        if (query.status) filters.push({ field: 'Status', operator: 'eq', value: query.status });
+        if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
+        if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
+        if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
+        
+        const options = {
+          filters: filters.length > 0 ? filters : undefined,
+          top: query.limit,
+          skip: query.skip
+        };
+        
+        receipts = await graphClient.listDocumentsWithMetadata(containerId, '/', options);
+      }
+
+      res.json({
+        receipts,
+        count: receipts.length,
+        hasMore: receipts.length === query.limit
+      });
+    } catch (error: any) {
+      console.error("[CONTAINER_RECEIPTS] Error listing receipts:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid query parameters", errors: error.errors });
+      }
+      const statusCode = error.status === 404 ? 404 : 500;
+      res.status(statusCode).json({ 
+        message: "Failed to list container receipts",
+        error: error.message 
       });
     }
   });
@@ -2896,6 +3395,57 @@ export async function registerRoutes(app: Express): Promise<void> {
 
           const attachment = await storage.addExpenseAttachment(expenseId, attachmentData);
 
+          // ============ AUTOMATIC RECEIPT METADATA ASSIGNMENT ============
+          // Automatically assign receipt metadata to the uploaded file
+          try {
+            // Initialize receipt metadata schema in container if not already present
+            console.log('[RECEIPT_METADATA] Initializing receipt metadata schema for container:', tenantContainerId);
+            await graphClient.initializeReceiptMetadataSchema(tenantContainerId);
+
+            // Prepare receipt metadata from expense and project information
+            const receiptMetadata = {
+              projectId: projectCode,
+              uploadedBy: userId,
+              expenseCategory: expense.category || 'Other', // Use expense category if available
+              receiptDate: expense.transactionDate ? new Date(expense.transactionDate) : new Date(),
+              amount: expense.amount || 0,
+              currency: expense.currency || 'USD',
+              status: 'assigned' as const, // File is assigned to an expense
+              expenseId: expenseId,
+              vendor: expense.vendor || null,
+              description: expense.description || `Receipt for ${sanitizedFilename}`,
+              isReimbursable: expense.isReimbursable !== false,
+              tags: `expense,${projectCode},${expense.category || 'uncategorized'}`.toLowerCase()
+            };
+
+            console.log('[RECEIPT_METADATA] Assigning metadata to uploaded file:', uploadResult.id);
+            await graphClient.assignReceiptMetadata(tenantContainerId, uploadResult.id, receiptMetadata);
+
+            // Sync metadata to local database for caching and reporting
+            await storage.syncDocumentMetadata(tenantContainerId, uploadResult.id, {
+              fileName: sanitizedFilename,
+              projectId: projectCode,
+              expenseId: expenseId,
+              uploadedBy: userId,
+              expenseCategory: expense.category || 'Other',
+              receiptDate: expense.transactionDate ? new Date(expense.transactionDate) : new Date(),
+              amount: expense.amount || 0,
+              currency: expense.currency || 'USD',
+              status: 'assigned',
+              vendor: expense.vendor || null,
+              description: expense.description || `Receipt for ${sanitizedFilename}`,
+              isReimbursable: expense.isReimbursable !== false,
+              tags: [`expense`, projectCode, expense.category || 'uncategorized'].filter(Boolean),
+              rawMetadata: receiptMetadata
+            });
+
+            console.log('[RECEIPT_METADATA] Successfully assigned receipt metadata to file:', uploadResult.id);
+          } catch (metadataError) {
+            // Don't fail the upload if metadata assignment fails - log the error and continue
+            console.warn('[RECEIPT_METADATA] Failed to assign receipt metadata (upload still successful):', metadataError);
+            // The file upload was successful, so we continue with the response
+          }
+
           res.status(201).json({
             id: attachment.id,
             fileName: attachment.fileName,
@@ -2903,7 +3453,9 @@ export async function registerRoutes(app: Express): Promise<void> {
             size: attachment.size,
             webUrl: attachment.webUrl,
             createdAt: attachment.createdAt,
-            createdByUserId: attachment.createdByUserId
+            createdByUserId: attachment.createdByUserId,
+            // Include metadata status in response
+            metadataAssigned: true // Indicates that receipt metadata was processed
           });
 
         } catch (error: any) {

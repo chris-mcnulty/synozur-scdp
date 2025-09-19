@@ -963,6 +963,81 @@ export const containerPermissions = pgTable("container_permissions", {
   grantedBy: varchar("granted_by").references(() => users.id),
 });
 
+// Container Metadata Column Definitions
+export const containerColumns = pgTable("container_columns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  containerId: text("container_id").notNull().references(() => clientContainers.containerId),
+  columnId: text("column_id").notNull(), // SharePoint column ID from Graph API
+  name: text("name").notNull(), // Internal column name (Title, ProjectId, etc.)
+  displayName: text("display_name").notNull(), // User-friendly display name
+  description: text("description"),
+  columnType: text("column_type").notNull(), // text, choice, dateTime, number, currency, boolean, personOrGroup
+  isRequired: boolean("is_required").notNull().default(false),
+  isIndexed: boolean("is_indexed").notNull().default(false),
+  isHidden: boolean("is_hidden").notNull().default(false),
+  isReadOnly: boolean("is_read_only").notNull().default(false),
+  // Column type-specific configuration stored as JSON
+  textConfig: jsonb("text_config"), // { maxLength: 255, allowMultipleLines: false, etc. }
+  choiceConfig: jsonb("choice_config"), // { choices: ["option1", "option2"], allowFillInChoice: false }
+  numberConfig: jsonb("number_config"), // { decimalPlaces: 2, min: 0, max: 999999 }
+  dateTimeConfig: jsonb("date_time_config"), // { displayAs: "DateTime", includeTime: true }
+  currencyConfig: jsonb("currency_config"), // { lcid: 1033 } - locale identifier
+  booleanConfig: jsonb("boolean_config"), // Not used currently but for future extensibility
+  // Validation rules
+  validationRules: jsonb("validation_rules"), // Custom validation rules
+  // Metadata for receipt workflow
+  isReceiptMetadata: boolean("is_receipt_metadata").notNull().default(false), // Flag for receipt-specific columns
+  receiptFieldType: text("receipt_field_type"), // "project_id", "expense_id", "amount", "status", etc.
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  // Unique constraint: one column name per container
+  uniqueContainerColumn: sql`UNIQUE (${table.containerId}, ${table.name})`
+}));
+
+// Receipt Metadata Templates (predefined schemas for different content types)
+export const metadataTemplates = pgTable("metadata_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // "receipt", "invoice", "contract", etc.
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  contentType: text("content_type").notNull(), // MIME type or general category
+  columnDefinitions: jsonb("column_definitions").notNull(), // Array of column configurations
+  isBuiltIn: boolean("is_built_in").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+// Document Metadata Tracking (for caching and query optimization)
+export const documentMetadata = pgTable("document_metadata", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  containerId: text("container_id").notNull().references(() => clientContainers.containerId),
+  itemId: text("item_id").notNull(), // SharePoint item ID
+  fileName: text("file_name").notNull(),
+  projectId: text("project_id").references(() => projects.code), // Links to project
+  expenseId: varchar("expense_id").references(() => expenses.id), // Links to expense when assigned
+  uploadedBy: varchar("uploaded_by").references(() => users.id), // User who uploaded
+  expenseCategory: text("expense_category"), // Expense category
+  receiptDate: timestamp("receipt_date"), // Date from receipt
+  amount: decimal("amount", { precision: 10, scale: 2 }), // Receipt amount
+  currency: text("currency").default("USD"), // Currency code
+  status: text("status").notNull().default("pending"), // pending, assigned, processed
+  vendor: text("vendor"), // Merchant/vendor name
+  description: text("description"), // Receipt description
+  isReimbursable: boolean("is_reimbursable").default(true), // Whether it's reimbursable
+  tags: text("tags").array(), // Additional tags for categorization
+  // Raw metadata from SharePoint (for backup/sync)
+  rawMetadata: jsonb("raw_metadata"), // Complete metadata from SharePoint
+  lastSyncedAt: timestamp("last_synced_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  // Unique constraint: one metadata record per container/item
+  uniqueContainerItem: sql`UNIQUE (${table.containerId}, ${table.itemId})`
+}));
+
 export interface BatchSettings {
   prefix: string;
   useSequential: boolean;
@@ -1021,10 +1096,16 @@ export interface UnbilledItemsResponse {
 export type ContainerType = typeof containerTypes.$inferSelect;
 export type ClientContainer = typeof clientContainers.$inferSelect;
 export type ContainerPermission = typeof containerPermissions.$inferSelect;
+export type ContainerColumn = typeof containerColumns.$inferSelect;
+export type MetadataTemplate = typeof metadataTemplates.$inferSelect;
+export type DocumentMetadata = typeof documentMetadata.$inferSelect;
 
 export type InsertContainerType = typeof containerTypes.$inferInsert;
 export type InsertClientContainer = typeof clientContainers.$inferInsert;
 export type InsertContainerPermission = typeof containerPermissions.$inferInsert;
+export type InsertContainerColumn = typeof containerColumns.$inferInsert;
+export type InsertMetadataTemplate = typeof metadataTemplates.$inferInsert;
+export type InsertDocumentMetadata = typeof documentMetadata.$inferInsert;
 
 // Container Management Zod Schemas
 export const insertContainerTypeSchema = createInsertSchema(containerTypes).omit({
@@ -1043,3 +1124,143 @@ export const insertContainerPermissionSchema = createInsertSchema(containerPermi
   id: true,
   grantedAt: true
 });
+
+export const insertContainerColumnSchema = createInsertSchema(containerColumns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertMetadataTemplateSchema = createInsertSchema(metadataTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertDocumentMetadataSchema = createInsertSchema(documentMetadata).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastSyncedAt: true
+});
+
+// Receipt Metadata Column Definitions (predefined schema)
+export interface ReceiptMetadataSchema {
+  projectId: {
+    name: "ProjectId";
+    displayName: "Project ID";
+    columnType: "text";
+    description: "Project code this receipt belongs to";
+    isRequired: true;
+    textConfig: { maxLength: 50; allowMultipleLines: false };
+    receiptFieldType: "project_id";
+  };
+  expenseId: {
+    name: "ExpenseId";
+    displayName: "Expense ID";
+    columnType: "text";
+    description: "Expense ID when assigned to an expense";
+    isRequired: false;
+    textConfig: { maxLength: 50; allowMultipleLines: false };
+    receiptFieldType: "expense_id";
+  };
+  uploadedBy: {
+    name: "UploadedBy";
+    displayName: "Uploaded By";
+    columnType: "text";
+    description: "User who uploaded this receipt";
+    isRequired: true;
+    textConfig: { maxLength: 255; allowMultipleLines: false };
+    receiptFieldType: "uploaded_by";
+  };
+  expenseCategory: {
+    name: "ExpenseCategory";
+    displayName: "Expense Category";
+    columnType: "choice";
+    description: "Type of expense category";
+    isRequired: true;
+    choiceConfig: { 
+      choices: ["Travel", "Meals", "Accommodation", "Equipment", "Supplies", "Software", "Training", "Other"];
+      allowFillInChoice: false;
+    };
+    receiptFieldType: "expense_category";
+  };
+  receiptDate: {
+    name: "ReceiptDate";
+    displayName: "Receipt Date";
+    columnType: "dateTime";
+    description: "Date from the receipt";
+    isRequired: true;
+    dateTimeConfig: { displayAs: "DateTime"; includeTime: false };
+    receiptFieldType: "receipt_date";
+  };
+  amount: {
+    name: "Amount";
+    displayName: "Amount";
+    columnType: "currency";
+    description: "Receipt amount";
+    isRequired: true;
+    currencyConfig: { lcid: 1033 }; // US locale
+    receiptFieldType: "amount";
+  };
+  currency: {
+    name: "Currency";
+    displayName: "Currency";
+    columnType: "choice";
+    description: "Currency of the receipt";
+    isRequired: true;
+    choiceConfig: {
+      choices: ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"];
+      allowFillInChoice: false;
+    };
+    receiptFieldType: "currency";
+  };
+  status: {
+    name: "Status";
+    displayName: "Status";
+    columnType: "choice";
+    description: "Processing status of the receipt";
+    isRequired: true;
+    choiceConfig: {
+      choices: ["pending", "assigned", "processed"];
+      allowFillInChoice: false;
+    };
+    receiptFieldType: "status";
+  };
+  vendor: {
+    name: "Vendor";
+    displayName: "Vendor";
+    columnType: "text";
+    description: "Merchant or vendor name";
+    isRequired: false;
+    textConfig: { maxLength: 255; allowMultipleLines: false };
+    receiptFieldType: "vendor";
+  };
+  description: {
+    name: "Description";
+    displayName: "Description";
+    columnType: "text";
+    description: "Receipt description or notes";
+    isRequired: false;
+    textConfig: { maxLength: 500; allowMultipleLines: true };
+    receiptFieldType: "description";
+  };
+  isReimbursable: {
+    name: "IsReimbursable";
+    displayName: "Reimbursable";
+    columnType: "boolean";
+    description: "Whether this receipt is reimbursable";
+    isRequired: false;
+    booleanConfig: {};
+    receiptFieldType: "is_reimbursable";
+  };
+  tags: {
+    name: "Tags";
+    displayName: "Tags";
+    columnType: "text";
+    description: "Additional tags for categorization";
+    isRequired: false;
+    textConfig: { maxLength: 500; allowMultipleLines: false };
+    receiptFieldType: "tags";
+  };
+}

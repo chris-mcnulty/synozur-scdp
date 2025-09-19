@@ -40,6 +40,86 @@ export interface ContainerType {
   applicationId?: string;
 }
 
+// Container metadata column interfaces
+export interface ColumnDefinition {
+  id?: string;
+  name: string;
+  displayName: string;
+  description?: string;
+  columnType: 'text' | 'choice' | 'dateTime' | 'number' | 'currency' | 'boolean' | 'personOrGroup' | 'hyperlinkOrPicture';
+  required?: boolean;
+  indexed?: boolean;
+  hidden?: boolean;
+  readOnly?: boolean;
+  enforceUniqueValues?: boolean;
+  // Type-specific configurations
+  text?: {
+    allowMultipleLines?: boolean;
+    appendChangesToExistingText?: boolean;
+    linesForEditing?: number;
+    maxLength?: number;
+  };
+  choice?: {
+    choices: string[];
+    allowFillInChoice?: boolean;
+    displayAs?: 'dropDownMenu' | 'radioButtons' | 'checkboxes';
+  };
+  dateTime?: {
+    displayAs?: 'DateTime' | 'DateOnly';
+    includeTime?: boolean;
+    dateTimeFormat?: string;
+  };
+  number?: {
+    decimalPlaces?: number;
+    minimum?: number;
+    maximum?: number;
+    showAsPercentage?: boolean;
+  };
+  currency?: {
+    lcid?: number; // Locale identifier (e.g., 1033 for US English)
+    currencySymbol?: string;
+  };
+  boolean?: {
+    // Currently no specific options for boolean columns
+  };
+  personOrGroup?: {
+    allowMultipleSelection?: boolean;
+    chooseFromType?: 'peopleOnly' | 'peopleAndGroups';
+  };
+  hyperlinkOrPicture?: {
+    isPicture?: boolean;
+  };
+}
+
+export interface DocumentMetadata {
+  [key: string]: string | number | boolean | Date | string[] | null;
+}
+
+export interface DocumentListItem {
+  id: string;
+  fields: DocumentMetadata;
+}
+
+export interface DriveItemWithMetadata extends DriveItem {
+  listItem?: DocumentListItem;
+}
+
+export interface MetadataQueryFilter {
+  field: string;
+  operator: 'eq' | 'ne' | 'gt' | 'lt' | 'ge' | 'le' | 'startsWith' | 'substringof';
+  value: string | number | boolean | Date;
+}
+
+export interface MetadataQueryOptions {
+  filters?: MetadataQueryFilter[];
+  orderBy?: string;
+  orderDirection?: 'asc' | 'desc';
+  top?: number;
+  skip?: number;
+  expand?: string[];
+  select?: string[];
+}
+
 // TypeScript interfaces for Microsoft Graph API responses
 export interface DriveItem {
   id: string;
@@ -984,6 +1064,574 @@ export class GraphClient {
         error: `Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
     }
+  }
+
+  // ============ CONTAINER METADATA MANAGEMENT OPERATIONS ============
+
+  /**
+   * List all columns in a SharePoint Embedded container
+   */
+  async listContainerColumns(containerId: string): Promise<ColumnDefinition[]> {
+    return this.withRetry(async () => {
+      const response = await this.makeGraphRequest<GraphResponse<ColumnDefinition>>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/columns`
+      );
+      return response.value || [];
+    }, `listContainerColumns(${containerId})`);
+  }
+
+  /**
+   * Get a specific column definition from a container
+   */
+  async getContainerColumn(containerId: string, columnId: string): Promise<ColumnDefinition> {
+    return this.withRetry(async () => {
+      return await this.makeGraphRequest<ColumnDefinition>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/columns/${columnId}`
+      );
+    }, `getContainerColumn(${containerId}, ${columnId})`);
+  }
+
+  /**
+   * Create a new column in a SharePoint Embedded container
+   */
+  async createContainerColumn(containerId: string, columnDefinition: ColumnDefinition): Promise<ColumnDefinition> {
+    return this.withRetry(async () => {
+      // Build the column request based on column type
+      const columnRequest: any = {
+        displayName: columnDefinition.displayName,
+        name: columnDefinition.name,
+        description: columnDefinition.description,
+        required: columnDefinition.required || false,
+        indexed: columnDefinition.indexed || false,
+        hidden: columnDefinition.hidden || false,
+        readOnly: columnDefinition.readOnly || false,
+        enforceUniqueValues: columnDefinition.enforceUniqueValues || false
+      };
+
+      // Add type-specific configuration
+      switch (columnDefinition.columnType) {
+        case 'text':
+          columnRequest.text = {
+            allowMultipleLines: columnDefinition.text?.allowMultipleLines || false,
+            appendChangesToExistingText: columnDefinition.text?.appendChangesToExistingText || false,
+            linesForEditing: columnDefinition.text?.linesForEditing || 0,
+            maxLength: Math.min(columnDefinition.text?.maxLength || 255, 255) // SharePoint max is 255
+          };
+          break;
+
+        case 'choice':
+          columnRequest.choice = {
+            choices: columnDefinition.choice?.choices || [],
+            allowFillInChoice: columnDefinition.choice?.allowFillInChoice || false,
+            displayAs: columnDefinition.choice?.displayAs || 'dropDownMenu'
+          };
+          break;
+
+        case 'dateTime':
+          columnRequest.dateTime = {
+            displayAs: columnDefinition.dateTime?.displayAs || 'DateTime',
+            includeTime: columnDefinition.dateTime?.includeTime !== false
+          };
+          break;
+
+        case 'number':
+          columnRequest.number = {
+            decimalPlaces: columnDefinition.number?.decimalPlaces || 0,
+            minimum: columnDefinition.number?.minimum,
+            maximum: columnDefinition.number?.maximum,
+            showAsPercentage: columnDefinition.number?.showAsPercentage || false
+          };
+          break;
+
+        case 'currency':
+          columnRequest.currency = {
+            lcid: columnDefinition.currency?.lcid || 1033 // Default to US English
+          };
+          break;
+
+        case 'boolean':
+          columnRequest.boolean = columnDefinition.boolean || {};
+          break;
+
+        case 'personOrGroup':
+          columnRequest.personOrGroup = {
+            allowMultipleSelection: columnDefinition.personOrGroup?.allowMultipleSelection || false,
+            chooseFromType: columnDefinition.personOrGroup?.chooseFromType || 'peopleOnly'
+          };
+          break;
+
+        case 'hyperlinkOrPicture':
+          columnRequest.hyperlinkOrPicture = {
+            isPicture: columnDefinition.hyperlinkOrPicture?.isPicture || false
+          };
+          break;
+
+        default:
+          throw new Error(`Unsupported column type: ${columnDefinition.columnType}`);
+      }
+
+      return await this.makeGraphRequest<ColumnDefinition>(
+        'POST',
+        `/storage/fileStorage/containers/${containerId}/columns`,
+        columnRequest
+      );
+    }, `createContainerColumn(${containerId}, ${columnDefinition.name})`);
+  }
+
+  /**
+   * Update an existing column in a SharePoint Embedded container
+   */
+  async updateContainerColumn(
+    containerId: string,
+    columnId: string,
+    updates: Partial<ColumnDefinition>
+  ): Promise<ColumnDefinition> {
+    return this.withRetry(async () => {
+      // Only include updateable fields
+      const updateRequest: any = {};
+      
+      if (updates.displayName) updateRequest.displayName = updates.displayName;
+      if (updates.description !== undefined) updateRequest.description = updates.description;
+      if (updates.required !== undefined) updateRequest.required = updates.required;
+      if (updates.hidden !== undefined) updateRequest.hidden = updates.hidden;
+
+      return await this.makeGraphRequest<ColumnDefinition>(
+        'PATCH',
+        `/storage/fileStorage/containers/${containerId}/columns/${columnId}`,
+        updateRequest
+      );
+    }, `updateContainerColumn(${containerId}, ${columnId})`);
+  }
+
+  /**
+   * Delete a column from a SharePoint Embedded container
+   */
+  async deleteContainerColumn(containerId: string, columnId: string): Promise<void> {
+    return this.withRetry(async () => {
+      await this.makeGraphRequest<void>(
+        'DELETE',
+        `/storage/fileStorage/containers/${containerId}/columns/${columnId}`
+      );
+    }, `deleteContainerColumn(${containerId}, ${columnId})`);
+  }
+
+  // ============ DOCUMENT METADATA OPERATIONS ============
+
+  /**
+   * Get metadata for a document in a SharePoint Embedded container
+   */
+  async getDocumentMetadata(containerId: string, itemId: string): Promise<DocumentMetadata> {
+    return this.withRetry(async () => {
+      const response = await this.makeGraphRequest<DocumentListItem>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listitem/fields`
+      );
+      return response.fields || {};
+    }, `getDocumentMetadata(${containerId}, ${itemId})`);
+  }
+
+  /**
+   * Update metadata for a document in a SharePoint Embedded container
+   */
+  async updateDocumentMetadata(
+    containerId: string,
+    itemId: string,
+    metadata: DocumentMetadata
+  ): Promise<DocumentMetadata> {
+    return this.withRetry(async () => {
+      // Clean the metadata - remove null/undefined values and format properly
+      const cleanMetadata: any = {};
+      for (const [key, value] of Object.entries(metadata)) {
+        if (value !== null && value !== undefined) {
+          if (value instanceof Date) {
+            cleanMetadata[key] = value.toISOString();
+          } else if (Array.isArray(value)) {
+            cleanMetadata[key] = value;
+          } else {
+            cleanMetadata[key] = value;
+          }
+        } else {
+          // Explicitly set null to clear the field
+          cleanMetadata[key] = null;
+        }
+      }
+
+      const response = await this.makeGraphRequest<DocumentListItem>(
+        'PATCH',
+        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listitem/fields`,
+        cleanMetadata
+      );
+      return response.fields || {};
+    }, `updateDocumentMetadata(${containerId}, ${itemId})`);
+  }
+
+  /**
+   * List documents with their metadata from a SharePoint Embedded container
+   */
+  async listDocumentsWithMetadata(
+    containerId: string,
+    folderPath: string = '/',
+    options?: MetadataQueryOptions
+  ): Promise<DriveItemWithMetadata[]> {
+    return this.withRetry(async () => {
+      const pathForApi = folderPath === '/' ? '' : `:${folderPath}:`;
+      
+      // Build query parameters
+      const queryParams: string[] = [];
+      
+      // Add expand to include listItem fields
+      queryParams.push('$expand=listItem($expand=fields)');
+      
+      if (options?.select && options.select.length > 0) {
+        queryParams.push(`$select=${options.select.join(',')}`);
+      }
+      
+      if (options?.filters && options.filters.length > 0) {
+        const filterExpression = options.filters
+          .map(filter => `listItem/fields/${filter.field} ${filter.operator} '${filter.value}'`)
+          .join(' and ');
+        queryParams.push(`$filter=${filterExpression}`);
+      }
+      
+      if (options?.orderBy) {
+        const order = options.orderDirection === 'desc' ? 'desc' : 'asc';
+        queryParams.push(`$orderby=listItem/fields/${options.orderBy} ${order}`);
+      }
+      
+      if (options?.top) {
+        queryParams.push(`$top=${options.top}`);
+      }
+      
+      if (options?.skip) {
+        queryParams.push(`$skip=${options.skip}`);
+      }
+      
+      const queryString = queryParams.length > 0 ? `?${queryParams.join('&')}` : '';
+      
+      const response = await this.makeGraphRequest<GraphResponse<DriveItemWithMetadata>>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children${queryString}`
+      );
+      
+      return response.value || [];
+    }, `listDocumentsWithMetadata(${containerId}, ${folderPath})`);
+  }
+
+  /**
+   * Search documents by metadata in a SharePoint Embedded container
+   */
+  async searchDocumentsByMetadata(
+    containerId: string,
+    query: string,
+    metadataFilters?: MetadataQueryFilter[]
+  ): Promise<DriveItemWithMetadata[]> {
+    return this.withRetry(async () => {
+      // Build search query parameters
+      const queryParams: string[] = [`q=${encodeURIComponent(query)}`];
+      queryParams.push('$expand=listItem($expand=fields)');
+      
+      if (metadataFilters && metadataFilters.length > 0) {
+        const filterExpression = metadataFilters
+          .map(filter => `listItem/fields/${filter.field} ${filter.operator} '${filter.value}'`)
+          .join(' and ');
+        queryParams.push(`$filter=${filterExpression}`);
+      }
+      
+      const queryString = queryParams.join('&');
+      
+      const response = await this.makeGraphRequest<GraphResponse<DriveItemWithMetadata>>(
+        'GET',
+        `/storage/fileStorage/containers/${containerId}/drive/root/search(q='${encodeURIComponent(query)}')?${queryString}`
+      );
+      
+      return response.value || [];
+    }, `searchDocumentsByMetadata(${containerId}, ${query})`);
+  }
+
+  // ============ RECEIPT METADATA SPECIFIC OPERATIONS ============
+
+  /**
+   * Initialize the receipt metadata schema for a container
+   * Creates all the required columns for receipt processing
+   */
+  async initializeReceiptMetadataSchema(containerId: string): Promise<ColumnDefinition[]> {
+    const receiptColumns: ColumnDefinition[] = [
+      {
+        name: 'ProjectId',
+        displayName: 'Project ID',
+        columnType: 'text',
+        description: 'Project code this receipt belongs to',
+        required: true,
+        text: { maxLength: 50, allowMultipleLines: false }
+      },
+      {
+        name: 'ExpenseId',
+        displayName: 'Expense ID',
+        columnType: 'text',
+        description: 'Expense ID when assigned to an expense',
+        required: false,
+        text: { maxLength: 50, allowMultipleLines: false }
+      },
+      {
+        name: 'UploadedBy',
+        displayName: 'Uploaded By',
+        columnType: 'text',
+        description: 'User who uploaded this receipt',
+        required: true,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'ExpenseCategory',
+        displayName: 'Expense Category',
+        columnType: 'choice',
+        description: 'Type of expense category',
+        required: true,
+        choice: {
+          choices: ['Travel', 'Meals', 'Accommodation', 'Equipment', 'Supplies', 'Software', 'Training', 'Other'],
+          allowFillInChoice: false
+        }
+      },
+      {
+        name: 'ReceiptDate',
+        displayName: 'Receipt Date',
+        columnType: 'dateTime',
+        description: 'Date from the receipt',
+        required: true,
+        dateTime: { displayAs: 'DateTime', includeTime: false }
+      },
+      {
+        name: 'Amount',
+        displayName: 'Amount',
+        columnType: 'currency',
+        description: 'Receipt amount',
+        required: true,
+        currency: { lcid: 1033 }
+      },
+      {
+        name: 'Currency',
+        displayName: 'Currency',
+        columnType: 'choice',
+        description: 'Currency of the receipt',
+        required: true,
+        choice: {
+          choices: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'],
+          allowFillInChoice: false
+        }
+      },
+      {
+        name: 'Status',
+        displayName: 'Status',
+        columnType: 'choice',
+        description: 'Processing status of the receipt',
+        required: true,
+        choice: {
+          choices: ['pending', 'assigned', 'processed'],
+          allowFillInChoice: false
+        }
+      },
+      {
+        name: 'Vendor',
+        displayName: 'Vendor',
+        columnType: 'text',
+        description: 'Merchant or vendor name',
+        required: false,
+        text: { maxLength: 255, allowMultipleLines: false }
+      },
+      {
+        name: 'Description',
+        displayName: 'Description',
+        columnType: 'text',
+        description: 'Receipt description or notes',
+        required: false,
+        text: { maxLength: 500, allowMultipleLines: true }
+      },
+      {
+        name: 'IsReimbursable',
+        displayName: 'Reimbursable',
+        columnType: 'boolean',
+        description: 'Whether this receipt is reimbursable',
+        required: false,
+        boolean: {}
+      },
+      {
+        name: 'Tags',
+        displayName: 'Tags',
+        columnType: 'text',
+        description: 'Additional tags for categorization',
+        required: false,
+        text: { maxLength: 500, allowMultipleLines: false }
+      }
+    ];
+
+    const createdColumns: ColumnDefinition[] = [];
+    
+    // Create each column, handling existing columns gracefully
+    for (const columnDef of receiptColumns) {
+      try {
+        const createdColumn = await this.createContainerColumn(containerId, columnDef);
+        createdColumns.push(createdColumn);
+        console.log(`[GraphClient] Created receipt metadata column: ${columnDef.name}`);
+      } catch (error: any) {
+        if (error.message?.includes('already exists') || error.status === 409) {
+          console.log(`[GraphClient] Receipt metadata column ${columnDef.name} already exists, skipping`);
+          // Try to get the existing column
+          try {
+            const existingColumns = await this.listContainerColumns(containerId);
+            const existing = existingColumns.find(col => col.name === columnDef.name);
+            if (existing) {
+              createdColumns.push(existing);
+            }
+          } catch (getError) {
+            console.warn(`[GraphClient] Could not retrieve existing column ${columnDef.name}:`, getError);
+          }
+        } else {
+          console.error(`[GraphClient] Failed to create receipt metadata column ${columnDef.name}:`, error);
+          throw error;
+        }
+      }
+    }
+
+    return createdColumns;
+  }
+
+  /**
+   * Assign receipt metadata to an uploaded file
+   */
+  async assignReceiptMetadata(
+    containerId: string,
+    itemId: string,
+    receiptData: {
+      projectId: string;
+      uploadedBy: string;
+      expenseCategory: string;
+      receiptDate: Date;
+      amount: number;
+      currency?: string;
+      status?: string;
+      expenseId?: string;
+      vendor?: string;
+      description?: string;
+      isReimbursable?: boolean;
+      tags?: string;
+    }
+  ): Promise<DocumentMetadata> {
+    const metadata: DocumentMetadata = {
+      ProjectId: receiptData.projectId,
+      UploadedBy: receiptData.uploadedBy,
+      ExpenseCategory: receiptData.expenseCategory,
+      ReceiptDate: receiptData.receiptDate,
+      Amount: receiptData.amount,
+      Currency: receiptData.currency || 'USD',
+      Status: receiptData.status || 'pending',
+    };
+
+    // Add optional fields if provided
+    if (receiptData.expenseId) {
+      metadata.ExpenseId = receiptData.expenseId;
+    }
+    if (receiptData.vendor) {
+      metadata.Vendor = receiptData.vendor;
+    }
+    if (receiptData.description) {
+      metadata.Description = receiptData.description;
+    }
+    if (receiptData.isReimbursable !== undefined) {
+      metadata.IsReimbursable = receiptData.isReimbursable;
+    }
+    if (receiptData.tags) {
+      metadata.Tags = receiptData.tags;
+    }
+
+    return await this.updateDocumentMetadata(containerId, itemId, metadata);
+  }
+
+  /**
+   * Update receipt status (pending -> assigned -> processed)
+   */
+  async updateReceiptStatus(
+    containerId: string,
+    itemId: string,
+    status: 'pending' | 'assigned' | 'processed',
+    expenseId?: string
+  ): Promise<DocumentMetadata> {
+    const metadata: DocumentMetadata = { Status: status };
+    
+    // If assigning to an expense, include the expense ID
+    if (status === 'assigned' && expenseId) {
+      metadata.ExpenseId = expenseId;
+    }
+    
+    return await this.updateDocumentMetadata(containerId, itemId, metadata);
+  }
+
+  /**
+   * Get receipts by status from a container
+   */
+  async getReceiptsByStatus(
+    containerId: string,
+    status: 'pending' | 'assigned' | 'processed',
+    limit?: number
+  ): Promise<DriveItemWithMetadata[]> {
+    const options: MetadataQueryOptions = {
+      filters: [{ field: 'Status', operator: 'eq', value: status }],
+      expand: ['listItem($expand=fields)']
+    };
+    
+    if (limit) {
+      options.top = limit;
+    }
+    
+    return await this.listDocumentsWithMetadata(containerId, '/', options);
+  }
+
+  /**
+   * Get receipts for a specific project
+   */
+  async getReceiptsByProject(
+    containerId: string,
+    projectId: string,
+    status?: 'pending' | 'assigned' | 'processed'
+  ): Promise<DriveItemWithMetadata[]> {
+    const filters: MetadataQueryFilter[] = [
+      { field: 'ProjectId', operator: 'eq', value: projectId }
+    ];
+    
+    if (status) {
+      filters.push({ field: 'Status', operator: 'eq', value: status });
+    }
+    
+    const options: MetadataQueryOptions = {
+      filters,
+      expand: ['listItem($expand=fields)']
+    };
+    
+    return await this.listDocumentsWithMetadata(containerId, '/', options);
+  }
+
+  /**
+   * Get receipts uploaded by a specific user
+   */
+  async getReceiptsByUploader(
+    containerId: string,
+    uploadedBy: string,
+    status?: 'pending' | 'assigned' | 'processed'
+  ): Promise<DriveItemWithMetadata[]> {
+    const filters: MetadataQueryFilter[] = [
+      { field: 'UploadedBy', operator: 'eq', value: uploadedBy }
+    ];
+    
+    if (status) {
+      filters.push({ field: 'Status', operator: 'eq', value: status });
+    }
+    
+    const options: MetadataQueryOptions = {
+      filters,
+      expand: ['listItem($expand=fields)']
+    };
+    
+    return await this.listDocumentsWithMetadata(containerId, '/', options);
   }
 }
 

@@ -4,7 +4,7 @@ import {
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
-  containerTypes, clientContainers, containerPermissions,
+  containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
@@ -25,7 +25,10 @@ import {
   type SystemSetting, type InsertSystemSetting,
   type ContainerType, type InsertContainerType,
   type ClientContainer, type InsertClientContainer,
-  type ContainerPermission, type InsertContainerPermission
+  type ContainerPermission, type InsertContainerPermission,
+  type ContainerColumn, type InsertContainerColumn,
+  type MetadataTemplate, type InsertMetadataTemplate,
+  type DocumentMetadata, type InsertDocumentMetadata
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -546,10 +549,45 @@ export interface IStorage {
   updateContainerPermission(id: string, updates: Partial<InsertContainerPermission>): Promise<ContainerPermission>;
   deleteContainerPermission(id: string): Promise<void>;
   
+  // Container Column Management
+  getContainerColumns(containerId: string): Promise<ContainerColumn[]>;
+  createContainerColumn(containerId: string, column: InsertContainerColumn): Promise<ContainerColumn>;
+  updateContainerColumn(columnId: string, updates: Partial<InsertContainerColumn>): Promise<ContainerColumn>;
+  deleteContainerColumn(columnId: string): Promise<void>;
+  initializeReceiptMetadataColumns(containerId: string): Promise<ContainerColumn[]>;
+  
   // Container Operations (integrate with GraphClient)
   createTenantContainer(clientId: string, containerTypeId: string, displayName?: string): Promise<ClientContainer>;
   ensureClientHasContainer(clientId: string, containerTypeId?: string): Promise<ClientContainer>;
   getClientContainerIdForUser(userId: string): Promise<string | null>;
+  
+  // Container Metadata Management
+  checkContainerAccess(userId: string, containerId: string, userRole: string): Promise<boolean>;
+  syncDocumentMetadata(containerId: string, itemId: string, metadata: {
+    fileName: string;
+    projectId: string | null;
+    expenseId?: string | null;
+    uploadedBy: string;
+    expenseCategory?: string;
+    receiptDate?: Date;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    vendor?: string | null;
+    description?: string | null;
+    isReimbursable?: boolean;
+    tags?: string[] | null;
+    rawMetadata?: any;
+  }): Promise<void>;
+  updateDocumentMetadataStatus(containerId: string, itemId: string, status: string, expenseId?: string): Promise<void>;
+  getDocumentMetadata(containerId: string, itemId: string): Promise<any>;
+  searchDocumentMetadata(containerId: string, filters: {
+    status?: string;
+    projectId?: string;
+    uploadedBy?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any[]>;
   
   // PDF Generation
   generateInvoicePDF(params: {
@@ -4809,6 +4847,257 @@ export class DatabaseStorage implements IStorage {
       .where(eq(containerPermissions.id, id));
   }
 
+  // Container Column Management
+  async getContainerColumns(containerId: string): Promise<ContainerColumn[]> {
+    return await db.select()
+      .from(containerColumns)
+      .where(eq(containerColumns.containerId, containerId))
+      .orderBy(containerColumns.name);
+  }
+
+  async createContainerColumn(containerId: string, column: InsertContainerColumn): Promise<ContainerColumn> {
+    const [created] = await db.insert(containerColumns)
+      .values({
+        ...column,
+        containerId
+      })
+      .returning();
+    return created;
+  }
+
+  async updateContainerColumn(columnId: string, updates: Partial<InsertContainerColumn>): Promise<ContainerColumn> {
+    const [updated] = await db.update(containerColumns)
+      .set({
+        ...updates,
+        updatedAt: sql`now()`
+      })
+      .where(eq(containerColumns.id, columnId))
+      .returning();
+    return updated;
+  }
+
+  async deleteContainerColumn(columnId: string): Promise<void> {
+    await db.delete(containerColumns)
+      .where(eq(containerColumns.id, columnId));
+  }
+
+  async initializeReceiptMetadataColumns(containerId: string): Promise<ContainerColumn[]> {
+    try {
+      // Check if columns already exist
+      const existingColumns = await this.getContainerColumns(containerId);
+      if (existingColumns.length > 0) {
+        console.log(`[METADATA_INIT] Container ${containerId} already has ${existingColumns.length} columns, skipping initialization`);
+        return existingColumns;
+      }
+
+      // Initialize via GraphClient if available
+      try {
+        const graphColumns = await graphClient.initializeReceiptMetadataSchema(containerId);
+        console.log(`[METADATA_INIT] GraphClient initialized ${graphColumns.length} columns`);
+        
+        // Sync the columns to local database
+        const localColumns: ContainerColumn[] = [];
+        for (const graphCol of graphColumns) {
+          const localColumn = await this.createContainerColumn(containerId, {
+            columnId: graphCol.id || '',
+            name: graphCol.name,
+            displayName: graphCol.displayName,
+            description: graphCol.description,
+            columnType: graphCol.columnType,
+            isRequired: graphCol.required || false,
+            isIndexed: graphCol.indexed || false,
+            isHidden: graphCol.hidden || false,
+            isReadOnly: graphCol.readOnly || false,
+            textConfig: graphCol.text ? JSON.stringify(graphCol.text) : null,
+            choiceConfig: graphCol.choice ? JSON.stringify(graphCol.choice) : null,
+            numberConfig: graphCol.number ? JSON.stringify(graphCol.number) : null,
+            dateTimeConfig: graphCol.dateTime ? JSON.stringify(graphCol.dateTime) : null,
+            currencyConfig: graphCol.currency ? JSON.stringify(graphCol.currency) : null,
+            booleanConfig: graphCol.boolean ? JSON.stringify(graphCol.boolean) : null,
+            isReceiptMetadata: true,
+            receiptFieldType: this.mapColumnToReceiptFieldType(graphCol.name)
+          });
+          localColumns.push(localColumn);
+        }
+        
+        return localColumns;
+      } catch (graphError) {
+        console.warn(`[METADATA_INIT] GraphClient initialization failed, creating local-only columns:`, graphError);
+        
+        // Fallback: create local columns without SharePoint integration
+        return await this.createLocalReceiptColumns(containerId);
+      }
+    } catch (error) {
+      console.error(`[METADATA_INIT] Failed to initialize receipt metadata columns:`, error);
+      throw error;
+    }
+  }
+
+  private mapColumnToReceiptFieldType(columnName: string): string | null {
+    const mapping: Record<string, string> = {
+      'ProjectId': 'project_id',
+      'ExpenseId': 'expense_id', 
+      'UploadedBy': 'uploaded_by',
+      'ExpenseCategory': 'expense_category',
+      'ReceiptDate': 'receipt_date',
+      'Amount': 'amount',
+      'Currency': 'currency',
+      'Status': 'status',
+      'Vendor': 'vendor',
+      'Description': 'description',
+      'IsReimbursable': 'is_reimbursable',
+      'Tags': 'tags'
+    };
+    return mapping[columnName] || null;
+  }
+
+  private async createLocalReceiptColumns(containerId: string): Promise<ContainerColumn[]> {
+    const columnDefs = [
+      {
+        name: 'ProjectId',
+        displayName: 'Project ID',
+        columnType: 'text' as const,
+        description: 'Project identifier',
+        isRequired: true,
+        receiptFieldType: 'project_id'
+      },
+      {
+        name: 'ExpenseId', 
+        displayName: 'Expense ID',
+        columnType: 'text' as const,
+        description: 'Expense record identifier',
+        isRequired: false,
+        receiptFieldType: 'expense_id'
+      },
+      {
+        name: 'UploadedBy',
+        displayName: 'Uploaded By',
+        columnType: 'text' as const,
+        description: 'User who uploaded the document',
+        isRequired: true,
+        receiptFieldType: 'uploaded_by'
+      },
+      {
+        name: 'ExpenseCategory',
+        displayName: 'Expense Category', 
+        columnType: 'choice' as const,
+        description: 'Type of expense category',
+        isRequired: true,
+        choiceConfig: JSON.stringify({
+          choices: ["Travel", "Meals", "Accommodation", "Equipment", "Supplies", "Software", "Training", "Other"],
+          allowFillInChoice: false
+        }),
+        receiptFieldType: 'expense_category'
+      },
+      {
+        name: 'ReceiptDate',
+        displayName: 'Receipt Date',
+        columnType: 'dateTime' as const,
+        description: 'Date from the receipt',
+        isRequired: true,
+        dateTimeConfig: JSON.stringify({ displayAs: "DateTime", includeTime: false }),
+        receiptFieldType: 'receipt_date'
+      },
+      {
+        name: 'Amount',
+        displayName: 'Amount',
+        columnType: 'currency' as const,
+        description: 'Receipt amount', 
+        isRequired: true,
+        currencyConfig: JSON.stringify({ lcid: 1033 }),
+        receiptFieldType: 'amount'
+      },
+      {
+        name: 'Currency',
+        displayName: 'Currency',
+        columnType: 'choice' as const,
+        description: 'Currency of the receipt',
+        isRequired: true,
+        choiceConfig: JSON.stringify({
+          choices: ["USD", "EUR", "GBP", "CAD", "AUD", "JPY"],
+          allowFillInChoice: false
+        }),
+        receiptFieldType: 'currency'
+      },
+      {
+        name: 'Status',
+        displayName: 'Status',
+        columnType: 'choice' as const,
+        description: 'Processing status of the receipt',
+        isRequired: true,
+        choiceConfig: JSON.stringify({
+          choices: ["pending", "assigned", "processed"],
+          allowFillInChoice: false
+        }),
+        receiptFieldType: 'status'
+      },
+      {
+        name: 'Vendor',
+        displayName: 'Vendor',
+        columnType: 'text' as const,
+        description: 'Merchant or vendor name',
+        isRequired: false,
+        textConfig: JSON.stringify({ maxLength: 255, allowMultipleLines: false }),
+        receiptFieldType: 'vendor'
+      },
+      {
+        name: 'Description',
+        displayName: 'Description',
+        columnType: 'text' as const,
+        description: 'Receipt description or notes',
+        isRequired: false,
+        textConfig: JSON.stringify({ maxLength: 500, allowMultipleLines: true }),
+        receiptFieldType: 'description'
+      },
+      {
+        name: 'IsReimbursable',
+        displayName: 'Reimbursable',
+        columnType: 'boolean' as const,
+        description: 'Whether this receipt is reimbursable',
+        isRequired: false,
+        booleanConfig: JSON.stringify({}),
+        receiptFieldType: 'is_reimbursable'
+      },
+      {
+        name: 'Tags',
+        displayName: 'Tags',
+        columnType: 'text' as const,
+        description: 'Additional tags for categorization',
+        isRequired: false,
+        textConfig: JSON.stringify({ maxLength: 500, allowMultipleLines: false }),
+        receiptFieldType: 'tags'
+      }
+    ];
+
+    const createdColumns: ContainerColumn[] = [];
+    for (const colDef of columnDefs) {
+      const column = await this.createContainerColumn(containerId, {
+        columnId: '', // Local-only, no SharePoint column ID
+        name: colDef.name,
+        displayName: colDef.displayName,
+        description: colDef.description,
+        columnType: colDef.columnType,
+        isRequired: colDef.isRequired,
+        isIndexed: false,
+        isHidden: false,
+        isReadOnly: false,
+        textConfig: colDef.textConfig || null,
+        choiceConfig: colDef.choiceConfig || null,
+        numberConfig: null,
+        dateTimeConfig: colDef.dateTimeConfig || null,
+        currencyConfig: colDef.currencyConfig || null,
+        booleanConfig: colDef.booleanConfig || null,
+        validationRules: null,
+        isReceiptMetadata: true,
+        receiptFieldType: colDef.receiptFieldType
+      });
+      createdColumns.push(column);
+    }
+
+    console.log(`[METADATA_INIT] Created ${createdColumns.length} local receipt metadata columns`);
+    return createdColumns;
+  }
+
   // Container Operations (integrated with GraphClient)
   async createTenantContainer(clientId: string, containerTypeId: string, displayName?: string): Promise<ClientContainer> {
     // Get client information
@@ -4900,6 +5189,216 @@ export class DatabaseStorage implements IStorage {
     const clientContainer = await this.getContainerForClient(clientId);
     
     return clientContainer?.containerId || null;
+  }
+
+  // ============ CONTAINER METADATA MANAGEMENT METHODS ============
+
+  /**
+   * Check if a user has access to a container
+   */
+  async checkContainerAccess(userId: string, containerId: string, userRole: string): Promise<boolean> {
+    try {
+      // Admin can access all containers
+      if (userRole === 'admin' || userRole === 'billing-admin') {
+        return true;
+      }
+
+      // Find the container and its client
+      const [container] = await db.select({
+        clientId: clientContainers.clientId
+      })
+      .from(clientContainers)
+      .where(eq(clientContainers.containerId, containerId));
+
+      if (!container) {
+        return false; // Container doesn't exist
+      }
+
+      // Check if user has projects with this client
+      const userClientAccess = await db.select({
+        count: sql<number>`count(*)`.as('count')
+      })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .where(and(
+        eq(timeEntries.personId, userId),
+        eq(projects.clientId, container.clientId)
+      ));
+
+      return (userClientAccess[0]?.count || 0) > 0;
+    } catch (error) {
+      console.error('[CONTAINER_ACCESS] Error checking container access:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Sync document metadata to local database for caching and reporting
+   */
+  async syncDocumentMetadata(containerId: string, itemId: string, metadata: {
+    fileName: string;
+    projectId: string | null;
+    expenseId?: string | null;
+    uploadedBy: string;
+    expenseCategory?: string;
+    receiptDate?: Date;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    vendor?: string | null;
+    description?: string | null;
+    isReimbursable?: boolean;
+    tags?: string[] | null;
+    rawMetadata?: any;
+  }): Promise<void> {
+    try {
+      // Check if document metadata already exists
+      const [existing] = await db.select()
+        .from(documentMetadata)
+        .where(and(
+          eq(documentMetadata.containerId, containerId),
+          eq(documentMetadata.itemId, itemId)
+        ));
+
+      if (existing) {
+        // Update existing record
+        await db.update(documentMetadata)
+          .set({
+            fileName: metadata.fileName,
+            projectId: metadata.projectId,
+            expenseId: metadata.expenseId || null,
+            uploadedBy: metadata.uploadedBy,
+            expenseCategory: metadata.expenseCategory || null,
+            receiptDate: metadata.receiptDate || null,
+            amount: metadata.amount?.toString() || null,
+            currency: metadata.currency || 'USD',
+            status: metadata.status || 'pending',
+            vendor: metadata.vendor || null,
+            description: metadata.description || null,
+            isReimbursable: metadata.isReimbursable !== false,
+            tags: metadata.tags || null,
+            rawMetadata: metadata.rawMetadata || null,
+            lastSyncedAt: sql`now()`,
+            updatedAt: sql`now()`
+          })
+          .where(eq(documentMetadata.id, existing.id));
+      } else {
+        // Create new record
+        await db.insert(documentMetadata)
+          .values({
+            containerId,
+            itemId,
+            fileName: metadata.fileName,
+            projectId: metadata.projectId,
+            expenseId: metadata.expenseId || null,
+            uploadedBy: metadata.uploadedBy,
+            expenseCategory: metadata.expenseCategory || null,
+            receiptDate: metadata.receiptDate || null,
+            amount: metadata.amount?.toString() || null,
+            currency: metadata.currency || 'USD',
+            status: metadata.status || 'pending',
+            vendor: metadata.vendor || null,
+            description: metadata.description || null,
+            isReimbursable: metadata.isReimbursable !== false,
+            tags: metadata.tags || null,
+            rawMetadata: metadata.rawMetadata || null
+          });
+      }
+    } catch (error) {
+      console.error('[METADATA_SYNC] Error syncing document metadata:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update document metadata status in local database
+   */
+  async updateDocumentMetadataStatus(containerId: string, itemId: string, status: string, expenseId?: string): Promise<void> {
+    try {
+      const updateData: any = {
+        status,
+        lastSyncedAt: sql`now()`,
+        updatedAt: sql`now()`
+      };
+
+      if (expenseId) {
+        updateData.expenseId = expenseId;
+      }
+
+      await db.update(documentMetadata)
+        .set(updateData)
+        .where(and(
+          eq(documentMetadata.containerId, containerId),
+          eq(documentMetadata.itemId, itemId)
+        ));
+    } catch (error) {
+      console.error('[METADATA_STATUS] Error updating document metadata status:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get document metadata from local database
+   */
+  async getDocumentMetadata(containerId: string, itemId: string): Promise<any> {
+    try {
+      const [metadata] = await db.select()
+        .from(documentMetadata)
+        .where(and(
+          eq(documentMetadata.containerId, containerId),
+          eq(documentMetadata.itemId, itemId)
+        ));
+
+      return metadata || null;
+    } catch (error) {
+      console.error('[METADATA_GET] Error getting document metadata:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Search document metadata with filters
+   */
+  async searchDocumentMetadata(containerId: string, filters: {
+    status?: string;
+    projectId?: string;
+    uploadedBy?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any[]> {
+    try {
+      let query = db.select()
+        .from(documentMetadata)
+        .where(eq(documentMetadata.containerId, containerId));
+
+      const conditions = [eq(documentMetadata.containerId, containerId)];
+
+      if (filters.status) {
+        conditions.push(eq(documentMetadata.status, filters.status));
+      }
+
+      if (filters.projectId) {
+        conditions.push(eq(documentMetadata.projectId, filters.projectId));
+      }
+
+      if (filters.uploadedBy) {
+        conditions.push(eq(documentMetadata.uploadedBy, filters.uploadedBy));
+      }
+
+      if (filters.startDate) {
+        conditions.push(gte(documentMetadata.receiptDate, filters.startDate));
+      }
+
+      if (filters.endDate) {
+        conditions.push(lte(documentMetadata.receiptDate, filters.endDate));
+      }
+
+      const results = await query.where(and(...conditions)).orderBy(desc(documentMetadata.createdAt));
+      return results;
+    } catch (error) {
+      console.error('[METADATA_SEARCH] Error searching document metadata:', error);
+      return [];
+    }
   }
 
   // ============ CONTAINER TYPE INITIALIZATION & MANAGEMENT ============
