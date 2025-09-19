@@ -4709,12 +4709,16 @@ export async function generateInvoicePDF(params: {
     }
     
     // Prepare line data for template
+    const originalAmount = parseFloat(line.originalAmount || line.amount || '0');
+    const billedAmount = line.billedAmount ? parseFloat(line.billedAmount) : parseFloat(line.amount || '0');
+    const variance = billedAmount - originalAmount;
+    
     const lineData = {
       ...line,
-      originalAmount: parseFloat(line.originalAmount || line.amount || '0').toFixed(2),
-      billedAmount: line.billedAmount ? parseFloat(line.billedAmount).toFixed(2) : parseFloat(line.amount || '0').toFixed(2),
-      varianceAmount: line.varianceAmount ? parseFloat(line.varianceAmount).toFixed(2) : '0',
-      varianceIsPositive: line.varianceAmount ? parseFloat(line.varianceAmount) >= 0 : true,
+      originalAmount: originalAmount.toFixed(2),
+      billedAmount: billedAmount.toFixed(2),
+      varianceAmount: Math.abs(variance).toFixed(2),
+      varianceIsPositive: variance >= 0,
       amount: parseFloat(line.amount || '0').toFixed(2),
       rate: line.rate ? parseFloat(line.rate).toFixed(2) : null
     };
