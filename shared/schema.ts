@@ -922,6 +922,47 @@ export const insertInvoiceAdjustmentSchema = createInsertSchema(invoiceAdjustmen
 export type InsertInvoiceAdjustment = z.infer<typeof insertInvoiceAdjustmentSchema>;
 
 // Billing API Response Types
+// SharePoint Embedded Container Management
+export const containerTypes = pgTable("container_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  containerTypeId: text("container_type_id").notNull().unique(), // SharePoint Container Type ID
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  applicationId: text("application_id"), // Azure AD Application ID that owns this container type
+  isBuiltIn: boolean("is_built_in").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const clientContainers = pgTable("client_containers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id),
+  containerId: text("container_id").notNull().unique(), // SharePoint Container ID
+  containerTypeId: text("container_type_id").notNull().references(() => containerTypes.containerTypeId),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  driveId: text("drive_id"), // Associated drive ID for backward compatibility
+  webUrl: text("web_url"), // SharePoint web URL
+  status: text("status").notNull().default("active"), // active, inactive
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  // Unique constraint: one active container per client/type combination
+  uniqueClientContainerType: sql`UNIQUE (${table.clientId}, ${table.containerTypeId}) WHERE ${table.status} = 'active'`
+}));
+
+export const containerPermissions = pgTable("container_permissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  containerId: text("container_id").notNull().references(() => clientContainers.containerId),
+  userId: varchar("user_id").references(() => users.id), // Optional - for user-specific permissions
+  principalType: text("principal_type").notNull(), // user, application, group
+  principalId: text("principal_id").notNull(), // Azure AD principal ID
+  roles: text("roles").array().notNull(), // SharePoint roles: reader, writer, owner, etc.
+  grantedAt: timestamp("granted_at").notNull().default(sql`now()`),
+  grantedBy: varchar("granted_by").references(() => users.id),
+});
+
 export interface BatchSettings {
   prefix: string;
   useSequential: boolean;
@@ -975,3 +1016,30 @@ export interface UnbilledItemsResponse {
     issues: string[];
   };
 }
+
+// Container Management Types
+export type ContainerType = typeof containerTypes.$inferSelect;
+export type ClientContainer = typeof clientContainers.$inferSelect;
+export type ContainerPermission = typeof containerPermissions.$inferSelect;
+
+export type InsertContainerType = typeof containerTypes.$inferInsert;
+export type InsertClientContainer = typeof clientContainers.$inferInsert;
+export type InsertContainerPermission = typeof containerPermissions.$inferInsert;
+
+// Container Management Zod Schemas
+export const insertContainerTypeSchema = createInsertSchema(containerTypes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertClientContainerSchema = createInsertSchema(clientContainers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertContainerPermissionSchema = createInsertSchema(containerPermissions).omit({
+  id: true,
+  grantedAt: true
+});

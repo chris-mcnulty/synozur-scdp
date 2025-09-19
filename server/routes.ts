@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, sows, timeEntries, expenses, users, projects, clients } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, sows, timeEntries, expenses, users, projects, clients } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -28,6 +28,22 @@ const sharePointFolderSchema = z.object({
 
 const sharePointListFilesSchema = z.object({
   folderPath: z.string().max(1000).trim().optional()
+});
+
+// Container management validation schemas
+const containerCreationSchema = z.object({
+  clientId: z.string().min(1),
+  containerTypeId: z.string().min(1),
+  displayName: z.string().min(1).max(255).optional()
+});
+
+const containerTypeCreationSchema = insertContainerTypeSchema.extend({
+  containerTypeId: z.string().min(1).max(255)
+});
+
+const containerPermissionCreationSchema = insertContainerPermissionSchema.extend({
+  containerId: z.string().min(1),
+  roles: z.array(z.string()).min(1)
 });
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
@@ -420,6 +436,255 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       res.status(isSecurityError ? 400 : 500).json({ 
         message: isSecurityError ? error.message : "Failed to list files from SharePoint"
+      });
+    }
+  });
+
+  // ============ CONTAINER MANAGEMENT ROUTES ============
+  
+  // Container Types (admin only)
+  app.get("/api/containers/types", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const containerTypes = await storage.getContainerTypes();
+      res.json(containerTypes);
+    } catch (error) {
+      console.error("[CONTAINER TYPES] Error listing container types:", error);
+      res.status(500).json({ message: "Failed to list container types" });
+    }
+  });
+
+  app.post("/api/containers/types", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = containerTypeCreationSchema.parse(req.body);
+      const containerType = await storage.createContainerType(validatedData);
+      res.status(201).json(containerType);
+    } catch (error) {
+      console.error("[CONTAINER TYPES] Error creating container type:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid container type data", 
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      res.status(500).json({ message: "Failed to create container type" });
+    }
+  });
+
+  app.get("/api/containers/types/:containerTypeId", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const containerType = await storage.getContainerType(req.params.containerTypeId);
+      if (!containerType) {
+        return res.status(404).json({ message: "Container type not found" });
+      }
+      res.json(containerType);
+    } catch (error) {
+      console.error("[CONTAINER TYPES] Error getting container type:", error);
+      res.status(500).json({ message: "Failed to get container type" });
+    }
+  });
+
+  // Client Containers
+  app.get("/api/containers", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const clientId = req.query.clientId as string;
+      const containers = await storage.getClientContainers(clientId);
+      res.json(containers);
+    } catch (error) {
+      console.error("[CLIENT CONTAINERS] Error listing containers:", error);
+      res.status(500).json({ message: "Failed to list containers" });
+    }
+  });
+
+  app.get("/api/containers/:containerId", requireAuth, async (req, res) => {
+    try {
+      const container = await storage.getClientContainer(req.params.containerId);
+      if (!container) {
+        return res.status(404).json({ message: "Container not found" });
+      }
+
+      // Implement proper access control for container metadata
+      // Allow admin/billing-admin to see all containers
+      if (req.user?.role !== "admin" && req.user?.role !== "billing-admin") {
+        // For non-admin users, validate they belong to projects associated with the container's client
+        const hasAccess = await storage.checkUserClientAccess(req.user!.id, container.clientId);
+        
+        if (!hasAccess) {
+          console.log(`[SECURITY] User ${req.user!.id} denied access to container ${req.params.containerId} for client ${container.clientId}`);
+          return res.status(403).json({ 
+            message: "Access denied. You don't have permission to view this container." 
+          });
+        }
+      }
+
+      res.json(container);
+    } catch (error) {
+      console.error("[CLIENT CONTAINERS] Error getting container:", error);
+      res.status(500).json({ message: "Failed to get container" });
+    }
+  });
+
+  app.post("/api/containers", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const validatedData = containerCreationSchema.parse(req.body);
+      
+      // Create tenant container via storage which integrates with GraphClient
+      const container = await storage.createTenantContainer(
+        validatedData.clientId,
+        validatedData.containerTypeId,
+        validatedData.displayName
+      );
+      
+      res.status(201).json(container);
+    } catch (error) {
+      console.error("[CLIENT CONTAINERS] Error creating container:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid container data", 
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to create container"
+      });
+    }
+  });
+
+  // Ensure client has container (auto-create if needed)
+  app.post("/api/clients/:clientId/container", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const { containerTypeId } = req.body;
+      
+      const container = await storage.ensureClientHasContainer(clientId, containerTypeId);
+      res.json(container);
+    } catch (error) {
+      console.error("[CLIENT CONTAINERS] Error ensuring client container:", error);
+      
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to ensure client has container"
+      });
+    }
+  });
+
+  // Container Permissions
+  app.get("/api/containers/:containerId/permissions", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const permissions = await storage.getContainerPermissions(req.params.containerId);
+      res.json(permissions);
+    } catch (error) {
+      console.error("[CONTAINER PERMISSIONS] Error listing permissions:", error);
+      res.status(500).json({ message: "Failed to list container permissions" });
+    }
+  });
+
+  app.post("/api/containers/:containerId/permissions", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = containerPermissionCreationSchema.parse({
+        ...req.body,
+        containerId: req.params.containerId
+      });
+      
+      const permission = await storage.createContainerPermission(validatedData);
+      res.status(201).json(permission);
+    } catch (error) {
+      console.error("[CONTAINER PERMISSIONS] Error creating permission:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid permission data", 
+          errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      
+      res.status(500).json({ message: "Failed to create container permission" });
+    }
+  });
+
+  app.delete("/api/containers/:containerId/permissions/:permissionId", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.deleteContainerPermission(req.params.permissionId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("[CONTAINER PERMISSIONS] Error deleting permission:", error);
+      res.status(500).json({ message: "Failed to delete container permission" });
+    }
+  });
+
+  // User's Container Discovery (for file operations)
+  app.get("/api/user/container", requireAuth, async (req, res) => {
+    try {
+      const containerId = await storage.getClientContainerIdForUser(req.user!.id);
+      
+      if (!containerId) {
+        return res.status(404).json({ 
+          message: "No container found for user",
+          suggestion: "User may not be assigned to any client projects"
+        });
+      }
+
+      const container = await storage.getClientContainer(containerId);
+      res.json(container);
+    } catch (error) {
+      console.error("[USER CONTAINER] Error getting user container:", error);
+      res.status(500).json({ message: "Failed to get user container" });
+    }
+  });
+
+  // List all SharePoint Embedded containers (admin utility)
+  app.get("/api/sharepoint/containers", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      if (!isEntraConfigured) {
+        return res.status(503).json({ message: "Azure AD not configured" });
+      }
+
+      const containers = await graphClient.listFileStorageContainers();
+      res.json(containers);
+    } catch (error) {
+      console.error("[SHAREPOINT CONTAINERS] Error listing SharePoint containers:", error);
+      res.status(500).json({ message: "Failed to list SharePoint containers" });
+    }
+  });
+
+  // Container Type Initialization (admin only)
+  app.post("/api/containers/types/initialize", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.initializeDefaultContainerTypes();
+      
+      const containerTypes = await storage.getContainerTypes();
+      const defaultType = await storage.getDefaultContainerType();
+      
+      res.json({
+        message: "Container types initialized successfully",
+        containerTypesCount: containerTypes.length,
+        defaultContainerType: defaultType
+      });
+    } catch (error) {
+      console.error("[CONTAINER INIT] Error initializing container types:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to initialize container types"
+      });
+    }
+  });
+
+  // Sync container types with SharePoint
+  app.post("/api/containers/types/sync", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.syncContainerTypesWithSharePoint();
+      
+      const containerTypes = await storage.getContainerTypes();
+      res.json({
+        message: "Container types synced successfully",
+        containerTypesCount: containerTypes.length,
+        containerTypes
+      });
+    } catch (error) {
+      console.error("[CONTAINER SYNC] Error syncing container types:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to sync container types"
       });
     }
   });
@@ -2573,10 +2838,34 @@ export async function registerRoutes(app: Express): Promise<void> {
           const project = await storage.getProject(expense.projectId);
           const projectCode = project?.code || 'unknown';
 
-          // Upload file to SharePoint using canonical folder structure
-          const sharePointConfig = await getSharePointConfig();
-          if (!sharePointConfig.configured) {
-            return res.status(503).json({ message: "SharePoint integration not configured" });
+          // Get tenant-specific container for the user
+          let tenantContainerId: string;
+          try {
+            // First, try to get the user's tenant-specific container
+            tenantContainerId = await storage.getClientContainerIdForUser(userId);
+            if (!tenantContainerId) {
+              // Fallback: if user doesn't have a tenant container, get the project's client container
+              if (project?.clientId) {
+                const clientContainer = await storage.ensureClientHasContainer(project.clientId);
+                tenantContainerId = clientContainer.containerId;
+                console.log(`[EXPENSE_ATTACHMENT] Created/found container for client ${project.clientId}: ${tenantContainerId}`);
+              } else {
+                // Last resort: fallback to global container for backward compatibility
+                console.warn('[EXPENSE_ATTACHMENT] No client found for project, using global container');
+                const sharePointConfig = await getSharePointConfig();
+                if (!sharePointConfig.configured) {
+                  return res.status(503).json({ message: "SharePoint integration not configured and no tenant container available" });
+                }
+                tenantContainerId = sharePointConfig.driveId!;
+              }
+            }
+          } catch (containerError) {
+            console.warn('[EXPENSE_ATTACHMENT] Failed to resolve tenant container, falling back to global container:', containerError);
+            const sharePointConfig = await getSharePointConfig();
+            if (!sharePointConfig.configured) {
+              return res.status(503).json({ message: "SharePoint integration not configured" });
+            }
+            tenantContainerId = sharePointConfig.driveId!;
           }
 
           // Use canonical folder structure for expense receipts
@@ -2584,8 +2873,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           const folderPath = `/Receipts/${year}/${projectCode}/${expenseId}`;
           
           const uploadResult = await graphClient.uploadFile(
-            sharePointConfig.siteId!,
-            sharePointConfig.driveId!,
+            'legacy-not-used', // siteId is not used in SharePoint Embedded
+            tenantContainerId, // Use tenant-specific container
             folderPath,
             sanitizedFilename,
             req.file.buffer,
@@ -2596,7 +2885,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Save attachment metadata to database
           const attachmentData = {
             expenseId: expenseId,
-            driveId: sharePointConfig.driveId!,
+            driveId: tenantContainerId, // Store the tenant-specific container ID
             itemId: uploadResult.id,
             webUrl: uploadResult.webUrl || `https://sharepoint.com/item/${uploadResult.id}`,
             fileName: sanitizedFilename,
@@ -2685,16 +2974,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Attachment not found" });
       }
 
-      // Get SharePoint configuration
-      const sharePointConfig = await getSharePointConfig();
-      if (!sharePointConfig.configured) {
-        return res.status(503).json({ message: "SharePoint integration not configured" });
-      }
-
       try {
-        // Get file content from SharePoint
+        // Get file content from SharePoint using the tenant-specific container
+        // The attachment.driveId contains the tenant-specific container ID
         const downloadResult = await graphClient.downloadFile(
-          sharePointConfig.driveId!,
+          attachment.driveId, // Use the stored tenant-specific container ID
           attachment.itemId
         );
 
@@ -2759,16 +3043,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Insufficient permissions to delete this attachment" });
       }
 
-      // Get SharePoint configuration
-      const sharePointConfig = await getSharePointConfig();
-      if (!sharePointConfig.configured) {
-        return res.status(503).json({ message: "SharePoint integration not configured" });
-      }
-
       try {
-        // Delete file from SharePoint
+        // Delete file from SharePoint using the tenant-specific container
+        // The attachment.driveId contains the tenant-specific container ID
         await graphClient.deleteFile(
-          sharePointConfig.driveId!,
+          attachment.driveId, // Use the stored tenant-specific container ID
           attachment.itemId
         );
 

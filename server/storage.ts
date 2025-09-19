@@ -4,6 +4,7 @@ import {
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
+  containerTypes, clientContainers, containerPermissions,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
@@ -21,7 +22,10 @@ import {
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
-  type SystemSetting, type InsertSystemSetting
+  type SystemSetting, type InsertSystemSetting,
+  type ContainerType, type InsertContainerType,
+  type ClientContainer, type InsertClientContainer,
+  type ContainerPermission, type InsertContainerPermission
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
@@ -30,6 +34,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
+import { graphClient } from './services/graph-client.js';
 
 // Numeric utility functions for safe operations
 function normalizeAmount(value: any): number {
@@ -521,6 +526,30 @@ export interface IStorage {
   setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
+  
+  // Container Management Methods
+  getContainerTypes(): Promise<ContainerType[]>;
+  getContainerType(containerTypeId: string): Promise<ContainerType | undefined>;
+  createContainerType(containerType: InsertContainerType): Promise<ContainerType>;
+  updateContainerType(id: string, updates: Partial<InsertContainerType>): Promise<ContainerType>;
+  deleteContainerType(id: string): Promise<void>;
+  
+  getClientContainers(clientId?: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType })[]>;
+  getClientContainer(containerId: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType }) | undefined>;
+  createClientContainer(clientContainer: InsertClientContainer): Promise<ClientContainer>;
+  updateClientContainer(id: string, updates: Partial<InsertClientContainer>): Promise<ClientContainer>;
+  deleteClientContainer(id: string): Promise<void>;
+  getContainerForClient(clientId: string): Promise<ClientContainer | undefined>;
+  
+  getContainerPermissions(containerId: string): Promise<(ContainerPermission & { user?: User })[]>;
+  createContainerPermission(permission: InsertContainerPermission): Promise<ContainerPermission>;
+  updateContainerPermission(id: string, updates: Partial<InsertContainerPermission>): Promise<ContainerPermission>;
+  deleteContainerPermission(id: string): Promise<void>;
+  
+  // Container Operations (integrate with GraphClient)
+  createTenantContainer(clientId: string, containerTypeId: string, displayName?: string): Promise<ClientContainer>;
+  ensureClientHasContainer(clientId: string, containerTypeId?: string): Promise<ClientContainer>;
+  getClientContainerIdForUser(userId: string): Promise<string | null>;
   
   // PDF Generation
   generateInvoicePDF(params: {
@@ -4566,6 +4595,558 @@ export class DatabaseStorage implements IStorage {
 
     // Filter out projects with no unbilled items (optional - keep all for visibility)
     return summaries.sort((a, b) => b.totalUnbilled - a.totalUnbilled);
+  }
+
+  // ============ CONTAINER MANAGEMENT METHODS ============
+
+  // Container Types
+  async getContainerTypes(): Promise<ContainerType[]> {
+    return await db.select()
+      .from(containerTypes)
+      .where(eq(containerTypes.isActive, true))
+      .orderBy(containerTypes.displayName);
+  }
+
+  async getContainerType(containerTypeId: string): Promise<ContainerType | undefined> {
+    const [containerType] = await db.select()
+      .from(containerTypes)
+      .where(eq(containerTypes.containerTypeId, containerTypeId));
+    return containerType || undefined;
+  }
+
+  async createContainerType(containerType: InsertContainerType): Promise<ContainerType> {
+    const [created] = await db.insert(containerTypes).values(containerType).returning();
+    return created;
+  }
+
+  async updateContainerType(id: string, updates: Partial<InsertContainerType>): Promise<ContainerType> {
+    const [updated] = await db.update(containerTypes)
+      .set({ ...updates, updatedAt: sql`now()` })
+      .where(eq(containerTypes.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteContainerType(id: string): Promise<void> {
+    await db.update(containerTypes)
+      .set({ isActive: false, updatedAt: sql`now()` })
+      .where(eq(containerTypes.id, id));
+  }
+
+  // Client Containers
+  async getClientContainers(clientId?: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType })[]> {
+    let query = db.select({
+      id: clientContainers.id,
+      clientId: clientContainers.clientId,
+      containerId: clientContainers.containerId,
+      containerTypeId: clientContainers.containerTypeId,
+      displayName: clientContainers.displayName,
+      description: clientContainers.description,
+      driveId: clientContainers.driveId,
+      webUrl: clientContainers.webUrl,
+      status: clientContainers.status,
+      createdAt: clientContainers.createdAt,
+      updatedAt: clientContainers.updatedAt,
+      client: clients,
+      containerType: containerTypes
+    })
+    .from(clientContainers)
+    .leftJoin(clients, eq(clientContainers.clientId, clients.id))
+    .leftJoin(containerTypes, eq(clientContainers.containerTypeId, containerTypes.containerTypeId))
+    .where(eq(clientContainers.status, 'active'));
+
+    if (clientId) {
+      query = query.where(eq(clientContainers.clientId, clientId));
+    }
+
+    const results = await query.orderBy(clientContainers.displayName);
+    
+    return results.map(row => ({
+      ...row,
+      client: row.client || { 
+        id: 'unknown', 
+        name: 'Unknown Client', 
+        currency: 'USD',
+        billingContact: null,
+        contactName: null,
+        contactAddress: null,
+        vocabularyOverrides: null,
+        createdAt: new Date()
+      },
+      containerType: row.containerType || {
+        id: 'unknown',
+        containerTypeId: 'unknown',
+        displayName: 'Unknown Type',
+        description: null,
+        applicationId: null,
+        isBuiltIn: false,
+        isActive: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    }));
+  }
+
+  async getClientContainer(containerId: string): Promise<(ClientContainer & { client: Client; containerType: ContainerType }) | undefined> {
+    const [result] = await db.select({
+      id: clientContainers.id,
+      clientId: clientContainers.clientId,
+      containerId: clientContainers.containerId,
+      containerTypeId: clientContainers.containerTypeId,
+      displayName: clientContainers.displayName,
+      description: clientContainers.description,
+      driveId: clientContainers.driveId,
+      webUrl: clientContainers.webUrl,
+      status: clientContainers.status,
+      createdAt: clientContainers.createdAt,
+      updatedAt: clientContainers.updatedAt,
+      client: clients,
+      containerType: containerTypes
+    })
+    .from(clientContainers)
+    .leftJoin(clients, eq(clientContainers.clientId, clients.id))
+    .leftJoin(containerTypes, eq(clientContainers.containerTypeId, containerTypes.containerTypeId))
+    .where(eq(clientContainers.containerId, containerId));
+
+    if (!result) return undefined;
+
+    return {
+      ...result,
+      client: result.client || { 
+        id: 'unknown', 
+        name: 'Unknown Client', 
+        currency: 'USD',
+        billingContact: null,
+        contactName: null,
+        contactAddress: null,
+        vocabularyOverrides: null,
+        createdAt: new Date()
+      },
+      containerType: result.containerType || {
+        id: 'unknown',
+        containerTypeId: 'unknown',
+        displayName: 'Unknown Type',
+        description: null,
+        applicationId: null,
+        isBuiltIn: false,
+        isActive: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    };
+  }
+
+  async createClientContainer(clientContainer: InsertClientContainer): Promise<ClientContainer> {
+    const [created] = await db.insert(clientContainers).values(clientContainer).returning();
+    return created;
+  }
+
+  async updateClientContainer(id: string, updates: Partial<InsertClientContainer>): Promise<ClientContainer> {
+    const [updated] = await db.update(clientContainers)
+      .set({ ...updates, updatedAt: sql`now()` })
+      .where(eq(clientContainers.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteClientContainer(id: string): Promise<void> {
+    await db.update(clientContainers)
+      .set({ status: 'inactive', updatedAt: sql`now()` })
+      .where(eq(clientContainers.id, id));
+  }
+
+  async getContainerForClient(clientId: string): Promise<ClientContainer | undefined> {
+    const [container] = await db.select()
+      .from(clientContainers)
+      .where(and(
+        eq(clientContainers.clientId, clientId),
+        eq(clientContainers.status, 'active')
+      ))
+      .orderBy(clientContainers.createdAt)
+      .limit(1);
+    return container || undefined;
+  }
+
+  // Container Permissions
+  async getContainerPermissions(containerId: string): Promise<(ContainerPermission & { user?: User })[]> {
+    const results = await db.select({
+      id: containerPermissions.id,
+      containerId: containerPermissions.containerId,
+      userId: containerPermissions.userId,
+      principalType: containerPermissions.principalType,
+      principalId: containerPermissions.principalId,
+      roles: containerPermissions.roles,
+      grantedAt: containerPermissions.grantedAt,
+      grantedBy: containerPermissions.grantedBy,
+      user: users
+    })
+    .from(containerPermissions)
+    .leftJoin(users, eq(containerPermissions.userId, users.id))
+    .where(eq(containerPermissions.containerId, containerId))
+    .orderBy(containerPermissions.grantedAt);
+
+    return results.map(row => ({
+      ...row,
+      user: row.user || undefined
+    }));
+  }
+
+  async createContainerPermission(permission: InsertContainerPermission): Promise<ContainerPermission> {
+    const [created] = await db.insert(containerPermissions).values(permission).returning();
+    return created;
+  }
+
+  async updateContainerPermission(id: string, updates: Partial<InsertContainerPermission>): Promise<ContainerPermission> {
+    const [updated] = await db.update(containerPermissions)
+      .set(updates)
+      .where(eq(containerPermissions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteContainerPermission(id: string): Promise<void> {
+    await db.delete(containerPermissions)
+      .where(eq(containerPermissions.id, id));
+  }
+
+  // Container Operations (integrated with GraphClient)
+  async createTenantContainer(clientId: string, containerTypeId: string, displayName?: string): Promise<ClientContainer> {
+    // Get client information
+    const client = await this.getClient(clientId);
+    if (!client) {
+      throw new Error(`Client not found: ${clientId}`);
+    }
+
+    // Get or create container type
+    let containerType = await this.getContainerType(containerTypeId);
+    if (!containerType) {
+      throw new Error(`Container type not found: ${containerTypeId}`);
+    }
+
+    // Generate display name if not provided
+    const containerDisplayName = displayName || `SCDP-${client.name.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+    try {
+      // Create container in SharePoint Embedded via GraphClient
+      const sharePointContainer = await graphClient.createFileStorageContainer(
+        containerDisplayName,
+        containerTypeId,
+        `SharePoint Embedded container for client: ${client.name}`
+      );
+
+      // Store container association in database
+      const clientContainer = await this.createClientContainer({
+        clientId,
+        containerId: sharePointContainer.id,
+        containerTypeId,
+        displayName: containerDisplayName,
+        description: `Container for ${client.name}`,
+        driveId: sharePointContainer.drive?.id,
+        webUrl: sharePointContainer.drive?.webUrl,
+        status: 'active'
+      });
+
+      console.log(`[CONTAINER] Created container ${sharePointContainer.id} for client ${client.name}`);
+      
+      return clientContainer;
+    } catch (error) {
+      console.error(`[CONTAINER] Failed to create container for client ${client.name}:`, error);
+      throw new Error(`Failed to create container for client ${client.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  async ensureClientHasContainer(clientId: string, containerTypeId?: string): Promise<ClientContainer> {
+    // Check if client already has a container
+    const existingContainer = await this.getContainerForClient(clientId);
+    if (existingContainer) {
+      return existingContainer;
+    }
+
+    // Get default container type if not provided
+    let typeId = containerTypeId;
+    if (!typeId) {
+      const defaultType = await this.getSystemSettingValue('DEFAULT_CONTAINER_TYPE_ID');
+      if (!defaultType) {
+        throw new Error('No container type specified and no default container type configured');
+      }
+      typeId = defaultType;
+    }
+
+    // Create new container for client
+    return await this.createTenantContainer(clientId, typeId);
+  }
+
+  async getClientContainerIdForUser(userId: string): Promise<string | null> {
+    // Find the user's client association
+    // This assumes users are associated with clients via projects
+    // You might need to adjust this based on your user-client relationship model
+    
+    // Get the user's projects to determine their client
+    const userProjects = await db.select({
+      projectId: projects.id,
+      clientId: projects.clientId
+    })
+    .from(timeEntries)
+    .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+    .where(eq(timeEntries.personId, userId))
+    .groupBy(projects.id, projects.clientId)
+    .limit(1);
+
+    if (userProjects.length === 0) {
+      return null;
+    }
+
+    const clientId = userProjects[0].clientId;
+    const clientContainer = await this.getContainerForClient(clientId);
+    
+    return clientContainer?.containerId || null;
+  }
+
+  // ============ CONTAINER TYPE INITIALIZATION & MANAGEMENT ============
+
+  /**
+   * Initialize default container types in the system
+   */
+  async initializeDefaultContainerTypes(): Promise<void> {
+    try {
+      console.log('[CONTAINER_INIT] Starting container type initialization...');
+
+      // Check if we have any container types already
+      const existingTypes = await this.getContainerTypes();
+      if (existingTypes.length > 0) {
+        console.log(`[CONTAINER_INIT] Found ${existingTypes.length} existing container types, skipping initialization`);
+        return;
+      }
+
+      // Try to sync with SharePoint Embedded first
+      await this.syncContainerTypesWithSharePoint();
+
+      // If still no types, create a default one
+      const typesAfterSync = await this.getContainerTypes();
+      if (typesAfterSync.length === 0) {
+        console.log('[CONTAINER_INIT] No container types found after SharePoint sync, creating default type...');
+        await this.createDefaultContainerType();
+      }
+
+      console.log('[CONTAINER_INIT] Container type initialization completed');
+    } catch (error) {
+      console.error('[CONTAINER_INIT] Failed to initialize container types:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync local container types with SharePoint Embedded
+   */
+  async syncContainerTypesWithSharePoint(): Promise<void> {
+    try {
+      console.log('[CONTAINER_SYNC] Syncing container types with SharePoint Embedded...');
+      
+      // Get container types from SharePoint Embedded
+      const sharePointTypes = await graphClient.listContainerTypes();
+      console.log(`[CONTAINER_SYNC] Found ${sharePointTypes.length} container types in SharePoint`);
+
+      // Sync each type to our database
+      for (const spType of sharePointTypes) {
+        const existingType = await this.getContainerType(spType.id);
+        
+        if (!existingType) {
+          // Create new container type in our database
+          await this.createContainerType({
+            containerTypeId: spType.id,
+            displayName: spType.displayName,
+            description: spType.description || null,
+            applicationId: spType.applicationId || null,
+            isBuiltIn: spType.isBuiltIn,
+            isActive: true
+          });
+          console.log(`[CONTAINER_SYNC] Added container type: ${spType.displayName} (${spType.id})`);
+        } else {
+          // Update existing container type
+          await this.updateContainerType(existingType.id, {
+            displayName: spType.displayName,
+            description: spType.description || null,
+            applicationId: spType.applicationId || null,
+            isBuiltIn: spType.isBuiltIn,
+            isActive: true
+          });
+          console.log(`[CONTAINER_SYNC] Updated container type: ${spType.displayName} (${spType.id})`);
+        }
+      }
+
+      // Set the first available type as default if none is set
+      if (sharePointTypes.length > 0) {
+        const defaultType = await this.getSystemSettingValue('DEFAULT_CONTAINER_TYPE_ID');
+        if (!defaultType) {
+          await this.setSystemSetting(
+            'DEFAULT_CONTAINER_TYPE_ID', 
+            sharePointTypes[0].id,
+            'Default container type for new clients'
+          );
+          console.log(`[CONTAINER_SYNC] Set default container type: ${sharePointTypes[0].id}`);
+        }
+      }
+
+    } catch (error) {
+      console.warn('[CONTAINER_SYNC] Failed to sync with SharePoint Embedded (this is normal if not configured):', error);
+    }
+  }
+
+  /**
+   * Create a default container type if none exist
+   */
+  async createDefaultContainerType(): Promise<ContainerType> {
+    try {
+      console.log('[CONTAINER_DEFAULT] Creating default container type...');
+      
+      // Try to create the container type in SharePoint Embedded first
+      let containerTypeId = 'default-scdp-containers';
+      
+      try {
+        const sharePointType = await graphClient.createContainerType(
+          'SCDP Default Container Type',
+          'Default container type for SCDP client file storage'
+        );
+        containerTypeId = sharePointType.id;
+        console.log(`[CONTAINER_DEFAULT] Created container type in SharePoint: ${sharePointType.id}`);
+      } catch (spError) {
+        console.warn('[CONTAINER_DEFAULT] Failed to create container type in SharePoint, using local type:', spError);
+      }
+
+      // Create the container type in our database
+      const containerType = await this.createContainerType({
+        containerTypeId,
+        displayName: 'SCDP Default Container Type',
+        description: 'Default container type for client file storage and receipts',
+        applicationId: process.env.AZURE_CLIENT_ID || null,
+        isBuiltIn: false,
+        isActive: true
+      });
+
+      // Set as default
+      await this.setSystemSetting(
+        'DEFAULT_CONTAINER_TYPE_ID',
+        containerTypeId,
+        'Default container type for new clients'
+      );
+
+      console.log(`[CONTAINER_DEFAULT] Created and set default container type: ${containerTypeId}`);
+      return containerType;
+    } catch (error) {
+      console.error('[CONTAINER_DEFAULT] Failed to create default container type:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure a container type exists for tenant operations
+   */
+  async ensureContainerTypeExists(containerTypeId: string, displayName?: string): Promise<ContainerType> {
+    // Check if type already exists locally
+    let containerType = await this.getContainerType(containerTypeId);
+    if (containerType) {
+      return containerType;
+    }
+
+    // Try to get from SharePoint Embedded
+    try {
+      const sharePointType = await graphClient.getContainerType(containerTypeId);
+      
+      // Create in our database
+      containerType = await this.createContainerType({
+        containerTypeId: sharePointType.id,
+        displayName: sharePointType.displayName,
+        description: sharePointType.description || null,
+        applicationId: sharePointType.applicationId || null,
+        isBuiltIn: sharePointType.isBuiltIn,
+        isActive: true
+      });
+
+      console.log(`[CONTAINER_TYPE] Synchronized container type from SharePoint: ${containerTypeId}`);
+      return containerType;
+    } catch (spError) {
+      console.warn(`[CONTAINER_TYPE] Container type not found in SharePoint: ${containerTypeId}`);
+      
+      // Create a new container type
+      const newDisplayName = displayName || `Container Type ${containerTypeId}`;
+      
+      try {
+        // Try to create in SharePoint first
+        const sharePointType = await graphClient.createContainerType(
+          newDisplayName,
+          `Auto-generated container type: ${containerTypeId}`
+        );
+        
+        containerType = await this.createContainerType({
+          containerTypeId: sharePointType.id,
+          displayName: sharePointType.displayName,
+          description: sharePointType.description || null,
+          applicationId: sharePointType.applicationId || null,
+          isBuiltIn: sharePointType.isBuiltIn,
+          isActive: true
+        });
+
+        console.log(`[CONTAINER_TYPE] Created new container type in SharePoint: ${sharePointType.id}`);
+        return containerType;
+      } catch (createError) {
+        console.warn(`[CONTAINER_TYPE] Failed to create container type in SharePoint, creating local only:`, createError);
+        
+        // Create local-only container type
+        containerType = await this.createContainerType({
+          containerTypeId,
+          displayName: newDisplayName,
+          description: `Local container type: ${containerTypeId}`,
+          applicationId: process.env.AZURE_CLIENT_ID || null,
+          isBuiltIn: false,
+          isActive: true
+        });
+
+        return containerType;
+      }
+    }
+  }
+
+  /**
+   * Get the default container type for new tenants
+   */
+  async getDefaultContainerType(): Promise<ContainerType> {
+    const defaultTypeId = await this.getSystemSettingValue('DEFAULT_CONTAINER_TYPE_ID');
+    
+    if (!defaultTypeId) {
+      // Initialize container types if not done
+      await this.initializeDefaultContainerTypes();
+      
+      const newDefaultTypeId = await this.getSystemSettingValue('DEFAULT_CONTAINER_TYPE_ID');
+      if (!newDefaultTypeId) {
+        throw new Error('No default container type configured and initialization failed');
+      }
+      
+      return await this.ensureContainerTypeExists(newDefaultTypeId);
+    }
+    
+    return await this.ensureContainerTypeExists(defaultTypeId);
+  }
+
+  /**
+   * Check if a user has access to a client through their project work
+   * Returns true if the user has time entries on projects belonging to the client
+   */
+  async checkUserClientAccess(userId: string, clientId: string): Promise<boolean> {
+    try {
+      const timeEntryData = await db.select({ count: sql<number>`COUNT(*)` })
+        .from(timeEntries)
+        .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+        .where(and(
+          eq(timeEntries.personId, userId),
+          eq(projects.clientId, clientId)
+        ));
+
+      const count = Number(timeEntryData[0]?.count || 0);
+      return count > 0;
+    } catch (error) {
+      console.error("[USER CLIENT ACCESS] Error checking user-client access:", error);
+      return false;
+    }
   }
 }
 

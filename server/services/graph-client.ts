@@ -373,6 +373,55 @@ export class GraphClient {
     }, `createFileStorageContainer(${displayName})`);
   }
 
+  // ============ CONTAINER TYPE OPERATIONS ============
+
+  /**
+   * List all container types available to the application
+   */
+  async listContainerTypes(): Promise<ContainerType[]> {
+    return this.withRetry(async () => {
+      const response = await this.makeGraphRequest<GraphResponse<ContainerType>>(
+        'GET',
+        '/storage/fileStorage/containerTypes'
+      );
+      return response.value || [];
+    }, 'listContainerTypes');
+  }
+
+  /**
+   * Get a specific container type by ID
+   */
+  async getContainerType(containerTypeId: string): Promise<ContainerType> {
+    return this.withRetry(async () => {
+      return await this.makeGraphRequest<ContainerType>(
+        'GET',
+        `/storage/fileStorage/containerTypes/${containerTypeId}`
+      );
+    }, `getContainerType(${containerTypeId})`);
+  }
+
+  /**
+   * Register a new container type with SharePoint Embedded
+   * Note: This typically requires administrative privileges
+   */
+  async createContainerType(
+    displayName: string,
+    description?: string,
+    applicationId?: string
+  ): Promise<ContainerType> {
+    return this.withRetry(async () => {
+      return await this.makeGraphRequest<ContainerType>(
+        'POST',
+        '/storage/fileStorage/containerTypes',
+        {
+          displayName,
+          description,
+          applicationId: applicationId || process.env.AZURE_CLIENT_ID
+        }
+      );
+    }, `createContainerType(${displayName})`);
+  }
+
   /**
    * Validate and normalize folder path to prevent path traversal attacks
    * When expenseId is provided, ignore arbitrary folderPath and use canonical structure
