@@ -41,18 +41,26 @@ app.use((req, res, next) => {
 function detectEnvironment() {
   // Check multiple indicators to determine if we're in development
   const isDevelopmentCommand = process.argv.some(arg => arg.includes('tsx'));
-  const isReplitDev = !process.env.REPLIT_DOMAINS && !process.env.REPL_SLUG;
   const hasDevScript = process.title && process.title.includes('tsx');
   const isLocalPort = process.env.PORT === undefined || process.env.PORT === '5000';
+  const explicitDev = process.env.NODE_ENV === 'development';
   
-  // If running with tsx (dev command) or in local Replit without deployment domains
-  if (isDevelopmentCommand || (isReplitDev && isLocalPort)) {
-    // Force development mode regardless of NODE_ENV global setting
+  // Log detection details for debugging
+  log(`🔍 Environment detection:`);
+  log(`  - NODE_ENV: ${process.env.NODE_ENV}`);
+  log(`  - Using tsx: ${isDevelopmentCommand}`);
+  log(`  - Port: ${process.env.PORT || '5000'} (default)`);
+  log(`  - REPLIT_DOMAINS: ${process.env.REPLIT_DOMAINS ? 'set' : 'not set'}`);
+  
+  // If running with tsx (dev command) or explicitly set to development
+  if (isDevelopmentCommand || hasDevScript || explicitDev) {
+    // Force development mode
     process.env.NODE_ENV = 'development';
-    log('🔧 Detected development environment - overriding NODE_ENV to development');
+    log('🔧 Running in DEVELOPMENT mode');
+  } else if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS) {
+    log('🚀 Running in PRODUCTION mode');
   }
   
-  log(`Environment mode: ${process.env.NODE_ENV}`);
   return process.env.NODE_ENV;
 }
 
@@ -162,6 +170,9 @@ process.on('uncaughtException', (error) => {
       log('Routes registered successfully');
     } catch (routeError: any) {
       log(`⚠️ Route registration failed: ${routeError.message}`);
+      if (routeError.stack) {
+        log(`Route error stack: ${routeError.stack.split('\n').slice(0, 5).join('\n')}`);
+      }
       log('Server will continue with health endpoints only');
       // Don't crash the server - health endpoints will still work
     }
@@ -211,31 +222,41 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
     log('Continuing without database - static content will still be served');
   }
   
-  // Setup Vite or static serving - more explicit deployment guard
+  // Setup Vite or static serving - fixed detection logic
   const isProduction = process.env.NODE_ENV === 'production';
-  const isDeployment = Boolean(process.env.REPLIT_DOMAINS || process.env.REPL_SLUG);
   const isViteDisabled = process.env.DISABLE_VITE_DEV === '1';
   const isDevelopment = process.env.NODE_ENV === 'development';
   
-  // Use detected environment mode for proper Vite setup
-  if (isDevelopment && !isDeployment && !isViteDisabled) {
+  log(`Frontend server configuration:`);
+  log(`  - Environment: ${process.env.NODE_ENV}`);
+  log(`  - Vite disabled: ${isViteDisabled ? 'yes' : 'no'}`);
+  log(`  - Mode: ${isDevelopment ? 'Development (Vite)' : 'Production (Static)'}`);
+  
+  // In development mode, always use Vite unless explicitly disabled
+  // Don't let REPLIT_DOMAINS affect development mode detection
+  if (isDevelopment && !isViteDisabled) {
     log('Setting up Vite development server...');
     try {
       await setupVite(app, server);
-      log('Vite development server setup successful');
+      log('✅ Vite development server setup successful');
+      log('📝 Frontend available at http://localhost:5000');
     } catch (viteError: any) {
       log(`⚠️ Vite setup failed: ${viteError.message}`);
-      log('Falling back to static file serving');
+      if (viteError.stack) {
+        log(`Vite error details: ${viteError.stack.split('\n').slice(0, 3).join('\n')}`);
+      }
+      log('Falling back to static file serving...');
       try {
         serveStatic(app);
-        log('Fallback to static file serving successful');
+        log('✅ Fallback to static file serving successful');
       } catch (staticError: any) {
         log(`❌ Static file serving also failed: ${staticError.message}`);
-        log('Frontend may not be available');
+        log('⚠️ Frontend may not be available - API endpoints will still work');
+        log('💡 To fix: run "npm run build" to create production build');
       }
     }
   } else {
-    const reason = isProduction ? 'production' : isDeployment ? 'deployment' : isViteDisabled ? 'disabled' : 'non-development';
+    const reason = isProduction ? 'production' : isViteDisabled ? 'Vite disabled' : 'non-development';
     log(`Setting up static file serving for ${reason} environment...`);
     try {
       serveStatic(app);
