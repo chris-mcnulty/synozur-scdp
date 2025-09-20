@@ -41,37 +41,6 @@ export function Header() {
         <div className="flex items-center space-x-6">
           <SynozurTextLogo />
           
-          {/* Quick Navigation */}
-          <nav className="hidden md:flex space-x-4" data-testid="nav-quick">
-            <a 
-              href="/" 
-              className="px-3 py-2 text-sm font-medium text-primary bg-accent/20 rounded-md"
-              data-testid="link-dashboard"
-            >
-              Dashboard
-            </a>
-            <a 
-              href="/projects" 
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md transition-colors"
-              data-testid="link-projects"
-            >
-              Projects
-            </a>
-            <a 
-              href="/time" 
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md transition-colors"
-              data-testid="link-time"
-            >
-              Time
-            </a>
-            <a 
-              href="/billing" 
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md transition-colors"
-              data-testid="link-billing"
-            >
-              Billing
-            </a>
-          </nav>
         </div>
         
         {/* User Menu */}

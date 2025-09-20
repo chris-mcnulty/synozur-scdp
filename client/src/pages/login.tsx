@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Building2, Lock, Mail } from "lucide-react";
+import { Lock, Mail } from "lucide-react";
+import { SynozurLogo } from "@/components/icons/synozur-logo";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -90,7 +91,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <Building2 className="h-12 w-12 text-primary" />
+            <SynozurLogo className="h-16 w-16" />
           </div>
           <CardTitle className="text-2xl text-center">Welcome to SCDP</CardTitle>
           <CardDescription className="text-center">

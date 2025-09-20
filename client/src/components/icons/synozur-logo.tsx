@@ -1,4 +1,4 @@
-import synozurLogo from '@assets/SynozurLogo_color 1400_1756666632658.png';
+import synozurLogo from '@assets/SynozurLogo_color 1400_1758346891058.png';
 
 export function SynozurLogo({ className = "w-10 h-10" }: { className?: string }) {
   return (
