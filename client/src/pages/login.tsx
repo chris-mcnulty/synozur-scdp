@@ -197,7 +197,7 @@ export default function Login() {
                 disabled={isSSOLoading}
                 data-testid="button-sso-login"
               >
-                <Building2 className="mr-2 h-4 w-4" />
+                <SynozurLogo className="mr-2 h-4 w-4" />
                 {isSSOLoading ? "Redirecting..." : "Sign in with Microsoft"}
               </Button>
             </>
