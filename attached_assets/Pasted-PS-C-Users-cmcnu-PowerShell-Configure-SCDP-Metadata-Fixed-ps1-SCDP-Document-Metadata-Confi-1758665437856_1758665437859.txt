@@ -1,0 +1,84 @@
+PS C:\Users\cmcnu\PowerShell> .\Configure-SCDP-Metadata-Fixed.ps1
+🏗️  SCDP Document Metadata Configuration (Using Owning App)
+=============================================================
+Owning App ID: 198aa0a6-d2ed-4f35-b41b-b6f6778a30d6
+Container Type: 358aba7d-bb55-4ce0-a08d-e51f03d5edf1
+
+📋 Connecting to Microsoft Graph with your owning app...
+⚠️  Important: You must use your owning app for authentication
+App ID: 198aa0a6-d2ed-4f35-b41b-b6f6778a30d6
+Connect-MgGraph: C:\Users\cmcnu\PowerShell\Configure-SCDP-Metadata-Fixed.ps1:263
+Line |
+ 263 |      Connect-MgGraph -ClientId $OwningAppId -TenantId $TenantId -Scope …
+     |      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | InteractiveBrowserCredential authentication failed:
+✅ Connected as:
+📋 Using App:
+
+📋 Configuring Development Container Metadata...
+Container ID: b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+   ❌ Failed: Document Type - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Client ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Client Name - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Project ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Project Code - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Effective Date - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Amount - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Estimate ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Change Order ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Tags - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Created By User ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Metadata Version - Authentication needed. Please call Connect-MgGraph.
+✅ Development metadata schema configured
+
+📋 Configuring Production Container Metadata...
+Container ID: b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+   ❌ Failed: Document Type - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Client ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Client Name - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Project ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Project Code - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Effective Date - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Amount - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Estimate ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Change Order ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Tags - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Created By User ID - Authentication needed. Please call Connect-MgGraph.
+   ❌ Failed: Metadata Version - Authentication needed. Please call Connect-MgGraph.
+✅ Production metadata schema configured
+
+🎉 SCDP Metadata Configuration Complete!
+========================================
+
+📋 Document Types Configured:
+   • receipt - Expense receipts
+   • invoice - Client invoices
+   • statementOfWork - SOWs and proposals
+   • contract - Client contracts
+   • report - Project reports
+   • estimate - Project estimates
+   • changeOrder - Change orders
+
+📋 Metadata Fields Added:
+   ✅ scdp_documentType (required choice)
+   ✅ scdp_clientId + scdp_clientName
+   ✅ scdp_projectId + scdp_projectCode
+   ✅ scdp_effectiveDate
+   ✅ scdp_amount
+   ✅ scdp_estimateId + scdp_changeOrderId
+   ✅ scdp_tags + scdp_createdByUserId
+   ✅ scdp_metadataVersion
+
+📋 Next Steps:
+1. Update SCDP application configuration
+2. Test file operations with metadata assignment
+3. Verify expense receipt workflow integration
+
+🔌 Disconnecting...
+Disconnect-MgGraph: C:\Users\cmcnu\PowerShell\Configure-SCDP-Metadata-Fixed.ps1:315
+Line |
+ 315 |      Disconnect-MgGraph
+     |      ~~~~~~~~~~~~~~~~~~
+     | No application to sign out from.
+✅ Complete!
+PS C:\Users\cmcnu\PowerShell> .\Configure-SCDP-Metadata-Fixed.ps1
