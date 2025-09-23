@@ -27,10 +27,9 @@ export function toDecimalString(num?: number | string | null): string | undefine
  * Convert domain receipt metadata to storage-safe InsertPendingReceipt
  */
 export function toPendingReceiptInsert(input: {
-  driveId: string;
-  itemId: string;
-  webUrl: string;
   fileName: string;
+  originalName: string;
+  filePath: string;
   contentType: string;
   size: number;
   uploadedBy: string;
@@ -46,10 +45,9 @@ export function toPendingReceiptInsert(input: {
   status?: string;
 }): InsertPendingReceipt {
   return {
-    driveId: input.driveId,
-    itemId: input.itemId,
-    webUrl: input.webUrl,
     fileName: input.fileName,
+    originalName: input.originalName,
+    filePath: input.filePath,
     contentType: input.contentType,
     size: input.size,
     uploadedBy: input.uploadedBy,

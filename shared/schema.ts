@@ -363,11 +363,10 @@ export const expenseAttachments = pgTable("expense_attachments", {
 // Pending Receipts (for bulk upload before expense assignment)
 export const pendingReceipts = pgTable("pending_receipts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  // SharePoint file information
-  driveId: text("drive_id").notNull(), // SharePoint drive ID
-  itemId: text("item_id").notNull(), // SharePoint item ID
-  webUrl: text("web_url").notNull(), // SharePoint web URL
-  fileName: text("file_name").notNull(), // Original filename
+  // Local file information
+  fileName: text("file_name").notNull(), // Stored filename
+  originalName: text("original_name").notNull(), // Original uploaded filename  
+  filePath: text("file_path").notNull(), // Local file system path
   contentType: text("content_type").notNull(), // MIME type
   size: integer("size").notNull(), // File size in bytes
   

@@ -38,7 +38,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
-import { graphClient } from './services/graph-client.js';
+// Graph client import disabled for local file storage migration
+// import { graphClient } from './services/graph-client.js';
 
 // Numeric utility functions for safe operations
 function normalizeAmount(value: any): number {
@@ -2425,13 +2426,13 @@ export class DatabaseStorage implements IStorage {
     // Create the expense
     const [expense] = await db.insert(expenses).values(expenseData).returning();
 
-    // Create expense attachment from the pending receipt
+    // Create expense attachment from the pending receipt (using local file storage)
     const expenseAttachmentData: InsertExpenseAttachment = {
       expenseId: expense.id,
-      driveId: receipt.driveId,
-      itemId: receipt.itemId,
-      webUrl: receipt.webUrl,
-      fileName: receipt.fileName,
+      driveId: 'local-storage', // Placeholder for local storage
+      itemId: receiptId, // Use receipt ID as item reference  
+      webUrl: `/api/receipts/${receiptId}/download`, // Local download URL
+      fileName: receipt.originalName || receipt.fileName, // Use original name or fallback
       contentType: receipt.contentType,
       size: receipt.size,
       createdByUserId: receipt.uploadedBy

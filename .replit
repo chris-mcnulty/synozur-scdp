@@ -13,6 +13,10 @@ deploymentTarget = "cloudrun"
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 43353
+externalPort = 3000
+
 [env]
 NODE_ENV = "production"
 

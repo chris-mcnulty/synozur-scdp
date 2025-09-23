@@ -138,10 +138,12 @@ const metadataQuerySchema = z.object({
 });
 
 import { eq } from "drizzle-orm";
-import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
-import { graphClient } from "./services/graph-client.js";
+// Azure/SharePoint imports disabled for local file storage migration
+// import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
+// import { graphClient } from "./services/graph-client.js";
 import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
+import { localFileStorage, type DocumentMetadata } from "./services/local-file-storage.js";
 
 // Extend Express Request interface to include user
 declare global {
@@ -162,11 +164,24 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Session storage (in-memory for demo, use Redis in production)
   const sessions: Map<string, any> = new Map();
   
-  // Check if Entra ID is configured
-  const isEntraConfigured = process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET;
+  // Check if Entra ID is configured  
+  const isEntraConfigured = false; // Disabled for local file storage migration
   
-  // Helper function to get SharePoint Embedded container configuration
+  // Stubbed SharePoint config for local file storage migration
   const getSharePointConfig = async () => {
+    // Return disabled state to prevent SharePoint initialization errors
+    return {
+      configured: false,
+      containerId: '',
+      containerTypeId: '',
+      environment: 'development',
+      containerName: 'local-storage',
+      siteId: 'local-storage',
+      driveId: '',
+      created: false
+    };
+    
+    /* Original SharePoint config disabled during local storage migration
     try {
       // Import container configuration from entra-config
       const { getSharePointContainerConfig } = await import('./auth/entra-config.js');
@@ -3735,10 +3750,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
         }
 
-        const sharePointConfig = await getSharePointConfig();
-        if (!sharePointConfig.configured) {
-          return res.status(503).json({ message: "File storage not configured" });
-        }
+        // Local file storage is always available
+        console.log('[BULK_UPLOAD] Using local file storage');
 
         const successful: any[] = [];
         const failed: any[] = [];
@@ -3786,23 +3799,25 @@ export async function registerRoutes(app: Express): Promise<void> {
               continue;
             }
 
-            // Upload to SharePoint with proper folder structure
-            const year = new Date().getFullYear();
-            const uploadPath = `pending-receipts/${year}/${userId}/${Date.now()}-${sanitizedFilename}`;
-            const driveItem = await graphClient.uploadFile(
-              'legacy-not-used', // siteId is not used in SharePoint Embedded
-              sharePointConfig.containerId!,
-              uploadPath,
-              sanitizedFilename,
-              file.buffer
-            );
+            // Store file locally
+            console.log('[BULK_UPLOAD] Storing file locally...');
+            
+            // Create document metadata matching SharePoint design
+            const documentMetadata: DocumentMetadata = {
+              documentType: 'receipt',
+              projectId: validatedBody.projectId,
+              effectiveDate: receiptMetadata.receiptDate,
+              amount: receiptMetadata.amount,
+              tags: receiptMetadata.tags,
+              createdByUserId: userId,
+              metadataVersion: 1
+            };
 
-            // Create pending receipt record with validated metadata
+            // Create pending receipt first to get the ID
             const receiptData = toPendingReceiptInsert({
-              driveId: sharePointConfig.containerId!,
-              itemId: driveItem.id,
-              webUrl: driveItem.webUrl || '',
-              fileName: sanitizedFilename,
+              fileName: file.originalname, // Temporary, will be updated
+              originalName: file.originalname,
+              filePath: '', // Temporary, will be updated
               contentType: file.mimetype,
               size: file.size,
               uploadedBy: userId,
@@ -3819,44 +3834,34 @@ export async function registerRoutes(app: Express): Promise<void> {
               tags: receiptMetadata.tags || undefined
             });
 
-          const createdReceipt = await storage.createPendingReceipt(receiptData);
+            const createdReceipt = await storage.createPendingReceipt(receiptData);
 
-            // Assign receipt metadata to SharePoint with validated data
-            try {
-              const runtimeTypes = fromStorageToRuntimeTypes(receiptData);
-              const metadata = {
-                projectId: receiptData.projectId || '',
-                uploadedBy: userId,
-                expenseCategory: receiptData.category || 'Other',
-                receiptDate: runtimeTypes.receiptDate,
-                amount: runtimeTypes.amount,
-                currency: receiptData.currency || 'USD',
-                status: 'pending',
-                vendor: receiptData.vendor || '',
-                description: receiptData.description || `Receipt: ${sanitizedFilename}`,
-                isReimbursable: receiptData.isReimbursable ?? true,
-                tags: receiptData.tags || ''
-              };
-
-            await graphClient.assignReceiptMetadata(
-              sharePointConfig.containerId!,
-              driveItem.id,
-              metadata
+            // Now store the file using the receipt ID
+            const storedFile = await localFileStorage.storeFile(
+              file.buffer,
+              file.originalname,
+              file.mimetype,
+              documentMetadata,
+              userId,
+              createdReceipt.id  // Use receipt ID as file ID
             );
-          } catch (metadataError) {
-            console.warn('[BULK_UPLOAD] Failed to assign metadata:', metadataError);
-            // Continue - metadata assignment is not critical
-          }
 
-            successful.push({
-              id: createdReceipt.id,
-              fileName: createdReceipt.fileName,
-              size: createdReceipt.size,
-              status: createdReceipt.status,
-              projectId: createdReceipt.projectId,
-              amount: createdReceipt.amount,
-              category: createdReceipt.category
+            // Update the receipt with the correct file information
+            const updatedReceipt = await storage.updatePendingReceipt(createdReceipt.id, {
+              fileName: storedFile.fileName,
+              filePath: storedFile.filePath
             });
+
+          successful.push({
+            id: updatedReceipt.id,
+            fileName: updatedReceipt.fileName,
+            originalName: updatedReceipt.originalName,
+            size: updatedReceipt.size,
+            status: updatedReceipt.status,
+            projectId: updatedReceipt.projectId,
+            amount: updatedReceipt.amount,
+            category: updatedReceipt.category
+          });
 
           } catch (error: any) {
             console.error(`[BULK_UPLOAD] Failed to process file ${file.originalname}:`, error);
@@ -4137,17 +4142,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Get file from SharePoint using container operations
-      // Note: receipt.driveId contains the tenant-specific container ID for proper isolation
-      const fileData = await graphClient.downloadFile(receipt.driveId, receipt.itemId);
+      // Get file from local file storage
+      const fileContent = await localFileStorage.getFileContent(receipt.id);
+      if (!fileContent) {
+        return res.status(404).json({ 
+          message: "File not found",
+          details: "Receipt file could not be retrieved from local storage"
+        });
+      }
 
       // Set appropriate headers
       res.setHeader('Content-Type', receipt.contentType);
       res.setHeader('Content-Length', receipt.size);
-      res.setHeader('Content-Disposition', `attachment; filename="${receipt.fileName.replace(/"/g, '\"')}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${receipt.originalName.replace(/"/g, '\"')}"`);
 
       // Send file data
-      res.send(fileData.buffer);
+      res.send(fileContent.buffer);
 
     } catch (error: any) {
       console.error('[PENDING_RECEIPT_DOWNLOAD] Error:', error);
