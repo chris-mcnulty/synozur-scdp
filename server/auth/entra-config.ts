@@ -1,13 +1,20 @@
 import { ConfidentialClientApplication, Configuration } from '@azure/msal-node';
 
-// Check if Azure AD is configured
-const isConfigured = !!(process.env.AZURE_CLIENT_ID && process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_SECRET);
+// Default to SharePoint Embedded owning app
+const defaultClientId = "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6"; // SCDP-Content owning app
+const defaultTenantId = "b4fbeaf7-1c91-43bb-8031-49eb8d4175ee";   // Synozur tenant
+
+// Check if Azure AD is configured (use defaults if not explicitly set)
+const isConfigured = !!(process.env.AZURE_CLIENT_ID || defaultClientId) && 
+                    !!(process.env.AZURE_TENANT_ID || defaultTenantId) && 
+                    !!process.env.AZURE_CLIENT_SECRET;
 
 // Microsoft Entra ID (Azure AD) configuration
+
 export const msalConfig: Configuration = {
   auth: {
-    clientId: process.env.AZURE_CLIENT_ID || 'placeholder',
-    authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || 'common'}`,
+    clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+    authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
     clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
   },
   system: {
