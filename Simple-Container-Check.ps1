@@ -109,10 +109,11 @@ function Test-GraphPermissions {
         $user = Get-MgUser -UserId $context.Account
         Write-Host "   ✅ User profile accessible" -ForegroundColor $Green
         
-        # Test if we can list any file storage containers
+        # Test if we can list file storage containers with containerTypeId filter
         Write-Host "   🗂️  Testing file storage container access..." -ForegroundColor $White
-        $containers = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/storage/fileStorage/containers" -Method GET
-        Write-Host "   ✅ Container listing works - found $($containers.value.Count) containers" -ForegroundColor $Green
+        $containerFilter = "https://graph.microsoft.com/beta/storage/fileStorage/containers?`$filter=containerTypeId eq '$ContainerTypeId'"
+        $containers = Invoke-MgGraphRequest -Uri $containerFilter -Method GET
+        Write-Host "   ✅ Container listing works - found $($containers.value.Count) containers for container type" -ForegroundColor $Green
         
         return $true
         
