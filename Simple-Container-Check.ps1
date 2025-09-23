@@ -80,19 +80,20 @@ function Show-AdminConsentInstructions {
     Write-Host "`n⚠️  Important: This must be done by a Global Administrator" -ForegroundColor $Yellow
 }
 
-function Show-SharePointAdminInstructions {
-    Write-Host "`n🏢 SharePoint Admin Center Steps" -ForegroundColor $Yellow
-    Write-Host "===============================" -ForegroundColor $Yellow
+function Show-ContainerTypeRegistrationInfo {
+    Write-Host "`n🔧 Container Type Registration Process" -ForegroundColor $Yellow
+    Write-Host "=====================================" -ForegroundColor $Yellow
     
-    $adminUrl = "https://synozur-admin.sharepoint.com"
+    Write-Host "`n📋 SharePoint Embedded container types require registration via SharePoint REST API:" -ForegroundColor $White
+    Write-Host "1. Container types are managed through Microsoft Graph, not SharePoint Admin Center" -ForegroundColor $White
+    Write-Host "2. Registration uses SharePoint REST API: _api/v2.1/storageContainerTypes" -ForegroundColor $Cyan
+    Write-Host "3. Requires certificate-based authentication (not client secrets)" -ForegroundColor $White
+    Write-Host "4. Must be done by the owning application after admin consent" -ForegroundColor $White
     
-    Write-Host "`n📋 Alternative registration via SharePoint Admin Center:" -ForegroundColor $White
-    Write-Host "1. Go to SharePoint Admin Center:" -ForegroundColor $White
-    Write-Host "   $adminUrl" -ForegroundColor $Blue
-    Write-Host "`n2. Navigate to: Settings > Container Types" -ForegroundColor $White
-    Write-Host "3. Look for container type: $ContainerTypeId" -ForegroundColor $Cyan
-    Write-Host "4. If not present, contact the owning application provider" -ForegroundColor $White
-    Write-Host "5. If present but inactive, enable it" -ForegroundColor $White
+    Write-Host "`n⚠️  Key Requirements:" -ForegroundColor $Yellow
+    Write-Host "• Admin consent must be completed first" -ForegroundColor $White
+    Write-Host "• Certificate authentication required for registration API" -ForegroundColor $White
+    Write-Host "• Container type ID: $ContainerTypeId" -ForegroundColor $Cyan
 }
 
 function Test-GraphPermissions {
@@ -153,8 +154,8 @@ try {
             # Show admin consent instructions
             Show-AdminConsentInstructions
             
-            # Show SharePoint admin instructions
-            Show-SharePointAdminInstructions
+            # Show container type registration information
+            Show-ContainerTypeRegistrationInfo
             
             Write-Host "`n📋 After completing admin consent:" -ForegroundColor $Yellow
             Write-Host "1. Wait 5-10 minutes for changes to propagate" -ForegroundColor $White
