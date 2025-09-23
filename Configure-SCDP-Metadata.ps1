@@ -19,6 +19,7 @@ $Green = "Green"
 $Yellow = "Yellow"
 $Red = "Red"
 $Cyan = "Cyan"
+$White = "White"
 
 function Add-SCDPMetadataColumn {
     param(
@@ -236,7 +237,7 @@ function Add-SCDPDocumentMetadata {
             minimum = 1
         }
         defaultValue = @{
-            value = "1"
+            value = 1
         }
     }
     Add-SCDPMetadataColumn -ContainerId $ContainerId -Environment $Environment -ColumnDef $metadataVersionColumn
