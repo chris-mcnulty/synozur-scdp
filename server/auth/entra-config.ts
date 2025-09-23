@@ -81,3 +81,26 @@ export const tokenRequest = {
   scopes: ["user.read", "profile", "email", "openid"],
   redirectUri: REDIRECT_URI,
 };
+
+// SharePoint Embedded Container Configuration
+export const getSharePointContainerConfig = () => {
+  // Container Type ID - same for both environments
+  const containerTypeId = "358aba7d-bb55-4ce0-a08d-e51f03d5edf1";
+  
+  // Environment-specific container IDs
+  const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+  
+  const containerIds = {
+    development: "b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr",
+    production: "b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr"
+  };
+  
+  const currentContainerId = isDevelopment ? containerIds.development : containerIds.production;
+  
+  return {
+    containerTypeId,
+    containerId: currentContainerId,
+    environment: isDevelopment ? 'development' : 'production',
+    containerName: isDevelopment ? 'SCDP Content Storage Dev' : 'SCDP Content Storage'
+  };
+};

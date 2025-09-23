@@ -1,0 +1,84 @@
+Container ID: b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+   ❌ Failed: Document Type - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Client ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Client Name - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Project ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Project Code - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Effective Date - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Amount - Response status code does not indicate success: BadRequest (Bad Request).
+   ❌ Failed: Estimate ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Change Order ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Tags - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Created By User ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Metadata Version - Response status code does not indicate success: BadRequest (Bad Request).
+✅ Development metadata schema configured
+
+📋 Configuring Production Container Metadata...
+Container ID: b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+   ❌ Failed: Document Type - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Client ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Client Name - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Project ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Project Code - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Effective Date - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Amount - Response status code does not indicate success: BadRequest (Bad Request).
+   ❌ Failed: Estimate ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Change Order ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Tags - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Created By User ID - Response status code does not indicate success: Forbidden (Forbidden).
+   ❌ Failed: Metadata Version - Response status code does not indicate success: BadRequest (Bad Request).
+✅ Production metadata schema configured
+
+🎉 SCDP Metadata Configuration Complete!
+========================================
+
+📋 Document Types Configured:
+   • receipt - Expense receipts
+   • invoice - Client invoices
+   • statementOfWork - SOWs and proposals
+   • contract - Client contracts
+   • report - Project reports
+   • estimate - Project estimates
+   • changeOrder - Change orders
+
+📋 Metadata Fields Added:
+   ✅ scdp_documentType (required choice)
+   ✅ scdp_clientId + scdp_clientName
+   ✅ scdp_projectId + scdp_projectCode
+   ✅ scdp_effectiveDate
+   ✅ scdp_amount
+   ✅ scdp_estimateId + scdp_changeOrderId
+   ✅ scdp_tags + scdp_createdByUserId
+   ✅ scdp_metadataVersion
+
+📋 Next Steps:
+❌ Error: Cannot bind parameter 'ForegroundColor' to the target. Exception setting "ForegroundColor": "Cannot convert null to type "System.ConsoleColor" due to enumeration values that are not valid. Specify one of the following enumeration values and try again. The possible enumeration values are "Black,DarkBlue,DarkGreen,DarkCyan,DarkRed,DarkMagenta,DarkYellow,Gray,DarkGray,Blue,Green,Cyan,Red,Magenta,Yellow,White"."
+
+🔌 Disconnecting...
+
+ClientId               : 14d82eec-204b-4c2f-b7e8-296a70dab67e
+TenantId               : b4fbeaf7-1c91-43bb-8031-49eb8d4175ee
+Scopes                 : {FileStorageContainer.Selected, openid, profile, email}
+AuthType               : Delegated
+TokenCredentialType    : InteractiveBrowser
+CertificateThumbprint  :
+CertificateSubjectName :
+SendCertificateChain   : False
+Account                : admin@synozur.com
+AppName                : Microsoft Graph Command Line Tools
+ContextScope           : CurrentUser
+Certificate            :
+PSHostVersion          : 7.5.3
+ManagedIdentityId      :
+ClientSecret           :
+Environment            : Global
+
+✅ Complete!
+Write-Host: C:\Users\cmcnu\PowerShell\Configure-SCDP-Metadata.ps1:285
+Line |
+ 285 |  … ate environment variables with container IDs" -ForegroundColor $White
+     |                                                                   ~~~~~~
+     | Cannot bind parameter 'ForegroundColor' to the target. Exception setting "ForegroundColor": "Cannot convert null
+     | to type "System.ConsoleColor" due to enumeration values that are not valid. Specify one of the following
+     | enumeration values and try again. The possible enumeration values are
+     | "Black,DarkBlue,DarkGreen,DarkCyan,DarkRed,DarkMagenta,DarkYellow,Gray,DarkGray,Blue,Green,Cyan,Red,Magenta,Yellow,White"."

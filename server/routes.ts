@@ -140,6 +140,8 @@ const metadataQuerySchema = z.object({
 import { eq } from "drizzle-orm";
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient } from "./services/graph-client.js";
+import type { InsertPendingReceipt } from "@shared/schema";
+import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
 
 // Extend Express Request interface to include user
 declare global {
@@ -166,14 +168,17 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Helper function to get SharePoint Embedded container configuration
   const getSharePointConfig = async () => {
     try {
-      // Try to get container ID from system settings first, fallback to environment variables
-      // For SharePoint Embedded, we primarily need the container ID
-      let containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || process.env.SHAREPOINT_CONTAINER_ID;
+      // Import container configuration from entra-config
+      const { getSharePointContainerConfig } = await import('./auth/entra-config.js');
+      const containerConfig = getSharePointContainerConfig();
+      
+      // Try to get container ID from system settings first, fallback to built-in configuration
+      let containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || containerConfig.containerId || '';
       
       // For backward compatibility with existing installations, if no container ID is set,
       // use the drive ID as container ID (admin will need to update this)
       if (!containerId) {
-        containerId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID;
+        containerId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID || '';
       }
       
       // Legacy site ID for backward compatibility (will be ignored by new container APIs)
@@ -181,13 +186,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       return {
         containerId,
+        containerTypeId: containerConfig.containerTypeId,
+        environment: containerConfig.environment,
+        containerName: containerConfig.containerName,
         // For backward compatibility, keep these properties but they'll use containerId internally
         siteId: legacySiteId || 'legacy-not-used',
         driveId: containerId, // Map driveId to containerId for backward compatibility
         configured: !!containerId
       };
     } catch (error) {
-      // Fallback to environment variables
+      // Fallback to environment variables if configuration import fails
       let containerId = process.env.SHAREPOINT_CONTAINER_ID;
       
       // For backward compatibility
@@ -226,7 +234,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Test SharePoint connectivity if configured
       if (isEntraConfigured) {
         const sharePointConfig = await getSharePointConfig();
-        healthStatus.sharepoint.configured = sharePointConfig.configured;
+        healthStatus.sharepoint.configured = sharePointConfig.configured ? true : false;
         
         if (sharePointConfig.configured) {
           try {
@@ -235,8 +243,8 @@ export async function registerRoutes(app: Express): Promise<void> {
               sharePointConfig.containerId
             );
             
-            healthStatus.sharepoint.accessible = connectivity.authenticated && 
-                                               connectivity.containerAccessible;
+            healthStatus.sharepoint.accessible = Boolean(connectivity.authenticated && 
+                                               connectivity.containerAccessible);
             
             if (connectivity.error) {
               healthStatus.sharepoint.error = connectivity.error;
@@ -3339,7 +3347,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           let tenantContainerId: string;
           try {
             // First, try to get the user's tenant-specific container
-            tenantContainerId = await storage.getClientContainerIdForUser(userId);
+            tenantContainerId = await storage.getClientContainerIdForUser(userId) || '';
             if (!tenantContainerId) {
               // Fallback: if user doesn't have a tenant container, get the project's client container
               if (project?.clientId) {
@@ -3782,13 +3790,15 @@ export async function registerRoutes(app: Express): Promise<void> {
             const year = new Date().getFullYear();
             const uploadPath = `pending-receipts/${year}/${userId}/${Date.now()}-${sanitizedFilename}`;
             const driveItem = await graphClient.uploadFile(
+              'legacy-not-used', // siteId is not used in SharePoint Embedded
               sharePointConfig.containerId!,
               uploadPath,
+              sanitizedFilename,
               file.buffer
             );
 
             // Create pending receipt record with validated metadata
-            const receiptData: InsertPendingReceipt = {
+            const receiptData = toPendingReceiptInsert({
               driveId: sharePointConfig.containerId!,
               itemId: driveItem.id,
               webUrl: driveItem.webUrl || '',
@@ -3798,8 +3808,8 @@ export async function registerRoutes(app: Express): Promise<void> {
               uploadedBy: userId,
               status: 'pending',
               // Add validated metadata
-              projectId: validatedBody.projectId || receiptMetadata.projectId || undefined,
-              receiptDate: receiptMetadata.receiptDate || undefined,
+              projectId: validatedBody.projectId || undefined,
+              receiptDate: receiptMetadata.receiptDate ? new Date(receiptMetadata.receiptDate) : undefined,
               amount: receiptMetadata.amount || undefined,
               currency: receiptMetadata.currency || 'USD',
               category: receiptMetadata.category || undefined,
@@ -3807,18 +3817,19 @@ export async function registerRoutes(app: Express): Promise<void> {
               description: receiptMetadata.description || undefined,
               isReimbursable: receiptMetadata.isReimbursable ?? true,
               tags: receiptMetadata.tags || undefined
-            };
+            });
 
           const createdReceipt = await storage.createPendingReceipt(receiptData);
 
             // Assign receipt metadata to SharePoint with validated data
             try {
+              const runtimeTypes = fromStorageToRuntimeTypes(receiptData);
               const metadata = {
                 projectId: receiptData.projectId || '',
                 uploadedBy: userId,
                 expenseCategory: receiptData.category || 'Other',
-                receiptDate: receiptData.receiptDate || new Date(),
-                amount: receiptData.amount || 0,
+                receiptDate: runtimeTypes.receiptDate,
+                amount: runtimeTypes.amount,
                 currency: receiptData.currency || 'USD',
                 status: 'pending',
                 vendor: receiptData.vendor || '',
@@ -3970,18 +3981,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Cannot update receipt that has been assigned to an expense" });
       }
 
-      const updatedReceipt = await storage.updatePendingReceipt(receiptId, updateData);
+      // Convert date/amount to storage-safe string types
+      const storageUpdateData = {
+        ...updateData,
+        receiptDate: updateData.receiptDate ? toDateString(updateData.receiptDate) : undefined,
+        amount: updateData.amount ? toDecimalString(updateData.amount) : undefined
+      };
+      
+      const updatedReceipt = await storage.updatePendingReceipt(receiptId, storageUpdateData);
 
       // Update SharePoint metadata if possible
       try {
         const sharePointConfig = await getSharePointConfig();
         if (sharePointConfig.configured) {
+          const runtimeTypes = fromStorageToRuntimeTypes(updatedReceipt);
           const metadata = {
             projectId: updatedReceipt.projectId || '',
             uploadedBy: updatedReceipt.uploadedBy,
             expenseCategory: updatedReceipt.category || 'Other',
-            receiptDate: updatedReceipt.receiptDate || new Date(),
-            amount: Number(updatedReceipt.amount) || 0,
+            receiptDate: runtimeTypes.receiptDate,
+            amount: runtimeTypes.amount,
             currency: updatedReceipt.currency || 'USD',
             status: updatedReceipt.status,
             vendor: updatedReceipt.vendor || '',
@@ -4077,8 +4096,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Receipt has already been processed" });
       }
 
-      // Convert receipt to expense
-      const result = await storage.convertPendingReceiptToExpense(receiptId, expenseData, userId);
+      // Convert receipt to expense with proper type mapping
+      const storageExpenseData = toExpenseInsert(expenseData);
+      const result = await storage.convertPendingReceiptToExpense(receiptId, storageExpenseData, userId);
 
       res.status(201).json({
         expense: result.expense,

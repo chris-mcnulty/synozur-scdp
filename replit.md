@@ -84,6 +84,33 @@ Preferred communication style: Simple, everyday language.
 - **PostCSS**: CSS processing with Tailwind and Autoprefixer
 - **WS**: WebSocket library for Neon database connections
 
+## SharePoint Embedded Integration
+
+### Current Status: **Production-Ready Infrastructure**
+- **Container Type ID**: 358aba7d-bb55-4ce0-a08d-e51f03d5edf1 (production-ready, billable)
+- **Dev Container ID**: b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+- **Prod Container ID**: b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr
+
+### Completed Infrastructure
+1. **Enterprise Security Architecture**: Azure AD groups for scalable permission management
+2. **Document Metadata Schema**: Comprehensive SCDP metadata with 12 fields supporting multiple document types
+3. **Type-Safe Storage Layer**: Storage mapping utilities for Date/number to string conversions
+4. **Environment Configuration**: Container-specific configuration with proper fallbacks
+5. **API Integration**: SharePoint health checks and connectivity testing
+
+### Technical Architecture
+- **Security Model**: Azure AD groups (SCDP-Admins, SCDP-ProjectManagers, etc.) for permission management
+- **Metadata Schema**: Single "Document" content type with scdp_* prefixed fields for all document types
+- **Type Mapping**: Storage boundary utilities in `server/utils/storageMappers.ts` handle Date/number to string conversions
+- **Configuration**: Environment-aware container selection with hardcoded production container IDs
+
+### Ready for Development
+The SharePoint Embedded infrastructure is now production-ready and positioned for:
+- Expense receipt upload and management
+- Document metadata assignment and retrieval
+- Multi-tenant container operations
+- Future expansion to invoices, statements of work, estimates, and change orders
+
 ## Technical Debt & Backlog
 
 ### Staff Table Removal
