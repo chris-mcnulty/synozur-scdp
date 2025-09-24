@@ -3134,6 +3134,39 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.patch("/api/expenses/:id", requireAuth, async (req, res) => {
+    try {
+      const expenseId = req.params.id;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission to edit it
+      const { canAccess, expense } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess || !expense) {
+        return res.status(expense ? 403 : 404).json({
+          message: expense ? "Insufficient permissions to edit this expense" : "Expense not found"
+        });
+      }
+
+      // Only expense owner can edit their own expenses (unless admin/billing-admin)
+      const canEdit = expense.personId === userId || ['admin', 'billing-admin'].includes(req.user!.role);
+      if (!canEdit) {
+        return res.status(403).json({ message: "You can only edit your own expenses" });
+      }
+
+      // Validate and parse update data
+      const updateSchema = insertExpenseSchema.partial().omit({ personId: true });
+      const validatedData = updateSchema.parse(req.body);
+      
+      const updatedExpense = await storage.updateExpense(expenseId, validatedData);
+      res.json(updatedExpense);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update expense" });
+    }
+  });
+
   // Validation schemas for expense attachment file uploads
   const allowedMimeTypes = [
     'image/jpeg',
@@ -3361,57 +3394,34 @@ export async function registerRoutes(app: Express): Promise<void> {
           const project = await storage.getProject(expense.projectId);
           const projectCode = project?.code || 'unknown';
 
-          // Get tenant-specific container for the user
-          let tenantContainerId: string;
-          try {
-            // First, try to get the user's tenant-specific container
-            tenantContainerId = await storage.getClientContainerIdForUser(userId) || '';
-            if (!tenantContainerId) {
-              // Fallback: if user doesn't have a tenant container, get the project's client container
-              if (project?.clientId) {
-                const clientContainer = await storage.ensureClientHasContainer(project.clientId);
-                tenantContainerId = clientContainer.containerId;
-                console.log(`[EXPENSE_ATTACHMENT] Created/found container for client ${project.clientId}: ${tenantContainerId}`);
-              } else {
-                // Last resort: fallback to global container for backward compatibility
-                console.warn('[EXPENSE_ATTACHMENT] No client found for project, using global container');
-                const sharePointConfig = await getSharePointConfig();
-                if (!sharePointConfig.configured) {
-                  return res.status(503).json({ message: "SharePoint integration not configured and no tenant container available" });
-                }
-                tenantContainerId = sharePointConfig.containerId!;
-              }
-            }
-          } catch (containerError) {
-            console.warn('[EXPENSE_ATTACHMENT] Failed to resolve tenant container, falling back to global container:', containerError);
-            const sharePointConfig = await getSharePointConfig();
-            if (!sharePointConfig.configured) {
-              return res.status(503).json({ message: "SharePoint integration not configured" });
-            }
-            tenantContainerId = sharePointConfig.containerId!;
-          }
+          // Store file using local file storage
+          const fileMetadata: DocumentMetadata = {
+            documentType: 'receipt',
+            clientId: project?.clientId,
+            clientName: project?.client?.name,
+            projectId: expense.projectId,
+            projectCode: projectCode,
+            amount: parseFloat(expense.amount),
+            createdByUserId: userId,
+            metadataVersion: 1,
+            tags: `expense,${projectCode},${expense.category || 'uncategorized'}`.toLowerCase()
+          };
 
-          // Use canonical folder structure for expense receipts
-          const year = new Date().getFullYear();
-          const folderPath = `/Receipts/${year}/${projectCode}/${expenseId}`;
-          
-          const uploadResult = await graphClient.uploadFile(
-            'legacy-not-used', // siteId is not used in SharePoint Embedded
-            tenantContainerId, // Use tenant-specific container
-            folderPath,
-            sanitizedFilename,
+          const uploadResult = await localFileStorage.storeFile(
             req.file.buffer,
-            projectCode,
-            expenseId
+            req.file.originalname,
+            req.file.mimetype,
+            fileMetadata,
+            userId
           );
 
           // Save attachment metadata to database
           const attachmentData = {
             expenseId: expenseId,
-            driveId: tenantContainerId, // Store the tenant-specific container ID
+            driveId: 'local-storage', // Use local storage identifier
             itemId: uploadResult.id,
-            webUrl: uploadResult.webUrl || `https://sharepoint.com/item/${uploadResult.id}`,
-            fileName: sanitizedFilename,
+            webUrl: `/api/expenses/${expenseId}/attachments/${uploadResult.id}/content`,
+            fileName: uploadResult.fileName,
             contentType: req.file.mimetype,
             size: req.file.size,
             createdByUserId: userId
@@ -3419,56 +3429,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
           const attachment = await storage.addExpenseAttachment(expenseId, attachmentData);
 
-          // ============ AUTOMATIC RECEIPT METADATA ASSIGNMENT ============
-          // Automatically assign receipt metadata to the uploaded file
-          try {
-            // Initialize receipt metadata schema in container if not already present
-            console.log('[RECEIPT_METADATA] Initializing receipt metadata schema for container:', tenantContainerId);
-            await graphClient.initializeReceiptMetadataSchema(tenantContainerId);
-
-            // Prepare receipt metadata from expense and project information
-            const receiptMetadata = {
-              projectId: projectCode,
-              uploadedBy: userId,
-              expenseCategory: expense.category || 'Other', // Use expense category if available
-              receiptDate: expense.transactionDate ? new Date(expense.transactionDate) : new Date(),
-              amount: expense.amount || 0,
-              currency: expense.currency || 'USD',
-              status: 'assigned' as const, // File is assigned to an expense
-              expenseId: expenseId,
-              vendor: expense.vendor || null,
-              description: expense.description || `Receipt for ${sanitizedFilename}`,
-              isReimbursable: expense.isReimbursable !== false,
-              tags: `expense,${projectCode},${expense.category || 'uncategorized'}`.toLowerCase()
-            };
-
-            console.log('[RECEIPT_METADATA] Assigning metadata to uploaded file:', uploadResult.id);
-            await graphClient.assignReceiptMetadata(tenantContainerId, uploadResult.id, receiptMetadata);
-
-            // Sync metadata to local database for caching and reporting
-            await storage.syncDocumentMetadata(tenantContainerId, uploadResult.id, {
-              fileName: sanitizedFilename,
-              projectId: projectCode,
-              expenseId: expenseId,
-              uploadedBy: userId,
-              expenseCategory: expense.category || 'Other',
-              receiptDate: expense.transactionDate ? new Date(expense.transactionDate) : new Date(),
-              amount: expense.amount || 0,
-              currency: expense.currency || 'USD',
-              status: 'assigned',
-              vendor: expense.vendor || null,
-              description: expense.description || `Receipt for ${sanitizedFilename}`,
-              isReimbursable: expense.isReimbursable !== false,
-              tags: [`expense`, projectCode, expense.category || 'uncategorized'].filter(Boolean),
-              rawMetadata: receiptMetadata
-            });
-
-            console.log('[RECEIPT_METADATA] Successfully assigned receipt metadata to file:', uploadResult.id);
-          } catch (metadataError) {
-            // Don't fail the upload if metadata assignment fails - log the error and continue
-            console.warn('[RECEIPT_METADATA] Failed to assign receipt metadata (upload still successful):', metadataError);
-            // The file upload was successful, so we continue with the response
-          }
+          // File is already stored with metadata in local storage
+          console.log('[RECEIPT_METADATA] File stored with metadata in local storage:', uploadResult.id);
 
           res.status(201).json({
             id: attachment.id,
@@ -3483,12 +3445,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
 
         } catch (error: any) {
-          console.error('[ATTACHMENT_UPLOAD] SharePoint upload error:', error);
-          
-          if (error.message?.includes('Graph API Error:')) {
-            return res.status(503).json({ message: "SharePoint service temporarily unavailable" });
-          }
-          
+          console.error('[ATTACHMENT_UPLOAD] Local storage upload error:', error);
           res.status(500).json({ message: "Failed to upload attachment" });
         }
       });

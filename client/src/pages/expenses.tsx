@@ -15,7 +15,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Receipt, Upload, DollarSign } from "lucide-react";
+import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,8 @@ const EXPENSE_CATEGORIES = [
 
 export default function Expenses() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -89,8 +92,116 @@ export default function Expenses() {
     },
   });
 
-  const onSubmit = (data: ExpenseFormData) => {
-    createExpenseMutation.mutate(data);
+  const updateExpenseMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: ExpenseFormData }) => {
+      return apiRequest(`/api/expenses/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      setEditingExpenseId(null);
+      toast({
+        title: "Expense updated",
+        description: "Your expense has been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update expense. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onSubmit = async (data: ExpenseFormData) => {
+    // First create the expense
+    try {
+      const expense = await createExpenseMutation.mutateAsync(data);
+      
+      // If there's a receipt file, upload it
+      if (receiptFile && expense.id) {
+        const formData = new FormData();
+        formData.append('file', receiptFile);
+        
+        try {
+          const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+            headers: {
+              'X-Session-Id': localStorage.getItem('sessionId') || '',
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error('Receipt upload failed');
+          }
+          
+          toast({
+            title: "Receipt uploaded",
+            description: "Receipt has been attached to the expense.",
+          });
+        } catch (error) {
+          toast({
+            title: "Receipt upload failed",
+            description: "Expense was created but receipt upload failed.",
+            variant: "destructive",
+          });
+        }
+      }
+      
+      setReceiptFile(null);
+    } catch (error) {
+      // Error is already handled by the mutation
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setReceiptFile(file);
+    }
+  };
+
+  // Edit form for expense editing
+  const editForm = useForm<ExpenseFormData>({
+    resolver: zodResolver(expenseFormSchema),
+    defaultValues: {
+      date: format(new Date(), 'yyyy-MM-dd'),
+      amount: "0",
+      currency: "USD",
+      billable: true,
+      reimbursable: true,
+      description: "",
+      category: "",
+      projectId: "",
+    },
+  });
+
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpenseId(expense.id);
+    // Populate the edit form with current expense data
+    editForm.reset({
+      date: format(new Date(expense.date), 'yyyy-MM-dd'),
+      amount: expense.amount,
+      currency: expense.currency,
+      billable: expense.billable,
+      reimbursable: expense.reimbursable,
+      description: expense.description,
+      category: expense.category,
+      projectId: expense.projectId,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingExpenseId(null);
+  };
+
+  const handleUpdateExpense = (expenseId: string, data: ExpenseFormData) => {
+    updateExpenseMutation.mutate({ id: expenseId, data });
   };
 
   const getTotalExpenses = () => {
@@ -388,15 +499,20 @@ export default function Expenses() {
 
                   <div className="space-y-2">
                     <FormLabel>Receipt (Optional)</FormLabel>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      data-testid="button-upload-receipt"
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Upload Receipt
-                    </Button>
+                    <div className="flex items-center space-x-2">
+                      <Input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.pdf,.heic,.heif"
+                        onChange={handleFileChange}
+                        className="flex-1"
+                        data-testid="input-receipt-file"
+                      />
+                      {receiptFile && (
+                        <span className="text-sm text-muted-foreground">
+                          {receiptFile.name}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <Button 
@@ -469,13 +585,23 @@ export default function Expenses() {
                           {expense.description}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-medium text-lg" data-testid={`expense-amount-${expense.id}`}>
-                          ${parseFloat(expense.amount).toFixed(2)}
+                      <div className="flex items-center space-x-3">
+                        <div className="text-right">
+                          <div className="font-medium text-lg" data-testid={`expense-amount-${expense.id}`}>
+                            ${parseFloat(expense.amount).toFixed(2)}
+                          </div>
+                          <div className="text-sm text-muted-foreground" data-testid={`expense-date-${expense.id}`}>
+                            {format(new Date(expense.date), 'MMM d, yyyy')}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground" data-testid={`expense-date-${expense.id}`}>
-                          {format(new Date(expense.date), 'MMM d, yyyy')}
-                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditExpense(expense)}
+                          data-testid={`button-edit-expense-${expense.id}`}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -485,6 +611,111 @@ export default function Expenses() {
           </Card>
         </div>
       </div>
+
+      {/* Edit Expense Dialog */}
+      <Dialog open={!!editingExpenseId} onOpenChange={(open) => !open && handleCancelEdit()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Expense</DialogTitle>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit((data) => handleUpdateExpense(editingExpenseId!, data))} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" step="0.01" data-testid="edit-input-amount" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} data-testid="edit-input-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-select-category">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {EXPENSE_CATEGORIES.map((category) => (
+                          <SelectItem key={category.value} value={category.value}>
+                            {category.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex space-x-2">
+                <FormField
+                  control={editForm.control}
+                  name="billable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center space-x-2">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="edit-checkbox-billable"
+                        />
+                      </FormControl>
+                      <FormLabel>Billable</FormLabel>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="reimbursable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center space-x-2">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="edit-checkbox-reimbursable"
+                        />
+                      </FormControl>
+                      <FormLabel>Reimbursable</FormLabel>
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={handleCancelEdit}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={updateExpenseMutation.isPending}>
+                  {updateExpenseMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
