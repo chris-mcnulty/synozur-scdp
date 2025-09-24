@@ -807,11 +807,11 @@ export const insertClientSchema = createInsertSchema(clients).omit({
   createdAt: true,
 }).extend({
   status: z.enum(["pending", "active", "inactive", "archived"]).default("pending"),
-  msaDate: z.string().optional(), // Date input as string
-  sinceDate: z.string().optional(), // Date input as string  
+  msaDate: z.string().nullish(), // Date input as string or null
+  sinceDate: z.string().nullish(), // Date input as string or null
   msaDocument: z.string().optional(), // File path/name
   hasMsa: z.boolean().default(false),
-  ndaDate: z.string().optional(), // Date input as string
+  ndaDate: z.string().nullish(), // Date input as string or null
   ndaDocument: z.string().optional(), // File path/name
   hasNda: z.boolean().default(false)
 });
