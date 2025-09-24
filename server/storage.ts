@@ -1969,11 +1969,15 @@ export class DatabaseStorage implements IStorage {
           } else {
             // Open-ended retainer: use invoiced amounts as recognized revenue
             // This avoids the issue of not knowing the contract duration
+            // EXCLUDING expenses (which are not revenue)
             const [invoicedData] = await db.select({
               totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
             })
             .from(invoiceLines)
-            .where(eq(invoiceLines.projectId, projectId));
+            .where(and(
+              eq(invoiceLines.projectId, projectId),
+              ne(invoiceLines.type, 'expense') // Exclude expense lines from revenue
+            ));
             
             revenue = Number(invoicedData?.totalInvoiced || 0);
           }
@@ -1981,12 +1985,15 @@ export class DatabaseStorage implements IStorage {
       }
     } else if (project && (project.commercialScheme === 'milestone' || project.commercialScheme === 'fixed-price')) {
       // For milestone and fixed-price projects, use invoiced amounts as recognized revenue
-      // This queries invoice lines for this project
+      // This queries invoice lines for this project, EXCLUDING expenses (which are not revenue)
       const [invoicedData] = await db.select({
         totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
       })
       .from(invoiceLines)
-      .where(eq(invoiceLines.projectId, projectId));
+      .where(and(
+        eq(invoiceLines.projectId, projectId),
+        ne(invoiceLines.type, 'expense') // Exclude expense lines from revenue
+      ));
       
       revenue = Number(invoicedData?.totalInvoiced || 0);
       

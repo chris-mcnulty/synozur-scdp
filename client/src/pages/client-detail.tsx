@@ -76,24 +76,40 @@ export default function ClientDetail() {
 
   const { toast } = useToast();
 
-  // Auto-enter edit mode if ?edit=true is in URL
+  // Fetch client details
+  const { data: client, isLoading: clientLoading, error: clientError } = useQuery<Client>({
+    queryKey: ["/api/clients", clientId],
+    enabled: !!clientId
+  });
+
+  // Auto-enter edit mode if ?edit=true is in URL and populate form with client data
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('edit') === 'true') {
+    if (urlParams.get('edit') === 'true' && client) {
       setIsEditing(true);
+      // Populate the edit form with client data
+      setEditForm({
+        name: client?.name || "",
+        status: client?.status || "pending",
+        billingContact: client?.billingContact || "",
+        contactName: client?.contactName || "",
+        contactAddress: client?.contactAddress || "",
+        currency: client?.currency || "USD",
+        msaDate: client?.msaDate || "",
+        sinceDate: client?.sinceDate || "",
+        hasMsa: client?.hasMsa || false,
+        msaDocument: client?.msaDocument || "",
+        ndaDate: client?.ndaDate || "",
+        hasNda: client?.hasNda || false,
+        ndaDocument: client?.ndaDocument || ""
+      });
       // Clean the URL by removing the edit parameter
       urlParams.delete('edit');
       const newSearch = urlParams.toString();
       const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
       window.history.replaceState({}, '', newUrl);
     }
-  }, []);
-
-  // Fetch client details
-  const { data: client, isLoading: clientLoading, error: clientError } = useQuery<Client>({
-    queryKey: ["/api/clients", clientId],
-    enabled: !!clientId
-  });
+  }, [client]);
 
   // Debug logging
   console.log('Client Detail Debug:', { clientId, clientLoading, client, clientError });
