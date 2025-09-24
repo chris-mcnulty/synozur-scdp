@@ -849,11 +849,19 @@ export class DatabaseStorage implements IStorage {
         const client = row.clients || {
           id: 'unknown',
           name: 'No Client Assigned',
+          status: 'inactive',
           currency: 'USD',
           billingContact: null,
           contactName: null,
           contactAddress: null,
           vocabularyOverrides: null,
+          msaDate: null,
+          msaDocument: null,
+          hasMsa: false,
+          sinceDate: null,
+          ndaDate: null,
+          ndaDocument: null,
+          hasNda: false,
           createdAt: new Date()
         };
         
@@ -2382,18 +2390,18 @@ export class DatabaseStorage implements IStorage {
     // Apply ordering
     let queryWithOrdering = queryWithConditions.orderBy(desc(pendingReceipts.createdAt));
 
-    // Apply pagination
-    let finalQuery = queryWithOrdering;
-    if (filters.limit) {
-      finalQuery = finalQuery.limit(filters.limit);
-    }
-    if (filters.offset) {
-      finalQuery = finalQuery.offset(filters.offset);
-    }
-
-    const results = await finalQuery;
+    // Apply pagination independently
+    let query = queryWithOrdering;
     
-    // Transform results
+    if (filters.limit && filters.offset) {
+      query = queryWithOrdering.limit(filters.limit).offset(filters.offset);
+    } else if (filters.limit) {
+      query = queryWithOrdering.limit(filters.limit);
+    } else if (filters.offset) {
+      query = queryWithOrdering.offset(filters.offset);
+    }
+    
+    const results = await query;
     return results.map(row => ({
       ...row.pendingReceipt,
       project: row.project || undefined,
@@ -2430,8 +2438,7 @@ export class DatabaseStorage implements IStorage {
 
   async updatePendingReceiptStatus(id: string, status: string, expenseId?: string, assignedBy?: string): Promise<PendingReceipt> {
     const updateData: Partial<InsertPendingReceipt> = {
-      status,
-      updatedAt: new Date()
+      status
     };
     
     if (status === 'assigned' && expenseId) {
@@ -3078,8 +3085,16 @@ export class DatabaseStorage implements IStorage {
       totalLinesCount,
       clientCount: uniqueClients.size,
       projectCount: uniqueProjects.size,
-      creator: result.creator?.id ? result.creator : null,
-      finalizer: result.finalizer?.id ? result.finalizer : null
+      creator: result.creator?.id ? {
+        id: String(result.creator.id),
+        name: String(result.creator.name),
+        email: String(result.creator.email)
+      } : null,
+      finalizer: result.finalizer?.id ? {
+        id: String(result.finalizer.id),
+        name: String(result.finalizer.name),
+        email: String(result.finalizer.email)
+      } : null
     });
   }
 
@@ -5335,11 +5350,33 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(containerTypes, eq(clientContainers.containerTypeId, containerTypes.containerTypeId))
     .where(eq(clientContainers.status, 'active'));
 
+    let finalQuery = query;
     if (clientId) {
-      query = query.where(eq(clientContainers.clientId, clientId));
+      finalQuery = db.select({
+        id: clientContainers.id,
+        clientId: clientContainers.clientId,
+        containerId: clientContainers.containerId,
+        containerTypeId: clientContainers.containerTypeId,
+        displayName: clientContainers.displayName,
+        description: clientContainers.description,
+        driveId: clientContainers.driveId,
+        webUrl: clientContainers.webUrl,
+        status: clientContainers.status,
+        createdAt: clientContainers.createdAt,
+        updatedAt: clientContainers.updatedAt,
+        client: clients,
+        containerType: containerTypes
+      })
+      .from(clientContainers)
+      .leftJoin(clients, eq(clientContainers.clientId, clients.id))
+      .leftJoin(containerTypes, eq(clientContainers.containerTypeId, containerTypes.containerTypeId))
+      .where(and(
+        eq(clientContainers.status, 'active'),
+        eq(clientContainers.clientId, clientId)
+      ));
     }
 
-    const results = await query.orderBy(clientContainers.displayName);
+    const results = await finalQuery.orderBy(clientContainers.displayName);
     
     return results.map(row => ({
       ...row,
@@ -5403,11 +5440,19 @@ export class DatabaseStorage implements IStorage {
       client: result.client || { 
         id: 'unknown', 
         name: 'Unknown Client', 
+        status: 'inactive',
         currency: 'USD',
         billingContact: null,
         contactName: null,
         contactAddress: null,
         vocabularyOverrides: null,
+        msaDate: null,
+        msaDocument: null,
+        hasMsa: false,
+        sinceDate: null,
+        ndaDate: null,
+        ndaDocument: null,
+        hasNda: false,
         createdAt: new Date()
       },
       containerType: result.containerType || {
@@ -5690,6 +5735,7 @@ export class DatabaseStorage implements IStorage {
     const createdColumns: ContainerColumn[] = [];
     for (const colDef of columnDefs) {
       const column = await this.createContainerColumn(containerId, {
+        containerId,
         columnId: '', // Local-only, no SharePoint column ID
         name: colDef.name,
         displayName: colDef.displayName,
@@ -5806,6 +5852,9 @@ export class DatabaseStorage implements IStorage {
     }
 
     const clientId = userProjects[0].clientId;
+    if (!clientId) {
+      return null;
+    }
     const clientContainer = await this.getContainerForClient(clientId);
     
     return clientContainer?.containerId || null;
@@ -5987,10 +6036,6 @@ export class DatabaseStorage implements IStorage {
     endDate?: Date;
   }): Promise<any[]> {
     try {
-      let query = db.select()
-        .from(documentMetadata)
-        .where(eq(documentMetadata.containerId, containerId));
-
       const conditions = [eq(documentMetadata.containerId, containerId)];
 
       if (filters.status) {
@@ -6013,7 +6058,10 @@ export class DatabaseStorage implements IStorage {
         conditions.push(lte(documentMetadata.receiptDate, filters.endDate));
       }
 
-      const results = await query.where(and(...conditions)).orderBy(desc(documentMetadata.createdAt));
+      const results = await db.select()
+        .from(documentMetadata)
+        .where(and(...conditions))
+        .orderBy(desc(documentMetadata.createdAt));
       return results;
     } catch (error) {
       console.error('[METADATA_SEARCH] Error searching document metadata:', error);
@@ -6061,50 +6109,12 @@ export class DatabaseStorage implements IStorage {
     try {
       console.log('[CONTAINER_SYNC] Syncing container types with SharePoint Embedded...');
       
-      // Get container types from SharePoint Embedded
-      const sharePointTypes = await graphClient.listContainerTypes();
-      console.log(`[CONTAINER_SYNC] Found ${sharePointTypes.length} container types in SharePoint`);
+      // Skip SharePoint Embedded integration - use local-only approach
+      console.warn('[CONTAINER_SYNC] SharePoint Embedded integration disabled, skipping sync');
+      return;
 
-      // Sync each type to our database
-      for (const spType of sharePointTypes) {
-        const existingType = await this.getContainerType(spType.id);
-        
-        if (!existingType) {
-          // Create new container type in our database
-          await this.createContainerType({
-            containerTypeId: spType.id,
-            displayName: spType.displayName,
-            description: spType.description || null,
-            applicationId: spType.applicationId || null,
-            isBuiltIn: spType.isBuiltIn,
-            isActive: true
-          });
-          console.log(`[CONTAINER_SYNC] Added container type: ${spType.displayName} (${spType.id})`);
-        } else {
-          // Update existing container type
-          await this.updateContainerType(existingType.id, {
-            displayName: spType.displayName,
-            description: spType.description || null,
-            applicationId: spType.applicationId || null,
-            isBuiltIn: spType.isBuiltIn,
-            isActive: true
-          });
-          console.log(`[CONTAINER_SYNC] Updated container type: ${spType.displayName} (${spType.id})`);
-        }
-      }
-
-      // Set the first available type as default if none is set
-      if (sharePointTypes.length > 0) {
-        const defaultType = await this.getSystemSettingValue('DEFAULT_CONTAINER_TYPE_ID');
-        if (!defaultType) {
-          await this.setSystemSetting(
-            'DEFAULT_CONTAINER_TYPE_ID', 
-            sharePointTypes[0].id,
-            'Default container type for new clients'
-          );
-          console.log(`[CONTAINER_SYNC] Set default container type: ${sharePointTypes[0].id}`);
-        }
-      }
+      // SharePoint integration skipped - no types to sync
+      console.log('[CONTAINER_SYNC] No SharePoint types to sync');
 
     } catch (error) {
       console.warn('[CONTAINER_SYNC] Failed to sync with SharePoint Embedded (this is normal if not configured):', error);
@@ -6121,16 +6131,8 @@ export class DatabaseStorage implements IStorage {
       // Try to create the container type in SharePoint Embedded first
       let containerTypeId = 'default-scdp-containers';
       
-      try {
-        const sharePointType = await graphClient.createContainerType(
-          'SCDP Default Container Type',
-          'Default container type for SCDP client file storage'
-        );
-        containerTypeId = sharePointType.id;
-        console.log(`[CONTAINER_DEFAULT] Created container type in SharePoint: ${sharePointType.id}`);
-      } catch (spError) {
-        console.warn('[CONTAINER_DEFAULT] Failed to create container type in SharePoint, using local type:', spError);
-      }
+      // Skip SharePoint integration - use local-only approach
+      console.warn('[CONTAINER_DEFAULT] SharePoint integration disabled, using local type');
 
       // Create the container type in our database
       const containerType = await this.createContainerType({
@@ -6167,62 +6169,23 @@ export class DatabaseStorage implements IStorage {
       return containerType;
     }
 
-    // Try to get from SharePoint Embedded
-    try {
-      const sharePointType = await graphClient.getContainerType(containerTypeId);
-      
-      // Create in our database
-      containerType = await this.createContainerType({
-        containerTypeId: sharePointType.id,
-        displayName: sharePointType.displayName,
-        description: sharePointType.description || null,
-        applicationId: sharePointType.applicationId || null,
-        isBuiltIn: sharePointType.isBuiltIn,
-        isActive: true
-      });
+    // Skip SharePoint integration - create local-only container type
+    console.warn(`[CONTAINER_TYPE] SharePoint integration disabled, creating local type: ${containerTypeId}`);
+    
+    const newDisplayName = displayName || `Container Type ${containerTypeId}`;
+    
+    // Create local-only container type
+    containerType = await this.createContainerType({
+      containerTypeId,
+      displayName: newDisplayName,
+      description: `Local container type: ${containerTypeId}`,
+      applicationId: process.env.AZURE_CLIENT_ID || null,
+      isBuiltIn: false,
+      isActive: true
+    });
 
-      console.log(`[CONTAINER_TYPE] Synchronized container type from SharePoint: ${containerTypeId}`);
-      return containerType;
-    } catch (spError) {
-      console.warn(`[CONTAINER_TYPE] Container type not found in SharePoint: ${containerTypeId}`);
-      
-      // Create a new container type
-      const newDisplayName = displayName || `Container Type ${containerTypeId}`;
-      
-      try {
-        // Try to create in SharePoint first
-        const sharePointType = await graphClient.createContainerType(
-          newDisplayName,
-          `Auto-generated container type: ${containerTypeId}`
-        );
-        
-        containerType = await this.createContainerType({
-          containerTypeId: sharePointType.id,
-          displayName: sharePointType.displayName,
-          description: sharePointType.description || null,
-          applicationId: sharePointType.applicationId || null,
-          isBuiltIn: sharePointType.isBuiltIn,
-          isActive: true
-        });
-
-        console.log(`[CONTAINER_TYPE] Created new container type in SharePoint: ${sharePointType.id}`);
-        return containerType;
-      } catch (createError) {
-        console.warn(`[CONTAINER_TYPE] Failed to create container type in SharePoint, creating local only:`, createError);
-        
-        // Create local-only container type
-        containerType = await this.createContainerType({
-          containerTypeId,
-          displayName: newDisplayName,
-          description: `Local container type: ${containerTypeId}`,
-          applicationId: process.env.AZURE_CLIENT_ID || null,
-          isBuiltIn: false,
-          isActive: true
-        });
-
-        return containerType;
-      }
-    }
+    console.log(`[CONTAINER_TYPE] Created local container type: ${containerTypeId}`);
+    return containerType;
   }
 
   // Initialize container types if they don't exist
