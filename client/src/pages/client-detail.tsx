@@ -77,10 +77,13 @@ export default function ClientDetail() {
   const { toast } = useToast();
 
   // Fetch client details
-  const { data: client, isLoading: clientLoading } = useQuery<Client>({
+  const { data: client, isLoading: clientLoading, error: clientError } = useQuery<Client>({
     queryKey: ["/api/clients", clientId],
     enabled: !!clientId
   });
+
+  // Debug logging
+  console.log('Client Detail Debug:', { clientId, clientLoading, client, clientError });
 
   // Fetch client projects
   const { data: allProjects = [] } = useQuery<ProjectWithClient[]>({
@@ -164,13 +167,33 @@ export default function ClientDetail() {
     );
   }
 
-  if (!client) {
+  if (clientError) {
+    return (
+      <Layout>
+        <div className="p-6">
+          <div className="text-center space-y-4">
+            <h1 className="text-2xl font-semibold">Error Loading Client</h1>
+            <p className="text-muted-foreground">
+              {clientError instanceof Error ? clientError.message : 'Failed to load client data'}
+            </p>
+            <p className="text-sm text-muted-foreground">Client ID: {clientId}</p>
+            <Link href="/clients">
+              <Button>Back to Clients</Button>
+            </Link>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!client && !clientLoading) {
     return (
       <Layout>
         <div className="p-6">
           <div className="text-center space-y-4">
             <h1 className="text-2xl font-semibold">Client Not Found</h1>
             <p className="text-muted-foreground">The requested client could not be found.</p>
+            <p className="text-sm text-muted-foreground">Client ID: {clientId}</p>
             <Link href="/clients">
               <Button>Back to Clients</Button>
             </Link>
