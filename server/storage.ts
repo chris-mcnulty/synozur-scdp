@@ -3127,7 +3127,7 @@ export class DatabaseStorage implements IStorage {
       let expensesBilled = 0;
       let totalAmount = 0;
 
-      // Get the batch details to determine date range
+      // Get the batch details to determine date range and type
       const [batch] = await tx.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
       if (!batch) {
         throw new Error(`Invoice batch ${batchId} not found`);
@@ -3135,13 +3135,14 @@ export class DatabaseStorage implements IStorage {
 
       const startDate = batch.startDate;
       const endDate = batch.endDate;
+      const batchType = batch.batchType || 'mixed'; // Default to mixed for backward compatibility
       
-      console.log(`[STORAGE] Generating invoices for batch ${batchId} from ${startDate} to ${endDate} (mode: ${invoicingMode})`);
+      console.log(`[STORAGE] Generating invoices for batch ${batchId} from ${startDate} to ${endDate} (mode: ${invoicingMode}, type: ${batchType})`);
 
       if (invoicingMode === 'project') {
         // Project-based invoicing: one invoice per project
         for (const projectId of projectIds) {
-          const result = await this.generateInvoiceForProject(tx, batchId, projectId, startDate, endDate);
+          const result = await this.generateInvoiceForProject(tx, batchId, projectId, startDate, endDate, batchType);
           invoicesCreated += result.invoicesCreated;
           timeEntriesBilled += result.timeEntriesBilled;
           expensesBilled += result.expensesBilled;
@@ -3150,7 +3151,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         // Client-based invoicing: one invoice per client (combining all projects)
         for (const clientId of clientIds) {
-          const result = await this.generateInvoiceForClient(tx, batchId, clientId, startDate, endDate);
+          const result = await this.generateInvoiceForClient(tx, batchId, clientId, startDate, endDate, batchType);
           invoicesCreated += result.invoicesCreated;
           timeEntriesBilled += result.timeEntriesBilled;
           expensesBilled += result.expensesBilled;
@@ -3342,7 +3343,7 @@ export class DatabaseStorage implements IStorage {
     return updatedBatch;
   }
 
-  private async generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string) {
+  private async generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string, batchType: string = 'mixed') {
     let timeEntriesBilled = 0;
     let expensesBilled = 0;
     let totalAmount = 0;
@@ -3396,50 +3397,56 @@ export class DatabaseStorage implements IStorage {
       return { invoicesCreated: 0, timeEntriesBilled: 0, expensesBilled: 0, totalAmount: 0 };
     }
 
-    // Process time entries
+    // Process time entries (skip if batch type is expenses only)
     const timeEntryIds: string[] = [];
-    for (const { timeEntry, user } of unbilledTimeEntries) {
-      const rate = await this.getBillingRateForTimeEntry(tx, timeEntry, user);
-      
-      if (!rate || rate <= 0) {
-        console.warn(`[STORAGE] Skipping time entry ${timeEntry.id} for user ${user.name} - no billing rate configured`);
-        continue;
-      }
-      
-      const amount = Number(timeEntry.hours) * rate;
-      totalAmount += amount;
-      timeEntryIds.push(timeEntry.id);
+    if (batchType === 'services' || batchType === 'mixed') {
+      for (const { timeEntry, user } of unbilledTimeEntries) {
+        const rate = await this.getBillingRateForTimeEntry(tx, timeEntry, user);
+        
+        if (!rate || rate <= 0) {
+          console.warn(`[STORAGE] Skipping time entry ${timeEntry.id} for user ${user.name} - no billing rate configured`);
+          continue;
+        }
+        
+        const amount = Number(timeEntry.hours) * rate;
+        totalAmount += amount;
+        timeEntryIds.push(timeEntry.id);
 
-      // Create invoice line for time entry
-      await tx.insert(invoiceLines).values({
-        batchId,
-        projectId,
-        clientId: client.id,
-        type: 'time',
-        quantity: timeEntry.hours,
-        rate: rate.toString(),
-        amount: amount.toString(),
-        description: `${user.name} - ${timeEntry.description || 'Time entry'} (${timeEntry.date})`
-      });
+        // Create invoice line for time entry
+        await tx.insert(invoiceLines).values({
+          batchId,
+          projectId,
+          clientId: client.id,
+          type: 'time',
+          quantity: timeEntry.hours,
+          rate: rate.toString(),
+          amount: amount.toString(),
+          description: `${user.name} - ${timeEntry.description || 'Time entry'} (${timeEntry.date})`
+        });
+      }
+      timeEntriesBilled = timeEntryIds.length;
     }
 
-    // Process expenses
+    // Process expenses (skip if batch type is services only)
     const expenseIds: string[] = [];
-    for (const expense of unbilledExpenses) {
-      const amount = Number(expense.amount);
-      totalAmount += amount;
-      expenseIds.push(expense.id);
+    if (batchType === 'expenses' || batchType === 'mixed') {
+      for (const expense of unbilledExpenses) {
+        const amount = Number(expense.amount);
+        totalAmount += amount;
+        expenseIds.push(expense.id);
 
-      // Create invoice line for expense
-      const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
-      await tx.insert(invoiceLines).values({
-        batchId,
-        projectId,
-        clientId: client.id,
-        type: 'expense',
-        amount: expense.amount,
-        description: `${expense.description}${vendorInfo} (${expense.date})`
-      });
+        // Create invoice line for expense
+        const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
+        await tx.insert(invoiceLines).values({
+          batchId,
+          projectId,
+          clientId: client.id,
+          type: 'expense',
+          amount: expense.amount,
+          description: `${expense.description}${vendorInfo} (${expense.date})`
+        });
+      }
+      expensesBilled = expenseIds.length;
     }
 
     // Mark time entries as billed and lock them
@@ -3452,7 +3459,6 @@ export class DatabaseStorage implements IStorage {
           lockedAt: sql`now()`
         })
         .where(sql`${timeEntries.id} IN (${sql.raw(timeEntryIds.map(id => `'${id}'`).join(','))})`);
-      timeEntriesBilled = timeEntryIds.length;
     }
 
     // Mark expenses as billed
@@ -3460,7 +3466,6 @@ export class DatabaseStorage implements IStorage {
       await tx.update(expenses)
         .set({ billedFlag: true })
         .where(sql`${expenses.id} IN (${sql.raw(expenseIds.map(id => `'${id}'`).join(','))})`);
-      expensesBilled = expenseIds.length;
     }
 
     if (timeEntryIds.length > 0 || expenseIds.length > 0) {
@@ -3471,7 +3476,7 @@ export class DatabaseStorage implements IStorage {
     return { invoicesCreated, timeEntriesBilled, expensesBilled, totalAmount };
   }
 
-  private async generateInvoiceForClient(tx: any, batchId: string, clientId: string, startDate: string, endDate: string) {
+  private async generateInvoiceForClient(tx: any, batchId: string, clientId: string, startDate: string, endDate: string, batchType: string = 'mixed') {
     let timeEntriesBilled = 0;
     let expensesBilled = 0;
     let totalAmount = 0;
@@ -3489,7 +3494,7 @@ export class DatabaseStorage implements IStorage {
 
     // Process each project for this client
     for (const project of clientProjects) {
-      const result = await this.generateInvoiceForProject(tx, batchId, project.id, startDate, endDate);
+      const result = await this.generateInvoiceForProject(tx, batchId, project.id, startDate, endDate, batchType);
       timeEntriesBilled += result.timeEntriesBilled;
       expensesBilled += result.expensesBilled;
       totalAmount += result.totalAmount;

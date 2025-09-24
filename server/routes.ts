@@ -4455,7 +4455,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode } = req.body;
+      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode, batchType } = req.body;
       
       console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode });
       
@@ -4497,6 +4497,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         discountAmount: discountAmount || null,
         totalAmount: "0", // Will be updated after generating invoices
         invoicingMode: invoicingMode || "client",
+        batchType: batchType || "mixed", // Default to mixed for backward compatibility
         exportedToQBO: false,
         createdBy: req.user?.id || null
       });

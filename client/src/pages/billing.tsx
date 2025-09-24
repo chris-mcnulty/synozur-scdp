@@ -29,7 +29,10 @@ import {
   Calendar,
   Building,
   FolderOpen,
-  Lock
+  Lock,
+  Users,
+  CreditCard,
+  Layers
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -71,6 +74,7 @@ export default function Billing() {
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newBatchOpen, setNewBatchOpen] = useState(false);
   const [invoicingMode, setInvoicingMode] = useState<'client' | 'project'>('client');
+  const [batchType, setBatchType] = useState<'services' | 'expenses' | 'mixed'>('mixed');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
@@ -173,6 +177,7 @@ export default function Billing() {
       startDate: string; 
       endDate: string; 
       invoicingMode: 'client' | 'project';
+      batchType: 'services' | 'expenses' | 'mixed';
       discountPercent?: string; 
       discountAmount?: string 
     }) => {
@@ -266,6 +271,7 @@ export default function Billing() {
       startDate,
       endDate,
       invoicingMode,
+      batchType,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
       discountAmount: discountType === 'amount' ? discountValue : undefined
     });
@@ -348,6 +354,39 @@ export default function Billing() {
                         <Label htmlFor="mode-project" className="flex items-center cursor-pointer">
                           <FolderOpen className="w-4 h-4 mr-2" />
                           Project-based (one invoice per project)
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {/* Batch Type */}
+                  <div className="space-y-4">
+                    <Label className="text-base font-medium">Invoice Type</Label>
+                    <RadioGroup 
+                      value={batchType} 
+                      onValueChange={(value: 'services' | 'expenses' | 'mixed') => setBatchType(value)}
+                      className="space-y-3"
+                      data-testid="radio-batch-type"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="services" id="type-services" />
+                        <Label htmlFor="type-services" className="flex items-center cursor-pointer">
+                          <Users className="w-4 h-4 mr-2" />
+                          Services Only (time entries)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="expenses" id="type-expenses" />
+                        <Label htmlFor="type-expenses" className="flex items-center cursor-pointer">
+                          <Receipt className="w-4 h-4 mr-2" />
+                          Expenses Only (with vendor information)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="mixed" id="type-mixed" />
+                        <Label htmlFor="type-mixed" className="flex items-center cursor-pointer">
+                          <Layers className="w-4 h-4 mr-2" />
+                          Mixed (both services and expenses)
                         </Label>
                       </div>
                     </RadioGroup>
