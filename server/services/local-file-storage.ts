@@ -14,7 +14,23 @@ const __dirname = path.dirname(__filename);
 
 // Storage directory configuration
 const STORAGE_ROOT = path.join(__dirname, '../../uploads');
-const RECEIPTS_DIR = path.join(STORAGE_ROOT, 'receipts');
+
+// Document type directories
+const DOCUMENT_DIRS = {
+  receipt: path.join(STORAGE_ROOT, 'receipts'),
+  invoice: path.join(STORAGE_ROOT, 'invoices'),
+  contract: path.join(STORAGE_ROOT, 'contracts'),
+  statementOfWork: path.join(STORAGE_ROOT, 'statements'),
+  estimate: path.join(STORAGE_ROOT, 'estimates'),
+  changeOrder: path.join(STORAGE_ROOT, 'change_orders'),
+  report: path.join(STORAGE_ROOT, 'reports')
+};
+
+// Get directory for document type with safety
+function getDocumentDirectory(documentType: string): string {
+  const dir = DOCUMENT_DIRS[documentType as keyof typeof DOCUMENT_DIRS] || DOCUMENT_DIRS.receipt;
+  return dir;
+}
 
 // Document metadata interface matching SharePoint design
 export interface DocumentMetadata {
@@ -96,11 +112,14 @@ export class LocalFileStorage {
   ): Promise<StoredFile> {
     // Ensure storage directories exist
     this.ensureDirectoryExists(STORAGE_ROOT);
-    this.ensureDirectoryExists(RECEIPTS_DIR);
+    
+    // Get appropriate directory for document type
+    const documentDir = getDocumentDirectory(metadata.documentType);
+    this.ensureDirectoryExists(documentDir);
 
     // Generate unique file name
     const fileName = this.generateUniqueFileName(originalName);
-    const filePath = path.join(RECEIPTS_DIR, fileName);
+    const filePath = path.join(documentDir, fileName);
 
     // Write file to disk
     fs.writeFileSync(filePath, buffer);
@@ -143,32 +162,45 @@ export class LocalFileStorage {
    * Retrieve file metadata by ID
    */
   async getFileMetadata(fileId: string): Promise<StoredFile | null> {
-    // For simplicity, scan the receipts directory for metadata files
-    const files = fs.readdirSync(RECEIPTS_DIR);
-    
-    for (const file of files) {
-      if (file.endsWith('.metadata.json')) {
-        const metadataPath = path.join(RECEIPTS_DIR, file);
-        try {
-          const content = fs.readFileSync(metadataPath, 'utf-8');
-          const rawData = JSON.parse(content);
-          
-          // Rehydrate dates from string format
-          const storedFile: StoredFile = {
-            ...rawData,
-            uploadedAt: new Date(rawData.uploadedAt),
-            metadata: {
-              ...rawData.metadata,
-              effectiveDate: rawData.metadata.effectiveDate ? new Date(rawData.metadata.effectiveDate) : undefined
+    // Search across all document type directories for metadata files
+    for (const documentType of Object.keys(DOCUMENT_DIRS)) {
+      const documentDir = getDocumentDirectory(documentType);
+      
+      // Skip if directory doesn't exist
+      if (!fs.existsSync(documentDir)) {
+        continue;
+      }
+      
+      try {
+        const files = fs.readdirSync(documentDir);
+        
+        for (const file of files) {
+          if (file.endsWith('.metadata.json')) {
+            const metadataPath = path.join(documentDir, file);
+            try {
+              const content = fs.readFileSync(metadataPath, 'utf-8');
+              const rawData = JSON.parse(content);
+              
+              // Rehydrate dates from string format
+              const storedFile: StoredFile = {
+                ...rawData,
+                uploadedAt: new Date(rawData.uploadedAt),
+                metadata: {
+                  ...rawData.metadata,
+                  effectiveDate: rawData.metadata.effectiveDate ? new Date(rawData.metadata.effectiveDate) : undefined
+                }
+              };
+              
+              if (storedFile.id === fileId) {
+                return storedFile;
+              }
+            } catch (error) {
+              console.warn(`Failed to read metadata file ${file}:`, error);
             }
-          };
-          
-          if (storedFile.id === fileId) {
-            return storedFile;
           }
-        } catch (error) {
-          console.warn(`Failed to read metadata file ${file}:`, error);
         }
+      } catch (error) {
+        console.warn(`Failed to read directory ${documentDir}:`, error);
       }
     }
     
@@ -202,12 +234,24 @@ export class LocalFileStorage {
     clientId?: string;
     uploadedBy?: string;
   }): Promise<StoredFile[]> {
-    const files = fs.readdirSync(RECEIPTS_DIR);
+    // Search across all document type directories safely
     const results: StoredFile[] = [];
+    const directoriesToSearch = filter?.documentType 
+      ? [getDocumentDirectory(filter.documentType)]
+      : Object.values(DOCUMENT_DIRS);
+    
+    for (const documentDir of directoriesToSearch) {
+      // Skip if directory doesn't exist
+      if (!fs.existsSync(documentDir)) {
+        continue;
+      }
+      
+      try {
+        const files = fs.readdirSync(documentDir);
 
-    for (const file of files) {
+        for (const file of files) {
       if (file.endsWith('.metadata.json')) {
-        const metadataPath = path.join(RECEIPTS_DIR, file);
+        const metadataPath = path.join(documentDir, file);
         try {
           const content = fs.readFileSync(metadataPath, 'utf-8');
           const rawData = JSON.parse(content);
@@ -238,10 +282,13 @@ export class LocalFileStorage {
             }
           }
 
-          results.push(storedFile);
-        } catch (error) {
-          console.warn(`Failed to read metadata file ${file}:`, error);
+            results.push(storedFile);
+          } catch (error) {
+            console.warn(`Failed to read metadata file ${file}:`, error);
+          }
         }
+      } catch (error) {
+        console.warn(`Failed to read directory ${documentDir}:`, error);
       }
     }
 
