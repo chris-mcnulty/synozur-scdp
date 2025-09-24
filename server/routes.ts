@@ -5617,12 +5617,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/auth/sso/status", async (req, res) => {
-    const { REDIRECT_URI } = await import("./auth/entra-config");
     res.json({ 
-      configured: !!isEntraConfigured,
-      tenantId: process.env.AZURE_TENANT_ID || null,
-      redirectUri: REDIRECT_URI,
-      clientId: process.env.AZURE_CLIENT_ID || null
+      configured: !!isEntraConfigured
     });
   });
   
