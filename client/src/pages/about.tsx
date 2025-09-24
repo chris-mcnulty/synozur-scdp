@@ -34,9 +34,10 @@ export default function About() {
     queryKey: ["/api/environment"]
   });
 
-  // Get version settings
+  // Get version and company settings
   const majorVersion = systemSettings.find((s: SystemSetting) => s.settingKey === 'VERSION_MAJOR')?.settingValue || '0';
   const releaseDate = systemSettings.find((s: SystemSetting) => s.settingKey === 'VERSION_RELEASE_DATE')?.settingValue || new Date().toISOString().split('T')[0];
+  const companyName = systemSettings.find((s: SystemSetting) => s.settingKey === 'COMPANY_NAME')?.settingValue || 'Synozur Consulting Delivery Platform';
   
   // Format version number (major.yyyy.mm.dd)
   const formatVersionNumber = (major: string, dateStr: string) => {
@@ -52,7 +53,6 @@ export default function About() {
   
   // Use backend-provided environment information
   const environment = environmentInfo?.environment || 'Development';
-  const companyName = 'Synozur';
 
   return (
     <Layout>
