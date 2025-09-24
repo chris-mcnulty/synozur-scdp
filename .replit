@@ -29,6 +29,10 @@ externalPort = 3003
 localPort = 43353
 externalPort = 3000
 
+[[ports]]
+localPort = 46125
+externalPort = 4200
+
 [env]
 NODE_ENV = "production"
 

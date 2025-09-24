@@ -82,27 +82,27 @@ export default function ClientDetail() {
     enabled: !!clientId
   });
 
-  // Auto-enter edit mode if ?edit=true is in URL and populate form with client data
+  // Auto-enter edit mode if ?edit=true is in URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('edit') === 'true' && client) {
-      setIsEditing(true);
-      // Populate the edit form with client data
+      // Populate form with client data
       setEditForm({
-        name: client?.name || "",
-        status: client?.status || "pending",
-        billingContact: client?.billingContact || "",
-        contactName: client?.contactName || "",
-        contactAddress: client?.contactAddress || "",
-        currency: client?.currency || "USD",
-        msaDate: client?.msaDate || "",
-        sinceDate: client?.sinceDate || "",
-        hasMsa: client?.hasMsa || false,
-        msaDocument: client?.msaDocument || "",
-        ndaDate: client?.ndaDate || "",
-        hasNda: client?.hasNda || false,
-        ndaDocument: client?.ndaDocument || ""
+        name: client.name,
+        status: client.status,
+        billingContact: client.billingContact || "",
+        contactName: client.contactName || "",
+        contactAddress: client.contactAddress || "",
+        currency: client.currency,
+        msaDate: client.msaDate || "",
+        sinceDate: client.sinceDate || "",
+        hasMsa: client.hasMsa || false,
+        msaDocument: client.msaDocument || "",
+        ndaDate: client.ndaDate || "",
+        hasNda: client.hasNda || false,
+        ndaDocument: client.ndaDocument || ""
       });
+      setIsEditing(true);
       // Clean the URL by removing the edit parameter
       urlParams.delete('edit');
       const newSearch = urlParams.toString();
@@ -110,9 +110,6 @@ export default function ClientDetail() {
       window.history.replaceState({}, '', newUrl);
     }
   }, [client]);
-
-  // Debug logging
-  console.log('Client Detail Debug:', { clientId, clientLoading, client, clientError });
 
   // Fetch client projects
   const { data: allProjects = [] } = useQuery<ProjectWithClient[]>({
@@ -163,22 +160,27 @@ export default function ClientDetail() {
   });
 
   const handleEdit = () => {
-    setIsEditing(true);
+    if (!client) {
+      return;
+    }
+    
+    // Populate form with current client data
     setEditForm({
-      name: client?.name || "",
-      status: client?.status || "pending",
-      billingContact: client?.billingContact || "",
-      contactName: client?.contactName || "",
-      contactAddress: client?.contactAddress || "",
-      currency: client?.currency || "USD",
-      msaDate: client?.msaDate || "",
-      sinceDate: client?.sinceDate || "",
-      hasMsa: client?.hasMsa || false,
-      msaDocument: client?.msaDocument || "",
-      ndaDate: client?.ndaDate || "",
-      hasNda: client?.hasNda || false,
-      ndaDocument: client?.ndaDocument || ""
+      name: client.name,
+      status: client.status,
+      billingContact: client.billingContact || "",
+      contactName: client.contactName || "",
+      contactAddress: client.contactAddress || "",
+      currency: client.currency,
+      msaDate: client.msaDate || "",
+      sinceDate: client.sinceDate || "",
+      hasMsa: client.hasMsa || false,
+      msaDocument: client.msaDocument || "",
+      ndaDate: client.ndaDate || "",
+      hasNda: client.hasNda || false,
+      ndaDocument: client.ndaDocument || ""
     });
+    setIsEditing(true);
   };
 
   const handleSave = () => {
