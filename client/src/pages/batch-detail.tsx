@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -113,6 +114,9 @@ interface InvoiceBatchDetails {
   paymentTerms?: string | null;
   finalizer?: { id: string; name: string; email: string } | null;
   creator?: { id: string; name: string; email: string } | null;
+  asOfDate?: string | null;
+  asOfDateUpdatedBy?: string | null;
+  asOfDateUpdatedAt?: string | null;
 }
 
 interface InvoiceLine {
@@ -191,6 +195,8 @@ export default function BatchDetail() {
   const [useCustomPaymentTerms, setUseCustomPaymentTerms] = useState(false);
   const [customPaymentTerms, setCustomPaymentTerms] = useState("");
   const [isEditingPaymentTerms, setIsEditingPaymentTerms] = useState(false);
+  const [isEditingAsOfDate, setIsEditingAsOfDate] = useState(false);
+  const [newAsOfDate, setNewAsOfDate] = useState("");
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -319,6 +325,32 @@ export default function BatchDetail() {
       toast({ 
         title: "Error",
         description: error.message || "Failed to update payment terms",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // As-Of Date Update Mutation
+  const updateAsOfDateMutation = useMutation({
+    mutationFn: async (asOfDate: string) => {
+      return await apiRequest(`/api/invoice-batches/${batchId}/as-of-date`, {
+        method: 'PATCH',
+        body: JSON.stringify({ asOfDate })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: "As-of date updated successfully" 
+      });
+      setIsEditingAsOfDate(false);
+      setNewAsOfDate("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update as-of date",
         variant: "destructive" 
       });
     }
@@ -750,6 +782,29 @@ export default function BatchDetail() {
     reviewMutation.mutate(undefined);
   };
 
+  const handleSaveAsOfDate = () => {
+    if (!newAsOfDate) {
+      toast({
+        title: "Invalid date",
+        description: "Please enter a valid as-of date",
+        variant: "destructive"
+      });
+      return;
+    }
+    updateAsOfDateMutation.mutate(newAsOfDate);
+  };
+
+  const handleCancelAsOfDateEdit = () => {
+    setIsEditingAsOfDate(false);
+    setNewAsOfDate("");
+  };
+
+  const handleStartAsOfDateEdit = () => {
+    setIsEditingAsOfDate(true);
+    // Pre-populate with current as-of date or finalized date
+    setNewAsOfDate(batchDetails?.asOfDate || (batchDetails?.finalizedAt ? batchDetails.finalizedAt.split('T')[0] : ""));
+  };
+
   const handleDeleteBatch = () => {
     const confirmMessage = `Are you sure you want to delete batch ${batchId}?\n\nThis will permanently remove:\n• All invoice lines\n• All adjustments\n• The batch itself\n\nThis action cannot be undone.`;
     
@@ -1149,7 +1204,7 @@ export default function BatchDetail() {
             {batchDetails.status === 'finalized' && batchDetails.finalizedAt && (
               <>
                 <Separator className="my-4" />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <div className="text-sm text-muted-foreground">Finalized By</div>
                     <p className="font-medium" data-testid="text-finalized-by">
@@ -1161,6 +1216,55 @@ export default function BatchDetail() {
                     <p className="font-medium" data-testid="text-finalized-at">
                       {format(new Date(batchDetails.finalizedAt), "MMM d, yyyy h:mm a")}
                     </p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-muted-foreground">As Of Date</div>
+                      {user?.role === 'admin' && !isEditingAsOfDate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleStartAsOfDateEdit}
+                          data-testid="button-edit-as-of-date"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {isEditingAsOfDate ? (
+                      <div className="space-y-2">
+                        <Input
+                          type="date"
+                          value={newAsOfDate}
+                          onChange={(e) => setNewAsOfDate(e.target.value)}
+                          data-testid="input-as-of-date"
+                        />
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            onClick={handleSaveAsOfDate}
+                            disabled={updateAsOfDateMutation.isPending}
+                            data-testid="button-save-as-of-date"
+                          >
+                            {updateAsOfDateMutation.isPending ? 'Saving...' : 'Save'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleCancelAsOfDateEdit}
+                            data-testid="button-cancel-as-of-date"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="font-medium" data-testid="text-as-of-date">
+                        {batchDetails.asOfDate 
+                          ? format(new Date(batchDetails.asOfDate), "MMM d, yyyy")
+                          : format(new Date(batchDetails.finalizedAt), "MMM d, yyyy")}
+                      </p>
+                    )}
                   </div>
                 </div>
               </>
