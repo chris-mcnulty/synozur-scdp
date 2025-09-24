@@ -30,12 +30,6 @@ const graphClient = {
   getReceiptsByUploader: async () => ({ receipts: [], error: "SharePoint disabled for local storage" }),
   uploadFile: async () => ({ success: false, error: "SharePoint disabled for local storage" })
 };
-const msalInstance = {
-  getAuthCodeUrl: async () => ({ success: false, error: "MSAL disabled for local storage" }),
-  acquireTokenByCode: async () => ({ success: false, error: "MSAL disabled for local storage" })
-};
-const authCodeRequest = {};
-const tokenRequest = {};
 
 // Zod schemas for SharePoint operations security validation
 // SECURITY FIX: Removed base64 upload capability to prevent DoS attacks
@@ -170,8 +164,8 @@ const metadataQuerySchema = z.object({
 });
 
 import { eq } from "drizzle-orm";
-// Azure/SharePoint imports disabled for local file storage migration
-// import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
+// Azure/SharePoint imports
+import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 // import { graphClient } from "./services/graph-client.js";
 import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
@@ -197,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   const sessions: Map<string, any> = new Map();
   
   // Check if Entra ID is configured  
-  const isEntraConfigured = false; // Disabled for local file storage migration
+  const isEntraConfigured = !!msalInstance;
   
   // Stubbed SharePoint config for local file storage migration
   const getSharePointConfig = async () => {
