@@ -506,6 +506,20 @@ export default function ClientDetail() {
                                   </span>
                                 )}
                               </div>
+                              {client.msaDocument && (
+                                <div className="flex items-center space-x-2">
+                                  <a 
+                                    href={`/api/documents/${client.msaDocument}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                                    data-testid="link-msa-document"
+                                  >
+                                    <FileText className="h-3 w-3" />
+                                    <span>View MSA Document</span>
+                                  </a>
+                                </div>
+                              )}
                             </>
                           )}
                           
@@ -539,6 +553,20 @@ export default function ClientDetail() {
                                   </span>
                                 )}
                               </div>
+                              {client.ndaDocument && (
+                                <div className="flex items-center space-x-2">
+                                  <a 
+                                    href={`/api/documents/${client.ndaDocument}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center space-x-1"
+                                    data-testid="link-nda-document"
+                                  >
+                                    <FileText className="h-3 w-3" />
+                                    <span>View NDA Document</span>
+                                  </a>
+                                </div>
+                              )}
                             </>
                           )}
                           
