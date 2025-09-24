@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle, FileText } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { toast } from "@/hooks/use-toast";
@@ -114,6 +114,24 @@ function Reports() {
       return response.json();
     },
     enabled: reportType === "revenue"
+  });
+
+  // Compliance Tracking Query - fetch clients without MSAs and projects without SOWs
+  const { data: complianceData, isLoading: complianceLoading } = useQuery({
+    queryKey: ["/api/compliance", selectedClient],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        ...(selectedClient !== "all" && { clientId: selectedClient })
+      });
+      const response = await fetch(`/api/compliance?${params}`, {
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch compliance data");
+      return response.json();
+    },
+    enabled: reportType === "compliance"
   });
 
   // Resource Utilization Query
@@ -883,6 +901,142 @@ function Reports() {
     );
   };
 
+  // Render Compliance Tracking
+  const renderComplianceTracking = () => {
+    if (complianceLoading) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+      );
+    }
+
+    const data = complianceData || { clientsWithoutMsa: [], projectsWithoutSow: [] };
+    
+    return (
+      <div className="space-y-6">
+        {/* Clients without MSAs */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <AlertCircle className="h-5 w-5 text-yellow-500" />
+              <span>Clients Without MSAs ({data.clientsWithoutMsa?.length || 0})</span>
+            </CardTitle>
+            <CardDescription>
+              Clients that need Master Service Agreements before project work can begin
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.clientsWithoutMsa?.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Client Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Has NDA</TableHead>
+                    <TableHead>Client Since</TableHead>
+                    <TableHead>Project Count</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.clientsWithoutMsa.map((client: any) => (
+                    <TableRow key={client.id}>
+                      <TableCell className="font-medium">{client.name}</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={
+                            client.status === 'active' ? 'default' :
+                            client.status === 'pending' ? 'secondary' :
+                            client.status === 'inactive' ? 'outline' : 'destructive'
+                          }
+                        >
+                          {client.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={client.hasNda ? 'default' : 'outline'}>
+                          {client.hasNda ? 'Yes' : 'No'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {client.sinceDate ? 
+                          format(new Date(client.sinceDate), "MMM d, yyyy") : 
+                          format(new Date(client.createdAt), "MMM d, yyyy")
+                        }
+                      </TableCell>
+                      <TableCell>{client.projectCount || 0}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">
+                All active clients have signed MSAs ✓
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Projects without SOWs */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5 text-orange-500" />
+              <span>Projects Without SOWs ({data.projectsWithoutSow?.length || 0})</span>
+            </CardTitle>
+            <CardDescription>
+              Projects that need Statement of Work agreements before work can continue
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.projectsWithoutSow?.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project Name</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Project Code</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Start Date</TableHead>
+                    <TableHead>PM</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.projectsWithoutSow.map((project: any) => (
+                    <TableRow key={project.id}>
+                      <TableCell className="font-medium">{project.name}</TableCell>
+                      <TableCell>{project.clientName}</TableCell>
+                      <TableCell className="font-mono text-sm">{project.code}</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={
+                            project.status === 'active' ? 'default' :
+                            project.status === 'on-hold' ? 'secondary' : 'outline'
+                          }
+                        >
+                          {project.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {project.startDate ? format(new Date(project.startDate), "MMM d, yyyy") : 'Not set'}
+                      </TableCell>
+                      <TableCell>{project.pmName || 'Unassigned'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">
+                All active projects have SOWs ✓
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
@@ -933,7 +1087,7 @@ function Reports() {
 
       {/* Report Tabs */}
       <Tabs value={reportType} onValueChange={setReportType}>
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="portfolio" data-testid="tab-portfolio">
             Portfolio Overview
           </TabsTrigger>
@@ -945,6 +1099,9 @@ function Reports() {
           </TabsTrigger>
           <TabsTrigger value="utilization" data-testid="tab-utilization">
             Resource Utilization
+          </TabsTrigger>
+          <TabsTrigger value="compliance" data-testid="tab-compliance">
+            Compliance Tracking
           </TabsTrigger>
         </TabsList>
         
@@ -962,6 +1119,10 @@ function Reports() {
         
         <TabsContent value="utilization" className="space-y-4">
           {renderResourceUtilization()}
+        </TabsContent>
+        
+        <TabsContent value="compliance" className="space-y-4">
+          {renderComplianceTracking()}
         </TabsContent>
       </Tabs>
     </div>

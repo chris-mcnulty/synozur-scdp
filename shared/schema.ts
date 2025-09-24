@@ -34,6 +34,15 @@ export const clients = pgTable("clients", {
   contactName: text("contact_name"),
   contactAddress: text("contact_address"),
   vocabularyOverrides: text("vocabulary_overrides"), // JSON string
+  // MSA (Master Services Agreement) tracking
+  msaDate: date("msa_date"), // Date MSA was signed
+  msaDocument: text("msa_document"), // File path/name for uploaded MSA document
+  hasMsa: boolean("has_msa").default(false), // Track if MSA exists
+  sinceDate: date("since_date"), // Client relationship start date (editable, can be derived from MSA date)
+  // NDA (Non-Disclosure Agreement) tracking
+  ndaDate: date("nda_date"), // Date NDA was signed
+  ndaDocument: text("nda_document"), // File path/name for uploaded NDA document
+  hasNda: boolean("has_nda").default(false), // Track if NDA exists
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -793,7 +802,14 @@ export const insertClientSchema = createInsertSchema(clients).omit({
   id: true,
   createdAt: true,
 }).extend({
-  status: z.enum(["pending", "active", "inactive", "archived"]).default("pending")
+  status: z.enum(["pending", "active", "inactive", "archived"]).default("pending"),
+  msaDate: z.string().optional(), // Date input as string
+  sinceDate: z.string().optional(), // Date input as string  
+  msaDocument: z.string().optional(), // File path/name
+  hasMsa: z.boolean().default(false),
+  ndaDate: z.string().optional(), // Date input as string
+  ndaDocument: z.string().optional(), // File path/name
+  hasNda: z.boolean().default(false)
 });
 
 export const insertProjectSchema = createInsertSchema(projects).omit({

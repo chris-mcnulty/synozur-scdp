@@ -141,7 +141,14 @@ export default function ClientDetail() {
       billingContact: client?.billingContact || "",
       contactName: client?.contactName || "",
       contactAddress: client?.contactAddress || "",
-      currency: client?.currency || "USD"
+      currency: client?.currency || "USD",
+      msaDate: client?.msaDate || "",
+      sinceDate: client?.sinceDate || "",
+      hasMsa: client?.hasMsa || false,
+      msaDocument: client?.msaDocument || "",
+      ndaDate: client?.ndaDate || "",
+      hasNda: client?.hasNda || false,
+      ndaDocument: client?.ndaDocument || ""
     });
   };
 
@@ -364,6 +371,44 @@ export default function ClientDetail() {
                             data-testid="textarea-edit-contact-address"
                           />
                         </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="msaDate">MSA Signed Date</Label>
+                          <Input
+                            id="msaDate"
+                            type="date"
+                            value={editForm.msaDate || ""}
+                            onChange={(e) => setEditForm({ 
+                              ...editForm, 
+                              msaDate: e.target.value,
+                              hasMsa: Boolean(e.target.value) // Auto-update hasMsa based on date
+                            })}
+                            data-testid="input-edit-msa-date"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="sinceDate">Client Since Date</Label>
+                          <Input
+                            id="sinceDate"
+                            type="date"
+                            value={editForm.sinceDate || ""}
+                            onChange={(e) => setEditForm({ ...editForm, sinceDate: e.target.value })}
+                            data-testid="input-edit-since-date"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="ndaDate">NDA Signed Date</Label>
+                          <Input
+                            id="ndaDate"
+                            type="date"
+                            value={editForm.ndaDate || ""}
+                            onChange={(e) => setEditForm({ 
+                              ...editForm, 
+                              ndaDate: e.target.value,
+                              hasNda: Boolean(e.target.value) // Auto-update hasNda based on date
+                            })}
+                            data-testid="input-edit-nda-date"
+                          />
+                        </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -437,9 +482,78 @@ export default function ClientDetail() {
                             <Calendar className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">Client Since</span>
                           </div>
-                          <p data-testid="text-created-date">
-                            {format(new Date(client.createdAt), "MMMM d, yyyy")}
+                          <p data-testid="text-client-since">
+                            {client.sinceDate ? 
+                              format(new Date(client.sinceDate), "MMMM d, yyyy") : 
+                              format(new Date(client.createdAt), "MMMM d, yyyy")
+                            }
                           </p>
+                          
+                          {client.hasMsa && (
+                            <>
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">MSA Status</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="default" data-testid="badge-msa-status">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  MSA Signed
+                                </Badge>
+                                {client.msaDate && (
+                                  <span className="text-sm text-muted-foreground">
+                                    {format(new Date(client.msaDate), "MMM d, yyyy")}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          
+                          {!client.hasMsa && (
+                            <>
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">MSA Status</span>
+                              </div>
+                              <Badge variant="outline" data-testid="badge-no-msa">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                No MSA
+                              </Badge>
+                            </>
+                          )}
+                          
+                          {client.hasNda && (
+                            <>
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">NDA Status</span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="secondary" data-testid="badge-nda-status">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  NDA Signed
+                                </Badge>
+                                {client.ndaDate && (
+                                  <span className="text-sm text-muted-foreground">
+                                    {format(new Date(client.ndaDate), "MMM d, yyyy")}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          
+                          {!client.hasNda && (
+                            <>
+                              <div className="flex items-center space-x-2">
+                                <FileText className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">NDA Status</span>
+                              </div>
+                              <Badge variant="outline" data-testid="badge-no-nda">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                No NDA
+                              </Badge>
+                            </>
+                          )}
                         </div>
                       </div>
                     )}

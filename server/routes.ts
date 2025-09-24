@@ -247,6 +247,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+
   // Health check endpoint
   app.get("/api/health", async (req, res) => {
     try {
@@ -324,6 +325,18 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
     next();
   };
+
+  // Compliance tracking endpoint
+  app.get("/api/compliance", requireAuth, async (req, res) => {
+    try {
+      const clientId = req.query.clientId as string;
+      const complianceData = await storage.getComplianceData(clientId || undefined);
+      res.json(complianceData);
+    } catch (error) {
+      console.error("Error fetching compliance data:", error);
+      res.status(500).json({ message: "Failed to fetch compliance data" });
+    }
+  });
 
   // User management
   app.get("/api/users", requireAuth, requireRole(["admin"]), async (req, res) => {

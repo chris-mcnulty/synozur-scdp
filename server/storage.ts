@@ -574,6 +574,27 @@ export interface IStorage {
     }[];
   }>;
   
+  getComplianceData(clientId?: string): Promise<{
+    clientsWithoutMsa: Array<{
+      id: string;
+      name: string;
+      status: string;
+      hasNda: boolean;
+      sinceDate: string | null;
+      createdAt: string;
+      projectCount: number;
+    }>;
+    projectsWithoutSow: Array<{
+      id: string;
+      name: string;
+      code: string;
+      clientName: string;
+      status: string;
+      startDate: string | null;
+      pmName: string | null;
+    }>;
+  }>;
+  
   // System Settings Methods
   getSystemSettings(): Promise<SystemSetting[]>;
   getSystemSetting(key: string): Promise<SystemSetting | undefined>;
@@ -4895,6 +4916,83 @@ export class DatabaseStorage implements IStorage {
   async getDefaultCostRate(): Promise<number> {
     const value = await this.getSystemSettingValue('DEFAULT_COST_RATE', '0');
     return parseFloat(value) || 0;
+  }
+
+  async getComplianceData(clientId?: string): Promise<{
+    clientsWithoutMsa: Array<{
+      id: string;
+      name: string;
+      status: string;
+      hasNda: boolean;
+      sinceDate: string | null;
+      createdAt: string;
+      projectCount: number;
+    }>;
+    projectsWithoutSow: Array<{
+      id: string;
+      name: string;
+      code: string;
+      clientName: string;
+      status: string;
+      startDate: string | null;
+      pmName: string | null;
+    }>;
+  }> {
+    try {
+      const result = {
+        clientsWithoutMsa: [] as any[],
+        projectsWithoutSow: [] as any[]
+      };
+
+      // Get clients without MSAs
+      let clientsQuery = db
+        .select({
+          id: clients.id,
+          name: clients.name,
+          status: clients.status,
+          hasNda: clients.hasNda,
+          sinceDate: clients.sinceDate,
+          createdAt: clients.createdAt,
+          projectCount: sql<number>`count(${projects.id})`.as('projectCount')
+        })
+        .from(clients)
+        .leftJoin(projects, eq(clients.id, projects.clientId))
+        .where(eq(clients.hasMsa, false))
+        .groupBy(clients.id, clients.name, clients.status, clients.hasNda, clients.sinceDate, clients.createdAt);
+
+      if (clientId) {
+        clientsQuery = clientsQuery.where(eq(clients.id, clientId));
+      }
+
+      result.clientsWithoutMsa = await clientsQuery;
+
+      // Get projects without SOWs
+      let projectsQuery = db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+          clientName: clients.name,
+          status: projects.status,
+          startDate: projects.startDate,
+          pmName: users.name
+        })
+        .from(projects)
+        .innerJoin(clients, eq(projects.clientId, clients.id))
+        .leftJoin(users, eq(projects.pm, users.id))
+        .where(eq(projects.hasSow, false));
+
+      if (clientId) {
+        projectsQuery = projectsQuery.where(eq(projects.clientId, clientId));
+      }
+
+      result.projectsWithoutSow = await projectsQuery;
+
+      return result;
+    } catch (error) {
+      console.error("Error fetching compliance data:", error);
+      throw error;
+    }
   }
 
   async generateInvoicePDF(params: {

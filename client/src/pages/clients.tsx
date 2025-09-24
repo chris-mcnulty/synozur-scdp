@@ -315,6 +315,8 @@ export default function Clients() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const msaDate = formData.get('msaDate') as string;
+              const ndaDate = formData.get('ndaDate') as string;
               createClientMutation.mutate({
                 name: formData.get('name'),
                 currency: formData.get('currency') || 'USD',
@@ -322,6 +324,13 @@ export default function Clients() {
                 billingContact: formData.get('billingContact'),
                 contactName: formData.get('contactName'),
                 contactAddress: formData.get('contactAddress'),
+                msaDate: msaDate || undefined,
+                sinceDate: formData.get('sinceDate') as string || undefined,
+                hasMsa: Boolean(msaDate), // Auto-set based on MSA date
+                msaDocument: undefined, // File upload to be implemented later
+                ndaDate: ndaDate || undefined,
+                hasNda: Boolean(ndaDate), // Auto-set based on NDA date
+                ndaDocument: undefined, // File upload to be implemented later
               });
             }}>
               <div className="grid gap-4 py-4">
@@ -395,6 +404,39 @@ export default function Clients() {
                       <SelectItem value="archived">Archived</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="msaDate">MSA Signed Date (Optional)</Label>
+                  <Input
+                    id="msaDate"
+                    name="msaDate"
+                    type="date"
+                    placeholder="Date MSA was signed"
+                    data-testid="input-msa-date"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="sinceDate">Client Since Date (Optional)</Label>
+                  <Input
+                    id="sinceDate"
+                    name="sinceDate"
+                    type="date"
+                    placeholder="Client relationship start date"
+                    data-testid="input-since-date"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="ndaDate">NDA Signed Date (Optional)</Label>
+                  <Input
+                    id="ndaDate"
+                    name="ndaDate"
+                    type="date"
+                    placeholder="Date NDA was signed"
+                    data-testid="input-nda-date"
+                  />
                 </div>
               </div>
               <DialogFooter>
