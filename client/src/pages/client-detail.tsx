@@ -214,6 +214,11 @@ export default function ClientDetail() {
 
   const projectStats = calculateProjectStats();
 
+  // Type guard to ensure client exists for rendering
+  if (!client) {
+    return null; // This should never happen due to earlier checks, but satisfies TypeScript
+  }
+
   return (
     <Layout>
       <div className="p-6 space-y-6">
