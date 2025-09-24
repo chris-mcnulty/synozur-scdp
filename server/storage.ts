@@ -32,7 +32,7 @@ import {
   type DocumentMetadata, type InsertDocumentMetadata
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, ne, desc, and, gte, lte, sql } from "drizzle-orm";
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
