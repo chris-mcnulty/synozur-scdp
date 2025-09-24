@@ -351,6 +351,7 @@ export const expenses = pgTable("expenses", {
   billable: boolean("billable").notNull().default(true),
   reimbursable: boolean("reimbursable").notNull().default(true),
   description: text("description"),
+  vendor: text("vendor"), // Merchant/vendor name (e.g., Alaska Airlines, Starbucks, Hyatt)
   receiptUrl: text("receipt_url"),
   billedFlag: boolean("billed_flag").notNull().default(false),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
