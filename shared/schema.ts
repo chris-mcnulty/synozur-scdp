@@ -454,6 +454,10 @@ export const invoiceBatches = pgTable("invoice_batches", {
   status: text("status").notNull().default("draft"), // draft, reviewed, finalized
   finalizedAt: timestamp("finalized_at"),
   finalizedBy: varchar("finalized_by").references(() => users.id),
+  // Revenue recognition date tracking
+  asOfDate: date("as_of_date"), // Date for revenue recognition (defaults to finalized date)
+  asOfDateUpdatedBy: varchar("as_of_date_updated_by").references(() => users.id),
+  asOfDateUpdatedAt: timestamp("as_of_date_updated_at"),
   notes: text("notes"), // For review comments
   exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
   exportedAt: timestamp("exported_at"),
