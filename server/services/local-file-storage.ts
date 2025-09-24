@@ -250,41 +250,42 @@ export class LocalFileStorage {
         const files = fs.readdirSync(documentDir);
 
         for (const file of files) {
-      if (file.endsWith('.metadata.json')) {
-        const metadataPath = path.join(documentDir, file);
-        try {
-          const content = fs.readFileSync(metadataPath, 'utf-8');
-          const rawData = JSON.parse(content);
-          
-          // Rehydrate dates from string format
-          const storedFile: StoredFile = {
-            ...rawData,
-            uploadedAt: new Date(rawData.uploadedAt),
-            metadata: {
-              ...rawData.metadata,
-              effectiveDate: rawData.metadata.effectiveDate ? new Date(rawData.metadata.effectiveDate) : undefined
-            }
-          };
+          if (file.endsWith('.metadata.json')) {
+            const metadataPath = path.join(documentDir, file);
+            try {
+              const content = fs.readFileSync(metadataPath, 'utf-8');
+              const rawData = JSON.parse(content);
+              
+              // Rehydrate dates from string format
+              const storedFile: StoredFile = {
+                ...rawData,
+                uploadedAt: new Date(rawData.uploadedAt),
+                metadata: {
+                  ...rawData.metadata,
+                  effectiveDate: rawData.metadata.effectiveDate ? new Date(rawData.metadata.effectiveDate) : undefined
+                }
+              };
 
-          // Apply filters
-          if (filter) {
-            if (filter.documentType && storedFile.metadata.documentType !== filter.documentType) {
-              continue;
-            }
-            if (filter.projectId && storedFile.metadata.projectId !== filter.projectId) {
-              continue;
-            }
-            if (filter.clientId && storedFile.metadata.clientId !== filter.clientId) {
-              continue;
-            }
-            if (filter.uploadedBy && storedFile.uploadedBy !== filter.uploadedBy) {
-              continue;
-            }
-          }
+              // Apply filters
+              if (filter) {
+                if (filter.documentType && storedFile.metadata.documentType !== filter.documentType) {
+                  continue;
+                }
+                if (filter.projectId && storedFile.metadata.projectId !== filter.projectId) {
+                  continue;
+                }
+                if (filter.clientId && storedFile.metadata.clientId !== filter.clientId) {
+                  continue;
+                }
+                if (filter.uploadedBy && storedFile.uploadedBy !== filter.uploadedBy) {
+                  continue;
+                }
+              }
 
-            results.push(storedFile);
-          } catch (error) {
-            console.warn(`Failed to read metadata file ${file}:`, error);
+              results.push(storedFile);
+            } catch (error) {
+              console.warn(`Failed to read metadata file ${file}:`, error);
+            }
           }
         }
       } catch (error) {
