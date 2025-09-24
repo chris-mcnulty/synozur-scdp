@@ -234,7 +234,8 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
   
   // Setup Vite or static serving - fixed detection logic
   const isProduction = process.env.NODE_ENV === 'production';
-  const isViteDisabled = process.env.DISABLE_VITE_DEV === '1';
+  // Force disable Vite to avoid crashes from broken IPC code in server/vite.ts
+  const isViteDisabled = true; // process.env.DISABLE_VITE_DEV === '1';
   const isDevelopment = process.env.NODE_ENV === 'development';
   
   log(`Frontend server configuration:`);

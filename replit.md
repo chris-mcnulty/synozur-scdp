@@ -118,6 +118,32 @@ The local file storage infrastructure provides:
 - Full CRUD operations for file management
 - Ready for expansion to invoices, statements of work, estimates, and change orders
 
+## Known Issues & Workarounds
+
+### Dev Server Workflow Issue (September 24, 2025)
+- **Issue**: The "Start Dev Server" workflow in .replit has incorrect syntax (`args` instead of `command`) 
+- **Impact**: Workflow won't execute when restarted; no logs appear
+- **Root Cause**: .replit file cannot be edited directly in Replit environment
+- **Workaround**: Use the provided run.js script or start server manually
+
+#### To Start the Server:
+1. **Option 1 - Use the fixed run.js script**:
+   ```bash
+   node run.js
+   ```
+
+2. **Option 2 - Direct tsx execution**:
+   ```bash
+   NODE_ENV=development npx tsx server/index.ts
+   ```
+
+3. **Option 3 - Production build**:
+   ```bash
+   NODE_ENV=production node dist/index.js
+   ```
+
+The server will bind to port 5000 and be accessible in Preview mode once running.
+
 ## Recent Changes
 
 ### Client Management Interface (September 2025)

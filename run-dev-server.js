@@ -9,9 +9,10 @@ process.env.NODE_ENV = 'development';
 const { spawn } = require('child_process');
 
 // Run tsx with the server file
+// Disable Vite dev integration to avoid crashes from broken IPC code
 const server = spawn('npx', ['tsx', 'server/index.ts'], {
   stdio: 'inherit',
-  env: { ...process.env, NODE_ENV: 'development' }
+  env: { ...process.env, NODE_ENV: 'development', DISABLE_VITE_DEV: '1' }
 });
 
 server.on('error', (error) => {

@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+// ES module imports must be at the top
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // This script starts the development server properly for Replit
 console.log('🚀 Starting SCDP Development Server...');
 console.log('Environment:', process.env.NODE_ENV || 'development');
@@ -8,10 +16,6 @@ console.log('Environment:', process.env.NODE_ENV || 'development');
 if (!process.env.NODE_ENV) {
   process.env.NODE_ENV = 'development';
 }
-
-// Start the server using child_process
-const { spawn } = require('child_process');
-const path = require('path');
 
 // Use tsx to run the TypeScript server
 const serverPath = path.join(__dirname, 'server', 'index.ts');
