@@ -461,6 +461,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
   aggregateAdjustmentTotal: decimal("aggregate_adjustment_total", { precision: 12, scale: 2 }), // Total of all aggregate adjustments
   invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
+  batchType: text("batch_type").notNull().default("mixed"), // "services", "expenses", or "mixed"
   paymentTerms: text("payment_terms"), // Optional payment terms override for this batch
   status: text("status").notNull().default("draft"), // draft, reviewed, finalized
   finalizedAt: timestamp("finalized_at"),

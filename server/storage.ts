@@ -3431,13 +3431,14 @@ export class DatabaseStorage implements IStorage {
       expenseIds.push(expense.id);
 
       // Create invoice line for expense
+      const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
       await tx.insert(invoiceLines).values({
         batchId,
         projectId,
         clientId: client.id,
         type: 'expense',
         amount: expense.amount,
-        description: `${expense.description} (${expense.date})`
+        description: `${expense.description}${vendorInfo} (${expense.date})`
       });
     }
 
