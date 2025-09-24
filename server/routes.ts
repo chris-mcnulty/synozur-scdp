@@ -230,6 +230,23 @@ export async function registerRoutes(app: Express): Promise<void> {
     */
   };
 
+  // Environment info endpoint
+  app.get("/api/environment", async (req, res) => {
+    try {
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT === '1';
+      const environment = isProduction ? 'Production' : 'Development';
+      
+      res.json({
+        environment,
+        isProduction,
+        nodeEnv: process.env.NODE_ENV,
+        replitDeployment: process.env.REPLIT_DEPLOYMENT
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get environment info" });
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", async (req, res) => {
     try {

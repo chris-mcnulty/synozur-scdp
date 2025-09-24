@@ -16,10 +16,22 @@ import {
   FileText
 } from "lucide-react";
 
+type EnvironmentInfo = {
+  environment: string;
+  isProduction: boolean;
+  nodeEnv: string;
+  replitDeployment: string;
+};
+
 export default function About() {
   // Fetch system settings for version information
   const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
     queryKey: ["/api/system-settings"]
+  });
+
+  // Fetch environment information from backend
+  const { data: environmentInfo } = useQuery<EnvironmentInfo>({
+    queryKey: ["/api/environment"]
   });
 
   // Get version settings
@@ -37,6 +49,10 @@ export default function About() {
 
   const versionNumber = formatVersionNumber(majorVersion, releaseDate);
   const isProductionRelease = majorVersion !== '0';
+  
+  // Use backend-provided environment information
+  const environment = environmentInfo?.environment || 'Development';
+  const companyName = 'Synozur';
 
   return (
     <Layout>
@@ -47,6 +63,7 @@ export default function About() {
             <Building className="h-8 w-8 text-primary" />
           </div>
           <div>
+            <p className="text-lg text-muted-foreground font-medium">{companyName}</p>
             <h1 className="text-3xl font-bold tracking-tight">SCDP</h1>
             <p className="text-xl text-muted-foreground">
               Synozur Consulting Delivery Platform
@@ -54,7 +71,14 @@ export default function About() {
           </div>
           <div className="flex items-center justify-center space-x-2">
             <Badge 
-              variant={isProductionRelease ? "default" : "secondary"}
+              variant={environment === 'Production' ? "default" : "secondary"}
+              className="text-sm"
+              data-testid="badge-environment"
+            >
+              {environment}
+            </Badge>
+            <Badge 
+              variant={isProductionRelease ? "default" : "outline"}
               className="text-sm"
               data-testid="badge-version"
             >
@@ -177,9 +201,9 @@ export default function About() {
                 
                 <div className="text-center p-4 bg-muted/30 rounded-lg">
                   <div className="text-2xl font-bold text-primary">
-                    {isProductionRelease ? 'Production' : 'Beta'}
+                    {environment}
                   </div>
-                  <div className="text-sm text-muted-foreground">Release Stage</div>
+                  <div className="text-sm text-muted-foreground">Environment</div>
                 </div>
               </div>
               

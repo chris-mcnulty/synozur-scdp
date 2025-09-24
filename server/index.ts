@@ -176,6 +176,16 @@ process.on('uncaughtException', (error) => {
       log('Server will continue with health endpoints only');
       // Don't crash the server - health endpoints will still work
     }
+
+    // Update version release date automatically on startup
+    log('Updating version release date...');
+    try {
+      await updateVersionReleaseDate();
+      log('Version release date updated successfully');
+    } catch (versionError: any) {
+      log(`⚠️ Version update failed: ${versionError.message}`);
+      // Don't crash - this is non-critical
+    }
     
     // Now run additional setup asynchronously without blocking the port
     log('Starting additional services setup asynchronously...');
@@ -265,5 +275,27 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       log(`⚠️ Static file serving failed: ${staticError.message}`);
       log('Server will continue with API only - frontend may not be available');
     }
+  }
+}
+
+// Function to automatically update version release date
+async function updateVersionReleaseDate() {
+  try {
+    const { db } = await import('./db');
+    const { sql } = await import('drizzle-orm');
+    const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    
+    await db.execute(sql`
+      INSERT INTO system_settings (setting_key, setting_value, description, setting_type) 
+      VALUES ('VERSION_RELEASE_DATE', ${currentDate}, 'Release date in YYYY-MM-DD format for version numbering', 'string')
+      ON CONFLICT (setting_key) 
+      DO UPDATE SET 
+        setting_value = EXCLUDED.setting_value
+    `);
+    
+    log(`📅 Version release date updated to: ${currentDate}`);
+  } catch (error: any) {
+    log(`❌ Failed to update version release date: ${error.message}`);
+    throw error;
   }
 }
