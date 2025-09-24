@@ -5,31 +5,7 @@ import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
 
-// Stub SharePoint-related objects for local file storage migration
-// These return safe responses instead of throwing to prevent route registration failures
-const graphClient = {
-  testConnectivity: async () => ({ authenticated: false, containerAccessible: false, error: "SharePoint disabled for local storage" }),
-  downloadFile: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  deleteFile: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  createFolder: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  listFiles: async () => ({ files: [], error: "SharePoint disabled for local storage" }),
-  listFileStorageContainers: async () => ({ containers: [], error: "SharePoint disabled for local storage" }),
-  listContainerColumns: async () => ({ columns: [], error: "SharePoint disabled for local storage" }),
-  createContainerColumn: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  getContainerColumn: async () => ({ column: null, error: "SharePoint disabled for local storage" }),
-  updateContainerColumn: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  deleteContainerColumn: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  initializeReceiptMetadataSchema: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  assignReceiptMetadata: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  updateReceiptStatus: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  getDocumentMetadata: async () => ({ metadata: null, error: "SharePoint disabled for local storage" }),
-  updateDocumentMetadata: async () => ({ success: false, error: "SharePoint disabled for local storage" }),
-  listDocumentsWithMetadata: async () => ({ documents: [], error: "SharePoint disabled for local storage" }),
-  getReceiptsByStatus: async () => ({ receipts: [], error: "SharePoint disabled for local storage" }),
-  getReceiptsByProject: async () => ({ receipts: [], error: "SharePoint disabled for local storage" }),
-  getReceiptsByUploader: async () => ({ receipts: [], error: "SharePoint disabled for local storage" }),
-  uploadFile: async () => ({ success: false, error: "SharePoint disabled for local storage" })
-};
+// SharePoint functionality restored - using real GraphClient implementation
 
 // Zod schemas for SharePoint operations security validation
 // SECURITY FIX: Removed base64 upload capability to prevent DoS attacks
@@ -166,7 +142,7 @@ const metadataQuerySchema = z.object({
 import { eq } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
-// import { graphClient } from "./services/graph-client.js";
+import { graphClient } from "./services/graph-client.js";
 import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
 import { localFileStorage, type DocumentMetadata } from "./services/local-file-storage.js";
