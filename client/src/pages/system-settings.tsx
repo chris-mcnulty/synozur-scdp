@@ -37,6 +37,10 @@ const rateSettingsSchema = z.object({
     const num = parseFloat(val);
     return !isNaN(num) && num >= 0;
   }, "Cost rate must be a valid number 0 or greater"),
+  mileageRate: z.string().min(1, "Mileage rate is required").refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Mileage rate must be a valid number 0 or greater"),
 });
 
 const companySettingsSchema = z.object({
@@ -64,6 +68,7 @@ export default function SystemSettings() {
   // Get current rate settings
   const defaultBillingRate = settings.find(s => s.settingKey === 'DEFAULT_BILLING_RATE')?.settingValue || '0';
   const defaultCostRate = settings.find(s => s.settingKey === 'DEFAULT_COST_RATE')?.settingValue || '0';
+  const mileageRate = settings.find(s => s.settingKey === 'MILEAGE_RATE')?.settingValue || '0.70';
 
   // Get current company settings
   const settingsMap = Object.fromEntries(settings.map(s => [s.settingKey, s.settingValue]));
@@ -74,10 +79,12 @@ export default function SystemSettings() {
     defaultValues: {
       defaultBillingRate: defaultBillingRate,
       defaultCostRate: defaultCostRate,
+      mileageRate: mileageRate,
     },
     values: {
       defaultBillingRate: defaultBillingRate,
       defaultCostRate: defaultCostRate,
+      mileageRate: mileageRate,
     },
   });
 
@@ -106,7 +113,7 @@ export default function SystemSettings() {
   // Mutations
   const updateRatesMutation = useMutation({
     mutationFn: async (data: RateSettingsData) => {
-      // Update both rate settings
+      // Update all rate settings
       await Promise.all([
         apiRequest("/api/settings", {
           method: "POST",
@@ -124,6 +131,15 @@ export default function SystemSettings() {
             settingValue: data.defaultCostRate,
             settingType: "number",
             description: "System-wide default cost rate used as final fallback when no other rates are available"
+          }),
+        }),
+        apiRequest("/api/settings", {
+          method: "POST",
+          body: JSON.stringify({
+            settingKey: "MILEAGE_RATE",
+            settingValue: data.mileageRate,
+            settingType: "number",
+            description: "Default reimbursement rate per mile for mileage expenses"
           }),
         })
       ]);
@@ -470,7 +486,7 @@ export default function SystemSettings() {
 
                 <Form {...rateForm}>
                   <form onSubmit={rateForm.handleSubmit(handleRateSubmit)} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-3 gap-6">
                       <FormField
                         control={rateForm.control}
                         name="defaultBillingRate"
@@ -521,6 +537,34 @@ export default function SystemSettings() {
                             </FormControl>
                             <FormDescription>
                               Fallback cost rate when no user or project rates are configured
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={rateForm.control}
+                        name="mileageRate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Mileage Rate</FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground">$</span>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.70"
+                                  className="pl-8"
+                                  {...field}
+                                  data-testid="input-mileage-rate"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormDescription>
+                              Reimbursement rate per mile for mileage expenses
                             </FormDescription>
                             <FormMessage />
                           </FormItem>

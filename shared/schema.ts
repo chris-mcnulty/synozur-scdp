@@ -345,8 +345,10 @@ export const expenses = pgTable("expenses", {
   projectId: varchar("project_id").notNull().references(() => projects.id),
   projectResourceId: varchar("project_resource_id").references(() => users.id), // User assigned to this expense within the project
   date: date("date").notNull(),
-  category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment
+  category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment, mileage
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }), // Nullable, for tracking quantity (e.g., miles for mileage)
+  unit: text("unit"), // Nullable, for tracking unit of measurement (e.g., "mile" for mileage)
   currency: text("currency").notNull().default("USD"),
   billable: boolean("billable").notNull().default(true),
   reimbursable: boolean("reimbursable").notNull().default(true),

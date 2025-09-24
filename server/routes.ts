@@ -3157,6 +3157,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get mileage rate (accessible to all authenticated users)
+  app.get("/api/expenses/mileage-rate", requireAuth, async (req, res) => {
+    try {
+      const mileageRate = await storage.getSystemSettingValue('MILEAGE_RATE', '0.70');
+      res.json({ rate: parseFloat(mileageRate) });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch mileage rate" });
+    }
+  });
+
   // Expenses
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
@@ -3187,6 +3197,23 @@ export async function registerRoutes(app: Express): Promise<void> {
         ...req.body,
         personId: req.user!.id // Always use the authenticated user
       });
+      
+      // Additional validation for mileage expenses
+      if (validatedData.category === "mileage") {
+        const quantity = parseFloat(validatedData.quantity || "0");
+        if (isNaN(quantity) || quantity <= 0) {
+          return res.status(400).json({ 
+            message: "Miles (quantity) must be greater than 0 for mileage expenses" 
+          });
+        }
+        // Ensure unit is set to "mile" for mileage expenses
+        validatedData.unit = "mile";
+      } else {
+        // Clear quantity and unit for non-mileage expenses
+        validatedData.quantity = undefined;
+        validatedData.unit = undefined;
+      }
+      
       const expense = await storage.createExpense(validatedData);
       res.status(201).json(expense);
     } catch (error) {
@@ -3219,6 +3246,22 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Validate and parse update data
       const updateSchema = insertExpenseSchema.partial().omit({ personId: true });
       const validatedData = updateSchema.parse(req.body);
+      
+      // Additional validation for mileage expenses
+      if (validatedData.category === "mileage") {
+        const quantity = parseFloat(validatedData.quantity || "0");
+        if (isNaN(quantity) || quantity <= 0) {
+          return res.status(400).json({ 
+            message: "Miles (quantity) must be greater than 0 for mileage expenses" 
+          });
+        }
+        // Ensure unit is set to "mile" for mileage expenses
+        validatedData.unit = "mile";
+      } else if (validatedData.category !== undefined) {
+        // If category is being updated to non-mileage, clear quantity and unit
+        validatedData.quantity = undefined;
+        validatedData.unit = undefined;
+      }
       
       const updatedExpense = await storage.updateExpense(expenseId, validatedData);
       res.json(updatedExpense);
