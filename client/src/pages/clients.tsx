@@ -288,7 +288,7 @@ export default function Clients() {
                                   View Details
                                 </DropdownMenuItem>
                               </Link>
-                              <Link href={`/clients/${client.id}/edit`}>
+                              <Link href={`/clients/${client.id}?edit=true`}>
                                 <DropdownMenuItem>
                                   <Edit className="h-4 w-4 mr-2" />
                                   Edit Client

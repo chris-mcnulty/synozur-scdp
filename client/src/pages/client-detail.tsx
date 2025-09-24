@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
@@ -70,11 +70,24 @@ type InvoiceBatchWithDetails = InvoiceBatch & {
 
 export default function ClientDetail() {
   const { id: clientId } = useParams<{ id: string }>();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Client>>({});
 
   const { toast } = useToast();
+
+  // Auto-enter edit mode if ?edit=true is in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('edit') === 'true') {
+      setIsEditing(true);
+      // Clean the URL by removing the edit parameter
+      urlParams.delete('edit');
+      const newSearch = urlParams.toString();
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
 
   // Fetch client details
   const { data: client, isLoading: clientLoading, error: clientError } = useQuery<Client>({
