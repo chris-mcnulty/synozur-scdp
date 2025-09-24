@@ -18,6 +18,7 @@ import RateManagement from "@/pages/rate-management";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import SystemSettings from "@/pages/system-settings";
+import About from "@/pages/about";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
@@ -108,6 +109,9 @@ function Router() {
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/about">
+        {user ? <About /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />

@@ -28,6 +28,7 @@ export const users = pgTable("users", {
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  status: text("status").notNull().default("pending"), // pending, active, inactive, archived
   currency: text("currency").notNull().default("USD"),
   billingContact: text("billing_contact"),
   contactName: text("contact_name"),
@@ -791,6 +792,8 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export const insertClientSchema = createInsertSchema(clients).omit({
   id: true,
   createdAt: true,
+}).extend({
+  status: z.enum(["pending", "active", "inactive", "archived"]).default("pending")
 });
 
 export const insertProjectSchema = createInsertSchema(projects).omit({

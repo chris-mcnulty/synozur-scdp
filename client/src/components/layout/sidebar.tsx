@@ -11,7 +11,8 @@ import {
   UsersRound,
   BarChart3,
   Settings,
-  Building2
+  Building2,
+  Info
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -144,6 +145,12 @@ export function Sidebar() {
             icon={<Settings />}
             label="System Settings"
             requiredRoles={["admin"]}
+          />
+          
+          <SidebarItem
+            href="/about"
+            icon={<Info />}
+            label="About"
           />
           
         </nav>

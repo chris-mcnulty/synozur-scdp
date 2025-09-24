@@ -189,6 +189,7 @@ export default function Clients() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Billing Contact</TableHead>
                     <TableHead>Currency</TableHead>
@@ -199,7 +200,7 @@ export default function Clients() {
                 <TableBody>
                   {filteredClients.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
+                      <TableCell colSpan={7} className="text-center py-8">
                         <div className="flex flex-col items-center space-y-2">
                           <Building2 className="h-8 w-8 text-muted-foreground" />
                           <p className="text-muted-foreground">
@@ -228,6 +229,20 @@ export default function Clients() {
                               )}
                             </div>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              client.status === 'active' ? 'default' :
+                              client.status === 'pending' ? 'secondary' :
+                              client.status === 'inactive' ? 'outline' : 'destructive'
+                            }
+                            data-testid={`badge-status-${client.id}`}
+                          >
+                            {client.status === 'pending' ? 'Pending' :
+                             client.status === 'active' ? 'Active' :
+                             client.status === 'inactive' ? 'Inactive' : 'Archived'}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
@@ -303,6 +318,7 @@ export default function Clients() {
               createClientMutation.mutate({
                 name: formData.get('name'),
                 currency: formData.get('currency') || 'USD',
+                status: formData.get('status') || 'pending',
                 billingContact: formData.get('billingContact'),
                 contactName: formData.get('contactName'),
                 contactAddress: formData.get('contactAddress'),
@@ -362,6 +378,21 @@ export default function Clients() {
                       <SelectItem value="EUR">EUR</SelectItem>
                       <SelectItem value="GBP">GBP</SelectItem>
                       <SelectItem value="CAD">CAD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select name="status" defaultValue="pending">
+                    <SelectTrigger data-testid="select-status">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending (No signed MSA/SOW)</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

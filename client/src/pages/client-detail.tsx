@@ -134,6 +134,7 @@ export default function ClientDetail() {
     setIsEditing(true);
     setEditForm({
       name: client?.name || "",
+      status: client?.status || "pending",
       billingContact: client?.billingContact || "",
       contactName: client?.contactName || "",
       contactAddress: client?.contactAddress || "",
@@ -291,6 +292,23 @@ export default function ClientDetail() {
                           </Select>
                         </div>
                         <div className="space-y-2">
+                          <Label htmlFor="status">Status</Label>
+                          <Select 
+                            value={editForm.status || "pending"}
+                            onValueChange={(value) => setEditForm({ ...editForm, status: value })}
+                          >
+                            <SelectTrigger data-testid="select-edit-status">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending (No signed MSA/SOW)</SelectItem>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="inactive">Inactive</SelectItem>
+                              <SelectItem value="archived">Archived</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
                           <Label htmlFor="contactName">Contact Name</Label>
                           <Input
                             id="contactName"
@@ -327,6 +345,23 @@ export default function ClientDetail() {
                             <span className="text-sm text-muted-foreground">Client Name</span>
                           </div>
                           <p className="font-medium" data-testid="text-client-name">{client.name}</p>
+                          
+                          <div className="flex items-center space-x-2">
+                            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Status</span>
+                          </div>
+                          <Badge 
+                            variant={
+                              client.status === 'active' ? 'default' :
+                              client.status === 'pending' ? 'secondary' :
+                              client.status === 'inactive' ? 'outline' : 'destructive'
+                            }
+                            data-testid="badge-client-status"
+                          >
+                            {client.status === 'pending' ? 'Pending (No signed MSA/SOW)' :
+                             client.status === 'active' ? 'Active' :
+                             client.status === 'inactive' ? 'Inactive' : 'Archived'}
+                          </Badge>
                           
                           {client.contactName && (
                             <>
