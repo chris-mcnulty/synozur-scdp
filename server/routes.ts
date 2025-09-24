@@ -4775,6 +4775,47 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
   
+  app.patch("/api/invoice-batches/:batchId/as-of-date", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { asOfDate } = req.body;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+      
+      if (!asOfDate) {
+        return res.status(400).json({ message: "As-of date is required" });
+      }
+      
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(asOfDate)) {
+        return res.status(400).json({ message: "As-of date must be in YYYY-MM-DD format" });
+      }
+      
+      const parsedDate = new Date(asOfDate);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: "Invalid as-of date" });
+      }
+      
+      console.log(`[API] Updating batch ${batchId} as-of date to ${asOfDate} by user ${userId}`);
+      
+      const updatedBatch = await storage.updateBatchAsOfDate(batchId, asOfDate, userId);
+      
+      res.json({
+        message: "As-of date updated successfully",
+        batch: updatedBatch
+      });
+    } catch (error: any) {
+      console.error("Failed to update as-of date:", error);
+      res.status(400).json({ 
+        message: error.message || "Failed to update as-of date" 
+      });
+    }
+  });
+  
   app.get("/api/invoice-batches/:batchId/status", requireAuth, async (req, res) => {
     try {
       const { batchId } = req.params;

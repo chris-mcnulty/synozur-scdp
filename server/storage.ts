@@ -316,6 +316,7 @@ export interface IStorage {
     finalizedBy?: User | null;
     notes?: string | null;
   }>;
+  updateBatchAsOfDate(batchId: string, asOfDate: string, userId: string): Promise<InvoiceBatch>;
 
   // Unbilled Items Detail
   getUnbilledItemsDetail(filters?: {
@@ -1956,8 +1957,8 @@ export class DatabaseStorage implements IStorage {
           }
         }
       }
-    } else if (project && project.commercialScheme === 'milestone') {
-      // For milestone projects, use invoiced amounts as recognized revenue
+    } else if (project && (project.commercialScheme === 'milestone' || project.commercialScheme === 'fixed-price')) {
+      // For milestone and fixed-price projects, use invoiced amounts as recognized revenue
       // This queries invoice lines for this project
       const [invoicedData] = await db.select({
         totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
@@ -3139,7 +3140,8 @@ export class DatabaseStorage implements IStorage {
         .set({
           status: 'finalized',
           finalizedAt: sql`now()`,
-          finalizedBy: userId
+          finalizedBy: userId,
+          asOfDate: sql`CURRENT_DATE` // Set as-of date to today when finalizing
         })
         .where(eq(invoiceBatches.batchId, batchId))
         .returning();
@@ -3252,6 +3254,31 @@ export class DatabaseStorage implements IStorage {
       finalizedBy: batch.finalizer,
       notes: batch.batch.notes
     };
+  }
+
+  async updateBatchAsOfDate(batchId: string, asOfDate: string, userId: string): Promise<InvoiceBatch> {
+    const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+    
+    if (batch.status !== 'finalized') {
+      throw new Error('Can only update as-of date for finalized batches');
+    }
+    
+    const [updatedBatch] = await db.update(invoiceBatches)
+      .set({
+        asOfDate: asOfDate,
+        asOfDateUpdatedBy: userId,
+        asOfDateUpdatedAt: sql`now()`
+      })
+      .where(eq(invoiceBatches.batchId, batchId))
+      .returning();
+    
+    console.log(`[STORAGE] Batch ${batchId} as-of date updated to ${asOfDate} by ${userId}`);
+    
+    return updatedBatch;
   }
 
   private async generateInvoiceForProject(tx: any, batchId: string, projectId: string, startDate: string, endDate: string) {
