@@ -118,6 +118,36 @@ The local file storage infrastructure provides:
 - Full CRUD operations for file management
 - Ready for expansion to invoices, statements of work, estimates, and change orders
 
+## Recent Changes
+
+### Client Management Interface (September 2025)
+- **Status**: ✅ Complete and Production Ready
+- **Features Implemented**:
+  1. **Client List Page** (`/clients`) with search, filtering, and embedded creation modal
+  2. **Client Detail Pages** (`/clients/:id`) with comprehensive tabs:
+     - Overview tab with inline editing capability
+     - Projects tab showing all client projects with key metrics
+     - SOWs & Change Orders tab listing all related documents
+     - Invoices tab showing client-specific invoice batches
+  3. **Full CRUD Operations**:
+     - Create clients via embedded modal without leaving client management area
+     - Edit client details directly from detail view
+     - Delete clients with confirmation dialog
+     - View client-specific invoice batches via dedicated API endpoint
+  4. **Navigation Integration**:
+     - Added "Clients" link to sidebar navigation
+     - Proper routing integration in App.tsx
+     - Seamless navigation between list and detail views
+- **Backend Enhancements**:
+  - Added client-specific API endpoints: GET/PATCH/DELETE `/api/clients/:id`
+  - Added client-scoped invoice batch endpoint: GET `/api/clients/:clientId/invoice-batches`
+  - Proper error handling and validation for all client operations
+- **Technical Improvements**:
+  - Resolved React hook violations by implementing proper backend filtering
+  - Implemented type-safe mutations with TanStack Query
+  - Added comprehensive form validation with proper error handling
+  - Full cache invalidation for real-time data updates
+
 ## Technical Debt & Backlog
 
 ### Staff Table Removal
