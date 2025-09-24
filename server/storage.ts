@@ -5545,7 +5545,6 @@ export class DatabaseStorage implements IStorage {
         
       // Fallback: create local columns without SharePoint integration
       return await this.createLocalReceiptColumns(containerId);
-      }
     } catch (error) {
       console.error(`[METADATA_INIT] Failed to initialize receipt metadata columns:`, error);
       throw error;
