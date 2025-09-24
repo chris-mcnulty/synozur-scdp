@@ -55,6 +55,7 @@ export default function Expenses() {
       billable: true,
       reimbursable: true,
       description: "",
+      vendor: "",
       category: "",
       projectId: "",
     },
@@ -457,6 +458,25 @@ export default function Expenses() {
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="vendor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Vendor</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Alaska Airlines, Starbucks, Hyatt..."
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-expense-vendor"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   <div className="space-y-3">
                     <FormField
                       control={form.control}
@@ -584,6 +604,11 @@ export default function Expenses() {
                         <div className="text-sm text-muted-foreground mt-1" data-testid={`expense-description-${expense.id}`}>
                           {expense.description}
                         </div>
+                        {expense.vendor && (
+                          <div className="text-sm text-muted-foreground mt-1" data-testid={`expense-vendor-${expense.id}`}>
+                            <strong>Vendor:</strong> {expense.vendor}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
@@ -640,7 +665,20 @@ export default function Expenses() {
                   <FormItem>
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Textarea {...field} data-testid="edit-input-description" />
+                      <Textarea {...field} value={field.value || ""} data-testid="edit-input-description" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="vendor"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Vendor</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} placeholder="e.g., Alaska Airlines, Starbucks, Hyatt..." data-testid="edit-input-vendor" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
