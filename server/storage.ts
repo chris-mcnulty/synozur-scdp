@@ -4333,16 +4333,41 @@ export class DatabaseStorage implements IStorage {
         .filter(co => co.status === 'approved')
         .reduce((sum, co) => sum + parseFloat(co.deltaFees || '0'), 0);
 
-      // Calculate variances
-      const hoursVariance = actualHours - currentEstimateHours;
-      const hoursVariancePercentage = currentEstimateHours > 0 
-        ? ((hoursVariance / currentEstimateHours) * 100) 
-        : 0;
+      // Calculate variances based on project type
+      let hoursVariance = 0;
+      let hoursVariancePercentage = 0;
+      let costVariance = 0;
+      let costVariancePercentage = 0;
       
-      const costVariance = actualCost - currentEstimateCost;
-      const costVariancePercentage = currentEstimateCost > 0 
-        ? ((costVariance / currentEstimateCost) * 100) 
-        : 0;
+      if (project.commercialScheme === 'milestone' || project.commercialScheme === 'fixed-price') {
+        // For fixed-price projects, hours variance is not meaningful
+        hoursVariance = 0;
+        hoursVariancePercentage = 0;
+        
+        // Cost variance should compare invoiced amount vs estimate
+        const [invoicedData] = await db.select({
+          totalInvoiced: sql<number>`COALESCE(SUM(CAST(${invoiceLines.amount} AS NUMERIC)), 0)`
+        })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.projectId, project.id));
+        
+        const actualInvoicedAmount = Number(invoicedData?.totalInvoiced || 0);
+        costVariance = actualInvoicedAmount - currentEstimateCost;
+        costVariancePercentage = currentEstimateCost > 0 
+          ? ((costVariance / currentEstimateCost) * 100) 
+          : 0;
+      } else {
+        // For time & materials projects, use traditional variance calculation
+        hoursVariance = actualHours - currentEstimateHours;
+        hoursVariancePercentage = currentEstimateHours > 0 
+          ? ((hoursVariance / currentEstimateHours) * 100) 
+          : 0;
+        
+        costVariance = actualCost - currentEstimateCost;
+        costVariancePercentage = currentEstimateCost > 0 
+          ? ((costVariance / currentEstimateCost) * 100) 
+          : 0;
+      }
 
       return {
         projectId: project.id,
