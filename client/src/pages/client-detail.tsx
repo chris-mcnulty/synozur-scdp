@@ -184,7 +184,14 @@ export default function ClientDetail() {
   };
 
   const handleSave = () => {
-    updateClientMutation.mutate(editForm);
+    // Convert empty date strings to null before sending to API
+    const cleanedForm = {
+      ...editForm,
+      msaDate: editForm.msaDate === "" ? null : editForm.msaDate,
+      sinceDate: editForm.sinceDate === "" ? null : editForm.sinceDate,
+      ndaDate: editForm.ndaDate === "" ? null : editForm.ndaDate,
+    };
+    updateClientMutation.mutate(cleanedForm);
   };
 
   const handleCancel = () => {
