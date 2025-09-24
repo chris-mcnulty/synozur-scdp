@@ -13,7 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertExpenseSchema, type Expense } from "@shared/schema";
+import { insertExpenseSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +21,9 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 
-const expenseFormSchema = insertExpenseSchema.extend({
+const expenseFormSchema = insertExpenseSchema.omit({
+  personId: true, // Server-side only
+}).extend({
   date: z.string(),
 });
 
@@ -55,18 +57,20 @@ export default function Expenses() {
     },
   });
 
-  const { data: projects } = useQuery({
+  const { data: projects = [] } = useQuery<(Project & { client: Client })[]>({
     queryKey: ["/api/projects"],
   });
 
-  const { data: expenses, isLoading } = useQuery({
+  const { data: expenses = [], isLoading } = useQuery<(Expense & { project: Project & { client: Client } })[]>({
     queryKey: ["/api/expenses"],
   });
 
   const createExpenseMutation = useMutation({
     mutationFn: async (data: ExpenseFormData) => {
-      const response = await apiRequest("POST", "/api/expenses", data);
-      return response.json();
+      return apiRequest("/api/expenses", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
@@ -92,7 +96,7 @@ export default function Expenses() {
   const getTotalExpenses = () => {
     if (!expenses) return { total: 0, billable: 0, reimbursable: 0 };
     
-    return expenses.reduce(
+    return expenses?.reduce(
       (acc, expense) => ({
         total: acc.total + parseFloat(expense.amount),
         billable: acc.billable + (expense.billable ? parseFloat(expense.amount) : 0),
@@ -240,7 +244,7 @@ export default function Expenses() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {projects?.map((project) => (
+                            {projects.map((project) => (
                               <SelectItem key={project.id} value={project.id}>
                                 {project.name} - {project.client.name}
                               </SelectItem>
@@ -333,6 +337,7 @@ export default function Expenses() {
                           <Textarea
                             placeholder="Describe the expense..."
                             {...field}
+                            value={field.value || ""}
                             data-testid="textarea-expense-description"
                           />
                         </FormControl>
@@ -424,7 +429,7 @@ export default function Expenses() {
                     </div>
                   ))}
                 </div>
-              ) : expenses?.length === 0 ? (
+              ) : expenses.length === 0 ? (
                 <div className="text-center py-8">
                   <Receipt className="w-12 h-12 mx-auto text-muted-foreground opacity-50 mb-4" />
                   <h3 className="text-lg font-medium mb-2">No expenses yet</h3>
@@ -432,7 +437,7 @@ export default function Expenses() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {expenses?.map((expense) => (
+                  {expenses.map((expense) => (
                     <div
                       key={expense.id}
                       className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
