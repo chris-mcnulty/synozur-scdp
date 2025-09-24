@@ -4434,7 +4434,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         discountAmount: discountAmount || null,
         totalAmount: "0", // Will be updated after generating invoices
         invoicingMode: invoicingMode || "client",
-        exportedToQBO: false
+        exportedToQBO: false,
+        createdBy: req.user?.id || null
       });
       
       res.json(batch);

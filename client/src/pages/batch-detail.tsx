@@ -63,7 +63,8 @@ import {
   Undo,
   Milestone,
   Target,
-  Trash2
+  Trash2,
+  User as UserIcon
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -111,6 +112,7 @@ interface InvoiceBatchDetails {
   projectCount: number;
   paymentTerms?: string | null;
   finalizer?: { id: string; name: string; email: string } | null;
+  creator?: { id: string; name: string; email: string } | null;
 }
 
 interface InvoiceLine {
@@ -1087,7 +1089,7 @@ export default function BatchDetail() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
               <div className="space-y-1">
                 <div className="flex items-center text-sm text-muted-foreground">
                   <Calendar className="mr-1 h-3 w-3" />
@@ -1120,6 +1122,26 @@ export default function BatchDetail() {
                   Line Items
                 </div>
                 <p className="font-medium" data-testid="text-line-count">{batchDetails.totalLinesCount}</p>
+              </div>
+              
+              <div className="space-y-1">
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Calendar className="mr-1 h-3 w-3" />
+                  Created Date
+                </div>
+                <p className="font-medium" data-testid="text-created-date">
+                  {format(new Date(batchDetails.createdAt), "MMM d, yyyy")}
+                </p>
+              </div>
+              
+              <div className="space-y-1">
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <UserIcon className="mr-1 h-3 w-3" />
+                  Created By
+                </div>
+                <p className="font-medium" data-testid="text-created-by">
+                  {batchDetails.creator?.name || 'System'}
+                </p>
               </div>
             </div>
             

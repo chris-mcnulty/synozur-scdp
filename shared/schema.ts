@@ -454,6 +454,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   status: text("status").notNull().default("draft"), // draft, reviewed, finalized
   finalizedAt: timestamp("finalized_at"),
   finalizedBy: varchar("finalized_by").references(() => users.id),
+  createdBy: varchar("created_by").references(() => users.id), // Track who created the batch
   // Revenue recognition date tracking
   asOfDate: date("as_of_date"), // Date for revenue recognition (defaults to finalized date)
   asOfDateUpdatedBy: varchar("as_of_date_updated_by").references(() => users.id),
@@ -725,6 +726,10 @@ export const invoiceBatchesRelations = relations(invoiceBatches, ({ many, one })
   adjustments: many(invoiceAdjustments),
   finalizer: one(users, {
     fields: [invoiceBatches.finalizedBy],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [invoiceBatches.createdBy],
     references: [users.id],
   }),
 }));

@@ -2952,16 +2952,32 @@ export class DatabaseStorage implements IStorage {
     totalLinesCount: number;
     clientCount: number;
     projectCount: number;
+    creator?: { id: string; name: string; email: string } | null;
   }) | undefined> {
-    // Get the batch
-    const [batch] = await db
-      .select()
-      .from(invoiceBatches)
-      .where(eq(invoiceBatches.batchId, batchId));
+    // Get the batch with creator and finalizer information
+    const [result] = await db.select({
+      batch: invoiceBatches,
+      creator: {
+        id: sql`creator_user.id`,
+        name: sql`creator_user.name`,
+        email: sql`creator_user.email`
+      },
+      finalizer: {
+        id: sql`finalizer_user.id`, 
+        name: sql`finalizer_user.name`,
+        email: sql`finalizer_user.email`
+      }
+    })
+    .from(invoiceBatches)
+    .leftJoin(sql`users as creator_user`, sql`creator_user.id = ${invoiceBatches.createdBy}`)
+    .leftJoin(sql`users as finalizer_user`, sql`finalizer_user.id = ${invoiceBatches.finalizedBy}`)
+    .where(eq(invoiceBatches.batchId, batchId));
     
-    if (!batch) {
+    if (!result) {
       return undefined;
     }
+
+    const batch = result.batch;
 
     // Get summary statistics for the batch
     const lines = await db
@@ -2994,7 +3010,9 @@ export class DatabaseStorage implements IStorage {
       ...updatedBatch,
       totalLinesCount,
       clientCount: uniqueClients.size,
-      projectCount: uniqueProjects.size
+      projectCount: uniqueProjects.size,
+      creator: result.creator?.id ? result.creator : null,
+      finalizer: result.finalizer?.id ? result.finalizer : null
     });
   }
 
