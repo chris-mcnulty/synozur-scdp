@@ -4605,7 +4605,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           };
         }
         
-        const amount = parseFloat(line.amount || '0');
+        // Use billedAmount if available (after adjustments), otherwise use original amount
+        const amount = parseFloat(line.billedAmount || line.amount || '0');
         acc[clientKey].projects[projectKey].lines.push(line);
         acc[clientKey].projects[projectKey].subtotal += amount;
         acc[clientKey].subtotal += amount;
