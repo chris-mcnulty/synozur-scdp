@@ -10,7 +10,8 @@ import {
   Users,
   UsersRound,
   BarChart3,
-  Settings
+  Settings,
+  Building2
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -80,6 +81,12 @@ export function Sidebar() {
             href="/projects"
             icon={<FolderOpen />}
             label="Projects"
+          />
+
+          <SidebarItem
+            href="/clients"
+            icon={<Building2 />}
+            label="Clients"
           />
           
           <SidebarItem

@@ -285,6 +285,7 @@ export interface IStorage {
   // Invoice Batches
   createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch>;
   getInvoiceBatches(): Promise<InvoiceBatch[]>;
+  getInvoiceBatchesForClient(clientId: string): Promise<InvoiceBatch[]>;
   getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {
     totalLinesCount: number;
     clientCount: number;
@@ -2946,6 +2947,27 @@ export class DatabaseStorage implements IStorage {
     }));
     
     return batchesWithDetails;
+  }
+
+  async getInvoiceBatchesForClient(clientId: string): Promise<InvoiceBatch[]> {
+    // Get batches that contain invoice lines for this client
+    const batchIds = await db
+      .selectDistinct({ batchId: invoiceLines.batchId })
+      .from(invoiceLines)
+      .where(eq(invoiceLines.clientId, clientId));
+    
+    if (batchIds.length === 0) {
+      return [];
+    }
+    
+    // Get the full batch details for these batch IDs
+    const batches = await db
+      .select()
+      .from(invoiceBatches)
+      .where(sql`${invoiceBatches.batchId} IN ${batchIds.map(b => b.batchId)}`)
+      .orderBy(desc(invoiceBatches.createdAt));
+    
+    return batches.map(batch => convertDecimalFieldsToNumbers(batch));
   }
 
   async getInvoiceBatchDetails(batchId: string): Promise<(InvoiceBatch & {

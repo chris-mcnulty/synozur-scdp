@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -31,6 +31,17 @@ export default function Projects() {
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
+
+  // Check for URL parameters and auto-open client creation dialog
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('action') === 'create-client') {
+      setCreateClientDialogOpen(true);
+      // Clean the URL parameter
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
 
   const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
     queryKey: ["/api/projects"],

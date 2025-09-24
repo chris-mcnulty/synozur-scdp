@@ -1815,6 +1815,39 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/clients/:id", requireAuth, async (req, res) => {
+    try {
+      const client = await storage.getClient(req.params.id);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      res.json(client);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch client" });
+    }
+  });
+
+  app.patch("/api/clients/:id", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const client = await storage.getClient(req.params.id);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+
+      const validatedData = insertClientSchema.partial().parse(req.body);
+      const updatedClient = await storage.updateClient(req.params.id, validatedData);
+      res.json(updatedClient);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid client data", errors: error.errors });
+      }
+      res.status(500).json({ 
+        message: "Failed to update client",
+        error: error.message 
+      });
+    }
+  });
+
   // Roles (admin only)
   app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
@@ -4562,6 +4595,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(batches);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch invoice batches" });
+    }
+  });
+
+  app.get("/api/clients/:clientId/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { clientId } = req.params;
+      const batches = await storage.getInvoiceBatchesForClient(clientId);
+      res.json(batches);
+    } catch (error) {
+      console.error("Failed to fetch client invoice batches:", error);
+      res.status(500).json({ message: "Failed to fetch client invoice batches" });
     }
   });
 
