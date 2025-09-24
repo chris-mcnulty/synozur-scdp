@@ -162,7 +162,7 @@ export default function Login() {
             Continue with Demo Account
           </Button>
 
-          {ssoStatus?.configured && (
+          {(ssoStatus as any)?.configured === true && (
             <>
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
@@ -204,7 +204,7 @@ export default function Login() {
           )}
           
           <p className="text-center text-sm text-muted-foreground mt-4">
-            {ssoStatus?.configured 
+            {(ssoStatus as any)?.configured === true
               ? "Use your corporate Microsoft account or demo credentials"
               : "For production SSO, configure Azure AD environment variables"
             }

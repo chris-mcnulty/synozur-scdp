@@ -3955,35 +3955,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       const updatedReceipt = await storage.updatePendingReceipt(receiptId, storageUpdateData);
 
-      // Update SharePoint metadata if possible
-      try {
-        const sharePointConfig = await getSharePointConfig();
-        if (sharePointConfig.configured) {
-          const runtimeTypes = fromStorageToRuntimeTypes(updatedReceipt);
-          const metadata = {
-            projectId: updatedReceipt.projectId || '',
-            uploadedBy: updatedReceipt.uploadedBy,
-            expenseCategory: updatedReceipt.category || 'Other',
-            receiptDate: runtimeTypes.receiptDate,
-            amount: runtimeTypes.amount,
-            currency: updatedReceipt.currency || 'USD',
-            status: updatedReceipt.status,
-            vendor: updatedReceipt.vendor || '',
-            description: updatedReceipt.description || '',
-            isReimbursable: updatedReceipt.isReimbursable ?? true,
-            tags: updatedReceipt.tags || ''
-          };
-
-          await graphClient.assignReceiptMetadata(
-            sharePointConfig.containerId!,
-            receipt.itemId,
-            metadata
-          );
-        }
-      } catch (metadataError) {
-        console.warn('[PENDING_RECEIPT_UPDATE] Failed to update metadata:', metadataError);
-        // Continue - metadata update is not critical
-      }
+      // Note: SharePoint metadata update removed - using local file storage
 
       res.json(updatedReceipt);
 
@@ -4152,14 +4124,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Cannot delete receipt that has been assigned to an expense" });
       }
 
-      try {
-        // Delete file from SharePoint using container operations
-        // Note: receipt.driveId contains the tenant-specific container ID for proper isolation
-        await graphClient.deleteFile(receipt.driveId, receipt.itemId);
-      } catch (sharePointError: any) {
-        console.warn('[PENDING_RECEIPT_DELETE] SharePoint delete failed:', sharePointError);
-        // Continue with database deletion even if SharePoint fails
-      }
+      // Note: SharePoint file deletion removed - using local file storage
+      // Local files are managed through the file storage service
 
       // Delete from database
       await storage.deletePendingReceipt(receiptId);
