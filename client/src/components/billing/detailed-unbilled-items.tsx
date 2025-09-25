@@ -39,7 +39,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
     queryFn: async () => {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value) params.append(key, value);
+        if (value && !value.startsWith('all-')) params.append(key, value);
       });
       
       return await apiRequest(`/api/billing/unbilled-items?${params.toString()}`);
@@ -130,7 +130,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
                     <SelectValue placeholder="All people" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All people</SelectItem>
+                    <SelectItem value="all-people">All people</SelectItem>
                     {(users as any[]).map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.name}
@@ -147,7 +147,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
                     <SelectValue placeholder="All projects" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All projects</SelectItem>
+                    <SelectItem value="all-projects">All projects</SelectItem>
                     {(projects as any[]).map((project: any) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name}
@@ -164,7 +164,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
                     <SelectValue placeholder="All clients" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All clients</SelectItem>
+                    <SelectItem value="all-clients">All clients</SelectItem>
                     {(clients as any[]).map((client: any) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.name}

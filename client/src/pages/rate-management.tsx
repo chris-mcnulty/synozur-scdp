@@ -203,8 +203,8 @@ export default function RateManagement() {
         method: "POST",
         body: JSON.stringify({
           filters: {
-            userId: data.userId || undefined,
-            projectId: data.projectId || undefined,
+            userId: (data.userId && data.userId !== "all-users") ? data.userId : undefined,
+            projectId: (data.projectId && data.projectId !== "all-projects") ? data.projectId : undefined,
             startDate: data.startDate || undefined,
             endDate: data.endDate || undefined,
           },
@@ -744,7 +744,7 @@ export default function RateManagement() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="">All users</SelectItem>
+                                <SelectItem value="all-users">All users</SelectItem>
                                 {users?.map((user) => (
                                   <SelectItem key={user.id} value={user.id}>
                                     {user.name}
@@ -770,7 +770,7 @@ export default function RateManagement() {
                                 </SelectTrigger>
                               </FormControl>
                               <SelectContent>
-                                <SelectItem value="">All projects</SelectItem>
+                                <SelectItem value="all-projects">All projects</SelectItem>
                                 {projects?.map((project) => (
                                   <SelectItem key={project.id} value={project.id}>
                                     {project.name}

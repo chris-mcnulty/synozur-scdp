@@ -903,10 +903,10 @@ export default function EstimateDetail() {
               <div>
                 <Label>Linked Project</Label>
                 <Select 
-                  value={estimate?.projectId || ""} 
+                  value={estimate?.projectId || "no-project"} 
                   onValueChange={(value) => {
                     updateEstimateMutation.mutate({ 
-                      projectId: value === "" ? null : value
+                      projectId: value === "no-project" ? null : value
                     });
                   }}
                 >
@@ -914,7 +914,7 @@ export default function EstimateDetail() {
                     <SelectValue placeholder="No project linked" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No project (unlink)</SelectItem>
+                    <SelectItem value="no-project">No project (unlink)</SelectItem>
                     {projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name} - {project.code}

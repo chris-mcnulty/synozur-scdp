@@ -117,7 +117,7 @@ export default function ExpenseManagement() {
   const buildQueryParams = (filterData: ExpenseFilters) => {
     const params = new URLSearchParams();
     Object.entries(filterData).forEach(([key, value]) => {
-      if (value && value !== '') {
+      if (value && value !== '' && !value.startsWith('all-')) {
         params.append(key, value);
       }
     });
@@ -208,9 +208,9 @@ export default function ExpenseManagement() {
       return;
     }
 
-    // Filter out undefined values
+    // Filter out undefined values and "no-change" selections
     const updates = Object.fromEntries(
-      Object.entries(data).filter(([_, value]) => value !== undefined)
+      Object.entries(data).filter(([_, value]) => value !== undefined && value !== "no-change")
     );
 
     if (Object.keys(updates).length === 0) {
@@ -344,7 +344,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All clients</SelectItem>
+                            <SelectItem value="all-clients">All clients</SelectItem>
                             {clients.map((client) => (
                               <SelectItem key={client.id} value={client.id}>
                                 {client.name}
@@ -370,7 +370,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All projects</SelectItem>
+                            <SelectItem value="all-projects">All projects</SelectItem>
                             {projects.map((project) => (
                               <SelectItem key={project.id} value={project.id}>
                                 {project.name}
@@ -396,7 +396,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All people</SelectItem>
+                            <SelectItem value="all-people">All people</SelectItem>
                             {users.map((user) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.name}
@@ -422,7 +422,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All categories</SelectItem>
+                            <SelectItem value="all-categories">All categories</SelectItem>
                             {EXPENSE_CATEGORIES.map((category) => (
                               <SelectItem key={category.value} value={category.value}>
                                 {category.label}
@@ -528,7 +528,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All statuses</SelectItem>
+                            <SelectItem value="all-statuses">All statuses</SelectItem>
                             <SelectItem value="true">Billed</SelectItem>
                             <SelectItem value="false">Unbilled</SelectItem>
                           </SelectContent>
@@ -551,7 +551,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">All receipts</SelectItem>
+                            <SelectItem value="all-receipts">All receipts</SelectItem>
                             <SelectItem value="true">Has receipt</SelectItem>
                             <SelectItem value="false">No receipt</SelectItem>
                           </SelectContent>
@@ -805,7 +805,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">No change</SelectItem>
+                            <SelectItem value="no-change">No change</SelectItem>
                             <SelectItem value="true">Mark as Billed</SelectItem>
                             <SelectItem value="false">Mark as Unbilled</SelectItem>
                           </SelectContent>
@@ -828,7 +828,7 @@ export default function ExpenseManagement() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">No change</SelectItem>
+                            <SelectItem value="no-change">No change</SelectItem>
                             {users.map((user) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.name}
