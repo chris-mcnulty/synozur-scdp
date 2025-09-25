@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone } from "@shared/schema";
+import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
 
 export default function EstimateDetail() {
   const { id } = useParams();
@@ -101,6 +101,11 @@ export default function EstimateDetail() {
     queryKey: ['/api/estimates', id, 'line-items'],
     enabled: !!id && !!estimate,
     retry: 1,
+  });
+
+  // Fetch projects for project selection dropdown
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
   });
 
   const { data: users = [] } = useQuery<any[]>({
@@ -821,73 +826,124 @@ export default function EstimateDetail() {
           <CardDescription>Configure how this estimate is priced</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            {/* Pricing Type Selector */}
-            <div>
-              <Label>Pricing Type</Label>
-              <Select 
-                value={estimate?.pricingType || 'hourly'} 
-                onValueChange={(value) => {
-                  updateEstimateMutation.mutate({ 
-                    pricingType: value as 'hourly' | 'fixed'
-                  });
-                }}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hourly">Hourly (Time & Materials)</SelectItem>
-                  <SelectItem value="fixed">Fixed Price / Block</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="space-y-4">
+            {/* First row - Pricing Configuration */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* Pricing Type Selector */}
+              <div>
+                <Label>Pricing Type</Label>
+                <Select 
+                  value={estimate?.pricingType || 'hourly'} 
+                  onValueChange={(value) => {
+                    updateEstimateMutation.mutate({ 
+                      pricingType: value as 'hourly' | 'fixed'
+                    });
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hourly">Hourly (Time & Materials)</SelectItem>
+                    <SelectItem value="fixed">Fixed Price / Block</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Fixed Price Field - only show for fixed pricing */}
+              {estimate?.pricingType === 'fixed' && (
+                <div>
+                  <Label htmlFor="fixed-price">Fixed Price ($)</Label>
+                  <Input
+                    id="fixed-price"
+                    type="number"
+                    step="0.01"
+                    placeholder="Enter fixed price (e.g., 10000)"
+                    value={fixedPriceInput}
+                    onChange={(e) => {
+                      setFixedPriceInput(e.target.value);
+                    }}
+                    onBlur={() => {
+                      const value = fixedPriceInput.trim();
+                      if (value === '' || !isNaN(parseFloat(value))) {
+                        updateEstimateMutation.mutate({ 
+                          fixedPrice: value === '' ? null : parseFloat(value)
+                        });
+                      }
+                    }}
+                    className="mt-1"
+                  />
+                </div>
+              )}
+
+              {/* Estimate Type Selector */}
+              <div>
+                <Label>Estimate Type</Label>
+                <Select 
+                  value={estimate?.estimateType || 'detailed'} 
+                  onValueChange={(value) => {
+                    updateEstimateMutation.mutate({ 
+                      estimateType: value as 'detailed' | 'block'
+                    });
+                  }}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="detailed">Detailed (Line Items)</SelectItem>
+                    <SelectItem value="block">Block (Simple Hours/Dollars)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {/* Fixed Price Field - only show for fixed pricing */}
-            {estimate?.pricingType === 'fixed' && (
+            {/* Second row - Project Selection */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="fixed-price">Fixed Price ($)</Label>
-                <Input
-                  id="fixed-price"
-                  type="number"
-                  step="0.01"
-                  placeholder="Enter fixed price (e.g., 10000)"
-                  value={fixedPriceInput}
-                  onChange={(e) => {
-                    setFixedPriceInput(e.target.value);
+                <Label>Linked Project</Label>
+                <Select 
+                  value={estimate?.projectId || ""} 
+                  onValueChange={(value) => {
+                    updateEstimateMutation.mutate({ 
+                      projectId: value === "" ? null : value
+                    });
                   }}
-                  onBlur={() => {
-                    const value = fixedPriceInput.trim();
-                    if (value === '' || !isNaN(parseFloat(value))) {
-                      updateEstimateMutation.mutate({ 
-                        fixedPrice: value === '' ? null : parseFloat(value)
-                      });
-                    }
-                  }}
-                  className="mt-1"
-                />
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="No project linked" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No project (unlink)</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name} - {project.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Link this estimate to an existing project for backtesting and tracking.
+                </p>
               </div>
-            )}
-
-            {/* Estimate Type Selector */}
-            <div>
-              <Label>Estimate Type</Label>
-              <Select 
-                value={estimate?.estimateType || 'detailed'} 
-                onValueChange={(value) => {
-                  updateEstimateMutation.mutate({ 
-                    estimateType: value as 'detailed' | 'block'
-                  });
-                }}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="detailed">Detailed (Line Items)</SelectItem>
-                  <SelectItem value="block">Block (Simple Hours/Dollars)</SelectItem>
-                </SelectContent>
-              </Select>
+              {estimate?.projectId && (
+                <div className="flex items-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      const linkedProject = projects.find(p => p.id === estimate.projectId);
+                      if (linkedProject) {
+                        setLocation(`/projects/${linkedProject.id}`);
+                      }
+                    }}
+                    className="mt-1"
+                  >
+                    <Briefcase className="h-4 w-4 mr-2" />
+                    View Linked Project
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
