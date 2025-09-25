@@ -12,6 +12,7 @@ import Estimates from "@/pages/estimates";
 import EstimateDetail from "@/pages/estimate-detail";
 import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
+import ExpenseManagement from "@/pages/expense-management";
 import Billing from "@/pages/billing";
 import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
@@ -23,11 +24,13 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { setSessionId } from "@/lib/queryClient";
 
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
+  const { hasAnyRole } = useAuth();
   
   // Handle sessionId from SSO callback FIRST
   useEffect(() => {
@@ -92,6 +95,9 @@ function Router() {
       <Route path="/expenses">
         {user ? <Expenses /> : <Redirect to="/login" />}
       </Route>
+      <Route path="/expense-management">
+        {user ? (hasAnyRole(['admin', 'pm', 'billing-admin']) ? <ExpenseManagement /> : <Redirect to="/" />) : <Redirect to="/login" />}
+      </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}
       </Route>
@@ -99,16 +105,16 @@ function Router() {
         {user ? <BatchDetail /> : <Redirect to="/login" />}
       </Route>
       <Route path="/rates">
-        {user ? <RateManagement /> : <Redirect to="/login" />}
+        {user ? (hasAnyRole(['admin']) ? <RateManagement /> : <Redirect to="/" />) : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
-        {user ? <Users /> : <Redirect to="/login" />}
+        {user ? (hasAnyRole(['admin']) ? <Users /> : <Redirect to="/" />) : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
-        {user ? <SystemSettings /> : <Redirect to="/login" />}
+        {user ? (hasAnyRole(['admin']) ? <SystemSettings /> : <Redirect to="/" />) : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
-        {user ? <Reports /> : <Redirect to="/login" />}
+        {user ? (hasAnyRole(['admin', 'billing-admin', 'pm', 'executive']) ? <Reports /> : <Redirect to="/" />) : <Redirect to="/login" />}
       </Route>
       <Route path="/about">
         {user ? <About /> : <Redirect to="/login" />}

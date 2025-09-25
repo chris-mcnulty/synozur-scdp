@@ -32,7 +32,8 @@ import {
   type DocumentMetadata, type InsertDocumentMetadata
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, desc, and, gte, lte, sql } from "drizzle-orm";
+import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -215,6 +216,11 @@ export interface IStorage {
   })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
+  
+  // Admin Expense Management
+  getExpensesAdmin(filters: any): Promise<any[]>;
+  bulkUpdateExpenses(expenseIds: string[], updates: any, userId: string, userRole: string): Promise<any>;
+  importExpenses(fileBuffer: Buffer, mimeType: string, userId: string): Promise<any>;
   
   // Container-based Expense Attachments (SharePoint Embedded)
   listExpenseAttachments(expenseId: string): Promise<ExpenseAttachment[]>;
@@ -2243,6 +2249,251 @@ export class DatabaseStorage implements IStorage {
     return attachment || undefined;
   }
 
+  // Admin Expense Management Methods
+  async getExpensesAdmin(filters: any): Promise<any[]> {
+    const conditions: any[] = [];
+    
+    if (filters.clientId) {
+      conditions.push(eq(projects.clientId, filters.clientId));
+    }
+    if (filters.projectId) {
+      conditions.push(eq(expenses.projectId, filters.projectId));
+    }
+    if (filters.personId) {
+      conditions.push(eq(expenses.personId, filters.personId));
+    }
+    if (filters.assignedPersonId) {
+      conditions.push(eq(expenses.projectResourceId, filters.assignedPersonId));
+    }
+    if (filters.category) {
+      conditions.push(eq(expenses.category, filters.category));
+    }
+    if (filters.vendor) {
+      conditions.push(ilike(expenses.vendor, `%${filters.vendor}%`));
+    }
+    if (filters.startDate) {
+      conditions.push(gte(expenses.date, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(expenses.date, filters.endDate));
+    }
+    if (filters.billable !== undefined) {
+      conditions.push(eq(expenses.billable, filters.billable));
+    }
+    if (filters.reimbursable !== undefined) {
+      conditions.push(eq(expenses.reimbursable, filters.reimbursable));
+    }
+    if (filters.billedFlag !== undefined) {
+      conditions.push(eq(expenses.billedFlag, filters.billedFlag));
+    }
+    if (filters.hasReceipt !== undefined) {
+      if (filters.hasReceipt) {
+        conditions.push(isNotNull(expenses.receiptUrl));
+      } else {
+        conditions.push(isNull(expenses.receiptUrl));
+      }
+    }
+    if (filters.minAmount) {
+      conditions.push(gte(expenses.amount, filters.minAmount.toString()));
+    }
+    if (filters.maxAmount) {
+      conditions.push(lte(expenses.amount, filters.maxAmount.toString()));
+    }
+
+    const query = db.select({
+      expense: expenses,
+      person: users,
+      project: projects,
+      client: clients,
+      projectResource: alias(users, 'projectResource'),
+    })
+    .from(expenses)
+    .innerJoin(users, eq(expenses.personId, users.id))
+    .innerJoin(projects, eq(expenses.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(alias(users, 'projectResource'), eq(expenses.projectResourceId, alias(users, 'projectResource').id))
+    .orderBy(desc(expenses.date));
+
+    let results;
+    if (conditions.length > 0) {
+      results = await query.where(and(...conditions));
+    } else {
+      results = await query;
+    }
+
+    return results.map(row => ({
+      ...row.expense,
+      person: row.person,
+      project: {
+        ...row.project,
+        client: row.client
+      },
+      projectResource: row.projectResource || undefined
+    }));
+  }
+
+  async bulkUpdateExpenses(expenseIds: string[], updates: any, userId: string, userRole: string): Promise<any> {
+    const results: any = { updated: 0, failed: 0, errors: [] };
+
+    for (const expenseId of expenseIds) {
+      try {
+        // Verify expense exists and user has permission
+        const [expense] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+        
+        if (!expense) {
+          results.failed++;
+          results.errors.push(`Expense ${expenseId} not found`);
+          continue;
+        }
+
+        // Check permission
+        const canEdit = expense.personId === userId || ['admin', 'billing-admin', 'pm'].includes(userRole);
+        if (!canEdit) {
+          results.failed++;
+          results.errors.push(`No permission to edit expense ${expenseId}`);
+          continue;
+        }
+
+        // Validate person assignment permission
+        if (updates.projectResourceId !== undefined && !['admin', 'pm', 'billing-admin'].includes(userRole)) {
+          results.failed++;
+          results.errors.push(`No permission to assign expense ${expenseId} to another person`);
+          continue;
+        }
+
+        // Perform update
+        await db.update(expenses).set(updates).where(eq(expenses.id, expenseId));
+        results.updated++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Error updating expense ${expenseId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    return results;
+  }
+
+  async importExpenses(fileBuffer: Buffer, mimeType: string, userId: string): Promise<any> {
+    try {
+      const XLSX = await import('xlsx');
+      
+      let workbook;
+      if (mimeType === 'text/csv') {
+        const csvData = fileBuffer.toString('utf8');
+        workbook = XLSX.read(csvData, { type: 'string' });
+      } else {
+        workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+      }
+      
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+      
+      const results = { successful: 0, failed: 0, errors: [] as any[] };
+      
+      // Get all projects for validation
+      const allProjects = await db.select().from(projects);
+      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        const rowNumber = i + 2; // Excel row number (1-indexed + header)
+        
+        try {
+          // Map flexible column names
+          const expenseData: any = {
+            personId: userId,
+            date: row['Date (YYYY-MM-DD)'] || row['Date'] || row['date'],
+            projectId: row['Project Code'] || row['Project ID'] || row['projectId'],
+            category: row['Category'] || row['category'],
+            amount: row['Amount'] || row['amount'],
+            currency: row['Currency'] || row['currency'] || 'USD',
+            description: row['Description'] || row['description'] || '',
+            vendor: row['Vendor'] || row['vendor'] || '',
+            billable: this.parseBoolean(row['Billable (TRUE/FALSE)'] || row['Billable'] || row['billable']),
+            reimbursable: this.parseBoolean(row['Reimbursable (TRUE/FALSE)'] || row['Reimbursable'] || row['reimbursable']),
+          };
+          
+          // Validate required fields
+          if (!expenseData.date || !expenseData.projectId || !expenseData.category || !expenseData.amount) {
+            results.failed++;
+            results.errors.push({
+              row: rowNumber,
+              error: 'Missing required fields (Date, Project Code, Category, Amount)'
+            });
+            continue;
+          }
+          
+          // Validate project exists
+          if (!projectMap.has(expenseData.projectId)) {
+            results.failed++;
+            results.errors.push({
+              row: rowNumber,
+              error: `Project Code '${expenseData.projectId}' not found`
+            });
+            continue;
+          }
+          
+          // Validate date format
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseData.date)) {
+            results.failed++;
+            results.errors.push({
+              row: rowNumber,
+              error: 'Date must be in YYYY-MM-DD format'
+            });
+            continue;
+          }
+          
+          // Validate amount is positive number
+          const amount = parseFloat(expenseData.amount);
+          if (isNaN(amount) || amount <= 0) {
+            results.failed++;
+            results.errors.push({
+              row: rowNumber,
+              error: 'Amount must be a positive number'
+            });
+            continue;
+          }
+          expenseData.amount = amount.toString();
+          
+          // Validate category
+          const validCategories = ['travel', 'hotel', 'meals', 'taxi', 'airfare', 'entertainment', 'mileage', 'other'];
+          if (!validCategories.includes(expenseData.category)) {
+            results.failed++;
+            results.errors.push({
+              row: rowNumber,
+              error: `Invalid category. Must be one of: ${validCategories.join(', ')}`
+            });
+            continue;
+          }
+          
+          // Create expense
+          await db.insert(expenses).values(expenseData);
+          results.successful++;
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            row: rowNumber,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+      
+      return results;
+    } catch (error) {
+      throw new Error(`Failed to process file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private parseBoolean(value: any): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      return lower === 'true' || lower === 'yes' || lower === '1';
+    }
+    if (typeof value === 'number') return value === 1;
+    return false;
+  }
+
   // Container-based expense attachment operations
   async uploadExpenseAttachmentToContainer(
     expenseId: string, 
@@ -2390,18 +2641,14 @@ export class DatabaseStorage implements IStorage {
     // Apply ordering
     let queryWithOrdering = queryWithConditions.orderBy(desc(pendingReceipts.createdAt));
 
-    // Apply pagination independently
-    let query = queryWithOrdering;
-    
-    if (filters.limit && filters.offset) {
-      query = queryWithOrdering.limit(filters.limit).offset(filters.offset);
-    } else if (filters.limit) {
-      query = queryWithOrdering.limit(filters.limit);
-    } else if (filters.offset) {
-      query = queryWithOrdering.offset(filters.offset);
+    // Execute query with optional pagination
+    let results;
+    if (filters.limit !== undefined || filters.offset !== undefined) {
+      const paginatedQuery = queryWithOrdering.limit(filters.limit || 50).offset(filters.offset || 0);
+      results = await paginatedQuery;
+    } else {
+      results = await queryWithOrdering;
     }
-    
-    const results = await query;
     return results.map(row => ({
       ...row.pendingReceipt,
       project: row.project || undefined,

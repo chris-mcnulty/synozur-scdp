@@ -339,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // User management
-  app.get("/api/users", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const users = await storage.getUsers();
       res.json(users);
@@ -3167,7 +3167,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Expenses
+
+  // Regular expenses endpoint (existing functionality)
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
       const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
@@ -3197,6 +3198,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         ...req.body,
         personId: req.user!.id // Always use the authenticated user
       });
+      
+      // Validate person assignment permissions
+      if (validatedData.projectResourceId) {
+        // Only admin, PM, and billing-admin can assign expenses to specific people
+        if (!['admin', 'pm', 'billing-admin'].includes(req.user!.role)) {
+          return res.status(403).json({ 
+            message: "Insufficient permissions to assign expenses to specific people" 
+          });
+        }
+      }
       
       // Additional validation for mileage expenses
       if (validatedData.category === "mileage") {
@@ -3247,6 +3258,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       const updateSchema = insertExpenseSchema.partial().omit({ personId: true });
       const validatedData = updateSchema.parse(req.body);
       
+      // Validate person assignment permissions for updates
+      if (validatedData.projectResourceId !== undefined) {
+        // Only admin, PM, and billing-admin can assign/reassign expenses to specific people
+        if (!['admin', 'pm', 'billing-admin'].includes(req.user!.role)) {
+          return res.status(403).json({ 
+            message: "Insufficient permissions to assign expenses to specific people" 
+          });
+        }
+      }
+      
       // Additional validation for mileage expenses
       if (validatedData.category === "mileage") {
         const quantity = parseFloat(validatedData.quantity || "0");
@@ -3272,6 +3293,52 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to update expense" });
     }
   });
+
+  // Admin Expense Management API
+  app.get("/api/expenses/admin", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const {
+        clientId,
+        projectId,
+        personId,
+        assignedPersonId,
+        category,
+        vendor,
+        startDate,
+        endDate,
+        billable,
+        reimbursable,
+        billedFlag,
+        hasReceipt,
+        minAmount,
+        maxAmount
+      } = req.query as Record<string, string>;
+
+      const filters: any = {};
+      
+      if (clientId) filters.clientId = clientId;
+      if (projectId) filters.projectId = projectId;
+      if (personId) filters.personId = personId;
+      if (assignedPersonId) filters.assignedPersonId = assignedPersonId;
+      if (category) filters.category = category;
+      if (vendor) filters.vendor = vendor;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+      if (billable !== undefined) filters.billable = billable === 'true';
+      if (reimbursable !== undefined) filters.reimbursable = reimbursable === 'true';
+      if (billedFlag !== undefined) filters.billedFlag = billedFlag === 'true';
+      if (hasReceipt !== undefined) filters.hasReceipt = hasReceipt === 'true';
+      if (minAmount) filters.minAmount = parseFloat(minAmount);
+      if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+
+      const expenses = await storage.getExpensesAdmin(filters);
+      res.json(expenses);
+    } catch (error) {
+      console.error("Error fetching admin expenses:", error);
+      res.status(500).json({ message: "Failed to fetch expenses" });
+    }
+  });
+
 
   // Validation schemas for expense attachment file uploads
   const allowedMimeTypes = [
@@ -5974,6 +6041,578 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete workstream" });
+    }
+  });
+
+  // ===================== EXPENSE MANAGEMENT ENDPOINTS =====================
+  
+  // Bulk update expenses (billed status, person assignment)
+  app.patch("/api/expenses/bulk", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { expenseIds, updates } = req.body;
+      
+      if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
+        return res.status(400).json({ message: "expenseIds must be a non-empty array" });
+      }
+
+      if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ message: "updates object is required" });
+      }
+
+      const results = [];
+      const errors = [];
+
+      for (const expenseId of expenseIds) {
+        try {
+          // Check user has permission to edit this expense
+          const { canAccess } = await canAccessExpense(expenseId, req.user!.id, req.user!.role);
+          if (!canAccess) {
+            errors.push({ expenseId, error: "Access denied" });
+            continue;
+          }
+
+          const updatedExpense = await storage.updateExpense(expenseId, updates);
+          results.push({ expenseId, success: true, expense: updatedExpense });
+        } catch (error) {
+          errors.push({ expenseId, error: error instanceof Error ? error.message : "Update failed" });
+        }
+      }
+
+      res.json({
+        success: true,
+        updated: results.length,
+        errors: errors.length,
+        results,
+        ...(errors.length > 0 && { errors })
+      });
+    } catch (error) {
+      console.error("Error bulk updating expenses:", error);
+      res.status(500).json({ message: "Failed to bulk update expenses" });
+    }
+  });
+
+  // Export expenses as CSV/Excel
+  app.get("/api/expenses/export", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { format = 'csv', ...filterParams } = req.query as Record<string, string>;
+      
+      // Apply same filters as admin endpoint
+      const filters: any = {};
+      const { 
+        personId, 
+        projectId, 
+        clientId,
+        projectResourceId,
+        startDate, 
+        endDate,
+        category,
+        billable,
+        reimbursable,
+        billedFlag,
+        hasReceipt,
+        minAmount,
+        maxAmount,
+        vendor
+      } = filterParams;
+      
+      if (personId) filters.personId = personId;
+      if (projectId) filters.projectId = projectId;
+      if (clientId) filters.clientId = clientId;
+      if (projectResourceId) filters.projectResourceId = projectResourceId;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+      if (category) filters.category = category;
+      if (billable !== undefined) filters.billable = billable === 'true';
+      if (reimbursable !== undefined) filters.reimbursable = reimbursable === 'true';
+      if (billedFlag !== undefined) filters.billedFlag = billedFlag === 'true';
+      if (hasReceipt !== undefined) filters.hasReceipt = hasReceipt === 'true';
+      if (minAmount) filters.minAmount = parseFloat(minAmount);
+      if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      if (vendor) filters.vendor = vendor;
+
+      const expenses = await storage.getExpenses(filters);
+
+      // Transform data for export
+      const exportData = expenses.map(expense => ({
+        'Date': expense.date,
+        'Project': expense.project?.name || '',
+        'Client': expense.project?.client?.name || '',
+        'Person': expense.person?.name || '',
+        'Category': expense.category,
+        'Amount': expense.amount,
+        'Currency': expense.currency,
+        'Description': expense.description || '',
+        'Vendor': expense.vendor || '',
+        'Billable': expense.billable ? 'Yes' : 'No',
+        'Reimbursable': expense.reimbursable ? 'Yes' : 'No',
+        'Billed': expense.billedFlag ? 'Yes' : 'No',
+        'Has Receipt': expense.receiptUrl ? 'Yes' : 'No',
+        'Quantity': expense.quantity || '',
+        'Unit': expense.unit || '',
+        'Created': expense.createdAt
+      }));
+
+      if (format.toLowerCase() === 'excel' || format.toLowerCase() === 'xlsx') {
+        const XLSX = require('xlsx');
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
+        
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=expenses-export-${new Date().toISOString().split('T')[0]}.xlsx`);
+        res.send(buffer);
+      } else {
+        // Default to CSV
+        const headers = Object.keys(exportData[0] || {});
+        const csvContent = [
+          headers.join(','),
+          ...exportData.map(row => 
+            headers.map(header => {
+              const value = (row as any)[header] || '';
+              // Escape commas and quotes in CSV
+              return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
+                ? `"${value.replace(/"/g, '""')}"` 
+                : value;
+            }).join(',')
+          )
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename=expenses-export-${new Date().toISOString().split('T')[0]}.csv`);
+        res.send(csvContent);
+      }
+    } catch (error) {
+      console.error("Error exporting expenses:", error);
+      res.status(500).json({ message: "Failed to export expenses" });
+    }
+  });
+
+
+  // Download Excel template for expense import
+  app.get("/api/expenses/template", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const XLSX = await import('xlsx');
+      
+      // Get active projects for the template
+      const projects = await storage.getProjects();
+      const sampleProjects = projects.slice(0, 3); // Get first 3 projects for samples
+      
+      // Template headers with validation guidelines
+      const headers = [
+        'Date (YYYY-MM-DD)',
+        'Project Code',
+        'Category',
+        'Amount',
+        'Currency',
+        'Description',
+        'Vendor',
+        'Billable (TRUE/FALSE)',
+        'Reimbursable (TRUE/FALSE)'
+      ];
+      
+      // Sample data rows to guide users
+      const sampleData = [
+        {
+          'Date (YYYY-MM-DD)': '2024-01-15',
+          'Project Code': sampleProjects[0]?.code || 'PROJ001',
+          'Category': 'travel',
+          'Amount': 150.00,
+          'Currency': 'USD',
+          'Description': 'Flight to client meeting',
+          'Vendor': 'Alaska Airlines',
+          'Billable (TRUE/FALSE)': 'TRUE',
+          'Reimbursable (TRUE/FALSE)': 'TRUE'
+        },
+        {
+          'Date (YYYY-MM-DD)': '2024-01-16',
+          'Project Code': sampleProjects[1]?.code || 'PROJ002',
+          'Category': 'meals',
+          'Amount': 45.50,
+          'Currency': 'USD',
+          'Description': 'Client dinner',
+          'Vendor': 'Restaurant ABC',
+          'Billable (TRUE/FALSE)': 'TRUE',
+          'Reimbursable (TRUE/FALSE)': 'TRUE'
+        },
+        {
+          'Date (YYYY-MM-DD)': '2024-01-17',
+          'Project Code': sampleProjects[2]?.code || 'PROJ003',
+          'Category': 'mileage',
+          'Amount': 35.00,
+          'Currency': 'USD',
+          'Description': '50 miles to client office',
+          'Vendor': '',
+          'Billable (TRUE/FALSE)': 'TRUE',
+          'Reimbursable (TRUE/FALSE)': 'TRUE'
+        }
+      ];
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Create main data sheet
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+      XLSX.utils.book_append_sheet(wb, ws, 'Expense Data');
+      
+      // Create instructions sheet
+      const instructions = [
+        { Instruction: 'How to use this template:' },
+        { Instruction: '1. Fill in your expense data in the "Expense Data" sheet' },
+        { Instruction: '2. Follow the format exactly as shown in the sample rows' },
+        { Instruction: '3. Date must be in YYYY-MM-DD format' },
+        { Instruction: '4. Project Code must match an existing project code exactly' },
+        { Instruction: '5. Category must be one of: travel, hotel, meals, taxi, airfare, entertainment, mileage, other' },
+        { Instruction: '6. Amount should be a number (decimals allowed)' },
+        { Instruction: '7. Currency should be a 3-letter code (USD, EUR, GBP, etc.)' },
+        { Instruction: '8. Billable and Reimbursable should be TRUE or FALSE' },
+        { Instruction: '9. Delete the sample rows before importing your data' },
+        { Instruction: '10. Save as Excel (.xlsx) or CSV (.csv) format' },
+        { Instruction: '' },
+        { Instruction: 'Valid Categories:' },
+        { Instruction: 'travel - Travel expenses (flights, trains, etc.)' },
+        { Instruction: 'hotel - Hotel and accommodation' },
+        { Instruction: 'meals - Meals and food expenses' },
+        { Instruction: 'taxi - Taxi and transportation' },
+        { Instruction: 'airfare - Flight tickets' },
+        { Instruction: 'entertainment - Client entertainment' },
+        { Instruction: 'mileage - Vehicle mileage (amount will be calculated)' },
+        { Instruction: 'other - Other business expenses' }
+      ];
+      
+      const instructionWs = XLSX.utils.json_to_sheet(instructions);
+      XLSX.utils.book_append_sheet(wb, instructionWs, 'Instructions');
+      
+      // Create projects reference sheet
+      const projectsRef = projects.map(p => ({
+        'Project Code': p.code,
+        'Project Name': p.name,
+        'Client': p.client?.name || 'Unknown'
+      }));
+      
+      if (projectsRef.length > 0) {
+        const projectsWs = XLSX.utils.json_to_sheet(projectsRef);
+        XLSX.utils.book_append_sheet(wb, projectsWs, 'Available Projects');
+      }
+      
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=expense-import-template-${new Date().toISOString().split('T')[0]}.xlsx`);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Error generating expense template:", error);
+      res.status(500).json({ message: "Failed to generate expense template" });
+    }
+  });
+
+  // Import expenses from Excel/CSV file - with rate limiting for security
+  app.post("/api/expenses/import", uploadRateLimit, requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const multer = require('multer');
+      const upload = multer({ 
+        storage: multer.memoryStorage(),
+        limits: { 
+          fileSize: 10 * 1024 * 1024, // 10MB limit
+          files: 1
+        },
+        fileFilter: (req: any, file: any, cb: any) => {
+          const allowedTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'text/csv', // .csv
+          ];
+          
+          if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+          } else {
+            cb(new Error('Invalid file type. Only Excel (.xlsx, .xls) and CSV (.csv) files are allowed.'));
+          }
+        }
+      }).single('file');
+
+      upload(req, res, async (err: any) => {
+        if (err) {
+          if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+              return res.status(400).json({ 
+                message: 'File too large. Maximum size is 10MB.',
+                errors: []
+              });
+            }
+          }
+          return res.status(400).json({ 
+            message: err.message || 'File upload error',
+            errors: []
+          });
+        }
+
+        if (!req.file) {
+          return res.status(400).json({ 
+            message: 'No file uploaded',
+            errors: []
+          });
+        }
+
+        try {
+          const XLSX = await import('xlsx');
+          let workbook;
+          
+          // Parse file based on type
+          if (req.file.mimetype === 'text/csv') {
+            const csvData = req.file.buffer.toString('utf8');
+            workbook = XLSX.read(csvData, { type: 'string' });
+          } else {
+            workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+          }
+
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+          if (!rawData || rawData.length === 0) {
+            return res.status(400).json({ 
+              message: 'No data found in file',
+              errors: []
+            });
+          }
+
+          // Get projects and users for validation
+          const projects = await storage.getProjects();
+          const projectMap = new Map(projects.map(p => [p.code.toLowerCase(), p]));
+          
+          const validationErrors: Array<{
+            row: number;
+            field?: string;
+            message: string;
+            value?: any;
+          }> = [];
+
+          const validExpenses: any[] = [];
+          const userId = req.user!.id;
+
+          // Valid expense categories
+          const validCategories = ['travel', 'hotel', 'meals', 'taxi', 'airfare', 'entertainment', 'mileage', 'other'];
+
+          // Process each row
+          for (let i = 0; i < rawData.length; i++) {
+            const row = rawData[i] as any;
+            const rowNum = i + 2; // +2 because Excel rows start at 1 and we have header
+            let hasError = false;
+
+            // Extract data with flexible column name matching
+            const getColumnValue = (row: any, possibleNames: string[]) => {
+              for (const name of possibleNames) {
+                if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+                  return String(row[name]).trim();
+                }
+              }
+              return '';
+            };
+
+            const dateStr = getColumnValue(row, ['Date (YYYY-MM-DD)', 'Date', 'date']);
+            const projectCode = getColumnValue(row, ['Project Code', 'Project', 'project', 'projectCode']);
+            const category = getColumnValue(row, ['Category', 'category']);
+            const amountStr = getColumnValue(row, ['Amount', 'amount']);
+            const currency = getColumnValue(row, ['Currency', 'currency']) || 'USD';
+            const description = getColumnValue(row, ['Description', 'description']) || '';
+            const vendor = getColumnValue(row, ['Vendor', 'vendor']) || '';
+            const billableStr = getColumnValue(row, ['Billable (TRUE/FALSE)', 'Billable', 'billable']);
+            const reimbursableStr = getColumnValue(row, ['Reimbursable (TRUE/FALSE)', 'Reimbursable', 'reimbursable']);
+
+            // Skip completely empty rows
+            if (!dateStr && !projectCode && !category && !amountStr) {
+              continue;
+            }
+
+            // Validate date
+            let parsedDate: Date | null = null;
+            if (!dateStr) {
+              validationErrors.push({ row: rowNum, field: 'date', message: 'Date is required' });
+              hasError = true;
+            } else {
+              // Try to parse date in various formats
+              const dateFormats = [
+                /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
+                /^\d{2}\/\d{2}\/\d{4}$/, // MM/DD/YYYY
+                /^\d{1,2}\/\d{1,2}\/\d{4}$/, // M/D/YYYY
+              ];
+              
+              parsedDate = new Date(dateStr);
+              
+              if (isNaN(parsedDate.getTime())) {
+                validationErrors.push({ 
+                  row: rowNum, 
+                  field: 'date', 
+                  message: 'Invalid date format. Use YYYY-MM-DD format',
+                  value: dateStr
+                });
+                hasError = true;
+              }
+            }
+
+            // Validate project
+            let project = null;
+            if (!projectCode) {
+              validationErrors.push({ row: rowNum, field: 'projectCode', message: 'Project code is required' });
+              hasError = true;
+            } else {
+              project = projectMap.get(projectCode.toLowerCase());
+              if (!project) {
+                validationErrors.push({ 
+                  row: rowNum, 
+                  field: 'projectCode', 
+                  message: 'Project code does not exist',
+                  value: projectCode
+                });
+                hasError = true;
+              }
+            }
+
+            // Validate category
+            if (!category) {
+              validationErrors.push({ row: rowNum, field: 'category', message: 'Category is required' });
+              hasError = true;
+            } else if (!validCategories.includes(category.toLowerCase())) {
+              validationErrors.push({ 
+                row: rowNum, 
+                field: 'category', 
+                message: `Invalid category. Must be one of: ${validCategories.join(', ')}`,
+                value: category
+              });
+              hasError = true;
+            }
+
+            // Validate amount
+            let amount = 0;
+            if (!amountStr) {
+              validationErrors.push({ row: rowNum, field: 'amount', message: 'Amount is required' });
+              hasError = true;
+            } else {
+              amount = parseFloat(amountStr.replace(/[$,]/g, ''));
+              if (isNaN(amount) || amount < 0) {
+                validationErrors.push({ 
+                  row: rowNum, 
+                  field: 'amount', 
+                  message: 'Amount must be a positive number',
+                  value: amountStr
+                });
+                hasError = true;
+              }
+            }
+
+            // Validate currency (basic check)
+            if (currency && currency.length !== 3) {
+              validationErrors.push({ 
+                row: rowNum, 
+                field: 'currency', 
+                message: 'Currency must be a 3-letter code (e.g., USD, EUR)',
+                value: currency
+              });
+              hasError = true;
+            }
+
+            // Validate boolean fields
+            const parseBooleanField = (value: string, fieldName: string, defaultValue: boolean = true) => {
+              if (!value || value === '') return defaultValue;
+              
+              const normalized = value.toLowerCase().trim();
+              if (['true', 'yes', '1', 'y'].includes(normalized)) return true;
+              if (['false', 'no', '0', 'n'].includes(normalized)) return false;
+              
+              validationErrors.push({ 
+                row: rowNum, 
+                field: fieldName, 
+                message: `${fieldName} must be TRUE/FALSE, YES/NO, or 1/0`,
+                value: value
+              });
+              hasError = true;
+              return defaultValue;
+            };
+
+            const billable = parseBooleanField(billableStr, 'billable', true);
+            const reimbursable = parseBooleanField(reimbursableStr, 'reimbursable', true);
+
+            // If no validation errors for this row, add to valid expenses
+            if (!hasError && project && parsedDate) {
+              validExpenses.push({
+                personId: userId,
+                projectId: project.id,
+                date: parsedDate.toISOString().split('T')[0],
+                category: category.toLowerCase(),
+                amount: amount.toString(),
+                currency: currency.toUpperCase(),
+                description,
+                vendor,
+                billable,
+                reimbursable,
+                billedFlag: false,
+                _originalRow: rowNum
+              });
+            }
+          }
+
+          // If there are validation errors, return them without importing
+          if (validationErrors.length > 0) {
+            return res.json({
+              success: false,
+              message: `Validation failed. Found ${validationErrors.length} error(s) in ${validationErrors.filter((e, i, arr) => arr.findIndex(item => item.row === e.row) === i).length} row(s).`,
+              totalRows: rawData.length,
+              validRows: validExpenses.length,
+              errorRows: validationErrors.length,
+              imported: 0,
+              errors: validationErrors
+            });
+          }
+
+          // Import valid expenses in a transaction-like manner
+          const importResults = [];
+          const importErrors = [];
+
+          for (const expenseData of validExpenses) {
+            try {
+              const expense = await storage.createExpense(expenseData);
+              importResults.push({
+                row: expenseData._originalRow,
+                expenseId: expense.id,
+                success: true
+              });
+            } catch (error) {
+              importErrors.push({
+                row: expenseData._originalRow,
+                message: error instanceof Error ? error.message : 'Failed to create expense',
+                success: false
+              });
+            }
+          }
+
+          res.json({
+            success: importErrors.length === 0,
+            message: importErrors.length === 0 
+              ? `Successfully imported ${importResults.length} expense(s)`
+              : `Imported ${importResults.length} expense(s) with ${importErrors.length} error(s)`,
+            totalRows: rawData.length,
+            validRows: validExpenses.length,
+            imported: importResults.length,
+            errors: importErrors,
+            results: importResults
+          });
+
+        } catch (error) {
+          console.error("Error processing import file:", error);
+          res.status(500).json({ 
+            message: "Failed to process import file",
+            errors: []
+          });
+        }
+      });
+    } catch (error) {
+      console.error("Error setting up file upload:", error);
+      res.status(500).json({ 
+        message: "Failed to set up file upload",
+        errors: []
+      });
     }
   });
 

@@ -118,6 +118,13 @@ export function Sidebar() {
           />
           
           <SidebarItem
+            href="/expense-management"
+            icon={<UsersRound />}
+            label="Expense Management"
+            requiredRoles={["admin", "pm", "billing-admin"]}
+          />
+          
+          <SidebarItem
             href="/billing"
             icon={<DollarSign />}
             label="Billing"

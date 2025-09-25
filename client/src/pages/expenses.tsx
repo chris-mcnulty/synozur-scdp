@@ -13,12 +13,13 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { insertExpenseSchema, type Expense, type Project, type Client } from "@shared/schema";
+import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format } from "date-fns";
 import { getTodayBusinessDate } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
@@ -28,6 +29,7 @@ const expenseFormSchema = insertExpenseSchema.omit({
 }).extend({
   date: z.string(),
   miles: z.string().optional(), // Separate field for miles input (not sent to backend)
+  projectResourceId: z.string().optional(), // Optional person assignment
 }).refine((data) => {
   // Validate that miles is positive when category is mileage
   if (data.category === "mileage") {
@@ -70,8 +72,16 @@ export default function Expenses() {
   const [prevCategory, setPrevCategory] = useState<string>("");
   const [editPrevCategory, setEditPrevCategory] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showImportDialog, setShowImportDialog] = useState<boolean>(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importProgress, setImportProgress] = useState<boolean>(false);
+  const [importResults, setImportResults] = useState<any>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { hasAnyRole } = useAuth();
+  
+  // Check if current user can assign expenses to other people
+  const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin']);
 
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
@@ -85,6 +95,7 @@ export default function Expenses() {
       vendor: "",
       category: "",
       projectId: "",
+      projectResourceId: "",
     },
   });
 
@@ -94,6 +105,19 @@ export default function Expenses() {
 
   const { data: expenses = [], isLoading } = useQuery<(Expense & { project: Project & { client: Client } })[]>({
     queryKey: ["/api/expenses"],
+  });
+
+  // Fetch users for person assignment (only for admin/PM roles)
+  const { data: users = [], error: usersError } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled: canAssignToPerson,
+    retry: (failureCount, error: any) => {
+      // Don't retry if it's a 403 (unauthorized)
+      if (error?.message?.includes('403')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
   });
 
   // Fetch MILEAGE_RATE from the dedicated endpoint
@@ -281,6 +305,147 @@ export default function Expenses() {
     }
   };
 
+  // Import functionality
+  const downloadTemplate = async () => {
+    try {
+      const response = await fetch('/api/expenses/template', {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'X-Session-Id': localStorage.getItem('sessionId') || '',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download template');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `expense-import-template-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Template downloaded",
+        description: "Excel template has been downloaded successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Failed to download template. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImportFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const allowedTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel', // .xls
+        'text/csv', // .csv
+      ];
+      
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Invalid file type",
+          description: "Please select an Excel (.xlsx, .xls) or CSV (.csv) file.",
+          variant: "destructive",
+        });
+        event.target.value = '';
+        return;
+      }
+      
+      // Validate file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "File size must be less than 10MB.",
+          variant: "destructive",
+        });
+        event.target.value = '';
+        return;
+      }
+      
+      setImportFile(file);
+      setImportResults(null);
+    }
+  };
+
+  const processImport = async () => {
+    if (!importFile) return;
+    
+    setImportProgress(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      
+      const response = await fetch('/api/expenses/import', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+        headers: {
+          'X-Session-Id': localStorage.getItem('sessionId') || '',
+        },
+      });
+      
+      const result = await response.json();
+      
+      setImportResults(result);
+      
+      if (result.success) {
+        toast({
+          title: "Import successful",
+          description: `Successfully imported ${result.imported} expense(s).`,
+        });
+        
+        // Refresh expenses list
+        queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+        
+        // Clear import state after successful import
+        setTimeout(() => {
+          setShowImportDialog(false);
+          setImportFile(null);
+          setImportResults(null);
+        }, 3000);
+      } else {
+        toast({
+          title: "Import completed with errors",
+          description: result.message || "Some expenses could not be imported.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Import failed",
+        description: "Failed to process import file. Please try again.",
+        variant: "destructive",
+      });
+      setImportResults({
+        success: false,
+        message: "Failed to process import file.",
+        errors: []
+      });
+    } finally {
+      setImportProgress(false);
+    }
+  };
+
+  const closeImportDialog = () => {
+    setShowImportDialog(false);
+    setImportFile(null);
+    setImportResults(null);
+    setImportProgress(false);
+  };
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -301,6 +466,7 @@ export default function Expenses() {
       category: "",
       projectId: "",
       vendor: "",
+      projectResourceId: "",
     },
   });
 
@@ -351,6 +517,7 @@ export default function Expenses() {
       category: expense.category,
       projectId: expense.projectId,
       vendor: expense.vendor || "",
+      projectResourceId: expense.projectResourceId || "",
       miles: expense.unit === "mile" && expense.quantity ? expense.quantity : undefined,
     });
     
@@ -374,6 +541,7 @@ export default function Expenses() {
       category: "",
       projectId: "",
       vendor: "",
+      projectResourceId: "",
       miles: undefined,
       quantity: undefined,
       unit: undefined,
@@ -441,7 +609,11 @@ export default function Expenses() {
               Track and manage project-related expenses
             </p>
           </div>
-          <Button data-testid="button-import-expenses">
+          <Button 
+            data-testid="button-import-expenses"
+            onClick={() => setShowImportDialog(true)}
+            disabled={!hasAnyRole(['admin', 'pm', 'billing-admin'])}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Import Expenses
           </Button>
@@ -577,6 +749,38 @@ export default function Expenses() {
                       </FormItem>
                     )}
                   />
+
+                  {/* Person Assignment (Admin/PM only) */}
+                  {canAssignToPerson && (
+                    <FormField
+                      control={form.control}
+                      name="projectResourceId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Assign to Person</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-expense-person">
+                                <SelectValue placeholder="Select person (optional)" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="">Unassigned</SelectItem>
+                              {users.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.firstName} {user.lastName} ({user.email})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Assign this expense to a specific team member (admin/PM only)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   <FormField
                     control={form.control}
@@ -931,6 +1135,39 @@ export default function Expenses() {
                   </FormItem>
                 )}
               />
+              
+              {/* Person Assignment for Edit (Admin/PM only) */}
+              {canAssignToPerson && (
+                <FormField
+                  control={editForm.control}
+                  name="projectResourceId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assign to Person</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger data-testid="edit-select-expense-person">
+                            <SelectValue placeholder="Select person (optional)" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">Unassigned</SelectItem>
+                          {users.map((user) => (
+                            <SelectItem key={user.id} value={user.id}>
+                              {user.firstName} {user.lastName} ({user.email})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Assign this expense to a specific team member (admin/PM only)
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+              
               {/* Mileage field for editing */}
               {editWatchedCategory === "mileage" && (
                 <FormField
@@ -1075,6 +1312,207 @@ export default function Expenses() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Expenses Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={closeImportDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-import-expenses">
+          <DialogHeader>
+            <DialogTitle>Import Expenses</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {!importResults && (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Upload an Excel (.xlsx, .xls) or CSV (.csv) file containing expense data.
+                  </p>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={downloadTemplate}
+                      data-testid="button-download-template"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Download Template
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Download template with sample data and instructions
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6">
+                  <div className="text-center space-y-2">
+                    <Upload className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                    <div>
+                      <label htmlFor="import-file" className="cursor-pointer">
+                        <span className="text-sm font-medium text-primary hover:text-primary/80">
+                          Click to upload
+                        </span>
+                        <span className="text-sm text-muted-foreground"> or drag and drop</span>
+                      </label>
+                      <input
+                        id="import-file"
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleImportFileChange}
+                        className="sr-only"
+                        data-testid="input-import-file"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Excel (.xlsx, .xls) or CSV (.csv) up to 10MB
+                    </p>
+                  </div>
+                </div>
+
+                {importFile && (
+                  <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <Receipt className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{importFile.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({(importFile.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setImportFile(null);
+                        const input = document.getElementById('import-file') as HTMLInputElement;
+                        if (input) input.value = '';
+                      }}
+                      data-testid="button-remove-file"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Import Results */}
+            {importResults && (
+              <div className="space-y-4">
+                <div className={`p-4 rounded-lg border ${
+                  importResults.success 
+                    ? 'bg-green-50 border-green-200 text-green-800'
+                    : 'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                  <div className="flex items-start space-x-2">
+                    <div className="flex-shrink-0">
+                      {importResults.success ? (
+                        <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                          <span className="text-white text-xs">✓</span>
+                        </div>
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
+                          <span className="text-white text-xs">!</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-medium">{importResults.message}</h4>
+                      
+                      <div className="mt-2 grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Total Rows:</span> {importResults.totalRows || 0}
+                        </div>
+                        <div>
+                          <span className="font-medium">Valid Rows:</span> {importResults.validRows || 0}
+                        </div>
+                        <div>
+                          <span className="font-medium">Imported:</span> {importResults.imported || 0}
+                        </div>
+                        <div>
+                          <span className="font-medium">Errors:</span> {importResults.errors?.length || 0}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Error Details */}
+                {importResults.errors && importResults.errors.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="font-medium text-sm">Validation Errors:</h5>
+                    <div className="max-h-60 overflow-y-auto">
+                      <div className="space-y-1">
+                        {importResults.errors.map((error: any, index: number) => (
+                          <div 
+                            key={index}
+                            className="text-xs p-2 bg-red-50 border border-red-200 rounded text-red-700"
+                          >
+                            <span className="font-medium">Row {error.row}:</span>
+                            {error.field && (
+                              <span className="text-red-600"> [{error.field}]</span>
+                            )}
+                            <span className="ml-1">{error.message}</span>
+                            {error.value && (
+                              <span className="ml-1 font-mono bg-red-100 px-1 rounded">
+                                "{error.value}"
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Success Results */}
+                {importResults.results && importResults.results.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="font-medium text-sm text-green-700">Successfully Imported:</h5>
+                    <div className="max-h-32 overflow-y-auto">
+                      <div className="space-y-1">
+                        {importResults.results.slice(0, 10).map((result: any, index: number) => (
+                          <div 
+                            key={index}
+                            className="text-xs p-2 bg-green-50 border border-green-200 rounded text-green-700"
+                          >
+                            Row {result.row}: Expense created successfully
+                          </div>
+                        ))}
+                        {importResults.results.length > 10 && (
+                          <div className="text-xs text-muted-foreground text-center p-2">
+                            ... and {importResults.results.length - 10} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeImportDialog}
+              data-testid="button-close-import"
+            >
+              {importResults ? 'Close' : 'Cancel'}
+            </Button>
+            {!importResults && importFile && (
+              <Button
+                type="button"
+                onClick={processImport}
+                disabled={importProgress}
+                data-testid="button-process-import"
+              >
+                {importProgress ? "Processing..." : "Import Expenses"}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Layout>
