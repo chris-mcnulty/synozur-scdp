@@ -35,7 +35,8 @@ import {
   User as UserIcon,
   Building2,
   FolderOpen,
-  Search
+  Search,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -82,10 +83,30 @@ const bulkEditSchema = z.object({
 
 type BulkEditData = z.infer<typeof bulkEditSchema>;
 
+// Individual edit schema - more fields than bulk edit
+const individualEditSchema = z.object({
+  description: z.string().optional(),
+  vendor: z.string().optional(),
+  category: z.string().optional(),
+  amount: z.number().positive().finite().optional(),
+  expenseDate: z.date().optional(),
+  reimbursable: z.boolean().optional(),
+  billedFlag: z.boolean().optional(),
+  projectResourceId: z.string().optional(),
+});
+
+type IndividualEditData = z.infer<typeof individualEditSchema>;
+
 export default function ExpenseManagement() {
   const [filters, setFilters] = useState<ExpenseFilters>({});
   const [selectedExpenses, setSelectedExpenses] = useState<string[]>([]);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [individualEditDialogOpen, setIndividualEditDialogOpen] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<(Expense & { 
+    project: Project & { client: Client }, 
+    person: User,
+    projectResource?: User 
+  }) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -110,6 +131,11 @@ export default function ExpenseManagement() {
 
   const bulkEditForm = useForm<BulkEditData>({
     resolver: zodResolver(bulkEditSchema),
+    defaultValues: {},
+  });
+
+  const individualEditForm = useForm<IndividualEditData>({
+    resolver: zodResolver(individualEditSchema),
     defaultValues: {},
   });
 
@@ -173,6 +199,53 @@ export default function ExpenseManagement() {
     },
   });
 
+  const individualUpdateMutation = useMutation({
+    mutationFn: async (data: { expenseId: string; updates: IndividualEditData }) => {
+      return apiRequest(`/api/expenses/${data.expenseId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data.updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      setIndividualEditDialogOpen(false);
+      setSelectedExpense(null);
+      toast({
+        title: "Expense updated",
+        description: "Expense has been updated successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update expense. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const individualDeleteMutation = useMutation({
+    mutationFn: async (expenseId: string) => {
+      return apiRequest(`/api/expenses/${expenseId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      toast({
+        title: "Expense deleted",
+        description: "Expense has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete expense. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleApplyFilters = (data: ExpenseFilters) => {
     setFilters(data);
   };
@@ -226,6 +299,63 @@ export default function ExpenseManagement() {
       expenseIds: selectedExpenses,
       updates,
     });
+  };
+
+  const handleIndividualEdit = (expense: (Expense & { 
+    project: Project & { client: Client }, 
+    person: User,
+    projectResource?: User 
+  })) => {
+    setSelectedExpense(expense);
+    // Pre-populate form with expense data
+    individualEditForm.reset({
+      description: expense.description || "",
+      vendor: expense.vendor || "",
+      category: expense.category || "",
+      amount: expense.amount || undefined,
+      expenseDate: expense.expenseDate ? new Date(expense.expenseDate) : undefined,
+      reimbursable: expense.reimbursable,
+      billedFlag: expense.billedFlag,
+      projectResourceId: expense.projectResourceId || undefined,
+    });
+    setIndividualEditDialogOpen(true);
+  };
+
+  const handleIndividualUpdate = (data: IndividualEditData) => {
+    if (!selectedExpense) return;
+
+    // Process the form data to handle special values
+    const updates: any = {};
+    
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        if (key === "projectResourceId" && value === "unassigned") {
+          updates[key] = null;
+        } else if (key === "amount") {
+          // Keep numeric fields as numbers for backend validation
+          if (typeof value === "number") {
+            updates[key] = value;
+          }
+        } else {
+          updates[key] = value;
+        }
+      }
+    });
+
+    individualUpdateMutation.mutate({
+      expenseId: selectedExpense.id,
+      updates: updates
+    });
+  };
+
+  const handleIndividualDelete = (expenseId: string, expenseDescription?: string) => {
+    const confirmMessage = expenseDescription 
+      ? `Are you sure you want to delete the expense "${expenseDescription}"?`
+      : "Are you sure you want to delete this expense?";
+      
+    if (confirm(confirmMessage + " This action cannot be undone.")) {
+      individualDeleteMutation.mutate(expenseId);
+    }
   };
 
   const handleExport = async (format: 'csv' | 'xlsx') => {
@@ -751,20 +881,25 @@ export default function ExpenseManagement() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              // Navigate to expense edit (could be implemented as a dialog or separate page)
-                              toast({
-                                title: "Edit expense",
-                                description: "Individual expense editing coming soon.",
-                              });
-                            }}
-                            data-testid={`button-edit-${expense.id}`}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleIndividualEdit(expense)}
+                              data-testid={`button-edit-${expense.id}`}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleIndividualDelete(expense.id, expense.description || undefined)}
+                              className="text-destructive hover:text-destructive"
+                              data-testid={`button-delete-${expense.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -870,6 +1005,231 @@ export default function ExpenseManagement() {
                 </DialogFooter>
               </form>
             </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Individual Edit Dialog */}
+        <Dialog open={individualEditDialogOpen} onOpenChange={setIndividualEditDialogOpen}>
+          <DialogContent data-testid="dialog-individual-edit">
+            <DialogHeader>
+              <DialogTitle>Edit Expense</DialogTitle>
+            </DialogHeader>
+            {selectedExpense && (
+              <Form {...individualEditForm}>
+                <form onSubmit={individualEditForm.handleSubmit(handleIndividualEdit)} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={individualEditForm.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Description</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-individual-description" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={individualEditForm.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              {...field}
+                              onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                              data-testid="input-individual-amount"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={individualEditForm.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Category</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""} data-testid="select-individual-category">
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {EXPENSE_CATEGORIES.map((category) => (
+                                <SelectItem key={category.value} value={category.value}>
+                                  {category.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={individualEditForm.control}
+                      name="expenseDate"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>Date</FormLabel>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <FormControl>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "pl-3 text-left font-normal",
+                                    !field.value && "text-muted-foreground"
+                                  )}
+                                  data-testid="button-individual-date"
+                                >
+                                  {field.value ? (
+                                    format(field.value, "PPP")
+                                  ) : (
+                                    <span>Pick a date</span>
+                                  )}
+                                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                              </FormControl>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={field.value}
+                                onSelect={field.onChange}
+                                disabled={(date) =>
+                                  date > new Date() || date < new Date("1900-01-01")
+                                }
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={individualEditForm.control}
+                      name="vendor"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Vendor</FormLabel>
+                          <FormControl>
+                            <Input {...field} data-testid="input-individual-vendor" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={individualEditForm.control}
+                      name="projectResourceId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Assign To</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""} data-testid="select-individual-assignee">
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select person" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {users?.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.firstName} {user.lastName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={individualEditForm.control}
+                      name="reimbursable"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-individual-reimbursable"
+                            />
+                          </FormControl>
+                          <FormLabel className="text-sm font-normal">
+                            Reimbursable
+                          </FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={individualEditForm.control}
+                      name="billedFlag"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-individual-billed"
+                            />
+                          </FormControl>
+                          <FormLabel className="text-sm font-normal">
+                            Billed
+                          </FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIndividualEditDialogOpen(false)}
+                      data-testid="button-cancel-individual-edit"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={individualUpdateMutation.isPending}
+                      data-testid="button-save-individual-edit"
+                    >
+                      {individualUpdateMutation.isPending ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Update Expense
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            )}
           </DialogContent>
         </Dialog>
       </div>

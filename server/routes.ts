@@ -3294,6 +3294,34 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Delete individual expense
+  app.delete("/api/expenses/:id", requireAuth, async (req, res) => {
+    try {
+      const expenseId = req.params.id;
+      const userId = req.user!.id;
+
+      // Validate expense exists and user has permission to delete it
+      const { canAccess, expense } = await canAccessExpense(expenseId, userId, req.user!.role);
+      if (!canAccess || !expense) {
+        return res.status(expense ? 403 : 404).json({
+          message: expense ? "Insufficient permissions to delete this expense" : "Expense not found"
+        });
+      }
+
+      // Only expense owner can delete their own expenses (unless admin/billing-admin)
+      const canDelete = expense.personId === userId || ['admin', 'billing-admin'].includes(req.user!.role);
+      if (!canDelete) {
+        return res.status(403).json({ message: "You can only delete your own expenses" });
+      }
+      
+      await storage.deleteExpense(expenseId);
+      res.json({ message: "Expense deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      res.status(500).json({ message: "Failed to delete expense" });
+    }
+  });
+
   // Admin Expense Management API
   app.get("/api/expenses/admin", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {

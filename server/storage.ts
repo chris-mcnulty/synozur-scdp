@@ -216,6 +216,7 @@ export interface IStorage {
   })[]>;
   createExpense(expense: InsertExpense): Promise<Expense>;
   updateExpense(id: string, expense: Partial<InsertExpense>): Promise<Expense>;
+  deleteExpense(id: string): Promise<void>;
   
   // Admin Expense Management
   getExpensesAdmin(filters: any): Promise<any[]>;
@@ -2217,6 +2218,10 @@ export class DatabaseStorage implements IStorage {
   async updateExpense(id: string, updateExpense: Partial<InsertExpense>): Promise<Expense> {
     const [expense] = await db.update(expenses).set(updateExpense).where(eq(expenses.id, id)).returning();
     return expense;
+  }
+
+  async deleteExpense(id: string): Promise<void> {
+    await db.delete(expenses).where(eq(expenses.id, id));
   }
 
   // Expense Attachments
