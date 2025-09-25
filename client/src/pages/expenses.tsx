@@ -15,6 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
+import { getTodayBusinessDate } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -65,7 +66,7 @@ export default function Expenses() {
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: getTodayBusinessDate(),
       amount: "0",
       currency: "USD",
       billable: true,
@@ -252,7 +253,7 @@ export default function Expenses() {
   const editForm = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
     defaultValues: {
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: getTodayBusinessDate(),
       amount: "0",
       currency: "USD",
       billable: true,

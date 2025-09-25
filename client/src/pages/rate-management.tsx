@@ -16,6 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertRoleSchema, insertUserRateScheduleSchema, type Role, type User, type UserRateSchedule } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+import { getTodayBusinessDate } from "@/lib/date-utils";
 import { 
   Plus, 
   DollarSign, 
@@ -106,7 +107,7 @@ export default function RateManagement() {
     resolver: zodResolver(rateScheduleFormSchema),
     defaultValues: {
       userId: "",
-      effectiveStart: format(new Date(), 'yyyy-MM-dd'),
+      effectiveStart: getTodayBusinessDate(),
       effectiveEnd: "",
       billingRate: "0",
       costRate: "0",

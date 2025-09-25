@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { getTodayBusinessDate } from "@/lib/date-utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { UnbilledItemsResponse } from "@shared/schema";
 
@@ -70,8 +71,8 @@ interface DiscountSettings {
 // Remove mock data - now using real API calls
 
 export default function Billing() {
-  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [startDate, setStartDate] = useState(getTodayBusinessDate());
+  const [endDate, setEndDate] = useState(getTodayBusinessDate());
   const [newBatchOpen, setNewBatchOpen] = useState(false);
   const [invoicingMode, setInvoicingMode] = useState<'client' | 'project'>('client');
   const [batchType, setBatchType] = useState<'services' | 'expenses' | 'mixed'>('mixed');

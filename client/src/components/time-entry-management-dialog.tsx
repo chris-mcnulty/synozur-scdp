@@ -41,6 +41,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { getTodayBusinessDate } from "@/lib/date-utils";
 
 // Helper functions for date handling
 function parseLocalDate(dateStr: string): Date {
@@ -121,7 +122,7 @@ export function TimeEntryManagementDialog({
     resolver: zodResolver(timeEntryFormSchema),
     defaultValues: {
       personId: "",
-      date: formatLocalDate(new Date()),
+      date: getTodayBusinessDate(),
       hours: "",
       billable: true,
       description: "",
@@ -136,7 +137,7 @@ export function TimeEntryManagementDialog({
     if (timeEntry && isOpen) {
       form.reset({
         personId: timeEntry.personId || "",
-        date: timeEntry.date || formatLocalDate(new Date()),
+        date: timeEntry.date || getTodayBusinessDate(),
         hours: timeEntry.hours?.toString() || "",
         billable: timeEntry.billable ?? true,
         description: timeEntry.description || "",
@@ -248,9 +249,11 @@ export function TimeEntryManagementDialog({
                         mode="single"
                         selected={field.value ? parseLocalDate(field.value) : undefined}
                         onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
-                        disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
-                        }
+                        disabled={(date) => {
+                          const today = new Date();
+                          const minDate = new Date(1900, 0, 1);
+                          return date > today || date < minDate;
+                        }}
                         initialFocus
                       />
                     </PopoverContent>

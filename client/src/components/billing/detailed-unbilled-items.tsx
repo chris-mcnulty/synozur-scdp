@@ -21,6 +21,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
+import { formatBusinessDate } from "@/lib/date-utils";
 import { apiRequest } from "@/lib/queryClient";
 import type { UnbilledItemsResponse, UnbilledItemsFilters, User, Project, Client } from "@shared/schema";
 
@@ -305,7 +306,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
                 <TableBody>
                   {unbilledData?.timeEntries?.map((entry: any) => (
                     <TableRow key={entry.id} data-testid={`time-entry-${entry.id}`}>
-                      <TableCell>{format(new Date(entry.date), 'MMM d, yyyy')}</TableCell>
+                      <TableCell>{formatBusinessDate(entry.date)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserIcon className="w-4 h-4" />
@@ -362,7 +363,7 @@ export function DetailedUnbilledItems({ initialFilters }: UnbilledItemsDetailPro
                 <TableBody>
                   {unbilledData?.expenses?.map((expense: any) => (
                     <TableRow key={expense.id} data-testid={`expense-${expense.id}`}>
-                      <TableCell>{format(new Date(expense.date), 'MMM d, yyyy')}</TableCell>
+                      <TableCell>{formatBusinessDate(expense.date)}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <UserIcon className="w-4 h-4" />
