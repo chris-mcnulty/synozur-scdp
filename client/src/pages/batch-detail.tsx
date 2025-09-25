@@ -1154,6 +1154,60 @@ export default function BatchDetail() {
                   {format(new Date(batchDetails.startDate), "MMM d, yyyy")} - {format(new Date(batchDetails.endDate), "MMM d, yyyy")}
                 </p>
               </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Calendar className="mr-1 h-3 w-3" />
+                    As Of Date
+                  </div>
+                  {user?.role === 'admin' && !isEditingAsOfDate && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleStartAsOfDateEdit}
+                      data-testid="button-edit-as-of-date"
+                    >
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                {isEditingAsOfDate ? (
+                  <div className="space-y-2">
+                    <Input
+                      type="date"
+                      value={newAsOfDate}
+                      onChange={(e) => setNewAsOfDate(e.target.value)}
+                      data-testid="input-as-of-date"
+                      className="text-sm"
+                    />
+                    <div className="flex space-x-1">
+                      <Button
+                        size="sm"
+                        onClick={handleSaveAsOfDate}
+                        disabled={updateAsOfDateMutation.isPending}
+                        data-testid="button-save-as-of-date"
+                      >
+                        {updateAsOfDateMutation.isPending ? 'Saving...' : 'Save'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancelAsOfDateEdit}
+                        data-testid="button-cancel-as-of-date"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-medium" data-testid="text-as-of-date">
+                    {batchDetails.asOfDate 
+                      ? format(new Date(batchDetails.asOfDate), "MMM d, yyyy")
+                      : format(new Date(batchDetails.createdAt), "MMM d, yyyy")}
+                  </p>
+                )}
+              </div>
               
               <div className="space-y-1">
                 <div className="flex items-center text-sm text-muted-foreground">
@@ -1188,16 +1242,18 @@ export default function BatchDetail() {
                   {format(new Date(batchDetails.createdAt), "MMM d, yyyy")}
                 </p>
               </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <UserIcon className="mr-1 h-3 w-3" />
-                  Created By
-                </div>
-                <p className="font-medium" data-testid="text-created-by">
-                  {batchDetails.creator?.name || 'System'}
-                </p>
+            </div>
+
+            {/* Creator Row */}
+            <Separator className="my-4" />
+            <div className="space-y-1">
+              <div className="flex items-center text-sm text-muted-foreground">
+                <UserIcon className="mr-1 h-3 w-3" />
+                Created By
               </div>
+              <p className="font-medium" data-testid="text-created-by">
+                {batchDetails.creator?.name || 'System'}
+              </p>
             </div>
             
             {/* Finalization Info */}
