@@ -24,13 +24,11 @@ import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { setSessionId } from "@/lib/queryClient";
 
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
-  const { hasAnyRole } = useAuth();
   
   // Handle sessionId from SSO callback FIRST
   useEffect(() => {
@@ -96,7 +94,7 @@ function Router() {
         {user ? <Expenses /> : <Redirect to="/login" />}
       </Route>
       <Route path="/expense-management">
-        {user ? (hasAnyRole(['admin', 'pm', 'billing-admin']) ? <ExpenseManagement /> : <Redirect to="/" />) : <Redirect to="/login" />}
+        {user ? <ExpenseManagement /> : <Redirect to="/login" />}
       </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}
@@ -105,16 +103,16 @@ function Router() {
         {user ? <BatchDetail /> : <Redirect to="/login" />}
       </Route>
       <Route path="/rates">
-        {user ? (hasAnyRole(['admin']) ? <RateManagement /> : <Redirect to="/" />) : <Redirect to="/login" />}
+        {user ? <RateManagement /> : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
-        {user ? (hasAnyRole(['admin']) ? <Users /> : <Redirect to="/" />) : <Redirect to="/login" />}
+        {user ? <Users /> : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
-        {user ? (hasAnyRole(['admin']) ? <SystemSettings /> : <Redirect to="/" />) : <Redirect to="/login" />}
+        {user ? <SystemSettings /> : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
-        {user ? (hasAnyRole(['admin', 'billing-admin', 'pm', 'executive']) ? <Reports /> : <Redirect to="/" />) : <Redirect to="/login" />}
+        {user ? <Reports /> : <Redirect to="/login" />}
       </Route>
       <Route path="/about">
         {user ? <About /> : <Redirect to="/login" />}
