@@ -52,6 +52,16 @@ Preferred communication style: Simple, everyday language.
 - **Access Control**: Route-level and component-level permission checks
 - **Mock Implementation**: Simplified auth for demo (hardcoded admin user)
 
+#### Test Credentials (Development Only)
+For testing and demonstration purposes, the following admin credentials are available:
+- **Email**: admin@synozur.com
+- **Password**: P@ssw0rd123!
+- **Role**: Admin (full access to all system features)
+
+Additional test accounts:
+- chris.mcnulty@synozur.com / admin123 (Admin)
+- sarah.chen@synozur.com / admin123 (Admin)
+
 ### Data Flow Architecture
 - **API Layer**: Express routes with middleware for auth and validation
 - **Storage Layer**: Abstracted database operations through storage interface
