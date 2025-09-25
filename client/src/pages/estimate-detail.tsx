@@ -114,6 +114,25 @@ export default function EstimateDetail() {
 
   const assignableUsers = users.filter((u: any) => u.isAssignable && u.isActive);
 
+  // Function to get filtered line items based on current filter criteria
+  const getFilteredLineItems = () => {
+    return lineItems.filter((item: EstimateLineItem) => {
+      const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
+      const matchesEpic = filterEpic === "all" || 
+        (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
+        item.epicId === filterEpic;
+      const matchesStage = filterStage === "all" || 
+        (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
+        item.stageId === filterStage;
+      const matchesWorkstream = !filterWorkstream || 
+        (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
+      const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
+      const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
+      
+      return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
+    });
+  };
+
   const { data: roles = [] } = useQuery<any[]>({
     queryKey: ["/api/roles"],
   });
@@ -1923,12 +1942,22 @@ export default function EstimateDetail() {
                   <TableHead className="w-12">
                     <input
                       type="checkbox"
-                      checked={lineItems.length > 0 && selectedItems.size === lineItems.length}
+                      checked={(() => {
+                        const filteredItems = getFilteredLineItems();
+                        return filteredItems.length > 0 && filteredItems.every(item => selectedItems.has(item.id));
+                      })()}
                       onChange={(e) => {
+                        const filteredItems = getFilteredLineItems();
                         if (e.target.checked) {
-                          setSelectedItems(new Set(lineItems.map(item => item.id)));
+                          // Select only filtered/visible items
+                          const newSelection = new Set(selectedItems);
+                          filteredItems.forEach(item => newSelection.add(item.id));
+                          setSelectedItems(newSelection);
                         } else {
-                          setSelectedItems(new Set());
+                          // Deselect only filtered/visible items
+                          const newSelection = new Set(selectedItems);
+                          filteredItems.forEach(item => newSelection.delete(item.id));
+                          setSelectedItems(newSelection);
                         }
                       }}
                     />
@@ -1965,22 +1994,8 @@ export default function EstimateDetail() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  // Filter line items based on current filters
-                  lineItems.filter((item: EstimateLineItem) => {
-                    const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
-                    const matchesEpic = filterEpic === "all" || 
-                      (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
-                      item.epicId === filterEpic;
-                    const matchesStage = filterStage === "all" || 
-                      (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
-                      item.stageId === filterStage;
-                    const matchesWorkstream = !filterWorkstream || 
-                      (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
-                    const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
-                    const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
-                    
-                    return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
-                  }).map((item: EstimateLineItem) => {
+                  // Use consistent filtering logic
+                  getFilteredLineItems().map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
                     return (
@@ -2307,21 +2322,7 @@ export default function EstimateDetail() {
 
           {/* Week Subtotals */}
           {(() => {
-            const weekTotals = lineItems.filter((item: EstimateLineItem) => {
-              const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
-              const matchesEpic = filterEpic === "all" || 
-                (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
-                item.epicId === filterEpic;
-              const matchesStage = filterStage === "all" || 
-                (filterStage === "none" && (!item.stageId || item.stageId === "none")) ||
-                item.stageId === filterStage;
-              const matchesWorkstream = !filterWorkstream || 
-                (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
-              const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
-              const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
-              
-              return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
-            }).reduce((acc: any, item) => {
+            const weekTotals = getFilteredLineItems().reduce((acc: any, item) => {
               const week = item.week || "Unassigned";
               if (!acc[week]) {
                 acc[week] = { hours: 0, amount: 0, count: 0 };
