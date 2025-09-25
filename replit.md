@@ -192,3 +192,38 @@ The server will bind to port 5000 and be accessible in Preview mode once running
   4. Remove staff storage methods from `server/storage.ts`
   5. Clean up misleading variable names (e.g., `selectedStaff` -> `selectedUser`)
   6. Migrate any historical data if needed
+
+### Persistent Invoice Storage & Cross-Module Integration
+- **Status**: Planned feature - blocked pending SharePoint Embedded resolution
+- **Priority**: High - critical for document management and audit trails
+- **Description**: Implement comprehensive invoice document storage with automatic archiving and integration across project, client, and billing modules
+- **Business Value**: 
+  - Automatic invoice archiving for compliance and audit trails
+  - Centralized invoice management accessible from multiple contexts
+  - Client and project-specific invoice history
+  - Reduced manual file management overhead
+- **Technical Scope**:
+  - **Database Changes**: New `invoiceDocuments` table with batch/client/project foreign keys, metadata storage, and primary document linking
+  - **Storage Integration**: Extend local file storage infrastructure for invoice PDFs with organized folder structure (`/uploads/invoices/{client}/{project}/batch-{id}/`)
+  - **API Layer**: New endpoints for invoice document CRUD, project/client invoice listings, and archive management
+  - **Frontend Integration**: Invoice tabs in project/client detail pages, invoice archive section in billing module, document status tracking
+  - **Process Automation**: Automatic invoice saving during PDF generation with transactional metadata persistence
+- **Implementation Plan**:
+  1. **Phase 1 - Data Model**: Define `invoiceDocuments` schema with Drizzle relations and Zod validators
+  2. **Phase 2 - Storage Layer**: Extend `IStorage` interface and implement file persistence with organized directory structure
+  3. **Phase 3 - API Integration**: Modify existing PDF generation flow to auto-save, add new invoice document endpoints
+  4. **Phase 4 - Project Integration**: Add "Invoices" tab to project detail pages showing batch history and document access
+  5. **Phase 5 - Client Integration**: Add invoice management to client detail pages with filtering and download capabilities
+  6. **Phase 6 - Invoice Archive**: Create dedicated invoice management section in billing module with pagination and search
+  7. **Phase 7 - Testing & Validation**: End-to-end testing, security validation, and performance optimization
+- **Dependencies**: 
+  - SharePoint Embedded issue resolution (blocking)
+  - Local file storage infrastructure (completed)
+  - Existing invoice PDF generation (available)
+- **Acceptance Criteria**:
+  - Generated invoices automatically saved to system storage
+  - Invoice documents accessible from batch detail, project detail, and client detail pages  
+  - Invoice archive provides searchable, filterable view of all stored invoices
+  - Role-based access controls prevent unauthorized access
+  - File organization supports easy backup and maintenance
+  - Cross-module navigation maintains context and user workflow
