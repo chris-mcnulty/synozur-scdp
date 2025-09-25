@@ -38,6 +38,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { format } from "date-fns";
+import { formatBusinessDate, formatTimestamp } from "@/lib/date-utils";
 import { 
   ArrowLeft, 
   Download, 
@@ -801,7 +802,7 @@ export default function BatchDetail() {
 
   const handleStartAsOfDateEdit = () => {
     setIsEditingAsOfDate(true);
-    // Pre-populate with current as-of date or finalized date
+    // Pre-populate with current as-of date or finalized date (business date format)
     setNewAsOfDate(batchDetails?.asOfDate || (batchDetails?.finalizedAt ? batchDetails.finalizedAt.split('T')[0] : ""));
   };
 
@@ -1151,7 +1152,7 @@ export default function BatchDetail() {
                   Date Range
                 </div>
                 <p className="font-medium" data-testid="text-date-range">
-                  {format(new Date(batchDetails.startDate), "MMM d, yyyy")} - {format(new Date(batchDetails.endDate), "MMM d, yyyy")}
+                  {formatBusinessDate(batchDetails.startDate)} - {formatBusinessDate(batchDetails.endDate)}
                 </p>
               </div>
 
@@ -1203,8 +1204,8 @@ export default function BatchDetail() {
                 ) : (
                   <p className="font-medium" data-testid="text-as-of-date">
                     {batchDetails.asOfDate 
-                      ? format(new Date(batchDetails.asOfDate), "MMM d, yyyy")
-                      : format(new Date(batchDetails.createdAt), "MMM d, yyyy")}
+                      ? formatBusinessDate(batchDetails.asOfDate)
+                      : formatTimestamp(batchDetails.createdAt, "MMM d, yyyy")}
                   </p>
                 )}
               </div>
@@ -1239,7 +1240,7 @@ export default function BatchDetail() {
                   Created Date
                 </div>
                 <p className="font-medium" data-testid="text-created-date">
-                  {format(new Date(batchDetails.createdAt), "MMM d, yyyy")}
+                  {formatTimestamp(batchDetails.createdAt, "MMM d, yyyy")}
                 </p>
               </div>
             </div>
@@ -1317,8 +1318,8 @@ export default function BatchDetail() {
                     ) : (
                       <p className="font-medium" data-testid="text-as-of-date">
                         {batchDetails.asOfDate 
-                          ? format(new Date(batchDetails.asOfDate), "MMM d, yyyy")
-                          : format(new Date(batchDetails.finalizedAt), "MMM d, yyyy")}
+                          ? formatBusinessDate(batchDetails.asOfDate)
+                          : formatTimestamp(batchDetails.finalizedAt, "MMM d, yyyy")}
                       </p>
                     )}
                   </div>

@@ -4909,15 +4909,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "As-of date is required" });
       }
       
-      // Validate date format (YYYY-MM-DD)
+      // Validate date format (YYYY-MM-DD) without timezone conversion
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(asOfDate)) {
         return res.status(400).json({ message: "As-of date must be in YYYY-MM-DD format" });
       }
       
-      const parsedDate = new Date(asOfDate);
-      if (isNaN(parsedDate.getTime())) {
+      // Parse date components and validate calendar dates properly 
+      const [year, month, day] = asOfDate.split('-').map(Number);
+      if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
         return res.status(400).json({ message: "Invalid as-of date" });
+      }
+      
+      // Use Date object for proper calendar validation but don't store it (avoids timezone storage issues)
+      const testDate = new Date(year, month - 1, day);
+      if (testDate.getFullYear() !== year || testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
+        return res.status(400).json({ message: "Invalid calendar date" });
       }
       
       console.log(`[API] Updating batch ${batchId} as-of date to ${asOfDate} by user ${userId}`);
