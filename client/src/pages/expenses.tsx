@@ -38,6 +38,15 @@ const expenseFormSchema = insertExpenseSchema.omit({
 }, {
   message: "Miles must be greater than 0 for mileage expenses",
   path: ["miles"],
+}).refine((data) => {
+  // Ensure required fields are not empty strings
+  if (data.category && data.projectId && data.description !== undefined) {
+    return data.category.trim() !== "" && data.projectId.trim() !== "";
+  }
+  return true;
+}, {
+  message: "Category and Project must be selected",
+  path: ["category"],
 });
 
 type ExpenseFormData = z.infer<typeof expenseFormSchema>;
@@ -60,6 +69,7 @@ export default function Expenses() {
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
   const [prevCategory, setPrevCategory] = useState<string>("");
   const [editPrevCategory, setEditPrevCategory] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -106,6 +116,9 @@ export default function Expenses() {
   // Auto-calculate amount when miles change for mileage category
   // Clear quantity/unit when switching away from mileage
   useEffect(() => {
+    // Skip effect during form submission to avoid race conditions
+    if (isSubmitting) return;
+    
     if (watchedCategory === "mileage" && watchedMiles) {
       const miles = parseFloat(watchedMiles);
       if (!isNaN(miles) && miles > 0) {
@@ -114,14 +127,18 @@ export default function Expenses() {
         form.setValue("quantity", miles.toString());
         form.setValue("unit", "mile");
       }
-    } else if (prevCategory === "mileage" && watchedCategory !== "mileage") {
-      // Clear quantity and unit when switching away from mileage
+    } else if (prevCategory === "mileage" && watchedCategory !== "mileage" && watchedCategory !== "") {
+      // Clear quantity and unit when switching away from mileage to another category
       form.setValue("quantity", undefined);
       form.setValue("unit", undefined);
       form.setValue("miles", undefined);
     }
-    setPrevCategory(watchedCategory);
-  }, [watchedCategory, watchedMiles, mileageRate, form, prevCategory]);
+    
+    // Only update prevCategory if we have a valid category change
+    if (watchedCategory !== prevCategory) {
+      setPrevCategory(watchedCategory);
+    }
+  }, [watchedCategory, watchedMiles, mileageRate, form, prevCategory, isSubmitting]);
 
   const createExpenseMutation = useMutation({
     mutationFn: async (data: ExpenseFormData) => {
@@ -132,7 +149,24 @@ export default function Expenses() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
-      form.reset();
+      // Reset form state completely
+      form.reset({
+        date: getTodayBusinessDate(),
+        amount: "0",
+        currency: "USD",
+        billable: true,
+        reimbursable: true,
+        description: "",
+        vendor: "",
+        category: "",
+        projectId: "",
+        miles: undefined,
+        quantity: undefined,
+        unit: undefined,
+      });
+      // Reset component state
+      setPrevCategory("");
+      setReceiptFile(null);
       toast({
         title: "Expense created",
         description: "Your expense has been logged successfully.",
@@ -172,36 +206,41 @@ export default function Expenses() {
   });
 
   const onSubmit = async (data: ExpenseFormData) => {
-    // Validate mileage
-    if (data.category === "mileage") {
-      const miles = parseFloat(data.miles || "0");
-      if (isNaN(miles) || miles <= 0) {
-        toast({
-          title: "Validation Error",
-          description: "Miles must be greater than 0 for mileage expenses",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
+    // Prevent concurrent submissions
+    if (isSubmitting) return;
     
-    // Prepare data for submission
-    const submitData = { ...data };
+    setIsSubmitting(true);
     
-    // Remove the miles field (it's only for UI)
-    delete submitData.miles;
-    
-    // If it's mileage, ensure quantity and unit are set
-    if (data.category === "mileage") {
-      submitData.unit = "mile";
-    } else {
-      // Clear quantity and unit for non-mileage expenses
-      submitData.quantity = undefined;
-      submitData.unit = undefined;
-    }
-    
-    // First create the expense
     try {
+      // Validate mileage
+      if (data.category === "mileage") {
+        const miles = parseFloat(data.miles || "0");
+        if (isNaN(miles) || miles <= 0) {
+          toast({
+            title: "Validation Error",
+            description: "Miles must be greater than 0 for mileage expenses",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
+      // Prepare data for submission
+      const submitData = { ...data };
+      
+      // Remove the miles field (it's only for UI)
+      delete submitData.miles;
+      
+      // If it's mileage, ensure quantity and unit are set
+      if (data.category === "mileage") {
+        submitData.unit = "mile";
+      } else {
+        // Clear quantity and unit for non-mileage expenses
+        submitData.quantity = undefined;
+        submitData.unit = undefined;
+      }
+      
+      // First create the expense
       const expense = await createExpenseMutation.mutateAsync(submitData);
       
       // If there's a receipt file, upload it
@@ -235,10 +274,10 @@ export default function Expenses() {
           });
         }
       }
-      
-      setReceiptFile(null);
     } catch (error) {
       // Error is already handled by the mutation
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -272,6 +311,9 @@ export default function Expenses() {
   // Auto-calculate amount for edit form
   // Clear quantity/unit when switching away from mileage
   useEffect(() => {
+    // Skip effect during form submission to avoid race conditions
+    if (updateExpenseMutation.isPending) return;
+    
     if (editWatchedCategory === "mileage" && editWatchedMiles) {
       const miles = parseFloat(editWatchedMiles);
       if (!isNaN(miles) && miles > 0) {
@@ -280,17 +322,24 @@ export default function Expenses() {
         editForm.setValue("quantity", miles.toString());
         editForm.setValue("unit", "mile");
       }
-    } else if (editPrevCategory === "mileage" && editWatchedCategory !== "mileage") {
-      // Clear quantity and unit when switching away from mileage
+    } else if (editPrevCategory === "mileage" && editWatchedCategory !== "mileage" && editWatchedCategory !== "") {
+      // Clear quantity and unit when switching away from mileage to another category
       editForm.setValue("quantity", undefined);
       editForm.setValue("unit", undefined);
       editForm.setValue("miles", undefined);
     }
-    setEditPrevCategory(editWatchedCategory);
-  }, [editWatchedCategory, editWatchedMiles, mileageRate, editForm, editPrevCategory]);
+    
+    // Only update prevCategory if we have a valid category change
+    if (editWatchedCategory !== editPrevCategory) {
+      setEditPrevCategory(editWatchedCategory);
+    }
+  }, [editWatchedCategory, editWatchedMiles, mileageRate, editForm, editPrevCategory, updateExpenseMutation.isPending]);
 
   const handleEditExpense = (expense: Expense) => {
     setEditingExpenseId(expense.id);
+    // Reset edit state first
+    setEditPrevCategory("");
+    
     // Populate the edit form with current expense data
     editForm.reset({
       date: format(new Date(expense.date), 'yyyy-MM-dd'),
@@ -304,13 +353,37 @@ export default function Expenses() {
       vendor: expense.vendor || "",
       miles: expense.unit === "mile" && expense.quantity ? expense.quantity : undefined,
     });
+    
+    // Set the previous category after reset to avoid useEffect conflicts
+    setTimeout(() => {
+      setEditPrevCategory(expense.category);
+    }, 0);
   };
 
   const handleCancelEdit = () => {
     setEditingExpenseId(null);
+    setEditPrevCategory("");
+    // Reset edit form to clean state
+    editForm.reset({
+      date: getTodayBusinessDate(),
+      amount: "0",
+      currency: "USD",
+      billable: true,
+      reimbursable: true,
+      description: "",
+      category: "",
+      projectId: "",
+      vendor: "",
+      miles: undefined,
+      quantity: undefined,
+      unit: undefined,
+    });
   };
 
   const handleUpdateExpense = (expenseId: string, data: ExpenseFormData) => {
+    // Prevent concurrent updates
+    if (updateExpenseMutation.isPending) return;
+    
     // Validate mileage
     if (data.category === "mileage") {
       const miles = parseFloat(data.miles || "0");
@@ -708,10 +781,10 @@ export default function Expenses() {
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={createExpenseMutation.isPending}
+                    disabled={createExpenseMutation.isPending || isSubmitting}
                     data-testid="button-submit-expense"
                   >
-                    {createExpenseMutation.isPending ? "Saving..." : "Add Expense"}
+                    {(createExpenseMutation.isPending || isSubmitting) ? "Saving..." : "Add Expense"}
                   </Button>
                 </form>
               </Form>
@@ -821,6 +894,43 @@ export default function Expenses() {
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit((data) => handleUpdateExpense(editingExpenseId!, data))} className="space-y-4">
+              <FormField
+                control={editForm.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" data-testid="edit-input-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="projectId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Project</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="edit-select-project">
+                          <SelectValue placeholder="Select project" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.client.name} - {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               {/* Mileage field for editing */}
               {editWatchedCategory === "mileage" && (
                 <FormField
