@@ -204,6 +204,47 @@ export default function EstimateDetail() {
     }
   });
 
+  const deleteEstimateStageMutation = useMutation({
+    mutationFn: async (stageId: string) => {
+      return apiRequest(`/api/estimates/${id}/stages/${stageId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      toast({ title: "Stage deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to delete stage", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const mergeStagesMutation = useMutation({
+    mutationFn: async (data: { keepStageId: string; deleteStageId: string }) => {
+      return apiRequest(`/api/estimates/${id}/stages/merge`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      toast({ title: "Stages merged successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to merge stages", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
   const createLineItemMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest(`/api/estimates/${id}/line-items`, {
@@ -2566,21 +2607,35 @@ export default function EstimateDetail() {
                                         size="sm"
                                         variant="outline"
                                         className="text-xs"
+                                        disabled={mergeStagesMutation.isPending}
                                         onClick={() => {
-                                          // TODO: Open merge dialog
-                                          toast({ 
-                                            title: "Merge functionality coming soon",
-                                            description: `Stage "${stage.name}" has ${lineItemCount} line items that need reassignment`
-                                          });
+                                          // Find the first non-duplicate stage with the same name to merge with
+                                          const keepStage = epicStages.find(s => 
+                                            s.name.toLowerCase().trim() === stage.name.toLowerCase().trim() && 
+                                            s.id !== stage.id
+                                          );
+                                          
+                                          if (keepStage) {
+                                            mergeStagesMutation.mutate({
+                                              keepStageId: keepStage.id,
+                                              deleteStageId: stage.id
+                                            });
+                                          } else {
+                                            toast({
+                                              title: "Cannot merge stage",
+                                              description: "Could not find a stage to merge with",
+                                              variant: "destructive"
+                                            });
+                                          }
                                         }}
                                       >
-                                        Merge
+                                        {mergeStagesMutation.isPending ? "Merging..." : "Merge"}
                                       </Button>
                                     )}
                                     <Button
                                       size="sm"
                                       variant="ghost"
-                                      disabled={lineItemCount > 0}
+                                      disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
                                       onClick={() => {
                                         if (lineItemCount > 0) {
                                           toast({
@@ -2589,15 +2644,15 @@ export default function EstimateDetail() {
                                             variant: "destructive"
                                           });
                                         } else {
-                                          // TODO: Add delete stage mutation
-                                          toast({
-                                            title: "Delete functionality coming soon",
-                                            description: "Safe stage deletion will be implemented next"
-                                          });
+                                          deleteEstimateStageMutation.mutate(stage.id);
                                         }
                                       }}
                                     >
-                                      <Trash2 className="h-3 w-3" />
+                                      {deleteEstimateStageMutation.isPending ? (
+                                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                                      ) : (
+                                        <Trash2 className="h-3 w-3" />
+                                      )}
                                     </Button>
                                   </div>
                                 </div>

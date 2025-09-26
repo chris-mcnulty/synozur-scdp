@@ -2115,6 +2115,43 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.delete("/api/estimates/:estimateId/stages/:stageId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteEstimateStage(req.params.estimateId, req.params.stageId);
+      res.json({ message: "Stage deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting stage:", error);
+      if (error.message && (error.message.includes("line items are still assigned") || error.message.includes("not found") || error.message.includes("does not belong"))) {
+        res.status(400).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to delete stage" });
+      }
+    }
+  });
+
+  app.post("/api/estimates/:estimateId/stages/merge", requireAuth, async (req, res) => {
+    try {
+      const { keepStageId, deleteStageId } = req.body;
+      if (!keepStageId || !deleteStageId) {
+        return res.status(400).json({ message: "Both keepStageId and deleteStageId are required" });
+      }
+      
+      if (keepStageId === deleteStageId) {
+        return res.status(400).json({ message: "Cannot merge a stage with itself" });
+      }
+      
+      await storage.mergeEstimateStages(req.params.estimateId, keepStageId, deleteStageId);
+      res.json({ message: "Stages merged successfully" });
+    } catch (error: any) {
+      console.error("Error merging stages:", error);
+      if (error.message && (error.message.includes("not found") || error.message.includes("does not belong") || error.message.includes("different epics"))) {
+        res.status(400).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to merge stages" });
+      }
+    }
+  });
+
   // Estimate line items
   app.get("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {

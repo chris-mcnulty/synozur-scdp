@@ -32,7 +32,7 @@ import {
   type DocumentMetadata, type InsertDocumentMetadata
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull } from "drizzle-orm";
+import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -179,6 +179,8 @@ export interface IStorage {
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
   createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage>;
+  deleteEstimateStage(estimateId: string, stageId: string): Promise<void>;
+  mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
   // Estimate Line Items
   getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]>;
@@ -1144,6 +1146,83 @@ export class DatabaseStorage implements IStorage {
       order: maxOrder + 1
     }).returning();
     return newStage;
+  }
+
+  async deleteEstimateStage(estimateId: string, stageId: string): Promise<void> {
+    // First verify that the stage belongs to this estimate
+    const stageWithEpic = await db
+      .select({ id: estimateStages.id, epicId: estimateStages.epicId })
+      .from(estimateStages)
+      .innerJoin(estimateEpics, eq(estimateStages.epicId, estimateEpics.id))
+      .where(
+        and(
+          eq(estimateStages.id, stageId),
+          eq(estimateEpics.estimateId, estimateId)
+        )
+      )
+      .limit(1);
+
+    if (stageWithEpic.length === 0) {
+      throw new Error('Stage not found or does not belong to this estimate');
+    }
+
+    // Check if stage has any line items assigned
+    const lineItemsCount = await db.select({ count: sql`count(*)` })
+      .from(estimateLineItems)
+      .where(eq(estimateLineItems.stageId, stageId));
+    
+    const count = Number(lineItemsCount[0]?.count || 0);
+    if (count > 0) {
+      throw new Error(`Cannot delete stage: ${count} line items are still assigned to this stage. Please reassign them first.`);
+    }
+    
+    // Safe to delete stage
+    await db.delete(estimateStages).where(eq(estimateStages.id, stageId));
+  }
+
+  async mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      // First, verify both stages exist and belong to the same estimate
+      const stages = await tx
+        .select({ 
+          id: estimateStages.id, 
+          name: estimateStages.name,
+          epicId: estimateStages.epicId 
+        })
+        .from(estimateStages)
+        .innerJoin(estimateEpics, eq(estimateStages.epicId, estimateEpics.id))
+        .where(
+          and(
+            inArray(estimateStages.id, [keepStageId, deleteStageId]),
+            eq(estimateEpics.estimateId, estimateId)
+          )
+        );
+
+      if (stages.length !== 2) {
+        throw new Error('One or both stages not found or do not belong to this estimate');
+      }
+
+      const keepStage = stages.find(s => s.id === keepStageId);
+      const deleteStage = stages.find(s => s.id === deleteStageId);
+
+      if (!keepStage || !deleteStage) {
+        throw new Error('Invalid stage IDs provided');
+      }
+
+      // Verify both stages belong to the same epic for logical consistency
+      if (keepStage.epicId !== deleteStage.epicId) {
+        throw new Error('Cannot merge stages from different epics');
+      }
+
+      // Reassign all line items from deleteStageId to keepStageId
+      await tx.update(estimateLineItems)
+        .set({ stageId: keepStageId })
+        .where(eq(estimateLineItems.stageId, deleteStageId));
+      
+      // Then delete the duplicate stage
+      await tx.delete(estimateStages)
+        .where(eq(estimateStages.id, deleteStageId));
+    });
   }
 
   async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {
