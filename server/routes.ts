@@ -6630,9 +6630,19 @@ export async function registerRoutes(app: Express): Promise<void> {
                   return `${year}-${month}-${day}`;
                 }
                 
-                // Try parsing as string date (handle formats like MM/DD/YYYY, DD/MM/YYYY, etc.)
+                // Handle string that represents a number (Excel serial date as string)
                 if (typeof serial === 'string' && serial.trim()) {
-                  const parsedDate = new Date(serial.trim());
+                  const trimmed = serial.trim();
+                  const numericValue = parseFloat(trimmed);
+                  
+                  // Check if the string represents a valid number (Excel serial date)
+                  if (!isNaN(numericValue) && isFinite(numericValue) && String(numericValue) === trimmed) {
+                    // Treat as Excel serial date - recursively call with the number
+                    return excelDateToYYYYMMDD(numericValue);
+                  }
+                  
+                  // Try parsing as string date (handle formats like MM/DD/YYYY, DD/MM/YYYY, etc.)
+                  const parsedDate = new Date(trimmed);
                   if (!isNaN(parsedDate.getTime())) {
                     const year = parsedDate.getFullYear();
                     // Validate reasonable date range
