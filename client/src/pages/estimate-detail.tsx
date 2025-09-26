@@ -576,14 +576,24 @@ export default function EstimateDetail() {
         adjustedHours: adjustedHours.toFixed(2),
         totalAmount: totalAmount.toFixed(2)
       }
-    });
-
-    // Clear draft and editing state after successful mutation
-    setEditingItem(null);
-    setEditingDraft(prev => {
-      const newDraft = { ...prev };
-      delete newDraft[item.id];
-      return newDraft;
+    }, {
+      onSuccess: () => {
+        // Clear draft and editing state only after successful mutation
+        setEditingItem(null);
+        setEditingDraft(prev => {
+          const newDraft = { ...prev };
+          delete newDraft[item.id];
+          return newDraft;
+        });
+      },
+      onError: (error) => {
+        // Keep editing state on error so user can retry
+        toast({ 
+          title: "Failed to save changes", 
+          description: "Please try again", 
+          variant: "destructive" 
+        });
+      }
     });
   };
 
