@@ -881,6 +881,70 @@ export const insertEstimateSchema = createInsertSchema(estimates).omit({
 export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({
   id: true,
   createdAt: true,
+  // Override numeric fields to handle string inputs from forms
+  baseHours: true,
+  factor: true,
+  rate: true,
+  costRate: true,
+  totalAmount: true,
+  totalCost: true,
+  margin: true,
+  marginPercent: true,
+}).extend({
+  // Handle numeric fields as strings with validation
+  baseHours: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
+  factor: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, {
+    message: "Must be a valid number greater than 0",
+  }),
+  rate: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
+  costRate: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
+  totalAmount: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
+  totalCost: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
+  margin: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num);
+  }, {
+    message: "Must be a valid number",
+  }),
+  marginPercent: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional field
+    const num = parseFloat(val);
+    return !isNaN(num);
+  }, {
+    message: "Must be a valid number",
+  }),
 });
 
 export const insertEstimateMilestoneSchema = createInsertSchema(estimateMilestones).omit({
