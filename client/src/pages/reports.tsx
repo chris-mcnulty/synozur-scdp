@@ -9,11 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle, FileText } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Download, Filter, Calendar, DollarSign, Users, Activity, BarChart3, Target, Clock, AlertCircle, FileText, CreditCard, Receipt } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Area, AreaChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { format, subMonths, startOfMonth } from "date-fns";
 import { toast } from "@/hooks/use-toast";
-import type { Client } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import type { Client, UnbilledItemsResponse } from "@shared/schema";
 
 // Color palette for charts
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7c7c'];
@@ -22,6 +23,8 @@ function Reports() {
   const [reportType, setReportType] = useState("portfolio");
   const [dateRange, setDateRange] = useState("3months");
   const [selectedClient, setSelectedClient] = useState<string>("all");
+  
+  const { hasAnyRole, canViewPricing } = useAuth();
   
   // Calculate date filters based on selected range
   const getDateFilters = () => {
@@ -114,6 +117,70 @@ function Reports() {
       return response.json();
     },
     enabled: reportType === "revenue"
+  });
+
+  // Finance Report Query - fetch unbilled items and unpaid invoices
+  const { data: financeData, isLoading: financeLoading } = useQuery({
+    queryKey: ["/api/finance-report", selectedClient],
+    queryFn: async () => {
+      // Fetch unbilled items
+      const unbilledParams = new URLSearchParams({
+        ...(selectedClient !== "all" && { clientId: selectedClient })
+      });
+      const unbilledResponse = await fetch(`/api/billing/unbilled-items?${unbilledParams}`, {
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
+      });
+      if (!unbilledResponse.ok) throw new Error("Failed to fetch unbilled data");
+      const unbilledData = await unbilledResponse.json();
+      
+      // Fetch invoice batches (including payment status)
+      const invoiceResponse = await fetch(`/api/invoice-batches`, {
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
+      });
+      if (!invoiceResponse.ok) throw new Error("Failed to fetch invoice data");
+      const invoiceData = await invoiceResponse.json();
+      
+      // Filter for unpaid and partially paid invoices that are finalized
+      let unpaidInvoices = invoiceData.filter((batch: any) => 
+        batch.status === 'finalized' && 
+        (batch.paymentStatus === 'unpaid' || batch.paymentStatus === 'partial')
+      );
+      
+      // Apply client filter if a specific client is selected
+      if (selectedClient !== "all") {
+        unpaidInvoices = unpaidInvoices.filter((batch: any) => {
+          // Check if batch has client information
+          if (batch.clientIds && batch.clientIds.includes(selectedClient)) {
+            return true;
+          }
+          // Fallback: check if client names match (less reliable but better than nothing)
+          if (batch.clientNames && clients.length > 0) {
+            const selectedClientName = clients.find(c => c.id === selectedClient)?.name;
+            return selectedClientName && batch.clientNames.includes(selectedClientName);
+          }
+          return false;
+        });
+      }
+      
+      return {
+        unbilled: unbilledData,
+        unpaidInvoices,
+        totalUnpaidAmount: unpaidInvoices.reduce((sum: number, batch: any) => 
+          sum + (Number(batch.totalAmount) || 0), 0
+        ),
+        partiallyPaidInvoices: unpaidInvoices.filter((batch: any) => 
+          batch.paymentStatus === 'partial'
+        ),
+        fullyUnpaidInvoices: unpaidInvoices.filter((batch: any) => 
+          batch.paymentStatus === 'unpaid'
+        )
+      };
+    },
+    enabled: reportType === "finance"
   });
 
   // Compliance Tracking Query - fetch clients without MSAs and projects without SOWs
@@ -715,6 +782,246 @@ function Reports() {
     );
   };
 
+  // Render Finance Report
+  const renderFinanceReport = () => {
+    // Check if user has access to finance reports
+    if (!hasAnyRole(['admin', 'executive', 'billing-admin'])) {
+      return (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">Access Restricted</h3>
+            <p className="text-muted-foreground">
+              Finance reports are available to administrators, executives, and billing administrators only.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (financeLoading) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      );
+    }
+
+    const data = financeData || { 
+      unbilled: { totals: {} }, 
+      unpaidInvoices: [], 
+      totalUnpaidAmount: 0,
+      partiallyPaidInvoices: [],
+      fullyUnpaidInvoices: []
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Summary Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Unbilled Hours</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {data.unbilled?.totals?.timeHours?.toFixed(1) || '0.0'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Hours awaiting billing
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Unbilled Revenue</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {canViewPricing 
+                  ? `$${(data.unbilled?.totals?.timeAmount || 0).toLocaleString()}` 
+                  : '***'
+                }
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Time + expenses to bill
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Unpaid Invoices</CardTitle>
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{data.unpaidInvoices.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {data.fullyUnpaidInvoices.length} unpaid, {data.partiallyPaidInvoices.length} partial
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Outstanding Amount</CardTitle>
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {canViewPricing 
+                  ? `$${data.totalUnpaidAmount.toLocaleString()}` 
+                  : '***'
+                }
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total outstanding receivables
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Unbilled Items and Unpaid Invoices */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Unbilled Items Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Unbilled Items Summary
+              </CardTitle>
+              <CardDescription>
+                Time entries and expenses awaiting billing
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <div>
+                    <div className="font-medium">Time Entries</div>
+                    <div className="text-sm text-muted-foreground">
+                      {data.unbilled?.totals?.timeHours?.toFixed(1) || '0'} hours
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold">
+                      {canViewPricing 
+                        ? `$${(data.unbilled?.totals?.timeAmount || 0).toLocaleString()}` 
+                        : '***'
+                      }
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <div>
+                    <div className="font-medium">Expenses</div>
+                    <div className="text-sm text-muted-foreground">
+                      Reimbursable costs
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold">
+                      ${(data.unbilled?.totals?.expenseAmount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Unpaid Invoices List */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4" />
+                Unpaid Invoices
+              </CardTitle>
+              <CardDescription>
+                Finalized invoices awaiting payment
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {data.unpaidInvoices.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-muted-foreground">No unpaid invoices</div>
+                  </div>
+                ) : (
+                  data.unpaidInvoices.map((invoice: any, index: number) => (
+                    <div key={index} className="flex justify-between items-center p-3 border rounded-lg">
+                      <div>
+                        <div className="font-medium">{invoice.batchId}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {invoice.clientNames ? invoice.clientNames.join(', ') : `${invoice.clientCount} clients`}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {format(new Date(invoice.createdAt), 'MMM d, yyyy')}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">
+                          {canViewPricing 
+                            ? `$${Number(invoice.totalAmount).toLocaleString()}` 
+                            : '***'
+                          }
+                        </div>
+                        <Badge 
+                          className={
+                            invoice.paymentStatus === 'partial' 
+                              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100' 
+                              : 'bg-red-100 text-red-800 hover:bg-red-100'
+                          }
+                        >
+                          {invoice.paymentStatus === 'partial' ? 'Partial' : 'Unpaid'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Export Options */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Export Options</CardTitle>
+            <CardDescription>
+              Export finance data for further analysis
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              <Button 
+                variant="outline" 
+                onClick={() => data.unbilled?.items && exportToCSV(data.unbilled.items, 'unbilled_items')}
+                disabled={!data.unbilled?.items?.length}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Unbilled Items
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => exportToCSV(data.unpaidInvoices, 'unpaid_invoices')}
+                disabled={!data.unpaidInvoices.length}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Export Unpaid Invoices
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  };
+
   // Render Resource Utilization
   const renderResourceUtilization = () => {
     if (utilizationLoading) {
@@ -1087,7 +1394,7 @@ function Reports() {
 
       {/* Report Tabs */}
       <Tabs value={reportType} onValueChange={setReportType}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="portfolio" data-testid="tab-portfolio">
             Portfolio Overview
           </TabsTrigger>
@@ -1096,6 +1403,13 @@ function Reports() {
           </TabsTrigger>
           <TabsTrigger value="revenue" data-testid="tab-revenue">
             Revenue Analysis
+          </TabsTrigger>
+          <TabsTrigger 
+            value="finance" 
+            data-testid="tab-finance"
+            disabled={!hasAnyRole(['admin', 'executive', 'billing-admin'])}
+          >
+            Finance Report
           </TabsTrigger>
           <TabsTrigger value="utilization" data-testid="tab-utilization">
             Resource Utilization
@@ -1115,6 +1429,10 @@ function Reports() {
         
         <TabsContent value="revenue" className="space-y-4">
           {renderRevenueAnalysis()}
+        </TabsContent>
+        
+        <TabsContent value="finance" className="space-y-4">
+          {renderFinanceReport()}
         </TabsContent>
         
         <TabsContent value="utilization" className="space-y-4">
