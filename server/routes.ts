@@ -339,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // User management
-  app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin", "executive"]), async (req, res) => {
     try {
       const users = await storage.getUsers();
       res.json(users);
@@ -632,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Client Containers
-  app.get("/api/containers", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.get("/api/containers", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const clientId = req.query.clientId as string;
       const containers = await storage.getClientContainers(clientId);
@@ -671,7 +671,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/containers", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/containers", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const validatedData = containerCreationSchema.parse(req.body);
       
@@ -700,7 +700,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Ensure client has container (auto-create if needed)
-  app.post("/api/clients/:clientId/container", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/clients/:clientId/container", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { clientId } = req.params;
       const { containerTypeId } = req.body;
@@ -863,7 +863,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new column in a container
-  app.post("/api/containers/:containerId/columns", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/containers/:containerId/columns", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { containerId } = req.params;
       const columnDef = columnDefinitionSchema.parse(req.body);
@@ -913,7 +913,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update a column in a container
-  app.patch("/api/containers/:containerId/columns/:columnId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.patch("/api/containers/:containerId/columns/:columnId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { containerId, columnId } = req.params;
       const updates = columnUpdateSchema.parse(req.body);
@@ -965,7 +965,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Receipt Metadata Management
 
   // Initialize receipt metadata schema for a container
-  app.post("/api/containers/:containerId/receipt-schema", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/containers/:containerId/receipt-schema", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { containerId } = req.params;
       
@@ -1425,7 +1425,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       console.log("[DEBUG] Creating project with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
@@ -1447,7 +1447,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       // Get the project first to check it exists
       const project = await storage.getProject(req.params.id);
@@ -1496,7 +1496,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const { estimateId } = req.body;
       if (!estimateId) {
@@ -1678,7 +1678,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:id/change-orders", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:id/change-orders", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const insertData = insertChangeOrderSchema.parse({
         ...req.body,
@@ -1695,7 +1695,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const changeOrder = await storage.updateChangeOrder(req.params.id, req.body);
       res.json(changeOrder);
@@ -1705,7 +1705,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.delete("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteChangeOrder(req.params.id);
       res.json({ message: "Change order deleted successfully" });
@@ -1739,7 +1739,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       console.log("Creating SOW with data:", req.body);
       console.log("Project ID:", req.params.id);
@@ -1770,7 +1770,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const sow = await storage.updateSow(req.params.id, req.body);
       res.json(sow);
@@ -1780,7 +1780,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.delete("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteSow(req.params.id);
       res.json({ message: "SOW deleted successfully" });
@@ -1879,7 +1879,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Roles (admin only)
-  app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const roles = await storage.getRoles();
       res.json(roles);
@@ -1888,7 +1888,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/roles", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/roles", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
       const validatedData = insertRoleSchema.parse(req.body);
       const role = await storage.createRole(validatedData);
@@ -1901,7 +1901,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/roles/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.patch("/api/roles/:id", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
       const role = await storage.updateRole(req.params.id, req.body);
       res.json(role);
@@ -1910,7 +1910,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/roles/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/roles/:id", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
       // Check if role is being used in users or estimate line items
       const users = await storage.getUsers();
@@ -1947,7 +1947,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const validatedData = insertUserRateScheduleSchema.parse(req.body);
       const schedule = await storage.createUserRateSchedule(validatedData);
@@ -1961,7 +1961,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const schedule = await storage.updateUserRateSchedule(req.params.id, req.body);
       res.json(schedule);
@@ -2006,7 +2006,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Project Rate Overrides
-  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const overrides = await storage.getProjectRateOverrides(req.params.projectId);
       res.json(overrides);
@@ -2016,7 +2016,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const validatedData = insertProjectRateOverrideSchema.parse({
         ...req.body,
@@ -2033,7 +2033,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectRateOverride(req.params.id);
       res.status(204).send();
@@ -3125,7 +3125,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Maintenance endpoint to fix time entries with null/zero rates
-  app.post("/api/time-entries/fix-rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/time-entries/fix-rates", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       // Get all time entries with null or zero rates
       const allEntries = await storage.getTimeEntries({});
@@ -4622,7 +4622,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Invoice batch endpoints
-  app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode, batchType } = req.body;
       
@@ -4682,7 +4682,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Batch ID generation preview endpoint
-  app.post("/api/billing/batch-id-preview", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/billing/batch-id-preview", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { startDate, endDate } = req.body;
       
@@ -4902,7 +4902,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
   
-  app.post("/api/invoice-batches/:batchId/generate", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches/:batchId/generate", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { clientIds, projectIds, invoicingMode } = req.body;
       
@@ -4955,7 +4955,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
   
   // Invoice batch finalization workflow endpoints
-  app.post("/api/invoice-batches/:batchId/finalize", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches/:batchId/finalize", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const userId = req.user?.id;
@@ -5137,7 +5137,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Invoice Line Adjustments API Routes
   
   // Line-item editing
-  app.patch("/api/invoice-lines/:lineId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.patch("/api/invoice-lines/:lineId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { lineId } = req.params;
       const updates = req.body;
@@ -5158,7 +5158,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
   
   // Bulk line editing
-  app.post("/api/invoice-batches/:batchId/bulk-update", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches/:batchId/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const { updates } = req.body;
@@ -5178,7 +5178,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
   
   // Aggregate adjustment
-  app.post("/api/invoice-batches/:batchId/aggregate-adjustment", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches/:batchId/aggregate-adjustment", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const { targetAmount, allocationMethod, sowId, adjustmentReason, lineAdjustments } = req.body;
@@ -5356,7 +5356,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Legacy aggregate adjustment endpoint (keep for compatibility)
-  app.post("/api/invoice-batches/:batchId/adjustments", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-batches/:batchId/adjustments", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const userId = req.user!.id;
@@ -5419,7 +5419,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
   
   // Remove adjustment
-  app.delete("/api/invoice-adjustments/:adjustmentId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.delete("/api/invoice-adjustments/:adjustmentId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { adjustmentId } = req.params;
       
@@ -5449,7 +5449,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update invoice batch
-  app.patch("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.patch("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       
@@ -5490,7 +5490,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete invoice batch
-  app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       
@@ -5507,7 +5507,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
   
   // Milestone mapping
-  app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { lineId } = req.params;
       const { milestoneId } = req.body;
@@ -5537,7 +5537,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
   
-  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const milestoneData = {
@@ -5911,7 +5911,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ===================== RATE MANAGEMENT ENDPOINTS =====================
   
   // Get user's default billing and cost rates
-  app.get("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.get("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const rates = await storage.getUserRates(req.params.userId);
       res.json(rates);
@@ -5921,7 +5921,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update user's default rates
-  app.put("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.put("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { billingRate, costRate } = req.body;
       const updated = await storage.setUserRates(req.params.userId, billingRate, costRate);
@@ -5932,7 +5932,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get all rate overrides for a project
-  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const overrides = await storage.getProjectRateOverrides(req.params.projectId);
       res.json(overrides);
@@ -5942,7 +5942,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create/update rate override for a user on a project
-  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const overrideData = {
         ...req.body,
@@ -5956,7 +5956,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a rate override
-  app.delete("/api/projects/:projectId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectRateOverride(req.params.overrideId);
       res.status(204).send();
@@ -5978,7 +5978,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create project epic
-  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const epicData = {
         ...req.body,
@@ -5993,7 +5993,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update project epic
-  app.patch("/api/epics/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.patch("/api/epics/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const epic = await storage.updateProjectEpic(req.params.id, req.body);
       res.json(epic);
@@ -6003,7 +6003,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete project epic
-  app.delete("/api/epics/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/epics/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectEpic(req.params.id);
       res.status(204).send();
@@ -6023,7 +6023,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create milestone
-  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const milestoneData = {
         ...req.body,
@@ -6039,7 +6039,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update milestone
-  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
       res.json(milestone);
@@ -6049,7 +6049,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete milestone
-  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectMilestone(req.params.id);
       res.status(204).send();
@@ -6069,7 +6069,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create workstream
-  app.post("/api/projects/:projectId/workstreams", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/workstreams", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const workstreamData = {
         ...req.body,
@@ -6084,7 +6084,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Update workstream
-  app.patch("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.patch("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const workstream = await storage.updateProjectWorkStream(req.params.id, req.body);
       res.json(workstream);
@@ -6094,7 +6094,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete workstream
-  app.delete("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectWorkStream(req.params.id);
       res.status(204).send();
