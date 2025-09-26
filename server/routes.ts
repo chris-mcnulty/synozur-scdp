@@ -2153,6 +2153,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const updateSchema = insertEstimateLineItemSchema.partial();
       const validatedData = updateSchema.parse(req.body);
       
+      // Reject empty update payloads
+      if (Object.keys(validatedData).length === 0) {
+        return res.status(400).json({ message: "At least one field must be provided for update" });
+      }
+      
       console.log("Validated update data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
       console.log("Updated line item:", lineItem);
