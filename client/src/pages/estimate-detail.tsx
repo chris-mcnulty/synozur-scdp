@@ -20,7 +20,7 @@ export default function EstimateDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<string | null>(null); // format: "itemId-fieldName"
   const [editingDraft, setEditingDraft] = useState<Record<string, any>>({});
   const [showEpicDialog, setShowEpicDialog] = useState(false);
   const [showStageDialog, setShowStageDialog] = useState(false);
@@ -264,7 +264,7 @@ export default function EstimateDetail() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      setEditingItem(null);
+      setEditingField(null);
       toast({ title: "Line item updated successfully" });
     }
   });
@@ -530,77 +530,72 @@ export default function EstimateDetail() {
     createLineItemMutation.mutate(lineItemData);
   };
 
-  // Start editing by copying current item data to draft state
-  const startEditing = (item: EstimateLineItem) => {
-    setEditingItem(item.id);
+  // Start editing a specific field
+  const startFieldEditing = (item: EstimateLineItem, fieldName: string) => {
+    const fieldKey = `${item.id}-${fieldName}`;
+    setEditingField(fieldKey);
     setEditingDraft({
-      [item.id]: {
-        description: item.description,
-        baseHours: item.baseHours,
-        factor: item.factor || 1,
-        workstream: item.workstream || "",
-        comments: item.comments || "",
-        // Add other editable fields as needed
-      }
+      [fieldKey]: item[fieldName as keyof EstimateLineItem] || (fieldName === 'factor' ? 1 : "")
     });
   };
 
   // Update draft state during editing
-  const updateDraft = (itemId: string, field: string, value: any) => {
+  const updateFieldDraft = (itemId: string, fieldName: string, value: any) => {
+    const fieldKey = `${itemId}-${fieldName}`;
     setEditingDraft(prev => ({
       ...prev,
-      [itemId]: {
-        ...prev[itemId],
-        [field]: value
-      }
+      [fieldKey]: value
     }));
   };
 
-  // Save draft changes to server (with delay to allow field switching)
-  const saveDraft = (item: EstimateLineItem) => {
-    // Small delay to allow user to click between fields without triggering save
-    setTimeout(() => {
-      // Check if user is still editing this item (they might have clicked another field)
-      if (editingItem !== item.id) return;
-      
-      const draft = editingDraft[item.id];
-      if (!draft) return;
+  // Save a specific field's changes to server
+  const saveFieldDraft = (item: EstimateLineItem, fieldName: string) => {
+    const fieldKey = `${item.id}-${fieldName}`;
+    const draftValue = editingDraft[fieldKey];
+    if (draftValue === undefined) return;
 
-      const updatedItem = { ...item, ...draft };
-      const baseHours = Number(updatedItem.baseHours);
-      const factor = Number(updatedItem.factor) || 1;
-      const rate = Number(updatedItem.rate);
+    // Create update data for this specific field
+    const updateData = { [fieldName]: draftValue };
+    
+    // For fields that affect calculations, include calculated values
+    let finalData = updateData;
+    if (['baseHours', 'factor', 'rate'].includes(fieldName)) {
+      const baseHours = fieldName === 'baseHours' ? Number(draftValue) : Number(item.baseHours);
+      const factor = fieldName === 'factor' ? Number(draftValue) : Number(item.factor) || 1;
+      const rate = fieldName === 'rate' ? Number(draftValue) : Number(item.rate);
+      
       const { adjustedHours, totalAmount } = calculateAdjustedValues(
-        baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+        baseHours, factor, rate, item.size, item.complexity, item.confidence
       );
       
-      updateLineItemMutation.mutate({
-        itemId: item.id,
-        data: {
-          ...updatedItem,
-          adjustedHours: adjustedHours.toFixed(2),
-          totalAmount: totalAmount.toFixed(2)
-        }
-      }, {
-        onSuccess: () => {
-          // Clear draft and editing state only after successful mutation
-          setEditingItem(null);
-          setEditingDraft(prev => {
-            const newDraft = { ...prev };
-            delete newDraft[item.id];
-            return newDraft;
-          });
-        },
-        onError: (error) => {
-          // Keep editing state on error so user can retry
-          toast({ 
-            title: "Failed to save changes", 
-            description: "Please try again", 
-            variant: "destructive" 
-          });
-        }
-      });
-    }, 100); // 100ms delay to allow field switching
+      finalData = {
+        ...updateData,
+        adjustedHours: adjustedHours.toFixed(2),
+        totalAmount: totalAmount.toFixed(2)
+      };
+    }
+    
+    updateLineItemMutation.mutate({
+      itemId: item.id,
+      data: finalData
+    }, {
+      onSuccess: () => {
+        // Clear only this field's editing state
+        setEditingField(null);
+        setEditingDraft(prev => {
+          const newDraft = { ...prev };
+          delete newDraft[fieldKey];
+          return newDraft;
+        });
+      },
+      onError: (error) => {
+        toast({ 
+          title: "Failed to save changes", 
+          description: "Please try again", 
+          variant: "destructive" 
+        });
+      }
+    });
   };
 
   // Legacy function for non-draft updates (like dropdowns)
@@ -765,10 +760,10 @@ export default function EstimateDetail() {
           <div>
             <h1 className="text-3xl font-bold">Estimate Details</h1>
             <p className="text-muted-foreground cursor-pointer" onClick={() => {
-              setEditingItem('estimate-name');
+              setEditingField('estimate-name');
               setEditingEstimateName(estimate?.name || "");
             }}>
-              {editingItem === 'estimate-name' ? (
+              {editingField === 'estimate-name' ? (
                 <Input
                   value={editingEstimateName}
                   onChange={(e) => setEditingEstimateName(e.target.value)}
@@ -776,7 +771,7 @@ export default function EstimateDetail() {
                     if (editingEstimateName.trim() && editingEstimateName !== estimate?.name) {
                       updateEstimateMutation.mutate({ name: editingEstimateName.trim() });
                     }
-                    setEditingItem(null);
+                    setEditingField(null);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -2093,17 +2088,18 @@ export default function EstimateDetail() {
                       <TableCell>{epic?.name || "-"}</TableCell>
                       <TableCell>{stage?.name || "-"}</TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
+                        {editingField === `${item.id}-workstream` ? (
                           <Input
-                            value={editingDraft[item.id]?.workstream ?? item.workstream ?? ""}
-                            onChange={(e) => updateDraft(item.id, "workstream", e.target.value)}
-                            onBlur={() => saveDraft(item)}
+                            value={editingDraft[`${item.id}-workstream`] ?? ""}
+                            onChange={(e) => updateFieldDraft(item.id, "workstream", e.target.value)}
+                            onBlur={() => saveFieldDraft(item, "workstream")}
                             placeholder="Workstream"
                             className="min-w-[120px]"
+                            autoFocus
                           />
                         ) : (
                           <div 
-                            onClick={() => startEditing(item)} 
+                            onClick={() => startFieldEditing(item, "workstream")} 
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
                             title="Click to edit workstream"
                           >
@@ -2113,16 +2109,16 @@ export default function EstimateDetail() {
                       </TableCell>
                       <TableCell>{item.week || "-"}</TableCell>
                       <TableCell className="min-w-[200px]">
-                        {editingItem === item.id ? (
+                        {editingField === `${item.id}-description` ? (
                           <Input
-                            value={editingDraft[item.id]?.description ?? item.description}
-                            onChange={(e) => updateDraft(item.id, "description", e.target.value)}
-                            onBlur={() => saveDraft(item)}
+                            value={editingDraft[`${item.id}-description`] ?? ""}
+                            onChange={(e) => updateFieldDraft(item.id, "description", e.target.value)}
+                            onBlur={() => saveFieldDraft(item, "description")}
                             autoFocus
                           />
                         ) : (
                           <div 
-                            onClick={() => startEditing(item)} 
+                            onClick={() => startFieldEditing(item, "description")} 
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
                             title="Click to edit description"
                           >
@@ -2131,18 +2127,19 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
+                        {editingField === `${item.id}-baseHours` ? (
                           <Input
                             type="number"
                             step="0.1"
-                            value={editingDraft[item.id]?.baseHours ?? item.baseHours}
-                            onChange={(e) => updateDraft(item.id, "baseHours", e.target.value)}
-                            onBlur={() => saveDraft(item)}
+                            value={editingDraft[`${item.id}-baseHours`] ?? ""}
+                            onChange={(e) => updateFieldDraft(item.id, "baseHours", e.target.value)}
+                            onBlur={() => saveFieldDraft(item, "baseHours")}
                             className="w-20"
+                            autoFocus
                           />
                         ) : (
                           <div 
-                            onClick={() => startEditing(item)} 
+                            onClick={() => startFieldEditing(item, "baseHours")} 
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
                             title="Click to edit hours"
                           >
@@ -2151,18 +2148,19 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
+                        {editingField === `${item.id}-factor` ? (
                           <Input
                             type="number"
                             step="0.1"
-                            value={editingDraft[item.id]?.factor ?? item.factor ?? 1}
-                            onChange={(e) => updateDraft(item.id, "factor", e.target.value)}
-                            onBlur={() => saveDraft(item)}
+                            value={editingDraft[`${item.id}-factor`] ?? ""}
+                            onChange={(e) => updateFieldDraft(item.id, "factor", e.target.value)}
+                            onBlur={() => saveFieldDraft(item, "factor")}
                             className="w-20"
+                            autoFocus
                           />
                         ) : (
                           <div 
-                            onClick={() => startEditing(item)} 
+                            onClick={() => startFieldEditing(item, "factor")} 
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
                             title="Click to edit factor"
                           >
@@ -2171,8 +2169,7 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
-                          <Select 
+                        <Select 
                             value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
                             onValueChange={(value) => {
                               if (value === "unassigned") {
@@ -2285,29 +2282,11 @@ export default function EstimateDetail() {
                               ))}
                             </SelectContent>
                           </Select>
-                        ) : (
-                          <span 
-                            className={!item.assignedUserId ? "text-orange-500 font-medium cursor-pointer" : "cursor-pointer"}
-                            onClick={() => setEditingItem(item.id)}
-                          >
-                            {item.resourceName || "Unassigned"}
-                          </span>
-                        )}
                       </TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
-                          <Input
-                            type="number"
-                            value={item.rate}
-                            onChange={(e) => handleUpdateItem(item, "rate", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
-                            className="w-24"
-                          />
-                        ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            ${Math.round(Number(item.rate))}
-                          </span>
-                        )}
+                        <span className="cursor-pointer">
+                          ${Math.round(Number(item.rate))}
+                        </span>
                       </TableCell>
                       <TableCell>
                         {(user?.role === "admin" || user?.role === "executive") && item.costRate ? (
@@ -2319,46 +2298,38 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {editingItem === item.id ? (
-                          <div className="space-y-1">
-                            <Select value={item.size} onValueChange={(value) => handleUpdateItem(item, "size", value)}>
-                              <SelectTrigger className="w-20">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="small">Small</SelectItem>
-                                <SelectItem value="medium">Medium</SelectItem>
-                                <SelectItem value="large">Large</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Select value={item.complexity} onValueChange={(value) => handleUpdateItem(item, "complexity", value)}>
-                              <SelectTrigger className="w-20">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="small">Simple</SelectItem>
-                                <SelectItem value="medium">Medium</SelectItem>
-                                <SelectItem value="large">Complex</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Select value={item.confidence} onValueChange={(value) => handleUpdateItem(item, "confidence", value)}>
-                              <SelectTrigger className="w-20">
-                                <SelectValue />
-                              </SelectTrigger>
+                        <div className="space-y-1">
+                          <Select value={item.size} onValueChange={(value) => handleUpdateItem(item, "size", value)}>
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="small">Small</SelectItem>
+                              <SelectItem value="medium">Medium</SelectItem>
+                              <SelectItem value="large">Large</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={item.complexity} onValueChange={(value) => handleUpdateItem(item, "complexity", value)}>
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="small">Simple</SelectItem>
+                              <SelectItem value="medium">Medium</SelectItem>
+                              <SelectItem value="large">Complex</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Select value={item.confidence} onValueChange={(value) => handleUpdateItem(item, "confidence", value)}>
+                            <SelectTrigger className="w-20">
+                              <SelectValue />
+                            </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="high">High</SelectItem>
                                 <SelectItem value="medium">Medium</SelectItem>
                                 <SelectItem value="low">Low</SelectItem>
                               </SelectContent>
                             </Select>
-                          </div>
-                        ) : (
-                          <div className="text-xs cursor-pointer" onClick={() => setEditingItem(item.id)}>
-                            S:{item.size[0].toUpperCase()},
-                            C:{item.complexity[0].toUpperCase()},
-                            Cf:{item.confidence[0].toUpperCase()}
-                          </div>
-                        )}
+                        </div>
                       </TableCell>
                       <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
                       <TableCell>${Math.round(Number(item.totalAmount)).toLocaleString()}</TableCell>
@@ -2372,17 +2343,18 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell className="max-w-[150px]">
-                        {editingItem === item.id ? (
+                        {editingField === `${item.id}-comments` ? (
                           <Input
-                            value={editingDraft[item.id]?.comments ?? item.comments ?? ""}
-                            onChange={(e) => updateDraft(item.id, "comments", e.target.value)}
-                            onBlur={() => saveDraft(item)}
+                            value={editingDraft[`${item.id}-comments`] ?? ""}
+                            onChange={(e) => updateFieldDraft(item.id, "comments", e.target.value)}
+                            onBlur={() => saveFieldDraft(item, "comments")}
                             placeholder="Comments"
                             className="min-w-[200px]"
+                            autoFocus
                           />
                         ) : (
                           <div 
-                            onClick={() => startEditing(item)} 
+                            onClick={() => startFieldEditing(item, "comments")} 
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded text-sm"
                             title={item.comments || "Click to add comments"}
                           >
