@@ -3883,6 +3883,12 @@ export class DatabaseStorage implements IStorage {
     revenue: number;
     expenseAmount: number;
   }[]> {
+    // Get project details to determine commercial scheme
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
     // Get all time entries for the project grouped by month
     const timeMetrics = await db.select({
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
@@ -3914,10 +3920,41 @@ export class DatabaseStorage implements IStorage {
     .where(eq(expenses.projectId, projectId))
     .groupBy(sql`TO_CHAR(${expenses.date}::date, 'YYYY-MM')`);
 
+    // For fixed-price projects (retainer, milestone), adjust revenue calculation
+    let adjustedTimeMetrics = timeMetrics;
+    if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
+      // Get total SOW value for this project
+      const totalSowValue = await this.getProjectTotalBudget(projectId);
+      
+      if (totalSowValue > 0) {
+        // Calculate total billable hours across all months
+        const totalBillableHours = timeMetrics.reduce((sum, m) => sum + Number(m.billableHours), 0);
+        
+        // Redistribute revenue based on proportion of hours worked per month
+        adjustedTimeMetrics = timeMetrics.map(metric => {
+          const monthHours = Number(metric.billableHours) || 0;
+          const proportionalRevenue = totalBillableHours > 0 
+            ? (monthHours / totalBillableHours) * totalSowValue 
+            : 0;
+          
+          return {
+            ...metric,
+            revenue: proportionalRevenue
+          };
+        });
+      } else {
+        // No SOW value, so no revenue for fixed-price projects
+        adjustedTimeMetrics = timeMetrics.map(metric => ({
+          ...metric,
+          revenue: 0
+        }));
+      }
+    }
+
     // Merge time and expense metrics
     const metricsMap = new Map<string, any>();
     
-    timeMetrics.forEach(metric => {
+    adjustedTimeMetrics.forEach(metric => {
       metricsMap.set(metric.month, {
         month: metric.month,
         billableHours: Number(metric.billableHours) || 0,
@@ -3930,13 +3967,22 @@ export class DatabaseStorage implements IStorage {
     expenseMetrics.forEach(metric => {
       const existing = metricsMap.get(metric.month);
       if (existing) {
+        // For fixed-price projects, expenses don't count as revenue
+        const expenseRevenue = (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') 
+          ? 0 
+          : Number(metric.expenseAmount) || 0;
+        existing.revenue += expenseRevenue; // Add expense to revenue for T&M projects
         existing.expenseAmount = Number(metric.expenseAmount) || 0;
       } else {
+        // For new months with only expenses, determine if expenses should be revenue
+        const expenseRevenue = (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') 
+          ? 0 
+          : Number(metric.expenseAmount) || 0;
         metricsMap.set(metric.month, {
           month: metric.month,
           billableHours: 0,
           nonBillableHours: 0,
-          revenue: 0,
+          revenue: expenseRevenue,
           expenseAmount: Number(metric.expenseAmount) || 0
         });
       }
@@ -3996,10 +4042,10 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Get actual hours and revenue consumed
-    // Use the billingRate that's already stored in time entries with fallback to user default rate
     const [actualMetrics] = await db.select({
       actualHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)::float`,
-      revenue: sql<number>`COALESCE(SUM(
+      billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
+      timeBasedRevenue: sql<number>`COALESCE(SUM(
         CASE WHEN ${timeEntries.billable} THEN 
           CAST(${timeEntries.hours} AS NUMERIC) * 
           COALESCE(
@@ -4022,9 +4068,23 @@ export class DatabaseStorage implements IStorage {
     .where(eq(expenses.projectId, projectId));
 
     const actualHours = Number(actualMetrics?.actualHours) || 0;
-    const revenue = Number(actualMetrics?.revenue) || 0;
+    const billableHours = Number(actualMetrics?.billableHours) || 0;
     const totalExpenses = Number(expenseMetrics?.totalExpenses) || 0;
-    const consumedBudget = revenue + totalExpenses;
+    
+    // Calculate revenue based on commercial scheme
+    let revenue = 0;
+    let consumedBudget = 0;
+    
+    if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
+      // For fixed-price projects, revenue is based on SOW value, not billable hours
+      // If project has SOW budget, that's the total revenue available
+      revenue = totalBudget; // For fixed price, we consider the full contract value as revenue
+      consumedBudget = revenue; // The "consumed budget" is the contract value since it's fixed
+    } else {
+      // For time & materials projects, use time-based revenue calculation
+      revenue = Number(actualMetrics?.timeBasedRevenue) || 0;
+      consumedBudget = revenue + totalExpenses;
+    }
     const burnRatePercentage = totalBudget > 0 ? (consumedBudget / totalBudget) * 100 : 0;
     const hoursVariance = actualHours - estimatedHours;
 
@@ -4059,13 +4119,19 @@ export class DatabaseStorage implements IStorage {
     totalHours: number;
     revenue: number;
   }[]> {
+    // Get project details to determine commercial scheme
+    const project = await this.getProject(projectId);
+    if (!project) {
+      throw new Error("Project not found");
+    }
+
     const teamMetrics = await db.select({
       personId: users.id,
       personName: users.name,
       billableHours: sql<number>`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       nonBillableHours: sql<number>`SUM(CASE WHEN NOT ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END)::float`,
       totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
-      revenue: sql<number>`SUM(
+      timeBasedRevenue: sql<number>`SUM(
         CASE WHEN ${timeEntries.billable} THEN 
           CAST(${timeEntries.hours} AS NUMERIC) * 
           COALESCE(
@@ -4082,14 +4148,52 @@ export class DatabaseStorage implements IStorage {
     .groupBy(users.id, users.name)
     .orderBy(sql`SUM(${timeEntries.hours}) DESC`);
 
-    return teamMetrics.map(metric => ({
-      personId: metric.personId,
-      personName: metric.personName,
-      billableHours: Number(metric.billableHours) || 0,
-      nonBillableHours: Number(metric.nonBillableHours) || 0,
-      totalHours: Number(metric.totalHours) || 0,
-      revenue: Number(metric.revenue) || 0
-    }));
+    // For fixed-price projects, adjust revenue calculation
+    if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
+      const totalSowValue = await this.getProjectTotalBudget(projectId);
+      
+      if (totalSowValue > 0) {
+        // Calculate total billable hours across all team members
+        const totalBillableHours = teamMetrics.reduce((sum, member) => sum + Number(member.billableHours), 0);
+        
+        // Redistribute revenue based on proportion of hours worked by each team member
+        return teamMetrics.map(member => {
+          const memberBillableHours = Number(member.billableHours) || 0;
+          const proportionalRevenue = totalBillableHours > 0 
+            ? (memberBillableHours / totalBillableHours) * totalSowValue 
+            : 0;
+          
+          return {
+            personId: member.personId,
+            personName: member.personName,
+            billableHours: Number(member.billableHours) || 0,
+            nonBillableHours: Number(member.nonBillableHours) || 0,
+            totalHours: Number(member.totalHours) || 0,
+            revenue: proportionalRevenue
+          };
+        });
+      } else {
+        // No SOW value, so no revenue for fixed-price projects
+        return teamMetrics.map(member => ({
+          personId: member.personId,
+          personName: member.personName,
+          billableHours: Number(member.billableHours) || 0,
+          nonBillableHours: Number(member.nonBillableHours) || 0,
+          totalHours: Number(member.totalHours) || 0,
+          revenue: 0
+        }));
+      }
+    } else {
+      // For time & materials projects, use time-based revenue calculation
+      return teamMetrics.map(member => ({
+        personId: member.personId,
+        personName: member.personName,
+        billableHours: Number(member.billableHours) || 0,
+        nonBillableHours: Number(member.nonBillableHours) || 0,
+        totalHours: Number(member.totalHours) || 0,
+        revenue: Number(member.timeBasedRevenue) || 0
+      }));
+    }
   }
 
   // Invoice Line Adjustments Implementation
