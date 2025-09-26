@@ -6416,9 +6416,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Import expenses from Excel/CSV file - with rate limiting for security
   app.post("/api/expenses/import", uploadRateLimit, requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
-      const multer = require('multer');
-      const upload = multer({ 
-        storage: multer.memoryStorage(),
+      const multer = await import('multer');
+      const upload = multer.default({ 
+        storage: multer.default.memoryStorage(),
         limits: { 
           fileSize: 10 * 1024 * 1024, // 10MB limit
           files: 1
@@ -6440,7 +6440,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       upload(req, res, async (err: any) => {
         if (err) {
-          if (err instanceof multer.MulterError) {
+          if (err instanceof multer.default.MulterError) {
             if (err.code === 'LIMIT_FILE_SIZE') {
               return res.status(400).json({ 
                 message: 'File too large. Maximum size is 10MB.',
