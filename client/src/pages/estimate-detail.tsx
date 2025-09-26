@@ -556,45 +556,51 @@ export default function EstimateDetail() {
     }));
   };
 
-  // Save draft changes to server
+  // Save draft changes to server (with delay to allow field switching)
   const saveDraft = (item: EstimateLineItem) => {
-    const draft = editingDraft[item.id];
-    if (!draft) return;
+    // Small delay to allow user to click between fields without triggering save
+    setTimeout(() => {
+      // Check if user is still editing this item (they might have clicked another field)
+      if (editingItem !== item.id) return;
+      
+      const draft = editingDraft[item.id];
+      if (!draft) return;
 
-    const updatedItem = { ...item, ...draft };
-    const baseHours = Number(updatedItem.baseHours);
-    const factor = Number(updatedItem.factor) || 1;
-    const rate = Number(updatedItem.rate);
-    const { adjustedHours, totalAmount } = calculateAdjustedValues(
-      baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
-    );
-    
-    updateLineItemMutation.mutate({
-      itemId: item.id,
-      data: {
-        ...updatedItem,
-        adjustedHours: adjustedHours.toFixed(2),
-        totalAmount: totalAmount.toFixed(2)
-      }
-    }, {
-      onSuccess: () => {
-        // Clear draft and editing state only after successful mutation
-        setEditingItem(null);
-        setEditingDraft(prev => {
-          const newDraft = { ...prev };
-          delete newDraft[item.id];
-          return newDraft;
-        });
-      },
-      onError: (error) => {
-        // Keep editing state on error so user can retry
-        toast({ 
-          title: "Failed to save changes", 
-          description: "Please try again", 
-          variant: "destructive" 
-        });
-      }
-    });
+      const updatedItem = { ...item, ...draft };
+      const baseHours = Number(updatedItem.baseHours);
+      const factor = Number(updatedItem.factor) || 1;
+      const rate = Number(updatedItem.rate);
+      const { adjustedHours, totalAmount } = calculateAdjustedValues(
+        baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+      );
+      
+      updateLineItemMutation.mutate({
+        itemId: item.id,
+        data: {
+          ...updatedItem,
+          adjustedHours: adjustedHours.toFixed(2),
+          totalAmount: totalAmount.toFixed(2)
+        }
+      }, {
+        onSuccess: () => {
+          // Clear draft and editing state only after successful mutation
+          setEditingItem(null);
+          setEditingDraft(prev => {
+            const newDraft = { ...prev };
+            delete newDraft[item.id];
+            return newDraft;
+          });
+        },
+        onError: (error) => {
+          // Keep editing state on error so user can retry
+          toast({ 
+            title: "Failed to save changes", 
+            description: "Please try again", 
+            variant: "destructive" 
+          });
+        }
+      });
+    }, 100); // 100ms delay to allow field switching
   };
 
   // Legacy function for non-draft updates (like dropdowns)
