@@ -509,7 +509,7 @@ export default function Expenses() {
     // Populate the edit form with current expense data
     editForm.reset({
       date: format(new Date(expense.date), 'yyyy-MM-dd'),
-      amount: expense.amount,
+      amount: String(expense.amount),
       currency: expense.currency,
       billable: expense.billable,
       reimbursable: expense.reimbursable,

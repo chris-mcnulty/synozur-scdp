@@ -6572,26 +6572,47 @@ export async function registerRoutes(app: Express): Promise<void> {
               try {
                 // If already in YYYY-MM-DD format
                 if (typeof serial === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(serial)) {
-                  return serial;
+                  // Validate the date is reasonable (between 1900 and 2100)
+                  const parsedDate = new Date(serial);
+                  if (!isNaN(parsedDate.getTime())) {
+                    const year = parsedDate.getFullYear();
+                    if (year >= 1900 && year <= 2100) {
+                      return serial;
+                    } else {
+                      throw new Error(`Date year ${year} is outside reasonable range (1900-2100)`);
+                    }
+                  } else {
+                    throw new Error('Invalid date string format');
+                  }
                 }
                 
                 // Handle numeric Excel serial dates
                 if (typeof serial === 'number' && !isNaN(serial) && serial > 0) {
-                  // Excel stores dates as days since 1900-01-01 (with leap year bug)
-                  // But we need to be careful with very large numbers
-                  if (serial > 2958465) { // Max safe date (year 9999)
-                    throw new Error('Date serial number too large');
+                  // Excel stores dates as days since 1900-01-01
+                  // Reasonable range: 1 (1900-01-01) to 73050 (2099-12-31)
+                  // This prevents dates thousands of years in the future
+                  if (serial < 1) {
+                    throw new Error('Date serial number too small (must be >= 1)');
                   }
+                  if (serial > 73050) { // Dec 31, 2099
+                    throw new Error('Date serial number too large (represents a date after 2099)');
+                  }
+                  
                   const excelEpoch = new Date(1900, 0, 1);
                   const msPerDay = 24 * 60 * 60 * 1000;
-                  const date = new Date(excelEpoch.getTime() + (serial - 2) * msPerDay);
+                  const date = new Date(excelEpoch.getTime() + (serial - 2) * msPerDay); // -2 for Excel leap year bug
                   
                   // Check if the resulting date is valid
                   if (isNaN(date.getTime())) {
                     throw new Error('Invalid date calculation');
                   }
                   
+                  // Double-check the year is reasonable
                   const year = date.getFullYear();
+                  if (year < 1900 || year > 2100) {
+                    throw new Error(`Calculated date year ${year} is outside reasonable range (1900-2100)`);
+                  }
+                  
                   const month = String(date.getMonth() + 1).padStart(2, '0');
                   const day = String(date.getDate()).padStart(2, '0');
                   return `${year}-${month}-${day}`;
@@ -6600,23 +6621,31 @@ export async function registerRoutes(app: Express): Promise<void> {
                 // Handle Date objects
                 if (serial instanceof Date && !isNaN(serial.getTime())) {
                   const year = serial.getFullYear();
+                  // Validate reasonable date range
+                  if (year < 1900 || year > 2100) {
+                    throw new Error(`Date year ${year} is outside reasonable range (1900-2100)`);
+                  }
                   const month = String(serial.getMonth() + 1).padStart(2, '0');
                   const day = String(serial.getDate()).padStart(2, '0');
                   return `${year}-${month}-${day}`;
                 }
                 
-                // Try parsing as string date
-                if (typeof serial === 'string') {
-                  const parsedDate = new Date(serial);
+                // Try parsing as string date (handle formats like MM/DD/YYYY, DD/MM/YYYY, etc.)
+                if (typeof serial === 'string' && serial.trim()) {
+                  const parsedDate = new Date(serial.trim());
                   if (!isNaN(parsedDate.getTime())) {
                     const year = parsedDate.getFullYear();
+                    // Validate reasonable date range
+                    if (year < 1900 || year > 2100) {
+                      throw new Error(`Parsed date year ${year} is outside reasonable range (1900-2100)`);
+                    }
                     const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
                     const day = String(parsedDate.getDate()).padStart(2, '0');
                     return `${year}-${month}-${day}`;
                   }
                 }
                 
-                throw new Error('Unsupported date format');
+                throw new Error(`Unsupported date format: "${serial}" (type: ${typeof serial})`);
               } catch (error: any) {
                 throw new Error(`Unable to parse date "${serial}": ${error.message}`);
               }
