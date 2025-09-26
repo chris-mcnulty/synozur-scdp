@@ -84,7 +84,7 @@ export function PaymentStatusDialog({
     mutationFn: async (data: PaymentUpdateFormData) => {
       return apiRequest(`/api/invoice-batches/${batch.batchId}/payment-status`, {
         method: "PATCH",
-        body: data,
+        body: JSON.stringify(data),
       });
     },
     onSuccess: () => {

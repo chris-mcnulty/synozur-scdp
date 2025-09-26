@@ -2366,7 +2366,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         ["Estimate Line Items Export"],
         [],
         headers,
-        ...filteredLineItems.map(item => {
+        ...filteredLineItems.map((item: any) => {
           const row = [
             item.epicId ? (epicMap.get(item.epicId) || "") : "",
             item.stageId ? (stageMap.get(item.stageId) || "") : "",
@@ -6567,26 +6567,80 @@ export async function registerRoutes(app: Express): Promise<void> {
               continue;
             }
 
+            // Helper function to convert Excel serial date to YYYY-MM-DD format
+            const excelDateToYYYYMMDD = (serial: any): string => {
+              try {
+                // If already in YYYY-MM-DD format
+                if (typeof serial === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(serial)) {
+                  return serial;
+                }
+                
+                // Handle numeric Excel serial dates
+                if (typeof serial === 'number' && !isNaN(serial) && serial > 0) {
+                  // Excel stores dates as days since 1900-01-01 (with leap year bug)
+                  // But we need to be careful with very large numbers
+                  if (serial > 2958465) { // Max safe date (year 9999)
+                    throw new Error('Date serial number too large');
+                  }
+                  const excelEpoch = new Date(1900, 0, 1);
+                  const msPerDay = 24 * 60 * 60 * 1000;
+                  const date = new Date(excelEpoch.getTime() + (serial - 2) * msPerDay);
+                  
+                  // Check if the resulting date is valid
+                  if (isNaN(date.getTime())) {
+                    throw new Error('Invalid date calculation');
+                  }
+                  
+                  const year = date.getFullYear();
+                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                  const day = String(date.getDate()).padStart(2, '0');
+                  return `${year}-${month}-${day}`;
+                }
+                
+                // Handle Date objects
+                if (serial instanceof Date && !isNaN(serial.getTime())) {
+                  const year = serial.getFullYear();
+                  const month = String(serial.getMonth() + 1).padStart(2, '0');
+                  const day = String(serial.getDate()).padStart(2, '0');
+                  return `${year}-${month}-${day}`;
+                }
+                
+                // Try parsing as string date
+                if (typeof serial === 'string') {
+                  const parsedDate = new Date(serial);
+                  if (!isNaN(parsedDate.getTime())) {
+                    const year = parsedDate.getFullYear();
+                    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(parsedDate.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                  }
+                }
+                
+                throw new Error('Unsupported date format');
+              } catch (error: any) {
+                throw new Error(`Unable to parse date "${serial}": ${error.message}`);
+              }
+            };
+
             // Validate date
             let parsedDate: Date | null = null;
+            let formattedDate: string | null = null;
             if (!dateStr) {
               validationErrors.push({ row: rowNum, field: 'date', message: 'Date is required' });
               hasError = true;
             } else {
-              // Try to parse date in various formats
-              const dateFormats = [
-                /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
-                /^\d{2}\/\d{2}\/\d{4}$/, // MM/DD/YYYY
-                /^\d{1,2}\/\d{1,2}\/\d{4}$/, // M/D/YYYY
-              ];
-              
-              parsedDate = new Date(dateStr);
-              
-              if (isNaN(parsedDate.getTime())) {
+              try {
+                formattedDate = excelDateToYYYYMMDD(dateStr);
+                parsedDate = new Date(formattedDate);
+                
+                if (isNaN(parsedDate.getTime())) {
+                  throw new Error('Invalid date after formatting');
+                }
+              } catch (error: any) {
                 validationErrors.push({ 
                   row: rowNum, 
                   field: 'date', 
-                  message: 'Invalid date format. Use YYYY-MM-DD format',
+                  message: error.message || 'Invalid date format. Use YYYY-MM-DD format or Excel date format',
                   value: dateStr
                 });
                 hasError = true;
@@ -6676,11 +6730,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             const reimbursable = parseBooleanField(reimbursableStr, 'reimbursable', true);
 
             // If no validation errors for this row, add to valid expenses
-            if (!hasError && project && parsedDate) {
+            if (!hasError && project && formattedDate) {
               validExpenses.push({
                 personId: userId,
                 projectId: project.id,
-                date: parsedDate.toISOString().split('T')[0],
+                date: formattedDate, // Use the properly formatted date string
                 category: category.toLowerCase(),
                 amount: amount.toString(),
                 currency: currency.toUpperCase(),
