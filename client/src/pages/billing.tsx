@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
 import { DetailedUnbilledItems } from "@/components/billing/detailed-unbilled-items";
+import { PaymentStatusDialog } from "@/components/billing/payment-status-dialog";
 import { 
   Plus, 
   FileText, 
@@ -60,6 +61,13 @@ interface InvoiceBatchData {
   notes?: string | null;
   exportedToQBO: boolean;
   exportedAt?: string;
+  // Payment tracking fields
+  paymentStatus: 'unpaid' | 'partial' | 'paid';
+  paymentDate?: string;
+  paymentAmount?: number;
+  paymentNotes?: string;
+  paymentUpdatedBy?: string;
+  paymentUpdatedAt?: string;
   createdAt: string;
 }
 
@@ -80,6 +88,8 @@ export default function Billing() {
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<InvoiceBatchData | null>(null);
   
   const { canViewPricing } = useAuth();
   const { toast } = useToast();
@@ -115,6 +125,24 @@ export default function Billing() {
       setDiscountValue(discountSettings.defaultDiscountValue);
     }
   }, [discountSettings]);
+
+  // Function to open payment dialog
+  const handleOpenPaymentDialog = (batch: InvoiceBatchData) => {
+    setSelectedBatch(batch);
+    setPaymentDialogOpen(true);
+  };
+
+  // Function to get payment status badge
+  const getPaymentStatusBadge = (paymentStatus: 'unpaid' | 'partial' | 'paid') => {
+    switch (paymentStatus) {
+      case 'paid':
+        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
+      case 'partial':
+        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Partial</Badge>;
+      default:
+        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Unpaid</Badge>;
+    }
+  };
 
   // Helper function for status badges
   const getStatusBadge = (batch: any) => {
@@ -634,11 +662,13 @@ export default function Billing() {
                             )}
                           </Badge>
                           {getStatusBadge(batch)}
+                          {batch.status === 'finalized' && getPaymentStatusBadge(batch.paymentStatus || 'unpaid')}
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
                           {batch.discountAmount && ` Discount: $${Number(batch.discountAmount).toLocaleString()} • `}
                           Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
+                          {batch.paymentDate && ` • Payment: ${format(new Date(batch.paymentDate), 'MMM d, yyyy')}`}
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
@@ -651,6 +681,17 @@ export default function Billing() {
                           </div>
                         </div>
                         <div className="flex space-x-2">
+                          {batch.status === 'finalized' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenPaymentDialog(batch)}
+                              data-testid={`button-payment-${batch.id}`}
+                            >
+                              <CreditCard className="w-4 h-4 mr-1" />
+                              Payment
+                            </Button>
+                          )}
                           {batch.status === 'finalized' && !batch.exportedToQBO && (
                             <Button
                               size="sm"
@@ -696,6 +737,26 @@ export default function Billing() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Payment Status Dialog */}
+        {selectedBatch && (
+          <PaymentStatusDialog
+            open={paymentDialogOpen}
+            onClose={() => {
+              setPaymentDialogOpen(false);
+              setSelectedBatch(null);
+            }}
+            batch={{
+              batchId: selectedBatch.batchId,
+              totalAmount: selectedBatch.totalAmount,
+              paymentStatus: selectedBatch.paymentStatus || 'unpaid',
+              paymentDate: selectedBatch.paymentDate,
+              paymentAmount: selectedBatch.paymentAmount,
+              paymentNotes: selectedBatch.paymentNotes,
+              status: selectedBatch.status,
+            }}
+          />
+        )}
       </div>
     </Layout>
   );

@@ -476,6 +476,13 @@ export const invoiceBatches = pgTable("invoice_batches", {
   notes: text("notes"), // For review comments
   exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
   exportedAt: timestamp("exported_at"),
+  // Payment tracking
+  paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid, partial, paid
+  paymentDate: date("payment_date"), // Date payment was received
+  paymentAmount: decimal("payment_amount", { precision: 10, scale: 2 }), // Amount paid (for partial payments)
+  paymentNotes: text("payment_notes"), // Notes about payment
+  paymentUpdatedBy: varchar("payment_updated_by").references(() => users.id), // Who updated payment status
+  paymentUpdatedAt: timestamp("payment_updated_at"), // When payment status was updated
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -1001,6 +1008,15 @@ export const insertInvoiceBatchSchema = createInsertSchema(invoiceBatches).omit(
   createdAt: true
 });
 export type InsertInvoiceBatch = z.infer<typeof insertInvoiceBatchSchema>;
+
+// Payment status update schema
+export const updateInvoicePaymentSchema = z.object({
+  paymentStatus: z.enum(["unpaid", "partial", "paid"]),
+  paymentDate: z.string().optional(),
+  paymentAmount: z.string().optional(), // Decimal as string
+  paymentNotes: z.string().optional(),
+});
+export type UpdateInvoicePayment = z.infer<typeof updateInvoicePaymentSchema>;
 
 export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   id: true,

@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, sows, timeEntries, expenses, users, projects, clients } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, sows, timeEntries, expenses, users, projects, clients } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -5532,6 +5532,41 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(error.message?.includes('finalized') ? 403 : 
                  error.message?.includes('not found') ? 404 : 400).json({ 
         message: error.message || "Failed to update invoice batch"
+      });
+    }
+  });
+
+  // Update invoice payment status
+  app.patch("/api/invoice-batches/:batchId/payment-status", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: "User ID required" });
+      }
+
+      // Validate the payment data
+      const validatedData = updateInvoicePaymentSchema.parse(req.body);
+
+      const updatedBatch = await storage.updateInvoicePaymentStatus(batchId, {
+        ...validatedData,
+        updatedBy: userId,
+      });
+
+      res.json(updatedBatch);
+    } catch (error: any) {
+      console.error("Failed to update payment status:", error);
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Invalid payment data", 
+          errors: error.errors 
+        });
+      }
+
+      res.status(400).json({ 
+        message: error.message || "Failed to update payment status" 
       });
     }
   });

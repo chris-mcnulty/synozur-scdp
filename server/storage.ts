@@ -299,6 +299,13 @@ export interface IStorage {
     projectCount: number;
   }) | undefined>;
   updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch>;
+  updateInvoicePaymentStatus(batchId: string, paymentData: {
+    paymentStatus: "unpaid" | "partial" | "paid";
+    paymentDate?: string;
+    paymentAmount?: string;
+    paymentNotes?: string;
+    updatedBy: string;
+  }): Promise<InvoiceBatch>;
   getInvoiceLinesForBatch(batchId: string): Promise<(InvoiceLine & {
     project: Project;
     client: Client;
@@ -3370,6 +3377,55 @@ export class DatabaseStorage implements IStorage {
     const [updatedBatch] = await db
       .update(invoiceBatches)
       .set(updates)
+      .where(eq(invoiceBatches.batchId, batchId))
+      .returning();
+
+    return convertDecimalFieldsToNumbers(updatedBatch);
+  }
+
+  async updateInvoicePaymentStatus(batchId: string, paymentData: {
+    paymentStatus: "unpaid" | "partial" | "paid";
+    paymentDate?: string;
+    paymentAmount?: string;
+    paymentNotes?: string;
+    updatedBy: string;
+  }): Promise<InvoiceBatch> {
+    // First check if the batch exists and is finalized
+    const [batch] = await db
+      .select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    
+    if (!batch) {
+      throw new Error(`Invoice batch ${batchId} not found`);
+    }
+
+    if (batch.status !== 'finalized') {
+      throw new Error(`Invoice batch ${batchId} must be finalized before payment status can be updated`);
+    }
+
+    // Update the payment fields
+    const updateData: any = {
+      paymentStatus: paymentData.paymentStatus,
+      paymentUpdatedBy: paymentData.updatedBy,
+      paymentUpdatedAt: new Date(),
+    };
+
+    if (paymentData.paymentDate) {
+      updateData.paymentDate = paymentData.paymentDate;
+    }
+
+    if (paymentData.paymentAmount) {
+      updateData.paymentAmount = paymentData.paymentAmount;
+    }
+
+    if (paymentData.paymentNotes !== undefined) {
+      updateData.paymentNotes = paymentData.paymentNotes;
+    }
+
+    const [updatedBatch] = await db
+      .update(invoiceBatches)
+      .set(updateData)
       .where(eq(invoiceBatches.batchId, batchId))
       .returning();
 
