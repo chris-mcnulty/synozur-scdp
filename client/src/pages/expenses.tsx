@@ -26,8 +26,15 @@ import { z } from "zod";
 
 const expenseFormSchema = insertExpenseSchema.omit({
   personId: true, // Server-side only
+  amount: true, // Override amount to handle as string
 }).extend({
   date: z.string(),
+  amount: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, {
+    message: "Must be a valid positive number",
+  }),
   miles: z.string().optional(), // Separate field for miles input (not sent to backend)
   projectResourceId: z.string().optional(), // Optional person assignment
 }).refine((data) => {
