@@ -1233,10 +1233,11 @@ export default function EstimateDetail() {
       ) : (
       /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="outputs">Quotes</TabsTrigger>
           <TabsTrigger value="inputs">Inputs</TabsTrigger>
           <TabsTrigger value="factors">Factors</TabsTrigger>
+          <TabsTrigger value="management">Structure</TabsTrigger>
         </TabsList>
 
         <TabsContent value="outputs" className="space-y-6">
@@ -2464,6 +2465,185 @@ export default function EstimateDetail() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* Structure Management Tab */}
+        <TabsContent value="management" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Epic & Stage Structure Management</CardTitle>
+              <CardDescription>
+                Manage your estimate structure, identify and merge duplicate stages
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Structure Overview */}
+              <div className="space-y-4">
+                {epics.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No epics created yet. Add your first epic to get started.
+                    <div className="mt-2">
+                      <Button onClick={() => setShowEpicDialog(true)} size="sm">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add First Epic
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  epics.map((epic) => {
+                    // Get stages for this epic
+                    const epicStages = stages.filter(stage => stage.epicId === epic.id);
+                    
+                    // Detect duplicate stages (same name within epic)
+                    const stageNames = epicStages.map(s => s.name.toLowerCase().trim());
+                    const duplicateNames = stageNames.filter((name, index) => stageNames.indexOf(name) !== index);
+                    
+                    return (
+                      <div key={epic.id} className="border rounded-lg p-4">
+                        {/* Epic Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Briefcase className="h-5 w-5 text-primary" />
+                            <h3 className="font-semibold text-lg">{epic.name}</h3>
+                            <Badge variant="secondary">
+                              {epicStages.length} stage{epicStages.length !== 1 ? 's' : ''}
+                            </Badge>
+                            {duplicateNames.length > 0 && (
+                              <Badge variant="destructive">
+                                {duplicateNames.length} duplicate{duplicateNames.length !== 1 ? 's' : ''}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => {
+                                setSelectedEpicForStage(epic.id);
+                                setShowStageDialog(true);
+                              }}
+                              size="sm"
+                              variant="outline"
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add Stage
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Stages List */}
+                        <div className="space-y-2 ml-6">
+                          {epicStages.length === 0 ? (
+                            <div className="text-muted-foreground text-sm py-2">
+                              No stages in this epic yet
+                            </div>
+                          ) : (
+                            epicStages.map((stage) => {
+                              // Count line items assigned to this stage
+                              const lineItemCount = lineItems.filter(item => item.stageId === stage.id).length;
+                              const isDuplicate = duplicateNames.includes(stage.name.toLowerCase().trim());
+                              
+                              return (
+                                <div
+                                  key={stage.id}
+                                  className={`flex items-center justify-between p-3 rounded border ${
+                                    isDuplicate ? 'border-red-200 bg-red-50' : 'border-gray-200'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-4 h-0.5 bg-gray-300"></div>
+                                    <span className="font-medium">{stage.name}</span>
+                                    <Badge variant={lineItemCount > 0 ? "default" : "outline"}>
+                                      {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''}
+                                    </Badge>
+                                    {isDuplicate && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        DUPLICATE
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {isDuplicate && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs"
+                                        onClick={() => {
+                                          // TODO: Open merge dialog
+                                          toast({ 
+                                            title: "Merge functionality coming soon",
+                                            description: `Stage "${stage.name}" has ${lineItemCount} line items that need reassignment`
+                                          });
+                                        }}
+                                      >
+                                        Merge
+                                      </Button>
+                                    )}
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      disabled={lineItemCount > 0}
+                                      onClick={() => {
+                                        if (lineItemCount > 0) {
+                                          toast({
+                                            title: "Cannot delete stage",
+                                            description: `This stage has ${lineItemCount} line items. Reassign them first.`,
+                                            variant: "destructive"
+                                          });
+                                        } else {
+                                          // TODO: Add delete stage mutation
+                                          toast({
+                                            title: "Delete functionality coming soon",
+                                            description: "Safe stage deletion will be implemented next"
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              
+              {/* Summary Section */}
+              {epics.length > 0 && (
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium mb-2">Structure Summary</h4>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground">Total Epics</div>
+                      <div className="font-medium">{epics.length}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Total Stages</div>
+                      <div className="font-medium">{stages.length}</div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Duplicates Found</div>
+                      <div className="font-medium text-red-600">
+                        {(() => {
+                          let duplicateCount = 0;
+                          epics.forEach(epic => {
+                            const epicStages = stages.filter(s => s.epicId === epic.id);
+                            const stageNames = epicStages.map(s => s.name.toLowerCase().trim());
+                            const duplicates = stageNames.filter((name, index) => stageNames.indexOf(name) !== index);
+                            duplicateCount += duplicates.length;
+                          });
+                          return duplicateCount;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
       )}
