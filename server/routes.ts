@@ -162,6 +162,30 @@ declare global {
   }
 }
 
+// Security helper: Filter sensitive financial data based on user role
+function filterSensitiveData(data: any, userRole: string): any {
+  const canViewCostMargins = ['admin', 'executive'].includes(userRole);
+  
+  if (!canViewCostMargins && data) {
+    // Remove sensitive financial fields for Project Managers and Employees
+    const sensitiveFields = ['costRate', 'totalCost', 'margin', 'marginPercent'];
+    
+    if (Array.isArray(data)) {
+      return data.map(item => {
+        const filtered = { ...item };
+        sensitiveFields.forEach(field => delete filtered[field]);
+        return filtered;
+      });
+    } else {
+      const filtered = { ...data };
+      sensitiveFields.forEach(field => delete filtered[field]);
+      return filtered;
+    }
+  }
+  
+  return data;
+}
+
 export async function registerRoutes(app: Express): Promise<void> {
   // Session storage (in-memory for demo, use Redis in production)
   const sessions: Map<string, any> = new Map();
@@ -2095,7 +2119,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
-      res.json(lineItems);
+      const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
+      res.json(filteredLineItems);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch line items" });
     }
@@ -2323,16 +2348,26 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
       const stageMap = new Map(stages.map(s => [s.id, s.name]));
       
+      // Filter line items based on user role for export
+      const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
+      const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
+      
+      // Create header row based on permissions
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
+      if (canViewCostMargins) {
+        headers.push("Cost Rate");
+      }
+      headers.push("Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount");
+      if (canViewCostMargins) {
+        headers.push("Total Cost", "Margin", "Margin %");
+      }
+      
       const worksheetData = [
         ["Estimate Line Items Export"],
         [],
-        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Cost Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount", "Total Cost", "Margin", "Margin %"],
-        ...lineItems.map(item => {
-          const totalCost = Number(item.costRate || 0) * Number(item.adjustedHours || 0);
-          const margin = Number(item.margin || 0);
-          const marginPercent = Number(item.marginPercent || 0);
-          
-          return [
+        headers,
+        ...filteredLineItems.map(item => {
+          const row = [
             item.epicId ? (epicMap.get(item.epicId) || "") : "",
             item.stageId ? (stageMap.get(item.stageId) || "") : "",
             item.workstream || "",
@@ -2342,18 +2377,30 @@ export async function registerRoutes(app: Express): Promise<void> {
             item.resourceName || "",
             Number(item.baseHours),
             Number(item.factor || 1),
-            Number(item.rate),
-            Number(item.costRate || 0),
+            Number(item.rate)
+          ];
+          
+          if (canViewCostMargins) {
+            row.push(Number(item.costRate || 0));
+          }
+          
+          row.push(
             item.size,
             item.complexity,
             item.confidence,
             item.comments || "",
             Number(item.adjustedHours),
-            Number(item.totalAmount),
-            totalCost,
-            margin,
-            marginPercent
-          ];
+            Number(item.totalAmount)
+          );
+          
+          if (canViewCostMargins) {
+            const totalCost = Number(item.costRate || 0) * Number(item.adjustedHours || 0);
+            const margin = Number(item.margin || 0);
+            const marginPercent = Number(item.marginPercent || 0);
+            row.push(totalCost, margin, marginPercent);
+          }
+          
+          return row;
         })
       ];
 
