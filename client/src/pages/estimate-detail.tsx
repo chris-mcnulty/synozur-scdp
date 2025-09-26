@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
 
 export default function EstimateDetail() {
@@ -138,9 +139,7 @@ export default function EstimateDetail() {
     queryKey: ["/api/roles"],
   });
 
-  const { data: user } = useQuery<any>({
-    queryKey: ["/api/auth/me"],
-  });
+  const { user, canViewCostMargins } = useAuth();
 
   const { data: epics = [], error: epicsError } = useQuery<EstimateEpic[]>({
     queryKey: ['/api/estimates', id, 'epics'],
@@ -1959,7 +1958,7 @@ export default function EstimateDetail() {
                             <div className="text-muted-foreground">Charge</div>
                             <div className="font-medium">${data.chargeAmount.toFixed(0)}</div>
                           </div>
-                          {user?.role === "admin" || user?.role === "executive" ? (
+                          {canViewCostMargins && (
                             <>
                               <div>
                                 <div className="text-muted-foreground">Cost</div>
@@ -1972,7 +1971,7 @@ export default function EstimateDetail() {
                                 </div>
                               </div>
                             </>
-                          ) : null}
+                          )}
                         </div>
                       </div>
                     ));
@@ -2289,7 +2288,7 @@ export default function EstimateDetail() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        {(user?.role === "admin" || user?.role === "executive") && item.costRate ? (
+                        {canViewCostMargins && item.costRate ? (
                           <span className="text-muted-foreground">
                             ${Math.round(Number(item.costRate))}
                           </span>
@@ -2334,7 +2333,7 @@ export default function EstimateDetail() {
                       <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
                       <TableCell>${Math.round(Number(item.totalAmount)).toLocaleString()}</TableCell>
                       <TableCell>
-                        {(user?.role === "admin" || user?.role === "executive") && item.margin ? (
+                        {canViewCostMargins && item.margin ? (
                           <span className={Number(item.marginPercent) > 0 ? "text-green-600" : "text-red-600"}>
                             ${Math.round(Number(item.margin))} ({Number(item.marginPercent).toFixed(1)}%)
                           </span>
