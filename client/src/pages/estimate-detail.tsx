@@ -21,6 +21,7 @@ export default function EstimateDetail() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<Record<string, any>>({});
   const [showEpicDialog, setShowEpicDialog] = useState(false);
   const [showStageDialog, setShowStageDialog] = useState(false);
   const [newEpicName, setNewEpicName] = useState("");
@@ -529,6 +530,64 @@ export default function EstimateDetail() {
     createLineItemMutation.mutate(lineItemData);
   };
 
+  // Start editing by copying current item data to draft state
+  const startEditing = (item: EstimateLineItem) => {
+    setEditingItem(item.id);
+    setEditingDraft({
+      [item.id]: {
+        description: item.description,
+        baseHours: item.baseHours,
+        factor: item.factor || 1,
+        workstream: item.workstream || "",
+        comments: item.comments || "",
+        // Add other editable fields as needed
+      }
+    });
+  };
+
+  // Update draft state during editing
+  const updateDraft = (itemId: string, field: string, value: any) => {
+    setEditingDraft(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        [field]: value
+      }
+    }));
+  };
+
+  // Save draft changes to server
+  const saveDraft = (item: EstimateLineItem) => {
+    const draft = editingDraft[item.id];
+    if (!draft) return;
+
+    const updatedItem = { ...item, ...draft };
+    const baseHours = Number(updatedItem.baseHours);
+    const factor = Number(updatedItem.factor) || 1;
+    const rate = Number(updatedItem.rate);
+    const { adjustedHours, totalAmount } = calculateAdjustedValues(
+      baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+    );
+    
+    updateLineItemMutation.mutate({
+      itemId: item.id,
+      data: {
+        ...updatedItem,
+        adjustedHours: adjustedHours.toFixed(2),
+        totalAmount: totalAmount.toFixed(2)
+      }
+    });
+
+    // Clear draft and editing state after successful mutation
+    setEditingItem(null);
+    setEditingDraft(prev => {
+      const newDraft = { ...prev };
+      delete newDraft[item.id];
+      return newDraft;
+    });
+  };
+
+  // Legacy function for non-draft updates (like dropdowns)
   const handleUpdateItem = (item: EstimateLineItem, field: string, value: any) => {
     const updatedItem = { ...item, [field]: value };
     const baseHours = Number(updatedItem.baseHours);
@@ -1936,7 +1995,7 @@ export default function EstimateDetail() {
           )}
 
           <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1400px]">
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -1976,7 +2035,7 @@ export default function EstimateDetail() {
                   <TableHead className="w-20">Adj. Hours</TableHead>
                   <TableHead className="w-20">Total</TableHead>
                   <TableHead className="w-24">Margin</TableHead>
-                  <TableHead className="w-32">Comments</TableHead>
+                  <TableHead className="w-24">Comments</TableHead>
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -2020,59 +2079,79 @@ export default function EstimateDetail() {
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
-                            value={item.workstream || ""}
-                            onChange={(e) => handleUpdateItem(item, "workstream", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
+                            value={editingDraft[item.id]?.workstream ?? item.workstream ?? ""}
+                            onChange={(e) => updateDraft(item.id, "workstream", e.target.value)}
+                            onBlur={() => saveDraft(item)}
                             placeholder="Workstream"
+                            className="min-w-[120px]"
                           />
                         ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                          <div 
+                            onClick={() => startEditing(item)} 
+                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
+                            title="Click to edit workstream"
+                          >
                             {item.workstream || "-"}
-                          </span>
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>{item.week || "-"}</TableCell>
-                      <TableCell>
+                      <TableCell className="min-w-[200px]">
                         {editingItem === item.id ? (
                           <Input
-                            value={item.description}
-                            onChange={(e) => handleUpdateItem(item, "description", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
+                            value={editingDraft[item.id]?.description ?? item.description}
+                            onChange={(e) => updateDraft(item.id, "description", e.target.value)}
+                            onBlur={() => saveDraft(item)}
+                            autoFocus
                           />
                         ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                          <div 
+                            onClick={() => startEditing(item)} 
+                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
+                            title="Click to edit description"
+                          >
                             {item.description}
-                          </span>
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
                             type="number"
-                            value={item.baseHours}
-                            onChange={(e) => handleUpdateItem(item, "baseHours", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
+                            step="0.1"
+                            value={editingDraft[item.id]?.baseHours ?? item.baseHours}
+                            onChange={(e) => updateDraft(item.id, "baseHours", e.target.value)}
+                            onBlur={() => saveDraft(item)}
                             className="w-20"
                           />
                         ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
+                          <div 
+                            onClick={() => startEditing(item)} 
+                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
+                            title="Click to edit hours"
+                          >
                             {Math.round(Number(item.baseHours))}
-                          </span>
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
                         {editingItem === item.id ? (
                           <Input
                             type="number"
-                            value={item.factor || 1}
-                            onChange={(e) => handleUpdateItem(item, "factor", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
+                            step="0.1"
+                            value={editingDraft[item.id]?.factor ?? item.factor ?? 1}
+                            onChange={(e) => updateDraft(item.id, "factor", e.target.value)}
+                            onBlur={() => saveDraft(item)}
                             className="w-20"
                           />
                         ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            {Math.round(Number(item.factor || 1))}
-                          </span>
+                          <div 
+                            onClick={() => startEditing(item)} 
+                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
+                            title="Click to edit factor"
+                          >
+                            {Number(item.factor || 1)}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
@@ -2276,18 +2355,29 @@ export default function EstimateDetail() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[150px]">
                         {editingItem === item.id ? (
                           <Input
-                            value={item.comments || ""}
-                            onChange={(e) => handleUpdateItem(item, "comments", e.target.value)}
-                            onBlur={() => setEditingItem(null)}
+                            value={editingDraft[item.id]?.comments ?? item.comments ?? ""}
+                            onChange={(e) => updateDraft(item.id, "comments", e.target.value)}
+                            onBlur={() => saveDraft(item)}
                             placeholder="Comments"
+                            className="min-w-[200px]"
                           />
                         ) : (
-                          <span onClick={() => setEditingItem(item.id)} className="cursor-pointer">
-                            {item.comments || "-"}
-                          </span>
+                          <div 
+                            onClick={() => startEditing(item)} 
+                            className="cursor-pointer hover:bg-gray-50 p-1 rounded text-sm"
+                            title={item.comments || "Click to add comments"}
+                          >
+                            {item.comments ? (
+                              <span className="truncate block">
+                                {item.comments.length > 20 ? `${item.comments.substring(0, 20)}...` : item.comments}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
