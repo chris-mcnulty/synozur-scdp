@@ -1,0 +1,84 @@
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/3d14ff2b-b1b8-4182-81ae-4a04dd09afd8:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/3d14ff2b-b1b8-4182-81ae-4a04dd09afd8:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 500 ()
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-CJxYTDBV.js:48   PATCH https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/3d14ff2b-b1b8-4182-81ae-4a04dd09afd8 500 (Internal Server Error)
+Ke @ index-CJxYTDBV.js:48
+mutationFn @ index-CJxYTDBV.js:600
+fn @ index-CJxYTDBV.js:48
+x @ index-CJxYTDBV.js:48
+start @ index-CJxYTDBV.js:48
+execute @ index-CJxYTDBV.js:48
+await in execute
+mutate @ index-CJxYTDBV.js:48
+(anonymous) @ index-CJxYTDBV.js:48
+Th @ index-CJxYTDBV.js:600
+onBlur @ index-CJxYTDBV.js:600
+G7 @ index-CJxYTDBV.js:37
+Q7 @ index-CJxYTDBV.js:37
+X7 @ index-CJxYTDBV.js:37
+Sk @ index-CJxYTDBV.js:37
+RF @ index-CJxYTDBV.js:37
+(anonymous) @ index-CJxYTDBV.js:37
+K_ @ index-CJxYTDBV.js:40
+oF @ index-CJxYTDBV.js:37
+A0 @ index-CJxYTDBV.js:37
+b_ @ index-CJxYTDBV.js:37
+hK @ index-CJxYTDBV.js:37
+index-CJxYTDBV.js:48   PATCH https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/3d14ff2b-b1b8-4182-81ae-4a04dd09afd8 500 (Internal Server Error)
+Ke @ index-CJxYTDBV.js:48
+mutationFn @ index-CJxYTDBV.js:600
+fn @ index-CJxYTDBV.js:48
+x @ index-CJxYTDBV.js:48
+start @ index-CJxYTDBV.js:48
+execute @ index-CJxYTDBV.js:48
+await in execute
+mutate @ index-CJxYTDBV.js:48
+(anonymous) @ index-CJxYTDBV.js:48
+Th @ index-CJxYTDBV.js:600
+onBlur @ index-CJxYTDBV.js:600
+G7 @ index-CJxYTDBV.js:37
+Q7 @ index-CJxYTDBV.js:37
+X7 @ index-CJxYTDBV.js:37
+Sk @ index-CJxYTDBV.js:37
+RF @ index-CJxYTDBV.js:37
+(anonymous) @ index-CJxYTDBV.js:37
+K_ @ index-CJxYTDBV.js:40
+oF @ index-CJxYTDBV.js:37
+A0 @ index-CJxYTDBV.js:37
+b_ @ index-CJxYTDBV.js:37
+hK @ index-CJxYTDBV.js:37
+index-CJxYTDBV.js:48   PATCH https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/3d14ff2b-b1b8-4182-81ae-4a04dd09afd8 500 (Internal Server Error)
+Ke @ index-CJxYTDBV.js:48
+mutationFn @ index-CJxYTDBV.js:600
+fn @ index-CJxYTDBV.js:48
+x @ index-CJxYTDBV.js:48
+start @ index-CJxYTDBV.js:48
+execute @ index-CJxYTDBV.js:48
+await in execute
+mutate @ index-CJxYTDBV.js:48
+(anonymous) @ index-CJxYTDBV.js:48
+Th @ index-CJxYTDBV.js:600
+onBlur @ index-CJxYTDBV.js:600
+G7 @ index-CJxYTDBV.js:37
+Q7 @ index-CJxYTDBV.js:37
+X7 @ index-CJxYTDBV.js:37
+Sk @ index-CJxYTDBV.js:37
+RF @ index-CJxYTDBV.js:37
+(anonymous) @ index-CJxYTDBV.js:37
+K_ @ index-CJxYTDBV.js:40
+oF @ index-CJxYTDBV.js:37
+A0 @ index-CJxYTDBV.js:37
+b_ @ index-CJxYTDBV.js:37
+hK @ index-CJxYTDBV.js:37

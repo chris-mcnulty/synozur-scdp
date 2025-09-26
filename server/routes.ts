@@ -2142,10 +2142,36 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
     try {
-      const lineItem = await storage.updateEstimateLineItem(req.params.id, req.body);
+      console.log("Updating line item:", req.params.id);
+      console.log("Request body:", JSON.stringify(req.body, null, 2));
+      
+      // Validate the request body
+      const { z } = await import("zod");
+      const { insertEstimateLineItemSchema } = await import("@shared/schema");
+      
+      // Create a partial schema for updates (all fields optional)
+      const updateSchema = insertEstimateLineItemSchema.partial();
+      const validatedData = updateSchema.parse(req.body);
+      
+      console.log("Validated update data:", JSON.stringify(validatedData, null, 2));
+      const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
+      console.log("Updated line item:", lineItem);
+      
       res.json(lineItem);
     } catch (error) {
-      res.status(500).json({ message: "Failed to update line item" });
+      console.error("Line item update error:", error);
+      if (error instanceof z.ZodError) {
+        console.error("Validation errors:", error.errors);
+        return res.status(400).json({ 
+          message: "Invalid line item data", 
+          errors: error.errors,
+          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        });
+      }
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to update line item",
+        error: String(error)
+      });
     }
   });
 
