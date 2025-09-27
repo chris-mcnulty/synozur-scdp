@@ -37,66 +37,45 @@ app.use((req, res, next) => {
   next();
 });
 
-// Intelligent environment detection to work around global settings
+// Simple environment detection - trust NODE_ENV
 function detectEnvironment() {
-  // Check multiple indicators to determine if we're in development
-  const isDevelopmentCommand = process.argv.some(arg => arg.includes('tsx'));
-  const hasDevScript = process.title && process.title.includes('tsx');
-  const isLocalPort = process.env.PORT === undefined || process.env.PORT === '5000';
-  const explicitDev = process.env.NODE_ENV === 'development';
-  
-  // Log detection details for debugging
-  log(`🔍 Environment detection:`);
-  log(`  - NODE_ENV: ${process.env.NODE_ENV}`);
-  log(`  - Using tsx: ${isDevelopmentCommand}`);
-  log(`  - Port: ${process.env.PORT || '5000'} (default)`);
-  log(`  - REPLIT_DOMAINS: ${process.env.REPLIT_DOMAINS ? 'set' : 'not set'}`);
-  
-  // If running with tsx (dev command) or explicitly set to development
-  if (isDevelopmentCommand || hasDevScript || explicitDev) {
-    // Force development mode
-    process.env.NODE_ENV = 'development';
-    log('🔧 Running in DEVELOPMENT mode');
-  } else if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS) {
-    log('🚀 Running in PRODUCTION mode');
+  // Use NODE_ENV if set, otherwise detect based on tsx usage
+  if (!process.env.NODE_ENV) {
+    const isDevelopmentCommand = process.argv.some(arg => arg.includes('tsx'));
+    process.env.NODE_ENV = isDevelopmentCommand ? 'development' : 'production';
   }
+  
+  log(`🔍 Environment: ${process.env.NODE_ENV}`);
+  log(`  - Port: ${process.env.PORT || '5000'} (default)`);
   
   return process.env.NODE_ENV;
 }
 
-// Environment validation function - softened for deployment resilience
+// Environment validation function - non-blocking for deployment
 function validateEnvironment() {
   const requiredVars = ['DATABASE_URL'];
   const missing = requiredVars.filter(varName => !process.env[varName]);
   
   if (missing.length > 0) {
-    if (process.env.STRICT_ENV === '1') {
-      throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-    } else {
-      log(`⚠️ Warning: Missing environment variables: ${missing.join(', ')} - continuing in degraded mode`);
-      return false;
-    }
+    log(`⚠️ Warning: Missing environment variables: ${missing.join(', ')} - database features may be limited`);
+    return false;
   }
   
-  log('Environment validation passed');
+  log('✅ Environment validation passed');
   return true;
 }
 
-// Add global error handlers for deployment resilience
+// Add global error handlers - properly exit in production to trigger restart
 process.on('unhandledRejection', (reason, promise) => {
-  log(`⚠️ Unhandled Rejection at: ${promise}, reason: ${reason}`);
-  // Don't exit - log and continue
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Exit cleanly to allow deployment system to restart
+  process.exit(1);
 });
 
 process.on('uncaughtException', (error) => {
-  log(`❌ Uncaught Exception: ${error.message}`);
-  log(`Stack: ${error.stack}`);
-  // In production, try to stay alive for health checks
-  if (process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS) {
-    log('Production environment - continuing after uncaught exception');
-  } else {
-    process.exit(1);
-  }
+  console.error('Uncaught Exception:', error);
+  // Exit cleanly to allow deployment system to restart  
+  process.exit(1);
 });
 
 // Main server startup function with comprehensive error handling
@@ -217,35 +196,31 @@ process.on('uncaughtException', (error) => {
 
 // Async function to handle additional services after port binding
 async function setupAdditionalServices(app: Express, server: Server, envValid: boolean) {
-  // Add database connection health check with timeout
-  log('Testing database connection...');
-  try {
-    const dbPromise = import('./db').then(({ db }) => db.execute(`SELECT 1 as test`));
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Database connection timeout')), 5000)
-    );
-    
-    await Promise.race([dbPromise, timeoutPromise]);
-    log('Database connection successful');
-  } catch (dbError: any) {
-    log(`Database connection check failed: ${dbError.message}`);
-    log('Continuing without database - static content will still be served');
+  // Database connection is optional - don't block on it
+  if (process.env.DATABASE_URL) {
+    log('Testing database connection...');
+    import('./db').then(({ db }) => {
+      return db.execute(`SELECT 1 as test`);
+    }).then(() => {
+      log('✅ Database connection successful');
+    }).catch((dbError: any) => {
+      log(`⚠️ Database not available: ${dbError.message}`);
+      log('Server will continue without database features');
+    });
+  } else {
+    log('⚠️ No DATABASE_URL provided - database features disabled');
   }
   
-  // Setup Vite or static serving - fixed detection logic
+  // Setup Vite or static serving based on environment
   const isProduction = process.env.NODE_ENV === 'production';
-  // Force disable Vite to avoid crashes from broken IPC code in server/vite.ts
-  const isViteDisabled = true; // process.env.DISABLE_VITE_DEV === '1';
   const isDevelopment = process.env.NODE_ENV === 'development';
   
   log(`Frontend server configuration:`);
   log(`  - Environment: ${process.env.NODE_ENV}`);
-  log(`  - Vite disabled: ${isViteDisabled ? 'yes' : 'no'}`);
   log(`  - Mode: ${isDevelopment ? 'Development (Vite)' : 'Production (Static)'}`);
   
-  // In development mode, always use Vite unless explicitly disabled
-  // Don't let REPLIT_DOMAINS affect development mode detection
-  if (isDevelopment && !isViteDisabled) {
+  // In development mode, use Vite for hot reloading
+  if (isDevelopment) {
     log('Setting up Vite development server...');
     try {
       await setupVite(app, server);
@@ -267,14 +242,17 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       }
     }
   } else {
-    const reason = isProduction ? 'production' : isViteDisabled ? 'Vite disabled' : 'non-development';
-    log(`Setting up static file serving for ${reason} environment...`);
+    // In production, serve the built static files
+    log(`Setting up static file serving for production environment...`);
     try {
       serveStatic(app);
-      log('Static file serving setup successful');
+      log('✅ Static file serving setup successful');
+      log('📝 Frontend available at port 5000');
     } catch (staticError: any) {
-      log(`⚠️ Static file serving failed: ${staticError.message}`);
-      log('Server will continue with API only - frontend may not be available');
+      log(`❌ Static file serving failed: ${staticError.message}`);
+      log('💡 Ensure you have run "npm run build" before starting in production');
+      // Exit to trigger deployment restart rather than running broken
+      process.exit(1);
     }
   }
 }
@@ -282,6 +260,12 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
 // Function to automatically update version release date
 async function updateVersionReleaseDate() {
   try {
+    // Only update if database is available
+    if (!process.env.DATABASE_URL) {
+      log('⚠️ Skipping version update - no database configured');
+      return;
+    }
+    
     const { db } = await import('./db');
     const { sql } = await import('drizzle-orm');
     const currentDate = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
@@ -296,7 +280,7 @@ async function updateVersionReleaseDate() {
     
     log(`📅 Version release date updated to: ${currentDate}`);
   } catch (error: any) {
-    log(`❌ Failed to update version release date: ${error.message}`);
-    throw error;
+    log(`⚠️ Failed to update version release date: ${error.message}`);
+    // Don't throw - this is non-critical
   }
 }
