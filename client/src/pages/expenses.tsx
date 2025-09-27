@@ -173,9 +173,16 @@ export default function Expenses() {
 
   const createExpenseMutation = useMutation({
     mutationFn: async (data: ExpenseFormData) => {
+      // Convert string fields to numbers for backend
+      const payload = {
+        ...data,
+        amount: parseFloat(data.amount) || 0,
+        quantity: data.quantity ? parseFloat(data.quantity) : undefined,
+      };
+      
       return apiRequest("/api/expenses", {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: () => {
@@ -214,9 +221,16 @@ export default function Expenses() {
 
   const updateExpenseMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ExpenseFormData }) => {
+      // Convert string fields to numbers for backend
+      const payload = {
+        ...data,
+        amount: parseFloat(data.amount) || 0,
+        quantity: data.quantity ? parseFloat(data.quantity) : undefined,
+      };
+      
       return apiRequest(`/api/expenses/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     },
     onSuccess: () => {
@@ -523,8 +537,9 @@ export default function Expenses() {
         // Otherwise parse and format it
         formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
       }
-    } else if (expense.date instanceof Date) {
-      formattedDate = format(expense.date, 'yyyy-MM-dd');
+    } else {
+      // If it's any other type (Date object), format it
+      formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
     }
     
     // Populate the edit form with current expense data
