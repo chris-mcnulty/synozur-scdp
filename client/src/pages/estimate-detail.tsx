@@ -2268,9 +2268,9 @@ export default function EstimateDetail() {
           <div className="rounded-md border relative">
             <div className="overflow-auto max-h-[calc(100vh-400px)] relative">
               <Table className="min-w-[1200px]">
-                <TableHeader className="sticky top-0 bg-background z-10 border-b">
+                <TableHeader className="sticky top-0 bg-white dark:bg-slate-950 z-20 border-b shadow-sm">
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10 px-2 py-2 text-xs">
+                    <TableHead className="w-10 px-2 py-2 text-xs bg-white dark:bg-slate-950">
                       <input
                         type="checkbox"
                       checked={(() => {
@@ -2293,22 +2293,22 @@ export default function EstimateDetail() {
                       }}
                     />
                     </TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Epic</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Stage</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs">Workstream</TableHead>
-                    <TableHead className="w-12 px-2 py-2 text-xs">Week</TableHead>
-                    <TableHead className="min-w-[180px] px-2 py-2 text-xs">Description</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs">Hours</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs">Factor</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs">Resource</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs">Rate</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs">Cost</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Adjust</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Adj.Hrs</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Total</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs">Margin</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs">Comments</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs">Actions</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Epic</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Stage</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Workstream</TableHead>
+                    <TableHead className="w-12 px-2 py-2 text-xs bg-white dark:bg-slate-950">Week</TableHead>
+                    <TableHead className="min-w-[180px] px-2 py-2 text-xs bg-white dark:bg-slate-950">Description</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Hours</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Factor</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Resource</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Rate</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Cost</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Adjust</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Adj.Hrs</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Total</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Margin</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Comments</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
