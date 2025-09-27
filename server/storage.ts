@@ -2591,15 +2591,17 @@ export class DatabaseStorage implements IStorage {
             continue;
           }
           
-          // Validate date format
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(expenseData.date)) {
+          // Parse and validate date
+          const parsedDate = this.parseImportDate(expenseData.date);
+          if (!parsedDate) {
             results.failed++;
             results.errors.push({
               row: rowNumber,
-              error: 'Date must be in YYYY-MM-DD format'
+              error: `Invalid date format: '${expenseData.date}'. Accepted formats: M/D/YY, M/D/YYYY, MM/DD/YY, MM/DD/YYYY, YYYY-MM-DD`
             });
             continue;
           }
+          expenseData.date = parsedDate;
           
           // Validate amount is positive number
           const amount = parseFloat(expenseData.amount);
@@ -2650,6 +2652,123 @@ export class DatabaseStorage implements IStorage {
     }
     if (typeof value === 'number') return value === 1;
     return false;
+  }
+
+  private parseImportDate(dateStr: any): string | null {
+    // Handle null/undefined/empty values
+    if (!dateStr || dateStr === '') return null;
+    
+    // Convert to string if not already
+    const dateString = String(dateStr).trim();
+    
+    // Pattern 1: Already in YYYY-MM-DD format (backwards compatibility)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      return dateString;
+    }
+    
+    // Pattern 2: Excel serial date number (number of days since 1900-01-01)
+    // Excel sometimes exports dates as numbers
+    const dateNum = parseFloat(dateString);
+    if (!isNaN(dateNum) && dateNum > 25569 && dateNum < 50000) { // Valid Excel date range
+      // Excel dates start from 1899-12-30 (day 0), but Excel incorrectly treats 1900 as a leap year
+      // For dates after Feb 28, 1900, we need to subtract 1 day
+      // JavaScript dates start from 1970-01-01
+      // 25569 = days between Excel's epoch and Unix epoch
+      let adjustedDateNum = dateNum;
+      // Correct for Excel's leap year bug (1900 wasn't a leap year, but Excel thinks it was)
+      if (dateNum > 60) { // After Feb 28, 1900
+        adjustedDateNum = dateNum - 1;
+      }
+      const jsDate = new Date((adjustedDateNum - 25569) * 86400 * 1000);
+      const year = jsDate.getUTCFullYear();
+      const month = String(jsDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(jsDate.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Pattern 3: M/D/YY or M/D/YYYY or MM/DD/YY or MM/DD/YYYY (North American format)
+    const usDateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+    const usMatch = dateString.match(usDateRegex);
+    if (usMatch) {
+      const month = parseInt(usMatch[1], 10);
+      const day = parseInt(usMatch[2], 10);
+      let year = parseInt(usMatch[3], 10);
+      
+      // Validate month and day ranges
+      if (month < 1 || month > 12) return null;
+      if (day < 1 || day > 31) return null;
+      
+      // Handle two-digit years
+      if (year < 100) {
+        // 00-29 -> 2000-2029
+        // 30-99 -> 1930-1999
+        year = year <= 29 ? 2000 + year : 1900 + year;
+      }
+      
+      // Additional validation for day of month
+      const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      
+      // Check for leap year
+      const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+      if (isLeapYear && month === 2) {
+        daysInMonth[1] = 29;
+      }
+      
+      if (day > daysInMonth[month - 1]) return null;
+      
+      // Format to YYYY-MM-DD
+      const monthStr = String(month).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      return `${year}-${monthStr}-${dayStr}`;
+    }
+    
+    // Pattern 4: M-D-YY or M-D-YYYY (alternative format with dashes)
+    const dashDateRegex = /^(\d{1,2})-(\d{1,2})-(\d{2,4})$/;
+    const dashMatch = dateString.match(dashDateRegex);
+    if (dashMatch) {
+      const month = parseInt(dashMatch[1], 10);
+      const day = parseInt(dashMatch[2], 10);
+      let year = parseInt(dashMatch[3], 10);
+      
+      // Validate month and day ranges
+      if (month < 1 || month > 12) return null;
+      if (day < 1 || day > 31) return null;
+      
+      // Handle two-digit years
+      if (year < 100) {
+        year = year <= 29 ? 2000 + year : 1900 + year;
+      }
+      
+      // Additional validation for day of month
+      const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+      const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+      if (isLeapYear && month === 2) {
+        daysInMonth[1] = 29;
+      }
+      
+      if (day > daysInMonth[month - 1]) return null;
+      
+      // Format to YYYY-MM-DD
+      const monthStr = String(month).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      return `${year}-${monthStr}-${dayStr}`;
+    }
+    
+    // Pattern 5: Try parsing with Date constructor as last resort
+    // This handles various other formats like "Aug 25, 2025" or "25-Aug-2025"
+    const parsedDate = new Date(dateString);
+    if (!isNaN(parsedDate.getTime())) {
+      // Check if the date is reasonable (between 1900 and 2100)
+      const year = parsedDate.getFullYear();
+      if (year >= 1900 && year <= 2100) {
+        const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const day = String(parsedDate.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    // If none of the patterns match, return null
+    return null;
   }
 
   // Container-based expense attachment operations
