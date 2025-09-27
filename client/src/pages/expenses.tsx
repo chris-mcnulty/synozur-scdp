@@ -156,6 +156,7 @@ export default function Expenses() {
         const calculatedAmount = (miles * mileageRate).toFixed(2);
         console.log('CREATE FORM: Mileage calculation:', { miles, mileageRate, calculatedAmount });
         form.setValue("amount", calculatedAmount);
+        // Store quantity as string in form (will be converted to number on submit)
         form.setValue("quantity", miles.toString());
         form.setValue("unit", "mile");
       }
@@ -264,8 +265,8 @@ export default function Expenses() {
         }
       }
       
-      // Use the unified transform function
-      const submitData = transformExpenseFormData(data);
+      // Use the unified transform function with current mileage rate
+      const submitData = transformExpenseFormData(data, mileageRate);
       console.log('Data after transformation:', submitData);
       
       // First create the expense
@@ -459,9 +460,11 @@ export default function Expenses() {
   };
 
   // Helper function to transform form data for backend
-  const transformExpenseFormData = (data: ExpenseFormData) => {
+  // Pass mileageRate as parameter to avoid closure issues
+  const transformExpenseFormData = (data: ExpenseFormData, currentMileageRate: number) => {
     console.log('=== TRANSFORM DATA ===');
     console.log('Input data:', data);
+    console.log('Current mileage rate:', currentMileageRate);
     
     const submitData: any = {
       ...data,
@@ -475,10 +478,17 @@ export default function Expenses() {
     if (data.category === "mileage") {
       submitData.unit = "mile";
       const milesNum = parseFloat(data.miles || "0");
-      submitData.quantity = milesNum > 0 ? String(milesNum) : undefined; // Backend expects string for quantity
-      // Recalculate amount to ensure accuracy
+      // Backend expects quantity as a NUMBER (decimal type in DB), not string!
+      submitData.quantity = milesNum > 0 ? milesNum : undefined;
+      // Recalculate amount to ensure accuracy using the passed mileage rate
       if (milesNum > 0) {
-        submitData.amount = parseFloat((milesNum * mileageRate).toFixed(2));
+        submitData.amount = parseFloat((milesNum * currentMileageRate).toFixed(2));
+        console.log('Mileage calculation:', { 
+          miles: milesNum, 
+          rate: currentMileageRate, 
+          calculatedAmount: submitData.amount,
+          formula: `${milesNum} * ${currentMileageRate} = ${submitData.amount}`
+        });
       }
       console.log('Mileage transformation:', { milesNum, quantity: submitData.quantity, amount: submitData.amount });
     } else {
@@ -537,6 +547,7 @@ export default function Expenses() {
         const calculatedAmount = (miles * mileageRate).toFixed(2);
         console.log('EDIT FORM: Mileage calculation:', { miles, mileageRate, calculatedAmount });
         editForm.setValue("amount", calculatedAmount);
+        // Store quantity as string in form (will be converted to number on submit)
         editForm.setValue("quantity", miles.toString());
         editForm.setValue("unit", "mile");
       }
@@ -674,8 +685,8 @@ export default function Expenses() {
       }
     }
     
-    // Use the unified transform function
-    const submitData = transformExpenseFormData(data);
+    // Use the unified transform function with current mileage rate
+    const submitData = transformExpenseFormData(data, mileageRate);
     console.log('Data after transformation:', submitData);
     console.log('=== END UPDATE SUBMIT ===');
     
