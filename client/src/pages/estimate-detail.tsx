@@ -538,7 +538,7 @@ export default function EstimateDetail() {
     mutationFn: ({ itemId, firstHours, secondHours }: { itemId: string; firstHours: number; secondHours: number }) => 
       apiRequest(`/api/estimates/${id}/line-items/${itemId}/split`, {
         method: "POST",
-        body: JSON.stringify({ firstHours, secondHours })
+        body: JSON.stringify({ firstHours: String(firstHours), secondHours: String(secondHours) })
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
@@ -607,7 +607,8 @@ export default function EstimateDetail() {
       baseHours, factor, rate, newItem.size, newItem.complexity, newItem.confidence
     );
     
-    // Send numeric fields as strings (backend expects strings for decimal/numeric fields)
+    // Backend normalizeEstimateLineItemPayload will handle type conversion
+    // But we MUST send strings for numeric fields to pass Zod validation
     const lineItemData = {
       description: newItem.description,
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
@@ -622,7 +623,7 @@ export default function EstimateDetail() {
       complexity: newItem.complexity,
       confidence: newItem.confidence,
       comments: newItem.comments || null,
-      userId: newItem.userId || null,
+      assignedUserId: newItem.userId || null,  // Changed from userId to assignedUserId
       resourceName: newItem.resourceName || null,
       adjustedHours: String(adjustedHours),
       totalAmount: String(totalAmount),
@@ -657,14 +658,14 @@ export default function EstimateDetail() {
     if (draftValue === undefined) return;
 
     // Create update data for this specific field
-    // Convert numeric fields to strings (backend expects strings for decimal/numeric fields)
+    // Backend normalizeEstimateLineItemPayload will handle type conversion
     let updateData: any = {};
     
-    // List of numeric fields that need conversion to string
+    // List of numeric fields that backend will normalize
     const numericFields = ['baseHours', 'factor', 'rate', 'costRate', 'week'];
     
     if (numericFields.includes(fieldName)) {
-      // Parse for validation but send as string
+      // Parse for validation
       const numValue = Number(draftValue);
       
       // Validate week number (0 is allowed for pre-kickoff)
@@ -677,8 +678,8 @@ export default function EstimateDetail() {
         return;
       }
       
-      // Send as string or null
-      updateData[fieldName] = draftValue !== '' ? String(draftValue) : null;
+      // Send as string or null (backend expects strings for Zod validation)
+      updateData[fieldName] = draftValue !== '' ? String(numValue) : null;
     } else {
       updateData[fieldName] = draftValue;
     }
@@ -734,22 +735,21 @@ export default function EstimateDetail() {
       baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
     );
     
-    // Convert numeric fields to strings (backend expects strings for decimal/numeric fields)
-    const numericFields = ['baseHours', 'factor', 'rate', 'costRate', 'week', 'adjustedHours', 'totalAmount'];
-    const dataToUpdate: any = {};
-    
-    for (const [key, val] of Object.entries(updatedItem)) {
-      if (numericFields.includes(key) && val !== null && val !== undefined && val !== '') {
-        dataToUpdate[key] = String(val);
+    // Send numeric fields as strings - backend Zod validation expects strings
+    // Convert all numeric fields to strings
+    const dataToSend: any = {};
+    for (const [key, value] of Object.entries(updatedItem)) {
+      if (['baseHours', 'factor', 'rate', 'costRate', 'week', 'adjustedHours', 'totalAmount'].includes(key)) {
+        dataToSend[key] = value !== null && value !== undefined && value !== '' ? String(value) : value;
       } else {
-        dataToUpdate[key] = val;
+        dataToSend[key] = value;
       }
     }
     
     updateLineItemMutation.mutate({
       itemId: item.id,
       data: {
-        ...dataToUpdate,
+        ...dataToSend,
         adjustedHours: String(adjustedHours),
         totalAmount: String(totalAmount)
       }
@@ -2265,8 +2265,8 @@ export default function EstimateDetail() {
             </div>
           )}
 
-          <div className="rounded-md border overflow-hidden relative">
-            <div className="overflow-x-auto max-h-[calc(100vh-400px)]">
+          <div className="rounded-md border relative">
+            <div className="overflow-auto max-h-[calc(100vh-400px)] relative">
               <Table className="min-w-[1200px]">
                 <TableHeader className="sticky top-0 bg-background z-10 border-b">
                   <TableRow className="hover:bg-transparent">
@@ -2559,34 +2559,34 @@ export default function EstimateDetail() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="space-y-1">
+                        <div className="flex flex-col gap-0.5">
                           <Select value={item.size} onValueChange={(value) => handleUpdateItem(item, "size", value)}>
-                            <SelectTrigger className="w-20">
+                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="small">Small</SelectItem>
-                              <SelectItem value="medium">Medium</SelectItem>
-                              <SelectItem value="large">Large</SelectItem>
+                              <SelectItem value="small">S</SelectItem>
+                              <SelectItem value="medium">M</SelectItem>
+                              <SelectItem value="large">L</SelectItem>
                             </SelectContent>
                           </Select>
                           <Select value={item.complexity} onValueChange={(value) => handleUpdateItem(item, "complexity", value)}>
-                            <SelectTrigger className="w-20">
+                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="small">Simple</SelectItem>
-                              <SelectItem value="medium">Medium</SelectItem>
-                              <SelectItem value="large">Complex</SelectItem>
+                              <SelectItem value="small">Sim</SelectItem>
+                              <SelectItem value="medium">Med</SelectItem>
+                              <SelectItem value="large">Cplx</SelectItem>
                             </SelectContent>
                           </Select>
                           <Select value={item.confidence} onValueChange={(value) => handleUpdateItem(item, "confidence", value)}>
-                            <SelectTrigger className="w-20">
+                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
                               <SelectValue />
                             </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="high">High</SelectItem>
-                                <SelectItem value="medium">Medium</SelectItem>
+                                <SelectItem value="high">Hi</SelectItem>
+                                <SelectItem value="medium">Med</SelectItem>
                                 <SelectItem value="low">Low</SelectItem>
                               </SelectContent>
                             </Select>
