@@ -91,6 +91,50 @@ function distributeResidual(targetAmount: number, allocations: Record<string, nu
   return rounded;
 }
 
+// Helper function to format any date to YYYY-MM-DD string format
+function formatDateToYYYYMMDD(date: Date | string | null | undefined): string | null {
+  // If date is null or undefined, return null to preserve the absence of data
+  if (date === null || date === undefined) return null;
+  
+  // If it's already a string, check if it's in correct format
+  if (typeof date === 'string') {
+    // Check if it's already in YYYY-MM-DD format
+    const yyyymmddRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (yyyymmddRegex.test(date)) {
+      return date;
+    }
+    
+    // Try to parse the string as a date
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) {
+      // If invalid date, return null instead of fabricating data
+      return null;
+    }
+    date = parsedDate;
+  }
+  
+  // At this point, date is a Date object
+  const d = date as Date;
+  
+  // Use UTC methods to prevent timezone shifts
+  // This ensures dates from PostgreSQL (stored as UTC midnight) are handled correctly
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
+}
+
+// Helper function to get today's date in UTC format
+// This should only be used when we absolutely need a default date (e.g., when creating new expenses)
+function getTodayUTC(): string {
+  const today = new Date();
+  const year = today.getUTCFullYear();
+  const month = String(today.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(today.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper to convert Decimal strings to numbers in objects
 function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T {
   const result = { ...obj } as any;
@@ -2284,8 +2328,14 @@ export class DatabaseStorage implements IStorage {
         ? projectResourceMap.get(row.expenses.projectResourceId) 
         : undefined;
 
-      return {
+      // Format date to YYYY-MM-DD string
+      const expense = {
         ...row.expenses,
+        date: formatDateToYYYYMMDD(row.expenses.date) || row.expenses.date
+      };
+
+      return {
+        ...expense,
         person,
         project: {
           ...project,
@@ -2297,13 +2347,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createExpense(insertExpense: InsertExpense): Promise<Expense> {
-    const [expense] = await db.insert(expenses).values(insertExpense).returning();
-    return expense;
+    // Ensure we have a date - use today's UTC date if not provided
+    const expenseData = {
+      ...insertExpense,
+      date: insertExpense.date || getTodayUTC()
+    };
+    const [expense] = await db.insert(expenses).values(expenseData).returning();
+    // Format date to YYYY-MM-DD string before returning
+    const formattedDate = formatDateToYYYYMMDD(expense.date);
+    return {
+      ...expense,
+      date: formattedDate || expense.date
+    };
   }
 
   async updateExpense(id: string, updateExpense: Partial<InsertExpense>): Promise<Expense> {
     const [expense] = await db.update(expenses).set(updateExpense).where(eq(expenses.id, id)).returning();
-    return expense;
+    // Format date to YYYY-MM-DD string before returning
+    const formattedDate = formatDateToYYYYMMDD(expense.date);
+    return {
+      ...expense,
+      date: formattedDate || expense.date
+    };
   }
 
   async deleteExpense(id: string): Promise<void> {
@@ -2414,6 +2479,8 @@ export class DatabaseStorage implements IStorage {
 
     return results.map(row => ({
       ...row.expense,
+      // Format date to YYYY-MM-DD string
+      date: formatDateToYYYYMMDD(row.expense.date) || row.expense.date,
       person: row.person,
       project: {
         ...row.project,
