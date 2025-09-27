@@ -864,9 +864,7 @@ export default function Expenses() {
                           <FormLabel>Amount</FormLabel>
                           <FormControl>
                             <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
+                              type="text"
                               placeholder="0.00"
                               {...field}
                               disabled={watchedCategory === "mileage"} // Disable for mileage (auto-calculated)
