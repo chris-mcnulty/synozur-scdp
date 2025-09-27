@@ -513,9 +513,23 @@ export default function Expenses() {
     // Reset edit state first
     setEditPrevCategory("");
     
+    // Ensure date is properly formatted for the date input
+    let formattedDate = expense.date;
+    if (typeof expense.date === 'string') {
+      // If it's already in YYYY-MM-DD format, use it directly
+      if (expense.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        formattedDate = expense.date;
+      } else {
+        // Otherwise parse and format it
+        formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
+      }
+    } else if (expense.date instanceof Date) {
+      formattedDate = format(expense.date, 'yyyy-MM-dd');
+    }
+    
     // Populate the edit form with current expense data
     editForm.reset({
-      date: format(new Date(expense.date), 'yyyy-MM-dd'),
+      date: formattedDate,
       amount: String(expense.amount),
       currency: expense.currency,
       billable: expense.billable,
@@ -1210,8 +1224,8 @@ export default function Expenses() {
                     <FormControl>
                       <Input 
                         {...field} 
-                        type="number" 
-                        step="0.01" 
+                        type="text" 
+                        placeholder="0.00"
                         disabled={editWatchedCategory === "mileage"}
                         data-testid="edit-input-amount" 
                       />
