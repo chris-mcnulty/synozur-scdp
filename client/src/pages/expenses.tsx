@@ -258,24 +258,8 @@ export default function Expenses() {
         }
       }
       
-      // Prepare data for submission - convert strings to numbers for backend
-      const submitData: any = {
-        ...data,
-        amount: parseFloat(data.amount) || 0,
-      };
-      
-      // Remove the miles field (it's only for UI)
-      delete submitData.miles;
-      
-      // If it's mileage, ensure quantity and unit are set
-      if (data.category === "mileage") {
-        submitData.unit = "mile";
-        submitData.quantity = parseFloat(data.miles || "0");
-      } else {
-        // Clear quantity and unit for non-mileage expenses
-        submitData.quantity = undefined;
-        submitData.unit = undefined;
-      }
+      // Use the unified transform function
+      const submitData = transformExpenseFormData(data);
       
       // First create the expense
       const expense = await createExpenseMutation.mutateAsync(submitData);
@@ -466,6 +450,29 @@ export default function Expenses() {
     }
   };
 
+  // Helper function to transform form data for backend
+  const transformExpenseFormData = (data: ExpenseFormData) => {
+    const submitData: any = {
+      ...data,
+      amount: parseFloat(data.amount) || 0,
+    };
+    
+    // Remove the miles field (it's only for UI)
+    delete submitData.miles;
+    
+    // If it's mileage, ensure quantity and unit are set
+    if (data.category === "mileage") {
+      submitData.unit = "mile";
+      submitData.quantity = parseFloat(data.miles || "0");
+    } else {
+      // Clear quantity and unit for non-mileage expenses
+      submitData.quantity = undefined;
+      submitData.unit = undefined;
+    }
+    
+    return submitData;
+  };
+
   // Edit form for expense editing
   const editForm = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
@@ -534,10 +541,10 @@ export default function Expenses() {
       formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
     }
     
-    // Populate the edit form with current expense data
+    // Populate the edit form with current expense data - ensure amount is always a string
     editForm.reset({
       date: formattedDate,
-      amount: String(expense.amount),
+      amount: typeof expense.amount === 'string' ? expense.amount : String(expense.amount),
       currency: expense.currency,
       billable: expense.billable,
       reimbursable: expense.reimbursable,
@@ -546,7 +553,7 @@ export default function Expenses() {
       projectId: expense.projectId,
       vendor: expense.vendor || "",
       projectResourceId: expense.projectResourceId || "",
-      miles: expense.unit === "mile" && expense.quantity ? expense.quantity : undefined,
+      miles: expense.unit === "mile" && expense.quantity ? String(expense.quantity) : undefined,
     });
     
     // Set the previous category after reset to avoid useEffect conflicts
@@ -593,24 +600,8 @@ export default function Expenses() {
       }
     }
     
-    // Prepare data for submission - convert strings to numbers for backend
-    const submitData: any = {
-      ...data,
-      amount: parseFloat(data.amount) || 0,
-    };
-    
-    // Remove the miles field (it's only for UI)
-    delete submitData.miles;
-    
-    // If it's mileage, ensure quantity and unit are set
-    if (data.category === "mileage") {
-      submitData.unit = "mile";
-      submitData.quantity = parseFloat(data.miles || "0");
-    } else {
-      // Clear quantity and unit for non-mileage expenses
-      submitData.quantity = undefined;
-      submitData.unit = undefined;
-    }
+    // Use the unified transform function
+    const submitData = transformExpenseFormData(data);
     
     updateExpenseMutation.mutate({ id: expenseId, data: submitData });
   };
