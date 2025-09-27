@@ -460,11 +460,11 @@ export default function Expenses() {
   };
 
   // Helper function to transform form data for backend
-  // Pass mileageRate as parameter to avoid closure issues
+  // Pass mileageRate as parameter to avoid closure issues - FIXED 2024-09-27
   const transformExpenseFormData = (data: ExpenseFormData, currentMileageRate: number) => {
-    console.log('=== TRANSFORM DATA ===');
+    console.log('=== TRANSFORM DATA v2 FIXED ===');
     console.log('Input data:', data);
-    console.log('Current mileage rate:', currentMileageRate);
+    console.log('Current mileage rate (fixed):', currentMileageRate);
     
     const submitData: any = {
       ...data,
