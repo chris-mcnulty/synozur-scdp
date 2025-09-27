@@ -2175,8 +2175,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
+      
+      // Normalize form strings to database types
+      const normalizedData = normalizeEstimateLineItemPayload(req.body);
+      
       const validatedData = insertEstimateLineItemSchema.parse({
-        ...req.body,
+        ...normalizedData,
         estimateId: req.params.id,
       });
       
@@ -2211,9 +2215,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { z } = await import("zod");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
       
+      // Normalize form strings to database types
+      const normalizedData = normalizeEstimateLineItemPayload(req.body);
+      
       // Create a partial schema for updates (all fields optional)
       const updateSchema = insertEstimateLineItemSchema.partial();
-      const validatedData = updateSchema.parse(req.body);
+      const validatedData = updateSchema.parse(normalizedData);
       
       // Reject empty update payloads
       if (Object.keys(validatedData).length === 0) {
@@ -3272,6 +3279,49 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Helper to normalize expense form data from strings to proper database types
+  const normalizeExpensePayload = (data: any): any => {
+    const normalized = { ...data };
+    
+    // Convert string numbers to actual numbers
+    if (normalized.amount !== undefined) {
+      normalized.amount = parseFloat(normalized.amount);
+    }
+    if (normalized.quantity !== undefined && normalized.quantity !== null && normalized.quantity !== '') {
+      normalized.quantity = parseFloat(normalized.quantity);
+    }
+    
+    // Ensure date is in YYYY-MM-DD format
+    if (normalized.date) {
+      // If it's already a Date object or ISO string, convert to YYYY-MM-DD
+      const dateObj = new Date(normalized.date);
+      normalized.date = dateObj.toISOString().split('T')[0];
+    }
+    
+    return normalized;
+  };
+
+  // Helper to normalize estimate line item form data from strings to proper database types
+  const normalizeEstimateLineItemPayload = (data: any): any => {
+    const normalized = { ...data };
+    
+    // Convert string numbers to actual numbers for decimal fields
+    const decimalFields = ['baseHours', 'factor', 'rate', 'costRate', 'totalAmount', 'totalCost', 'margin', 'marginPercent', 'adjustedHours'];
+    
+    for (const field of decimalFields) {
+      if (normalized[field] !== undefined && normalized[field] !== null && normalized[field] !== '') {
+        normalized[field] = parseFloat(normalized[field]);
+      }
+    }
+    
+    // Convert week to integer if present
+    if (normalized.week !== undefined && normalized.week !== null && normalized.week !== '') {
+      normalized.week = parseInt(normalized.week, 10);
+    }
+    
+    return normalized;
+  };
+
   // Get mileage rate (accessible to all authenticated users)
   app.get("/api/expenses/mileage-rate", requireAuth, async (req, res) => {
     try {
@@ -3309,8 +3359,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/expenses", requireAuth, async (req, res) => {
     try {
+      // Normalize form strings to database types
+      const normalizedData = normalizeExpensePayload(req.body);
+      
       const validatedData = insertExpenseSchema.parse({
-        ...req.body,
+        ...normalizedData,
         personId: req.user!.id // Always use the authenticated user
       });
       
@@ -3369,9 +3422,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "You can only edit your own expenses" });
       }
 
+      // Normalize form strings to database types
+      const normalizedData = normalizeExpensePayload(req.body);
+      
       // Validate and parse update data
       const updateSchema = insertExpenseSchema.partial().omit({ personId: true });
-      const validatedData = updateSchema.parse(req.body);
+      const validatedData = updateSchema.parse(normalizedData);
       
       // Validate person assignment permissions for updates
       if (validatedData.projectResourceId !== undefined) {
@@ -3400,7 +3456,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       const updatedExpense = await storage.updateExpense(expenseId, validatedData);
-      res.json(updatedExpense);
+      
+      // Format date for frontend (YYYY-MM-DD string)
+      const formattedExpense = {
+        ...updatedExpense,
+        date: typeof updatedExpense.date === 'string' 
+          ? updatedExpense.date 
+          : updatedExpense.date.toISOString().split('T')[0]
+      };
+      
+      res.json(formattedExpense);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
