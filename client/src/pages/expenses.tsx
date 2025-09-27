@@ -172,17 +172,11 @@ export default function Expenses() {
   }, [watchedCategory, watchedMiles, mileageRate, form, prevCategory, isSubmitting]);
 
   const createExpenseMutation = useMutation({
-    mutationFn: async (data: ExpenseFormData) => {
-      // Convert string fields to numbers for backend
-      const payload = {
-        ...data,
-        amount: parseFloat(data.amount) || 0,
-        quantity: data.quantity ? parseFloat(data.quantity) : undefined,
-      };
-      
+    mutationFn: async (data: any) => {
+      // Data should already have numbers from onSubmit
       return apiRequest("/api/expenses", {
         method: "POST",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
     },
     onSuccess: () => {
@@ -220,17 +214,11 @@ export default function Expenses() {
   });
 
   const updateExpenseMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: ExpenseFormData }) => {
-      // Convert string fields to numbers for backend
-      const payload = {
-        ...data,
-        amount: parseFloat(data.amount) || 0,
-        quantity: data.quantity ? parseFloat(data.quantity) : undefined,
-      };
-      
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      // Data should already have numbers from handleUpdateExpense
       return apiRequest(`/api/expenses/${id}`, {
         method: "PATCH",
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
     },
     onSuccess: () => {
@@ -270,8 +258,11 @@ export default function Expenses() {
         }
       }
       
-      // Prepare data for submission
-      const submitData = { ...data };
+      // Prepare data for submission - convert strings to numbers for backend
+      const submitData: any = {
+        ...data,
+        amount: parseFloat(data.amount) || 0,
+      };
       
       // Remove the miles field (it's only for UI)
       delete submitData.miles;
@@ -279,6 +270,7 @@ export default function Expenses() {
       // If it's mileage, ensure quantity and unit are set
       if (data.category === "mileage") {
         submitData.unit = "mile";
+        submitData.quantity = parseFloat(data.miles || "0");
       } else {
         // Clear quantity and unit for non-mileage expenses
         submitData.quantity = undefined;
@@ -601,8 +593,11 @@ export default function Expenses() {
       }
     }
     
-    // Prepare data for submission
-    const submitData = { ...data };
+    // Prepare data for submission - convert strings to numbers for backend
+    const submitData: any = {
+      ...data,
+      amount: parseFloat(data.amount) || 0,
+    };
     
     // Remove the miles field (it's only for UI)
     delete submitData.miles;
@@ -610,6 +605,7 @@ export default function Expenses() {
     // If it's mileage, ensure quantity and unit are set
     if (data.category === "mileage") {
       submitData.unit = "mile";
+      submitData.quantity = parseFloat(data.miles || "0");
     } else {
       // Clear quantity and unit for non-mileage expenses
       submitData.quantity = undefined;
