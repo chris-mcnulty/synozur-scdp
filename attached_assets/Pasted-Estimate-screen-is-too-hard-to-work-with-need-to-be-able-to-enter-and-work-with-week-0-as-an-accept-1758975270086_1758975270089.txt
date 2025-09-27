@@ -1,0 +1,368 @@
+Estimate screen is too hard to work with; need to be able to enter and work with week 0 as an acceptable value (it refers to pre kickoff work)
+
+The screen wastes too much space on the left and the right for inputs, and when you scroll down yuo lose the coumn headers and there's too much white space between lines; "Adjustments should could be compressed to a single line with a dynamic dropdown to edit or something?
+
+Epic and stage names need to be editable in "Structure" and those edits need to cascade down to individual estimate line items. Structure should also allow us to add epics and stages.
+
+Addin a new line item in estimate fails with the attached error and this consoled log:
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-HHr8ayg6.js:48   POST https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items 400 (Bad Request)
+Ge @ index-HHr8ayg6.js:48
+mutationFn @ index-HHr8ayg6.js:605
+fn @ index-HHr8ayg6.js:48
+g @ index-HHr8ayg6.js:48
+start @ index-HHr8ayg6.js:48
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-HHr8ayg6.js:48   POST https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items 400 (Bad Request)
+Ge @ index-HHr8ayg6.js:48
+mutationFn @ index-HHr8ayg6.js:605
+fn @ index-HHr8ayg6.js:48
+g @ index-HHr8ayg6.js:48
+start @ index-HHr8ayg6.js:48
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+index-HHr8ayg6.js:527  Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ index-HHr8ayg6.js:527
+/api/expenses/5a762dab-0538-4fda-b4d6-7fbe1e191911:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items/215989a1-0d33-455f-888d-ac58bf96a5ff:1   Failed to load resource: the server responded with a status of 400 ()
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items:1   Failed to load resource: the server responded with a status of 400 ()
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+index-HHr8ayg6.js:48   POST https://scdp.synozur.com/api/estimates/e0f5dc90-9caa-4b8d-82e9-58dc07773540/line-items 400 (Bad Request)
+Ge @ index-HHr8ayg6.js:48
+mutationFn @ index-HHr8ayg6.js:605
+fn @ index-HHr8ayg6.js:48
+g @ index-HHr8ayg6.js:48
+start @ index-HHr8ayg6.js:48
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Failed to create line item - Full error: Error: 400: {"message":"Invalid line item data","errors":[{"code":"invalid_type","expected":"string","received":"number","path":["baseHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["factor"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["rate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["costRate"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["adjustedHours"],"message":"Expected string, received number"},{"code":"invalid_type","expected":"string","received":"number","path":["totalAmount"],"message":"Expected string, received number"}],"details":"baseHours: Expected string, received number, factor: Expected string, received number, rate: Expected string, received number, costRate: Expected string, received number, adjustedHours: Expected string, received number, totalAmount: Expected string, received number"}
+    at h3 (index-HHr8ayg6.js:48:43050)
+    at async Ge (index-HHr8ayg6.js:48:43269)
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error response: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+index-HHr8ayg6.js:605  Error details: undefined
+onError @ index-HHr8ayg6.js:605
+execute @ index-HHr8ayg6.js:48
+await in execute
+mutate @ index-HHr8ayg6.js:48
+(anonymous) @ index-HHr8ayg6.js:48
+o7 @ index-HHr8ayg6.js:605
+K7 @ index-HHr8ayg6.js:37
+Y7 @ index-HHr8ayg6.js:37
+Q7 @ index-HHr8ayg6.js:37
+NE @ index-HHr8ayg6.js:37
+$F @ index-HHr8ayg6.js:37
+(anonymous) @ index-HHr8ayg6.js:37
+q_ @ index-HHr8ayg6.js:40
+iF @ index-HHr8ayg6.js:37
+P0 @ index-HHr8ayg6.js:37
+j_ @ index-HHr8ayg6.js:37
+fK @ index-HHr8ayg6.js:37
+
+

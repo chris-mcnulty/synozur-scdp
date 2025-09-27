@@ -2091,6 +2091,20 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.patch("/api/estimates/:estimateId/epics/:epicId", requireAuth, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Epic name is required" });
+      }
+      const epic = await storage.updateEstimateEpic(req.params.epicId, { name });
+      res.json(epic);
+    } catch (error) {
+      console.error("Error updating epic:", error);
+      res.status(500).json({ message: "Failed to update epic" });
+    }
+  });
+
   // Estimate stages
   app.get("/api/estimates/:id/stages", requireAuth, async (req, res) => {
     try {
@@ -2112,6 +2126,20 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error creating stage:", error);
       res.status(500).json({ message: "Failed to create stage" });
+    }
+  });
+
+  app.patch("/api/estimates/:estimateId/stages/:stageId", requireAuth, async (req, res) => {
+    try {
+      const { name } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Stage name is required" });
+      }
+      const stage = await storage.updateEstimateStage(req.params.stageId, { name });
+      res.json(stage);
+    } catch (error) {
+      console.error("Error updating stage:", error);
+      res.status(500).json({ message: "Failed to update stage" });
     }
   });
 

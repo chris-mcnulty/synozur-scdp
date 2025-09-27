@@ -76,6 +76,10 @@ export default function EstimateDetail() {
   const [blockHoursInput, setBlockHoursInput] = useState<string>("");
   const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
+  const [editingEpicId, setEditingEpicId] = useState<string | null>(null);
+  const [editingEpicName, setEditingEpicName] = useState<string>("");
+  const [editingStageId, setEditingStageId] = useState<string | null>(null);
+  const [editingStageName, setEditingStageName] = useState<string>("");
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -199,6 +203,50 @@ export default function EstimateDetail() {
     onError: (error: any) => {
       toast({ 
         title: "Failed to create stage", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const updateEpicMutation = useMutation({
+    mutationFn: async ({ epicId, name }: { epicId: string; name: string }) => {
+      return apiRequest(`/api/estimates/${id}/epics/${epicId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
+      // Also refresh line items since they may display epic names
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      toast({ title: "Epic updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update epic", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ stageId, name }: { stageId: string; name: string }) => {
+      return apiRequest(`/api/estimates/${id}/stages/${stageId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      // Also refresh line items since they may display stage names
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      toast({ title: "Stage updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update stage", 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -533,6 +581,8 @@ export default function EstimateDetail() {
     const baseHours = Number(newItem.baseHours);
     const factor = Number(newItem.factor) || 1;
     const rate = Number(newItem.rate);
+    const costRate = Number(newItem.costRate) || 0;
+    const week = newItem.week ? Number(newItem.week) : null;
     
     if (isNaN(baseHours) || isNaN(factor) || isNaN(rate)) {
       toast({
@@ -543,28 +593,39 @@ export default function EstimateDetail() {
       return;
     }
     
+    // Allow week 0 for pre-kickoff work
+    if (week !== null && week < 0) {
+      toast({
+        title: "Invalid week number",
+        description: "Week number must be 0 or greater (0 = pre-kickoff work)",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     const { adjustedHours, totalAmount } = calculateAdjustedValues(
       baseHours, factor, rate, newItem.size, newItem.complexity, newItem.confidence
     );
     
+    // Send numeric fields as strings (backend expects strings for decimal/numeric fields)
     const lineItemData = {
       description: newItem.description,
       epicId: newItem.epicId === "none" ? null : newItem.epicId,
       stageId: newItem.stageId === "none" ? null : newItem.stageId,
       workstream: newItem.workstream || null,
-      week: newItem.week ? Number(newItem.week) : null,
-      baseHours: baseHours.toString(),
-      factor: factor.toString(),
-      rate: rate.toString(),
-      costRate: newItem.costRate || "0",
+      week: week !== null ? String(week) : null,
+      baseHours: String(baseHours),
+      factor: String(factor),
+      rate: String(rate),
+      costRate: String(costRate),
       size: newItem.size,
       complexity: newItem.complexity,
       confidence: newItem.confidence,
       comments: newItem.comments || null,
       userId: newItem.userId || null,
       resourceName: newItem.resourceName || null,
-      adjustedHours: adjustedHours.toFixed(2),
-      totalAmount: totalAmount.toFixed(2),
+      adjustedHours: String(adjustedHours),
+      totalAmount: String(totalAmount),
       sortOrder: lineItems?.length || 0
     };
     
@@ -596,7 +657,31 @@ export default function EstimateDetail() {
     if (draftValue === undefined) return;
 
     // Create update data for this specific field
-    const updateData = { [fieldName]: draftValue };
+    // Convert numeric fields to strings (backend expects strings for decimal/numeric fields)
+    let updateData: any = {};
+    
+    // List of numeric fields that need conversion to string
+    const numericFields = ['baseHours', 'factor', 'rate', 'costRate', 'week'];
+    
+    if (numericFields.includes(fieldName)) {
+      // Parse for validation but send as string
+      const numValue = Number(draftValue);
+      
+      // Validate week number (0 is allowed for pre-kickoff)
+      if (fieldName === 'week' && draftValue !== '' && numValue < 0) {
+        toast({
+          title: "Invalid week number",
+          description: "Week number must be 0 or greater (0 = pre-kickoff work)",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Send as string or null
+      updateData[fieldName] = draftValue !== '' ? String(draftValue) : null;
+    } else {
+      updateData[fieldName] = draftValue;
+    }
     
     // For fields that affect calculations, include calculated values
     let finalData = updateData;
@@ -611,8 +696,8 @@ export default function EstimateDetail() {
       
       finalData = {
         ...updateData,
-        adjustedHours: adjustedHours.toFixed(2),
-        totalAmount: totalAmount.toFixed(2)
+        adjustedHours: String(adjustedHours),
+        totalAmount: String(totalAmount)
       };
     }
     
@@ -649,12 +734,24 @@ export default function EstimateDetail() {
       baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
     );
     
+    // Convert numeric fields to strings (backend expects strings for decimal/numeric fields)
+    const numericFields = ['baseHours', 'factor', 'rate', 'costRate', 'week', 'adjustedHours', 'totalAmount'];
+    const dataToUpdate: any = {};
+    
+    for (const [key, val] of Object.entries(updatedItem)) {
+      if (numericFields.includes(key) && val !== null && val !== undefined && val !== '') {
+        dataToUpdate[key] = String(val);
+      } else {
+        dataToUpdate[key] = val;
+      }
+    }
+    
     updateLineItemMutation.mutate({
       itemId: item.id,
       data: {
-        ...updatedItem,
-        adjustedHours: adjustedHours.toFixed(2),
-        totalAmount: totalAmount.toFixed(2)
+        ...dataToUpdate,
+        adjustedHours: String(adjustedHours),
+        totalAmount: String(totalAmount)
       }
     });
   };
@@ -997,7 +1094,7 @@ export default function EstimateDetail() {
                       const value = fixedPriceInput.trim();
                       if (value === '' || !isNaN(parseFloat(value))) {
                         updateEstimateMutation.mutate({ 
-                          fixedPrice: value === '' ? null : parseFloat(value)
+                          fixedPrice: value === '' ? null : String(value)
                         });
                       }
                     }}
@@ -1174,7 +1271,7 @@ export default function EstimateDetail() {
                     const value = blockHoursInput.trim();
                     if (value === '' || !isNaN(parseFloat(value))) {
                       updateEstimateMutation.mutate({ 
-                        blockHours: value === '' ? null : parseFloat(value)
+                        blockHours: value === '' ? null : String(value)
                       });
                     }
                   }}
@@ -1197,7 +1294,7 @@ export default function EstimateDetail() {
                     const value = blockDollarsInput.trim();
                     if (value === '' || !isNaN(parseFloat(value))) {
                       updateEstimateMutation.mutate({ 
-                        blockDollars: value === '' ? null : parseFloat(value)
+                        blockDollars: value === '' ? null : String(value)
                       });
                     }
                   }}
@@ -1307,8 +1404,8 @@ export default function EstimateDetail() {
                         const calculatedMargin = quote > 0 ? ((profit / quote) * 100).toFixed(2) : "0";
                         setMargin(calculatedMargin);
                         updateEstimateMutation.mutate({ 
-                          presentedTotal: presentedTotal,
-                          margin: calculatedMargin
+                          presentedTotal: String(presentedTotal),
+                          margin: String(calculatedMargin)
                         });
                       }
                     }}
@@ -1606,9 +1703,68 @@ export default function EstimateDetail() {
                 ) : (
                   <div className="space-y-2">
                     {epics.map((epic, index) => (
-                      <div key={epic.id} className="flex items-center justify-between p-2 border rounded">
-                        <span className="font-medium">{epic.name}</span>
-                        <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                      <div key={epic.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
+                        {editingEpicId === epic.id ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <Input
+                              value={editingEpicName}
+                              onChange={(e) => setEditingEpicName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
+                                  setEditingEpicId(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingEpicId(null);
+                                }
+                              }}
+                              className="h-7 text-sm"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
+                                setEditingEpicId(null);
+                              }}
+                            >
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingEpicId(null)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between w-full">
+                            <span 
+                              className="font-medium cursor-pointer hover:underline" 
+                              onClick={() => {
+                                setEditingEpicId(epic.id);
+                                setEditingEpicName(epic.name);
+                              }}
+                              title="Click to edit"
+                            >
+                              {epic.name}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingEpicId(epic.id);
+                                  setEditingEpicName(epic.name);
+                                }}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                              <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1639,14 +1795,76 @@ export default function EstimateDetail() {
                     {stages.map((stage, index) => {
                       const epic = epics.find(e => e.id === stage.epicId);
                       return (
-                        <div key={stage.id} className="flex items-center justify-between p-2 border rounded">
-                          <div>
-                            <span className="font-medium">{stage.name}</span>
-                            <span className="text-xs text-muted-foreground ml-2">
-                              (Epic: {epic?.name || 'Unknown'})
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                        <div key={stage.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
+                          {editingStageId === stage.id ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <Input
+                                value={editingStageName}
+                                onChange={(e) => setEditingStageName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
+                                    setEditingStageId(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingStageId(null);
+                                  }
+                                }}
+                                className="h-7 text-sm flex-1"
+                                autoFocus
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                (Epic: {epic?.name || 'Unknown'})
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
+                                  setEditingStageId(null);
+                                }}
+                              >
+                                <Check className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setEditingStageId(null)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between w-full">
+                              <div>
+                                <span 
+                                  className="font-medium cursor-pointer hover:underline" 
+                                  onClick={() => {
+                                    setEditingStageId(stage.id);
+                                    setEditingStageName(stage.name);
+                                  }}
+                                  title="Click to edit"
+                                >
+                                  {stage.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  (Epic: {epic?.name || 'Unknown'})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingStageId(stage.id);
+                                    setEditingStageName(stage.name);
+                                  }}
+                                >
+                                  <Edit className="h-3 w-3" />
+                                </Button>
+                                <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2047,13 +2265,14 @@ export default function EstimateDetail() {
             </div>
           )}
 
-          <div className="rounded-md border overflow-x-auto">
-            <Table className="min-w-[1200px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
-                    <input
-                      type="checkbox"
+          <div className="rounded-md border overflow-hidden relative">
+            <div className="overflow-x-auto max-h-[calc(100vh-400px)]">
+              <Table className="min-w-[1200px]">
+                <TableHeader className="sticky top-0 bg-background z-10 border-b">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10 px-2 py-2 text-xs">
+                      <input
+                        type="checkbox"
                       checked={(() => {
                         const filteredItems = getFilteredLineItems();
                         return filteredItems.length > 0 && filteredItems.every(item => selectedItems.has(item.id));
@@ -2073,23 +2292,23 @@ export default function EstimateDetail() {
                         }
                       }}
                     />
-                  </TableHead>
-                  <TableHead className="w-20">Epic</TableHead>
-                  <TableHead className="w-20">Stage</TableHead>
-                  <TableHead className="w-24">Workstream</TableHead>
-                  <TableHead className="w-16">Week</TableHead>
-                  <TableHead className="min-w-[200px]">Description</TableHead>
-                  <TableHead className="w-16">Hours</TableHead>
-                  <TableHead className="w-16">Factor</TableHead>
-                  <TableHead className="w-24">Resource</TableHead>
-                  <TableHead className="w-16">Rate</TableHead>
-                  <TableHead className="w-16">Cost</TableHead>
-                  <TableHead className="w-20">Adjustments</TableHead>
-                  <TableHead className="w-20">Adj. Hours</TableHead>
-                  <TableHead className="w-20">Total</TableHead>
-                  <TableHead className="w-24">Margin</TableHead>
-                  <TableHead className="w-24">Comments</TableHead>
-                  <TableHead className="w-20">Actions</TableHead>
+                    </TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Epic</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Stage</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs">Workstream</TableHead>
+                    <TableHead className="w-12 px-2 py-2 text-xs">Week</TableHead>
+                    <TableHead className="min-w-[180px] px-2 py-2 text-xs">Description</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs">Hours</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs">Factor</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs">Resource</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs">Rate</TableHead>
+                    <TableHead className="w-14 px-2 py-2 text-xs">Cost</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Adjust</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Adj.Hrs</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Total</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs">Margin</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs">Comments</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2111,7 +2330,7 @@ export default function EstimateDetail() {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
                     return (
-                    <TableRow key={item.id} className={selectedItems.has(item.id) ? "bg-blue-50" : ""}>
+                    <TableRow key={item.id} className={`${selectedItems.has(item.id) ? "bg-blue-50" : ""} h-10`}>
                       <TableCell>
                         <input
                           type="checkbox"
@@ -2235,8 +2454,8 @@ export default function EstimateDetail() {
                                     assignedUserId: null,
                                     roleId: null,
                                     resourceName: "",
-                                    adjustedHours: adjustedHours.toFixed(2),
-                                    totalAmount: totalAmount.toFixed(2)
+                                    adjustedHours: adjustedHours,
+                                    totalAmount: totalAmount
                                   }
                                 });
                               } else if (value.startsWith("role-")) {
@@ -2264,9 +2483,9 @@ export default function EstimateDetail() {
                                       assignedUserId: null,
                                       roleId: selectedRole.id,
                                       resourceName: selectedRole.name,
-                                      rate: selectedRole.defaultRackRate,
-                                      adjustedHours: adjustedHours.toFixed(2),
-                                      totalAmount: totalAmount.toFixed(2)
+                                      rate: Number(selectedRole.defaultRackRate),
+                                      adjustedHours: adjustedHours,
+                                      totalAmount: totalAmount
                                     }
                                   });
                                 }
@@ -2295,10 +2514,10 @@ export default function EstimateDetail() {
                                       assignedUserId: selectedUser.id,
                                       roleId: null,
                                       resourceName: selectedUser.name,
-                                      rate: selectedUser.defaultBillingRate,
-                                      costRate: selectedUser.defaultCostRate,
-                                      adjustedHours: adjustedHours.toFixed(2),
-                                      totalAmount: totalAmount.toFixed(2)
+                                      rate: Number(selectedUser.defaultBillingRate),
+                                      costRate: Number(selectedUser.defaultCostRate),
+                                      adjustedHours: adjustedHours,
+                                      totalAmount: totalAmount
                                     }
                                   });
                                 }
@@ -2437,7 +2656,8 @@ export default function EstimateDetail() {
                   )})
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           </div>
 
           {/* Week Subtotals */}
@@ -2874,8 +3094,8 @@ export default function EstimateDetail() {
               createMilestoneMutation.mutate({
                 name: newMilestone.name,
                 description: newMilestone.description || null,
-                amount: newMilestone.amount || null,
-                percentage: newMilestone.percentage || null,
+                amount: newMilestone.amount ? String(newMilestone.amount) : null,
+                percentage: newMilestone.percentage ? String(newMilestone.percentage) : null,
                 dueDate: newMilestone.dueDate || null,
                 sortOrder
               });
@@ -3125,11 +3345,11 @@ export default function EstimateDetail() {
                 updates.stageId = bulkEditData.stageId === "none" ? null : bulkEditData.stageId;
               }
               if (bulkEditData.workstream) updates.workstream = bulkEditData.workstream;
-              if (bulkEditData.week) updates.week = parseInt(bulkEditData.week);
+              if (bulkEditData.week) updates.week = String(bulkEditData.week);
               if (bulkEditData.size) updates.size = bulkEditData.size;
               if (bulkEditData.complexity) updates.complexity = bulkEditData.complexity;
               if (bulkEditData.confidence) updates.confidence = bulkEditData.confidence;
-              if (bulkEditData.rate) updates.rate = bulkEditData.rate;
+              if (bulkEditData.rate) updates.rate = String(bulkEditData.rate);
               // Category field hidden per requirements
               
               if (Object.keys(updates).length > 0) {

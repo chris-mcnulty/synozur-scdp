@@ -219,10 +219,12 @@ export interface IStorage {
   // Estimate Epics
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
   createEstimateEpic(estimateId: string, epic: { name: string }): Promise<EstimateEpic>;
+  updateEstimateEpic(epicId: string, update: { name: string }): Promise<EstimateEpic>;
   
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
   createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage>;
+  updateEstimateStage(stageId: string, update: { name: string }): Promise<EstimateStage>;
   deleteEstimateStage(estimateId: string, stageId: string): Promise<void>;
   mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
@@ -1167,6 +1169,14 @@ export class DatabaseStorage implements IStorage {
     return newEpic;
   }
 
+  async updateEstimateEpic(epicId: string, update: { name: string }): Promise<EstimateEpic> {
+    const [updatedEpic] = await db.update(estimateEpics)
+      .set({ name: update.name })
+      .where(eq(estimateEpics.id, epicId))
+      .returning();
+    return updatedEpic;
+  }
+
   async getEstimateStages(estimateId: string): Promise<EstimateStage[]> {
     // Get all stages for all epics in this estimate
     const epics = await this.getEstimateEpics(estimateId);
@@ -1190,6 +1200,14 @@ export class DatabaseStorage implements IStorage {
       order: maxOrder + 1
     }).returning();
     return newStage;
+  }
+
+  async updateEstimateStage(stageId: string, update: { name: string }): Promise<EstimateStage> {
+    const [updatedStage] = await db.update(estimateStages)
+      .set({ name: update.name })
+      .where(eq(estimateStages.id, stageId))
+      .returning();
+    return updatedStage;
   }
 
   async deleteEstimateStage(estimateId: string, stageId: string): Promise<void> {

@@ -154,12 +154,14 @@ export default function Expenses() {
       const miles = parseFloat(watchedMiles);
       if (!isNaN(miles) && miles > 0) {
         const calculatedAmount = (miles * mileageRate).toFixed(2);
+        console.log('CREATE FORM: Mileage calculation:', { miles, mileageRate, calculatedAmount });
         form.setValue("amount", calculatedAmount);
         form.setValue("quantity", miles.toString());
         form.setValue("unit", "mile");
       }
     } else if (prevCategory === "mileage" && watchedCategory !== "mileage" && watchedCategory !== "") {
       // Clear quantity and unit when switching away from mileage to another category
+      console.log('CREATE FORM: Clearing mileage fields, switching from mileage to:', watchedCategory);
       form.setValue("quantity", undefined);
       form.setValue("unit", undefined);
       form.setValue("miles", undefined);
@@ -242,12 +244,16 @@ export default function Expenses() {
     // Prevent concurrent submissions
     if (isSubmitting) return;
     
+    console.log('=== CREATE EXPENSE SUBMIT ===');
+    console.log('Form data received:', data);
+    
     setIsSubmitting(true);
     
     try {
       // Validate mileage
       if (data.category === "mileage") {
         const miles = parseFloat(data.miles || "0");
+        console.log('Validating mileage:', { miles, isValid: !isNaN(miles) && miles > 0 });
         if (isNaN(miles) || miles <= 0) {
           toast({
             title: "Validation Error",
@@ -260,9 +266,11 @@ export default function Expenses() {
       
       // Use the unified transform function
       const submitData = transformExpenseFormData(data);
+      console.log('Data after transformation:', submitData);
       
       // First create the expense
       const expense = await createExpenseMutation.mutateAsync(submitData);
+      console.log('Expense created:', expense);
       
       // If there's a receipt file, upload it
       if (receiptFile && expense.id) {
@@ -452,6 +460,9 @@ export default function Expenses() {
 
   // Helper function to transform form data for backend
   const transformExpenseFormData = (data: ExpenseFormData) => {
+    console.log('=== TRANSFORM DATA ===');
+    console.log('Input data:', data);
+    
     const submitData: any = {
       ...data,
       amount: parseFloat(data.amount) || 0,
@@ -469,10 +480,12 @@ export default function Expenses() {
       if (milesNum > 0) {
         submitData.amount = parseFloat((milesNum * mileageRate).toFixed(2));
       }
+      console.log('Mileage transformation:', { milesNum, quantity: submitData.quantity, amount: submitData.amount });
     } else {
       // Clear quantity and unit for non-mileage expenses
       submitData.quantity = undefined;
       submitData.unit = undefined;
+      console.log('Non-mileage: cleared quantity and unit');
     }
     
     // Ensure projectResourceId is handled correctly - convert "unassigned" to undefined
@@ -484,6 +497,9 @@ export default function Expenses() {
     submitData.amount = parseFloat(String(submitData.amount)) || 0;
     submitData.billable = Boolean(submitData.billable);
     submitData.reimbursable = Boolean(submitData.reimbursable);
+    
+    console.log('Final transformed data:', submitData);
+    console.log('=== END TRANSFORM ===');
     
     return submitData;
   };
@@ -519,12 +535,14 @@ export default function Expenses() {
       const miles = parseFloat(editWatchedMiles);
       if (!isNaN(miles) && miles > 0) {
         const calculatedAmount = (miles * mileageRate).toFixed(2);
+        console.log('EDIT FORM: Mileage calculation:', { miles, mileageRate, calculatedAmount });
         editForm.setValue("amount", calculatedAmount);
         editForm.setValue("quantity", miles.toString());
         editForm.setValue("unit", "mile");
       }
     } else if (editPrevCategory === "mileage" && editWatchedCategory !== "mileage" && editWatchedCategory !== "") {
       // Clear quantity and unit when switching away from mileage to another category
+      console.log('EDIT FORM: Clearing mileage fields, switching from mileage to:', editWatchedCategory);
       editForm.setValue("quantity", undefined);
       editForm.setValue("unit", undefined);
       editForm.setValue("miles", undefined);
@@ -537,6 +555,20 @@ export default function Expenses() {
   }, [editWatchedCategory, editWatchedMiles, mileageRate, editForm, editPrevCategory, updateExpenseMutation.isPending]);
 
   const handleEditExpense = (expense: Expense) => {
+    console.log('=== START EDIT EXPENSE ===');
+    console.log('Editing expense:', {
+      id: expense.id,
+      description: expense.description,
+      category: expense.category,
+      amount: expense.amount,
+      date: expense.date,
+      quantity: expense.quantity,
+      unit: expense.unit,
+      vendor: expense.vendor,
+      billable: expense.billable,
+      reimbursable: expense.reimbursable
+    });
+    
     setEditingExpenseId(expense.id);
     // Reset edit state first
     setEditPrevCategory("");
@@ -555,6 +587,8 @@ export default function Expenses() {
       // If it's any other type (Date object), format it
       formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
     }
+    
+    console.log('Formatted date:', formattedDate);
     
     // Sync the selectedDate state for the date picker
     setSelectedDate(new Date(expense.date));
@@ -584,14 +618,17 @@ export default function Expenses() {
       // But ensure quantity and unit are set
       formData.quantity = miles;
       formData.unit = "mile";
+      console.log('Mileage expense detected, miles:', miles);
     }
     
+    console.log('Form data to be set:', formData);
     editForm.reset(formData);
     
     // Set the previous category after reset to avoid useEffect conflicts
     setTimeout(() => {
       setEditPrevCategory(expense.category);
     }, 0);
+    console.log('=== END EDIT EXPENSE ===');
   };
 
   const handleCancelEdit = () => {
@@ -619,9 +656,14 @@ export default function Expenses() {
     // Prevent concurrent updates
     if (updateExpenseMutation.isPending) return;
     
+    console.log('=== UPDATE EXPENSE SUBMIT ===');
+    console.log('Expense ID:', expenseId);
+    console.log('Form data received:', data);
+    
     // Validate mileage
     if (data.category === "mileage") {
       const miles = parseFloat(data.miles || "0");
+      console.log('Validating mileage:', { miles, isValid: !isNaN(miles) && miles > 0 });
       if (isNaN(miles) || miles <= 0) {
         toast({
           title: "Validation Error",
@@ -634,6 +676,8 @@ export default function Expenses() {
     
     // Use the unified transform function
     const submitData = transformExpenseFormData(data);
+    console.log('Data after transformation:', submitData);
+    console.log('=== END UPDATE SUBMIT ===');
     
     updateExpenseMutation.mutate({ id: expenseId, data: submitData });
   };
