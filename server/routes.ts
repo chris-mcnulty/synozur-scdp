@@ -3457,15 +3457,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       const updatedExpense = await storage.updateExpense(expenseId, validatedData);
       
-      // Format date for frontend (YYYY-MM-DD string)
-      const formattedExpense = {
-        ...updatedExpense,
-        date: typeof updatedExpense.date === 'string' 
-          ? updatedExpense.date 
-          : updatedExpense.date.toISOString().split('T')[0]
-      };
-      
-      res.json(formattedExpense);
+      // Expense date is already returned as a YYYY-MM-DD string from the database
+      // No need for additional formatting
+      res.json(updatedExpense);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
