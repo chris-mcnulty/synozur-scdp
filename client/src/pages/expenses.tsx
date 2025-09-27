@@ -17,7 +17,7 @@ import { insertExpenseSchema, type Expense, type Project, type Client, type User
 import { format } from "date-fns";
 import { getTodayBusinessDate } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -460,15 +460,30 @@ export default function Expenses() {
     // Remove the miles field (it's only for UI)
     delete submitData.miles;
     
-    // If it's mileage, ensure quantity and unit are set
+    // If it's mileage, ensure quantity and unit are set with proper numeric conversion
     if (data.category === "mileage") {
       submitData.unit = "mile";
-      submitData.quantity = parseFloat(data.miles || "0");
+      const milesNum = parseFloat(data.miles || "0");
+      submitData.quantity = milesNum > 0 ? String(milesNum) : undefined; // Backend expects string for quantity
+      // Recalculate amount to ensure accuracy
+      if (milesNum > 0) {
+        submitData.amount = parseFloat((milesNum * mileageRate).toFixed(2));
+      }
     } else {
       // Clear quantity and unit for non-mileage expenses
       submitData.quantity = undefined;
       submitData.unit = undefined;
     }
+    
+    // Ensure projectResourceId is handled correctly - convert "unassigned" to undefined
+    if (submitData.projectResourceId === "unassigned") {
+      submitData.projectResourceId = undefined;
+    }
+    
+    // Ensure all numeric fields are properly typed
+    submitData.amount = parseFloat(String(submitData.amount)) || 0;
+    submitData.billable = Boolean(submitData.billable);
+    submitData.reimbursable = Boolean(submitData.reimbursable);
     
     return submitData;
   };
@@ -541,8 +556,11 @@ export default function Expenses() {
       formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
     }
     
+    // Sync the selectedDate state for the date picker
+    setSelectedDate(new Date(expense.date));
+    
     // Populate the edit form with current expense data - ensure amount is always a string
-    editForm.reset({
+    const formData: ExpenseFormData = {
       date: formattedDate,
       amount: typeof expense.amount === 'string' ? expense.amount : String(expense.amount),
       currency: expense.currency,
@@ -553,8 +571,22 @@ export default function Expenses() {
       projectId: expense.projectId,
       vendor: expense.vendor || "",
       projectResourceId: expense.projectResourceId || "",
-      miles: expense.unit === "mile" && expense.quantity ? String(expense.quantity) : undefined,
-    });
+      miles: undefined,
+      quantity: undefined,
+      unit: undefined,
+    };
+    
+    // For mileage expenses, populate the miles field and trigger amount recalculation
+    if (expense.category === "mileage" && expense.unit === "mile" && expense.quantity) {
+      const miles = String(expense.quantity);
+      formData.miles = miles;
+      // Don't set amount here - let the useEffect handle the calculation
+      // But ensure quantity and unit are set
+      formData.quantity = miles;
+      formData.unit = "mile";
+    }
+    
+    editForm.reset(formData);
     
     // Set the previous category after reset to avoid useEffect conflicts
     setTimeout(() => {
@@ -1116,6 +1148,9 @@ export default function Expenses() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Expense</DialogTitle>
+            <DialogDescription>
+              Update the details for this expense entry
+            </DialogDescription>
           </DialogHeader>
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit((data) => handleUpdateExpense(editingExpenseId!, data))} className="space-y-4">
@@ -1341,6 +1376,9 @@ export default function Expenses() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-import-expenses">
           <DialogHeader>
             <DialogTitle>Import Expenses</DialogTitle>
+            <DialogDescription>
+              Upload an Excel or CSV file to bulk import expense entries
+            </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
