@@ -6,8 +6,9 @@ channel = "stable-24_05"
 packages = ["chromium"]
 
 [deployment]
-run = ["sh", "-c", "npm run build && npm start"]
+run = ["sh", "-c", "npm start"]
 deploymentTarget = "cloudrun"
+build = ["sh", "-c", "npm run build"]
 
 [[ports]]
 localPort = 5000
