@@ -165,11 +165,11 @@ declare global {
 // Security helper: Filter sensitive financial data based on user role
 function filterSensitiveData(data: any, userRole: string): any {
   const canViewCostMargins = ['admin', 'executive'].includes(userRole);
-  
+
   if (!canViewCostMargins && data) {
     // Remove sensitive financial fields for Project Managers and Employees
     const sensitiveFields = ['costRate', 'totalCost', 'margin', 'marginPercent'];
-    
+
     if (Array.isArray(data)) {
       return data.map(item => {
         const filtered = { ...item };
@@ -182,17 +182,17 @@ function filterSensitiveData(data: any, userRole: string): any {
       return filtered;
     }
   }
-  
+
   return data;
 }
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Session storage (in-memory for demo, use Redis in production)
   const sessions: Map<string, any> = new Map();
-  
+
   // Check if Entra ID is configured  
   const isEntraConfigured = !!msalInstance;
-  
+
   // Stubbed SharePoint config for local file storage migration
   const getSharePointConfig = async () => {
     // Return disabled state to prevent SharePoint initialization errors
@@ -206,25 +206,25 @@ export async function registerRoutes(app: Express): Promise<void> {
       driveId: '',
       created: false
     };
-    
+
     /* Original SharePoint config disabled during local storage migration
     try {
       // Import container configuration from entra-config
       const { getSharePointContainerConfig } = await import('./auth/entra-config.js');
       const containerConfig = getSharePointContainerConfig();
-      
+
       // Try to get container ID from system settings first, fallback to built-in configuration
       let containerId = await storage.getSystemSettingValue('SHAREPOINT_CONTAINER_ID') || containerConfig.containerId || '';
-      
+
       // For backward compatibility with existing installations, if no container ID is set,
       // use the drive ID as container ID (admin will need to update this)
       if (!containerId) {
         containerId = await storage.getSystemSettingValue('SHAREPOINT_DRIVE_ID') || process.env.SHAREPOINT_DRIVE_ID || '';
       }
-      
+
       // Legacy site ID for backward compatibility (will be ignored by new container APIs)
       const legacySiteId = await storage.getSystemSettingValue('SHAREPOINT_SITE_ID') || process.env.SHAREPOINT_SITE_ID;
-      
+
       return {
         containerId,
         containerTypeId: containerConfig.containerTypeId,
@@ -238,12 +238,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       // Fallback to environment variables if configuration import fails
       let containerId = process.env.SHAREPOINT_CONTAINER_ID;
-      
+
       // For backward compatibility
       if (!containerId) {
         containerId = process.env.SHAREPOINT_DRIVE_ID;
       }
-      
+
       return {
         containerId,
         siteId: process.env.SHAREPOINT_SITE_ID || 'legacy-not-used',
@@ -259,7 +259,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const isProduction = process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT === '1';
       const environment = isProduction ? 'Production' : 'Development';
-      
+
       res.json({
         environment,
         isProduction,
@@ -277,7 +277,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Test database connection
       const dbTest = await storage.getUsers();
-      
+
       const healthStatus = { 
         status: "healthy",
         database: "connected",
@@ -295,17 +295,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (isEntraConfigured) {
         const sharePointConfig = await getSharePointConfig();
         healthStatus.sharepoint.configured = sharePointConfig.configured ? true : false;
-        
+
         if (sharePointConfig.configured) {
           try {
             const connectivity = await graphClient.testConnectivity(
               sharePointConfig.siteId,
               sharePointConfig.containerId
             );
-            
+
             healthStatus.sharepoint.accessible = Boolean(connectivity.authenticated && 
                                                connectivity.containerAccessible);
-            
+
             if (connectivity.error) {
               healthStatus.sharepoint.error = connectivity.error;
             }
@@ -326,18 +326,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Auth middleware
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     const sessionId = req.headers['x-session-id'] as string;
-    
+
     console.log("[AUTH] Session check - SessionId:", sessionId ? `${sessionId.substring(0, 4)}...` : 'none');
-    
+
     if (!sessionId || !sessions.has(sessionId)) {
       console.log("[AUTH] Session not found - Total sessions:", sessions.size);
       return res.status(401).json({ message: "Not authenticated" });
     }
-    
+
     req.user = sessions.get(sessionId);
     console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
     next();
@@ -417,7 +417,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const sharePointConfig = await getSharePointConfig();
-      
+
       if (!sharePointConfig.configured) {
         return res.status(503).json({
           status: "error",
@@ -466,18 +466,18 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Validate item ID parameter
       const validatedParams = sharePointItemIdSchema.parse({ itemId: req.params.itemId });
-      
+
       const sharePointConfig = await getSharePointConfig();
       if (!sharePointConfig.configured) {
         return res.status(503).json({ message: "SharePoint not configured" });
       }
 
       const fileData = await graphClient.downloadFile(sharePointConfig.containerId!, validatedParams.itemId);
-      
+
       // SECURITY FIX: Enhanced secure headers for download to prevent XSS
       const safeContentType = fileData.mimeType === 'application/pdf' ? 
         'application/pdf' : 'application/octet-stream';
-      
+
       res.setHeader('Content-Type', safeContentType);
       res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName.replace(/"/g, '\"')}"`);
       res.setHeader('Content-Length', fileData.size.toString());
@@ -487,18 +487,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
-      
+
       res.send(fileData.buffer);
     } catch (error) {
       console.error("[SHAREPOINT DOWNLOAD] Error:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           message: "Invalid item ID format",
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       res.status(500).json({ 
         message: "Failed to download file from SharePoint"
       });
@@ -509,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Validate item ID parameter
       const validatedParams = sharePointItemIdSchema.parse({ itemId: req.params.itemId });
-      
+
       const sharePointConfig = await getSharePointConfig();
       if (!sharePointConfig.configured) {
         return res.status(503).json({ message: "SharePoint not configured" });
@@ -519,14 +519,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(204).send();
     } catch (error) {
       console.error("[SHAREPOINT DELETE] Error:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           message: "Invalid item ID format",
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       res.status(500).json({ 
         message: "Failed to delete file from SharePoint"
       });
@@ -552,20 +552,20 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(result);
     } catch (error) {
       console.error("[SHAREPOINT CREATE FOLDER] Error:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           message: "Invalid folder data",
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       // Don't expose internal error details to client
       const isSecurityError = error instanceof Error && 
         (error.message.includes('path traversal') || 
          error.message.includes('invalid character') ||
          error.message.includes('not allowed'));
-      
+
       res.status(isSecurityError ? 400 : 500).json({ 
         message: isSecurityError ? error.message : "Failed to create folder in SharePoint"
       });
@@ -576,7 +576,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Validate query parameters
       const validatedQuery = sharePointListFilesSchema.parse(req.query);
-      
+
       const sharePointConfig = await getSharePointConfig();
       if (!sharePointConfig.configured) {
         return res.status(503).json({ message: "SharePoint not configured" });
@@ -590,20 +590,20 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(files);
     } catch (error) {
       console.error("[SHAREPOINT LIST FILES] Error:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({
           message: "Invalid query parameters",
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       // Don't expose internal error details to client
       const isSecurityError = error instanceof Error && 
         (error.message.includes('path traversal') || 
          error.message.includes('invalid character') ||
          error.message.includes('not allowed'));
-      
+
       res.status(isSecurityError ? 400 : 500).json({ 
         message: isSecurityError ? error.message : "Failed to list files from SharePoint"
       });
@@ -611,7 +611,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ============ CONTAINER MANAGEMENT ROUTES ============
-  
+
   // Container Types (admin only)
   app.get("/api/containers/types", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
@@ -630,14 +630,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(201).json(containerType);
     } catch (error) {
       console.error("[CONTAINER TYPES] Error creating container type:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
           message: "Invalid container type data", 
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       res.status(500).json({ message: "Failed to create container type" });
     }
   });
@@ -679,7 +679,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (req.user?.role !== "admin" && req.user?.role !== "billing-admin") {
         // For non-admin users, validate they belong to projects associated with the container's client
         const hasAccess = await storage.checkUserClientAccess(req.user!.id, container.clientId);
-        
+
         if (!hasAccess) {
           console.log(`[SECURITY] User ${req.user!.id} denied access to container ${req.params.containerId} for client ${container.clientId}`);
           return res.status(403).json({ 
@@ -698,25 +698,25 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/containers", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const validatedData = containerCreationSchema.parse(req.body);
-      
+
       // Create tenant container via storage which integrates with GraphClient
       const container = await storage.createTenantContainer(
         validatedData.clientId,
         validatedData.containerTypeId,
         validatedData.displayName
       );
-      
+
       res.status(201).json(container);
     } catch (error) {
       console.error("[CLIENT CONTAINERS] Error creating container:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
           message: "Invalid container data", 
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       res.status(500).json({ 
         message: error instanceof Error ? error.message : "Failed to create container"
       });
@@ -728,12 +728,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { clientId } = req.params;
       const { containerTypeId } = req.body;
-      
+
       const container = await storage.ensureClientHasContainer(clientId, containerTypeId);
       res.json(container);
     } catch (error) {
       console.error("[CLIENT CONTAINERS] Error ensuring client container:", error);
-      
+
       res.status(500).json({ 
         message: error instanceof Error ? error.message : "Failed to ensure client has container"
       });
@@ -757,19 +757,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         ...req.body,
         containerId: req.params.containerId
       });
-      
+
       const permission = await storage.createContainerPermission(validatedData);
       res.status(201).json(permission);
     } catch (error) {
       console.error("[CONTAINER PERMISSIONS] Error creating permission:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
           message: "Invalid permission data", 
           errors: error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
         });
       }
-      
+
       res.status(500).json({ message: "Failed to create container permission" });
     }
   });
@@ -788,7 +788,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/user/container", requireAuth, async (req, res) => {
     try {
       const containerId = await storage.getClientContainerIdForUser(req.user!.id);
-      
+
       if (!containerId) {
         return res.status(404).json({ 
           message: "No container found for user",
@@ -823,10 +823,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/containers/types/initialize", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       await storage.initializeDefaultContainerTypes();
-      
+
       const containerTypes = await storage.getContainerTypes();
       const defaultType = await storage.getDefaultContainerType();
-      
+
       res.json({
         message: "Container types initialized successfully",
         containerTypesCount: containerTypes.length,
@@ -844,7 +844,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/containers/types/sync", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       await storage.syncContainerTypesWithSharePoint();
-      
+
       const containerTypes = await storage.getContainerTypes();
       res.json({
         message: "Container types synced successfully",
@@ -867,7 +867,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/containers/:containerId/columns", requireAuth, async (req, res) => {
     try {
       const { containerId } = req.params;
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -891,7 +891,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId } = req.params;
       const columnDef = columnDefinitionSchema.parse(req.body);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -917,7 +917,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/containers/:containerId/columns/:columnId", requireAuth, async (req, res) => {
     try {
       const { containerId, columnId } = req.params;
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -941,7 +941,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId, columnId } = req.params;
       const updates = columnUpdateSchema.parse(req.body);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -967,7 +967,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.delete("/api/containers/:containerId/columns/:columnId", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { containerId, columnId } = req.params;
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -992,7 +992,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/containers/:containerId/receipt-schema", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { containerId } = req.params;
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1019,7 +1019,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId, itemId } = req.params;
       const receiptData = receiptMetadataAssignmentSchema.parse(req.body);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1027,7 +1027,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const metadata = await graphClient.assignReceiptMetadata(containerId, itemId, receiptData);
-      
+
       // Also sync to local database for caching and reporting
       try {
         await storage.syncDocumentMetadata(containerId, itemId, {
@@ -1073,7 +1073,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId, itemId } = req.params;
       const statusUpdate = receiptStatusUpdateSchema.parse(req.body);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1086,7 +1086,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         statusUpdate.status,
         statusUpdate.expenseId
       );
-      
+
       // Also sync to local database
       try {
         await storage.updateDocumentMetadataStatus(containerId, itemId, statusUpdate.status, statusUpdate.expenseId);
@@ -1117,7 +1117,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/containers/:containerId/items/:itemId/metadata", requireAuth, async (req, res) => {
     try {
       const { containerId, itemId } = req.params;
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1141,7 +1141,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId, itemId } = req.params;
       const metadataUpdates = documentMetadataUpdateSchema.parse(req.body);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1171,7 +1171,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId } = req.params;
       const query = metadataQuerySchema.parse(req.query);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1184,7 +1184,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
       if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
       if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
-      
+
       const options = {
         filters: filters.length > 0 ? filters : undefined,
         top: query.limit,
@@ -1215,7 +1215,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { containerId } = req.params;
       const query = metadataQuerySchema.parse(req.query);
-      
+
       // Check container access
       const hasAccess = await storage.checkContainerAccess(req.user!.id, containerId, req.user!.role);
       if (!hasAccess) {
@@ -1223,7 +1223,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       let receipts;
-      
+
       // Use specialized receipt methods when possible for better performance
       if (query.status && !query.projectId && !query.uploadedBy) {
         receipts = await graphClient.getReceiptsByStatus(containerId, query.status, query.limit);
@@ -1238,13 +1238,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (query.projectId) filters.push({ field: 'ProjectId', operator: 'eq', value: query.projectId });
         if (query.uploadedBy) filters.push({ field: 'UploadedBy', operator: 'eq', value: query.uploadedBy });
         if (query.expenseCategory) filters.push({ field: 'ExpenseCategory', operator: 'eq', value: query.expenseCategory });
-        
+
         const options = {
           filters: filters.length > 0 ? filters : undefined,
           top: query.limit,
           skip: query.skip
         };
-        
+
         receipts = await graphClient.listDocumentsWithMetadata(containerId, '/', options);
       }
 
@@ -1348,14 +1348,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
         return res.status(403).json({ message: "Insufficient permissions to view portfolio reports" });
       }
-      
+
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
         clientId: req.query.clientId as string | undefined,
         status: req.query.status as string | undefined
       };
-      
+
       const metrics = await storage.getPortfolioMetrics(filters);
       res.json(metrics);
     } catch (error) {
@@ -1370,13 +1370,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
         return res.status(403).json({ message: "Insufficient permissions to view estimate accuracy reports" });
       }
-      
+
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
         clientId: req.query.clientId as string | undefined
       };
-      
+
       const accuracy = await storage.getEstimateAccuracy(filters);
       res.json(accuracy);
     } catch (error) {
@@ -1391,13 +1391,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!["admin", "billing-admin", "executive"].includes(req.user!.role)) {
         return res.status(403).json({ message: "Insufficient permissions to view revenue reports" });
       }
-      
+
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
         clientId: req.query.clientId as string | undefined
       };
-      
+
       const revenue = await storage.getRevenueMetrics(filters);
       res.json(revenue);
     } catch (error) {
@@ -1412,13 +1412,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
         return res.status(403).json({ message: "Insufficient permissions to view utilization reports" });
       }
-      
+
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
         roleId: req.query.roleId as string | undefined
       };
-      
+
       const utilization = await storage.getResourceUtilization(filters);
       res.json(utilization);
     } catch (error) {
@@ -1538,7 +1538,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      
+
       if (estimate.status !== 'approved') {
         return res.status(400).json({ message: "Only approved estimates can be copied to projects" });
       }
@@ -1575,19 +1575,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check user permissions - only allow admin, billing-admin, pm, and executive roles
       const user = req.user!;
       const allowedRoles = ["admin", "billing-admin", "pm", "executive"];
-      
+
       // Check if user has an allowed role
       const hasAllowedRole = allowedRoles.includes(user.role);
-      
+
       // For PMs, also check if they are the PM of this specific project
       const isProjectPM = user.role === "pm" && project.pm === user.id;
-      
+
       if (!hasAllowedRole && !isProjectPM) {
         return res.status(403).json({ 
           message: "You don't have permission to view analytics for this project" 
         });
       }
-      
+
       // Additional check for PMs - they can only see their own projects
       if (user.role === "pm" && project.pm !== user.id) {
         return res.status(403).json({ 
@@ -1651,31 +1651,31 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
         return res.status(403).json({ message: "Insufficient permissions to view project progress" });
       }
-      
+
       const projectId = req.params.id;
-      
+
       // Get actual hours from time entries
       const timeEntries = await storage.getTimeEntries({ projectId });
       const actualHours = timeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours), 0);
-      
+
       // Get estimated hours from project estimates
       const projectEstimates = await storage.getEstimatesByProject(projectId);
       let estimatedHours = 0;
-      
+
       if (projectEstimates.length > 0) {
         // Use the latest approved estimate, or the latest draft if no approved
         const approvedEstimate = projectEstimates.find(e => e.status === 'approved');
         const estimate = approvedEstimate || projectEstimates[0];
-        
+
         if (estimate) {
           const lineItems = await storage.getEstimateLineItems(estimate.id);
           estimatedHours = lineItems.reduce((sum, item) => sum + parseFloat(item.adjustedHours), 0);
         }
       }
-      
+
       // Get project budget info
       const project = await storage.getProject(projectId);
-      
+
       res.json({
         actualHours,
         estimatedHours,
@@ -1767,12 +1767,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("Creating SOW with data:", req.body);
       console.log("Project ID:", req.params.id);
-      
+
       const insertData = insertSowSchema.parse({
         ...req.body,
         projectId: req.params.id
       });
-      
+
       console.log("Parsed SOW data:", insertData);
       const sow = await storage.createSow(insertData);
       res.status(201).json(sow);
@@ -1780,12 +1780,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.error("Error creating SOW - Full error:", error);
       console.error("Error stack:", error.stack);
       console.error("Request body:", req.body);
-      
+
       if (error instanceof z.ZodError) {
         console.error("Zod validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid SOW data", errors: error.errors });
       }
-      
+
       res.status(500).json({ 
         message: "Failed to create SOW", 
         details: error.message || "Unknown error",
@@ -1820,7 +1820,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const sow = await storage.updateSow(req.params.id, { 
         status: "approved"
       });
-      
+
       // Then manually update the approval fields directly (since they're not in InsertSow)
       const [updatedSow] = await db.update(sows)
         .set({
@@ -1829,7 +1829,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         })
         .where(eq(sows.id, req.params.id))
         .returning();
-      
+
       res.json(updatedSow);
     } catch (error) {
       console.error("Error approving SOW:", error);
@@ -1939,13 +1939,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check if role is being used in users or estimate line items
       const users = await storage.getUsers();
       const roleInUse = users.some(u => u.roleId === req.params.id);
-      
+
       if (roleInUse) {
         return res.status(400).json({ 
           message: "Cannot delete role that is assigned to users" 
         });
       }
-      
+
       // Delete the role
       await storage.deleteRole(req.params.id);
       res.status(204).send();
@@ -1962,7 +1962,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!userId || typeof userId !== 'string') {
         return res.status(400).json({ message: "userId query parameter is required" });
       }
-      
+
       const schedules = await storage.getUserRateSchedules(userId);
       res.json(schedules);
     } catch (error) {
@@ -1998,16 +1998,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/rates/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { filters, rates, skipLocked = true, dryRun = false } = req.body;
-      
+
       // Validate input
       if (!filters || !rates) {
         return res.status(400).json({ message: "filters and rates are required" });
       }
-      
+
       if (!rates.mode || !['override', 'recalculate'].includes(rates.mode)) {
         return res.status(400).json({ message: "rates.mode must be 'override' or 'recalculate'" });
       }
-      
+
       if (dryRun) {
         // For dry run, just return a preview without making changes
         // This would require an additional storage method to preview changes
@@ -2020,7 +2020,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         });
       }
-      
+
       const result = await storage.bulkUpdateTimeEntryRates(filters, rates, skipLocked);
       res.json(result);
     } catch (error) {
@@ -2163,11 +2163,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!keepStageId || !deleteStageId) {
         return res.status(400).json({ message: "Both keepStageId and deleteStageId are required" });
       }
-      
+
       if (keepStageId === deleteStageId) {
         return res.status(400).json({ message: "Cannot merge a stage with itself" });
       }
-      
+
       await storage.mergeEstimateStages(req.params.estimateId, keepStageId, deleteStageId);
       res.json({ message: "Stages merged successfully" });
     } catch (error: any) {
@@ -2195,27 +2195,27 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("Creating line item for estimate:", req.params.id);
       console.log("Request body:", JSON.stringify(req.body, null, 2));
-      
+
       // Check if estimate exists first
       const estimate = await storage.getEstimate(req.params.id);
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      
+
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
-      
+
       // Normalize form strings to database types
       const normalizedData = normalizeEstimateLineItemPayload(req.body);
-      
+
       const validatedData = insertEstimateLineItemSchema.parse({
         ...normalizedData,
         estimateId: req.params.id,
       });
-      
+
       console.log("Validated data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.createEstimateLineItem(validatedData);
       console.log("Created line item:", lineItem);
-      
+
       res.json(lineItem);
     } catch (error) {
       console.error("Line item creation error:", error);
@@ -2238,27 +2238,27 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("Updating line item:", req.params.id);
       console.log("Request body:", JSON.stringify(req.body, null, 2));
-      
+
       // Validate the request body
       const { z } = await import("zod");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
-      
+
       // Normalize form strings to database types
       const normalizedData = normalizeEstimateLineItemPayload(req.body);
-      
+
       // Create a partial schema for updates (all fields optional)
       const updateSchema = insertEstimateLineItemSchema.partial();
       const validatedData = updateSchema.parse(normalizedData);
-      
+
       // Reject empty update payloads
       if (Object.keys(validatedData).length === 0) {
         return res.status(400).json({ message: "At least one field must be provided for update" });
       }
-      
+
       console.log("Validated update data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
       console.log("Updated line item:", lineItem);
-      
+
       res.json(lineItem);
     } catch (error) {
       console.error("Line item update error:", error);
@@ -2340,7 +2340,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/estimates/:estimateId/line-items/:id/split", requireAuth, async (req, res) => {
     try {
       const { firstHours, secondHours } = req.body;
-      
+
       if (!firstHours || !secondHours || firstHours <= 0 || secondHours <= 0) {
         return res.status(400).json({ message: "Both hour values must be positive numbers" });
       }
@@ -2356,7 +2356,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/estimates/template-excel", requireAuth, async (req, res) => {
     try {
       const xlsx = await import("xlsx");
-      
+
       const worksheetData = [
         ["Estimate Line Items Template"],
         ["Instructions: Fill in the rows below with your line item details. Keep the header row intact. Epic and Stage names must match existing values in the estimate."],
@@ -2373,7 +2373,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
-      
+
       // Set column widths for better readability
       ws['!cols'] = [
         { wch: 15 }, // Epic Name
@@ -2392,12 +2392,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         { wch: 15 }, // Adjusted Hours
         { wch: 15 }, // Total Amount
       ];
-      
+
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Line Items Template");
 
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-      
+
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", 'attachment; filename="estimate-template.xlsx"');
       res.send(buffer);
@@ -2415,15 +2415,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      
+
       // Create lookup maps for epic and stage names
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
       const stageMap = new Map(stages.map(s => [s.id, s.name]));
-      
+
       // Filter line items based on user role for export
       const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
       const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
-      
+
       // Create header row based on permissions
       const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
       if (canViewCostMargins) {
@@ -2433,7 +2433,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (canViewCostMargins) {
         headers.push("Total Cost", "Margin", "Margin %");
       }
-      
+
       const worksheetData = [
         ["Estimate Line Items Export"],
         [],
@@ -2451,11 +2451,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             Number(item.factor || 1),
             Number(item.rate)
           ];
-          
+
           if (canViewCostMargins) {
             row.push(Number(item.costRate || 0));
           }
-          
+
           row.push(
             item.size,
             item.complexity,
@@ -2464,14 +2464,14 @@ export async function registerRoutes(app: Express): Promise<void> {
             Number(item.adjustedHours),
             Number(item.totalAmount)
           );
-          
+
           if (canViewCostMargins) {
             const totalCost = Number(item.costRate || 0) * Number(item.adjustedHours || 0);
             const margin = Number(item.margin || 0);
             const marginPercent = Number(item.marginPercent || 0);
             row.push(totalCost, margin, marginPercent);
           }
-          
+
           return row;
         })
       ];
@@ -2482,7 +2482,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
-      
+
       // Set column widths for better readability
       ws['!cols'] = [
         { wch: 15 }, // Epic Name
@@ -2506,12 +2506,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         { wch: 12 }, // Margin
         { wch: 10 }, // Margin %
       ];
-      
+
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Line Items");
 
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-      
+
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="estimate-${req.params.id}.xlsx"`);
       res.send(buffer);
@@ -2525,29 +2525,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
-      
+
       // Parse base64 file data
       const fileData = req.body.file;
       const buffer = Buffer.from(fileData, "base64");
-      
+
       const workbook = xlsx.read(buffer, { type: "buffer" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-      
+
       // Get estimate to calculate multipliers
       const estimate = await storage.getEstimate(req.params.id);
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      
+
       // Get epics and stages for lookup
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      
+
       // Create lookup maps for epic and stage IDs by name
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
       const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
-      
+
       // Skip header rows and process data
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
@@ -2556,36 +2556,36 @@ export async function registerRoutes(app: Express): Promise<void> {
         // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 6: Base Hours, 7: Factor, 8: Rate
         // 9: Size, 10: Complexity, 11: Confidence, 12: Comments
         if (!row[4] || !row[6] || !row[8]) continue; // Skip if no description, hours, or rate
-        
+
         // Lookup epic and stage IDs from names
         const epicName = row[0] ? String(row[0]).toLowerCase() : "";
         const stageName = row[1] ? String(row[1]).toLowerCase() : "";
         const epicId = epicName ? (epicNameToId.get(epicName) || null) : null;
         const stageId = stageName ? (stageNameToId.get(stageName) || null) : null;
-        
+
         const size = row[9] || "small";
         const complexity = row[10] || "small";
         const confidence = row[11] || "high";
-        
+
         // Calculate multipliers
         let sizeMultiplier = 1.0;
         if (size === "medium") sizeMultiplier = Number(estimate.sizeMediumMultiplier || 1.05);
         else if (size === "large") sizeMultiplier = Number(estimate.sizeLargeMultiplier || 1.10);
-        
+
         let complexityMultiplier = 1.0;
         if (complexity === "medium") complexityMultiplier = Number(estimate.complexityMediumMultiplier || 1.05);
         else if (complexity === "large") complexityMultiplier = Number(estimate.complexityLargeMultiplier || 1.10);
-        
+
         let confidenceMultiplier = 1.0;
         if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
         else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
-        
+
         const baseHours = Number(row[6]);
         const factor = Number(row[7]) || 1;
         const rate = Number(row[8]);
         const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
-        
+
         lineItems.push({
           estimateId: req.params.id,
           epicId,
@@ -2606,13 +2606,13 @@ export async function registerRoutes(app: Express): Promise<void> {
           sortOrder: i - 3
         });
       }
-      
+
       // Delete existing line items and insert new ones
       const existingItems = await storage.getEstimateLineItems(req.params.id);
       for (const item of existingItems) {
         await storage.deleteEstimateLineItem(item.id);
       }
-      
+
       const createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
       res.json({ success: true, itemsCreated: createdItems.length });
     } catch (error) {
@@ -2625,10 +2625,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/time-entries", requireAuth, async (req, res) => {
     try {
       const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
-      
+
       // Build filters based on user role and query params
       const filters: any = {};
-      
+
       // SPECIAL CASE: If projectId is provided and user has appropriate permissions,
       // return ALL entries for that project (for project reporting/analytics)
       if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {
@@ -2658,7 +2658,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Add project filter if provided
         if (projectId) filters.projectId = projectId;
       }
-      
+
       // Add other optional filters
       if (clientId) filters.clientId = clientId;
       if (startDate) filters.startDate = startDate;
@@ -2680,40 +2680,41 @@ export async function registerRoutes(app: Express): Promise<void> {
         email: req.user?.email,
         name: req.user?.name,
         role: req.user?.role,
+        isActive: req.user?.isActive,
         sessionSize: sessions.size,
         timestamp: new Date().toISOString()
         // Note: rates are not stored in session, they're fetched from DB when needed
       });
-      
+
       // CRITICAL: Strip billingRate and costRate from request body
       // These are calculated server-side, not provided by the client
       delete req.body.billingRate;
       delete req.body.costRate;
-      
+
       // Regular employees can only create their own entries
       // PMs, admins, billing-admins, and executives can create for anyone
       let personId = req.user!.id;
-      
+
       if (req.body.personId && ["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
         personId = req.body.personId;
       }
-      
+
       // Convert hours to string if it's a number
       const dataWithHours = {
         ...req.body,
         personId: personId,
         hours: req.body.hours !== undefined ? String(req.body.hours) : req.body.hours
       };
-      
+
       // CRITICAL: Ensure billingRate and costRate are not in the data
       delete dataWithHours.billingRate;
       delete dataWithHours.costRate;
-      
+
       console.log("[TIME_ENTRY] Data with hours (rates stripped):", dataWithHours);
-      
+
       const validatedData = insertTimeEntrySchema.parse(dataWithHours);
       console.log("[TIME_ENTRY] Validated data:", validatedData);
-      
+
       // Validate that the project exists before attempting to create the entry
       if (validatedData.projectId) {
         const project = await storage.getProject(validatedData.projectId);
@@ -2725,24 +2726,24 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
         }
       }
-      
+
       const timeEntry = await storage.createTimeEntry(validatedData);
       console.log("[TIME_ENTRY] Created successfully with rates:", {
         id: timeEntry.id,
         billingRate: timeEntry.billingRate,
         costRate: timeEntry.costRate
       });
-      
+
       res.status(201).json(timeEntry);
     } catch (error: any) {
       console.error("[TIME_ENTRY] Error creating time entry:", error);
-      
+
       // Handle validation errors
       if (error instanceof z.ZodError) {
         console.error("[TIME_ENTRY] Validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid time entry data", errors: error.errors });
       }
-      
+
       // Handle rate configuration errors with 422 status
       if (error.message?.includes('No billing rate configured') || 
           error.message?.includes('No cost rate configured') ||
@@ -2753,7 +2754,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           type: 'RATE_NOT_CONFIGURED'
         });
       }
-      
+
       // Generic server error
       console.error("[TIME_ENTRY] Server error:", error.stack);
       res.status(500).json({ 
@@ -2768,22 +2769,22 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Get the specific time entry
       const existingEntry = await storage.getTimeEntry(req.params.id);
-      
+
       if (!existingEntry) {
         return res.status(404).json({ message: "Time entry not found" });
       }
-      
+
       // Check if entry is locked (invoice batch)
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
       const isPM = req.user?.role === "pm";
       const isPrivileged = ["admin", "billing-admin", "pm", "executive"].includes(req.user!.role);
-      
+
       if (existingEntry.locked && !isAdmin) {
         return res.status(403).json({ 
           message: "This time entry has been locked in an invoice batch and cannot be edited" 
         });
       }
-      
+
       // Check permissions
       if (req.user?.role === "employee") {
         // Regular employees can only edit their own entries
@@ -2794,7 +2795,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Other roles need specific permissions
         return res.status(403).json({ message: "Insufficient permissions to edit time entries" });
       }
-      
+
       // For PMs, check if they manage this project
       if (isPM && existingEntry.projectId) {
         const project = await storage.getProject(existingEntry.projectId);
@@ -2802,11 +2803,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(403).json({ message: "You can only edit time entries for projects you manage" });
         }
       }
-      
+
       // Whitelist allowed fields only
       const allowedFields = ['date', 'hours', 'description', 'billable', 'projectId', 'milestoneId', 'workstreamId', 'phase'];
       const updateData: any = {};
-      
+
       // Allow personId reassignment for admin, billing-admin, and PMs (for their projects)
       if ((isAdmin || (isPM && existingEntry.projectId)) && req.body.personId !== undefined) {
         // Verify the new person exists and is assignable
@@ -2819,7 +2820,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
         updateData.personId = req.body.personId;
       }
-      
+
       // Only copy allowed fields from request body
       for (const field of allowedFields) {
         if (field in req.body) {
@@ -2831,14 +2832,14 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
       }
-      
+
       // Additional restrictions for regular employees
       if (req.user?.role === "employee") {
         // Employees cannot change the project or person
         delete updateData.projectId;
         delete updateData.personId;
       }
-      
+
       // Never allow these fields to be updated via PATCH
       delete updateData.locked;
       delete updateData.lockedAt;
@@ -2847,12 +2848,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       delete updateData.costRate;
       delete updateData.billedFlag;
       delete updateData.statusReportedFlag;
-      
+
       const updatedEntry = await storage.updateTimeEntry(req.params.id, updateData);
       res.json(updatedEntry);
     } catch (error: any) {
       console.error("[ERROR] Failed to update time entry:", error);
-      
+
       // Handle rate configuration errors with 422 status
       if (error.message?.includes('No billing rate configured') || 
           error.message?.includes('No cost rate configured') ||
@@ -2863,7 +2864,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           type: 'RATE_NOT_CONFIGURED'
         });
       }
-      
+
       res.status(500).json({ message: "Failed to update time entry" });
     }
   });
@@ -2872,11 +2873,11 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Get the specific time entry
       const existingEntry = await storage.getTimeEntry(req.params.id);
-      
+
       if (!existingEntry) {
         return res.status(404).json({ message: "Time entry not found" });
       }
-      
+
       // Check if entry is locked (invoice batch)
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
       if (existingEntry.locked && !isAdmin) {
@@ -2884,7 +2885,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           message: "This time entry has been locked in an invoice batch and cannot be deleted" 
         });
       }
-      
+
       // Check permissions
       if (req.user?.role === "employee") {
         // Regular employees can only delete their own entries
@@ -2895,7 +2896,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Other roles need specific permissions
         return res.status(403).json({ message: "Insufficient permissions to delete time entries" });
       }
-      
+
       // Delete the time entry
       await storage.deleteTimeEntry(req.params.id);
       res.status(204).send();
@@ -2908,7 +2909,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/time-entries/export", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
-      
+
       const filters: any = {};
       if (personId) filters.personId = personId;
       if (projectId) filters.projectId = projectId;
@@ -2917,7 +2918,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const timeEntries = await storage.getTimeEntries(filters);
       const xlsx = await import("xlsx");
-      
+
       const worksheetData = [
         ["Time Entries Export"],
         ["Date", "Person", "Project", "Description", "Hours", "Billable", "Phase"],
@@ -2948,9 +2949,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Time Entries");
-      
+
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-      
+
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", `attachment; filename="time-entries-${new Date().toISOString().split('T')[0]}.xlsx"`);
       res.send(buffer);
@@ -2964,7 +2965,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/time-entries/template", requireAuth, async (req, res) => {
     try {
       const xlsx = await import("xlsx");
-      
+
       const worksheetData = [
         ["Time Entries Import Template"],
         ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact."],
@@ -2992,9 +2993,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Time Entry Template");
-      
+
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
-      
+
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition", "attachment; filename=\"time-entry-template.xlsx\"");
       res.send(buffer);
@@ -3009,7 +3010,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const multer = await import("multer");
       const upload = multer.default({ storage: multer.default.memoryStorage() });
-      
+
       upload.single("file")(req, res, async (uploadError) => {
         if (uploadError) {
           return res.status(400).json({ message: "File upload failed" });
@@ -3025,11 +3026,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
           const data = xlsx.utils.sheet_to_json(worksheet, { range: 2, raw: false, dateNF: 'yyyy-mm-dd' }); // Skip header rows
-          
+
           const importResults = [];
           const errors = [];
           const warnings = [];
-          
+
           // Helper function to convert Excel serial date to YYYY-MM-DD
           const excelDateToYYYYMMDD = (serial: any): string => {
             if (typeof serial === 'string' && serial.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -3053,11 +3054,15 @@ export async function registerRoutes(app: Express): Promise<void> {
             }
             return serial; // Return as-is and let validation catch it
           };
-          
+
           // Get all projects and users for lookup
           const projects = await storage.getProjects();
-          const projectMap = new Map(projects.map(p => [p.name.toLowerCase(), p.id]));
-          
+          const projectMap = new Map();
+          projects.forEach(p => {
+            projectMap.set(p.name.toLowerCase(), p.id);
+            projectMap.set(p.code.toLowerCase(), p.id); // Also map by project code
+          });
+
           const users = await storage.getUsers();
           const userMap = new Map();
           users.forEach(u => {
@@ -3087,32 +3092,32 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Track unique missing projects and resources for summary
           const missingProjects = new Set<string>();
           const missingResources = new Set<string>();
-          
+
           // Debug: Log what we found in the database
           console.log(`Import Debug - Found ${projects.length} projects in database`);
           console.log(`Import Debug - Found ${users.length} users in database`);
           console.log(`Import Debug - Processing ${data.length} rows from Excel`);
 
           for (let i = 0; i < data.length; i++) {
-            const row = data[i] as any;
-            
+            const row = data[i] as any[];
+
             // Skip empty rows
             if (!row.Date && !row["Project Name"] && !row.Description) continue;
-            
+
             try {
               // Convert date format
               const formattedDate = excelDateToYYYYMMDD(row.Date);
-              
+
               // Find project by name - try multiple matching strategies
               const projectName = row["Project Name"]?.toString().trim();
               let projectId = projectMap.get(projectName?.toLowerCase());
-              
+
               // If exact match fails, try fuzzy matching
               if (!projectId && projectName) {
                 // Try without extra spaces
                 const normalizedName = projectName.replace(/\s+/g, ' ').toLowerCase();
                 projectId = projectMap.get(normalizedName);
-                
+
                 // Try to find partial matches
                 if (!projectId) {
                   for (const [key, id] of Array.from(projectMap.entries())) {
@@ -3124,31 +3129,31 @@ export async function registerRoutes(app: Express): Promise<void> {
                   }
                 }
               }
-              
+
               if (!projectId) {
                 missingProjects.add(projectName);
                 errors.push(`Row ${i + 3}: Project "${projectName}" not found. Available projects: ${Array.from(projectMap.keys()).slice(0, 5).join(', ')}${projectMap.size > 5 ? '...' : ''}`);
                 continue;
               }
-              
+
               // Find resource/person by name - try multiple matching strategies
               let personId = req.user!.id; // Default to current user
               const resourceName = row["Resource Name"]?.toString().trim();
-              
+
               if (resourceName) {
                 let foundPersonId = userMap.get(resourceName.toLowerCase());
-                
+
                 // If exact match fails, try other strategies
                 if (!foundPersonId) {
                   // Try without spaces
                   foundPersonId = userMap.get(resourceName.replace(/\s+/g, '').toLowerCase());
-                  
+
                   // Try with normalized spaces
                   if (!foundPersonId) {
                     const normalizedName = resourceName.replace(/\s+/g, ' ').toLowerCase();
                     foundPersonId = userMap.get(normalizedName);
                   }
-                  
+
                   // Try to match by parts (first name, last name)
                   if (!foundPersonId) {
                     const nameParts = resourceName.toLowerCase().split(/\s+/);
@@ -3161,7 +3166,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     }
                   }
                 }
-                
+
                 if (foundPersonId) {
                   // Check permissions: only admin, billing-admin, pm, and executive can assign to others
                   if (["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
@@ -3180,7 +3185,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   personId = req.user!.id;
                 }
               }
-              
+
               // Parse billable field (handle string 'TRUE'/'FALSE' or boolean)
               let billable = false;
               if (typeof row.Billable === 'string') {
@@ -3188,7 +3193,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               } else if (typeof row.Billable === 'boolean') {
                 billable = row.Billable;
               }
-              
+
               const timeEntryData = {
                 date: formattedDate,
                 projectId: projectId,
@@ -3198,7 +3203,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                 phase: row.Phase || "",
                 personId: personId
               };
-              
+
               const validatedData = insertTimeEntrySchema.parse(timeEntryData);
               const timeEntry = await storage.createTimeEntry(validatedData);
               importResults.push(timeEntry);
@@ -3206,7 +3211,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               errors.push(`Row ${i + 3}: ${error instanceof Error ? error.message : "Invalid data"}`);
             }
           }
-          
+
           // Add summary of missing projects and resources to help user understand what needs to be created
           if (missingProjects.size > 0) {
             errors.unshift(`MISSING PROJECTS (create these first): ${Array.from(missingProjects).join(', ')}`);
@@ -3217,7 +3222,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               : `UNKNOWN USERS (entries assigned to you): ${Array.from(missingResources).join(', ')}`;
             warnings.unshift(resourceMsg);
           }
-          
+
           res.json({
             success: importResults.length > 0,
             imported: importResults.length,
@@ -3252,36 +3257,36 @@ export async function registerRoutes(app: Express): Promise<void> {
         !entry.billingRate || entry.billingRate === '0' || 
         !entry.costRate || entry.costRate === '0'
       );
-      
+
       let fixedCount = 0;
       const errors = [];
-      
+
       for (const entry of entriesToFix) {
         try {
           // Get rates for this entry
           const override = await storage.getProjectRateOverride(entry.projectId, entry.personId, entry.date);
-          
+
           let billingRate: number | null = null;
           let costRate: number | null = null;
-          
+
           if (override) {
             billingRate = override.billingRate ? Number(override.billingRate) : null;
             costRate = override.costRate ? Number(override.costRate) : null;
           }
-          
+
           // If no override or rates are still null, get user default rates
           if (billingRate === null || costRate === null) {
             const userRates = await storage.getUserRates(entry.personId);
             billingRate = billingRate ?? userRates.billingRate ?? 150;
             costRate = costRate ?? userRates.costRate ?? 100;
           }
-          
+
           // Update the entry with the calculated rates directly in the database
           await db.update(timeEntries).set({
             billingRate: billingRate.toString(),
             costRate: costRate.toString()
           }).where(eq(timeEntries.id, entry.id));
-          
+
           fixedCount++;
         } catch (error) {
           errors.push({
@@ -3292,7 +3297,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
         }
       }
-      
+
       res.json({
         success: true,
         message: `Fixed ${fixedCount} time entries out of ${entriesToFix.length} that had null/zero rates`,
@@ -3310,7 +3315,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Helper to normalize expense form data from strings to proper database types
   const normalizeExpensePayload = (data: any): any => {
     const normalized = { ...data };
-    
+
     // Convert string numbers to actual numbers
     if (normalized.amount !== undefined) {
       normalized.amount = parseFloat(normalized.amount);
@@ -3318,35 +3323,35 @@ export async function registerRoutes(app: Express): Promise<void> {
     if (normalized.quantity !== undefined && normalized.quantity !== null && normalized.quantity !== '') {
       normalized.quantity = parseFloat(normalized.quantity);
     }
-    
+
     // Ensure date is in YYYY-MM-DD format
     if (normalized.date) {
       // If it's already a Date object or ISO string, convert to YYYY-MM-DD
       const dateObj = new Date(normalized.date);
       normalized.date = dateObj.toISOString().split('T')[0];
     }
-    
+
     return normalized;
   };
 
   // Helper to normalize estimate line item form data from strings to proper database types
   const normalizeEstimateLineItemPayload = (data: any): any => {
     const normalized = { ...data };
-    
+
     // Convert string numbers to actual numbers for decimal fields
     const decimalFields = ['baseHours', 'factor', 'rate', 'costRate', 'totalAmount', 'totalCost', 'margin', 'marginPercent', 'adjustedHours'];
-    
+
     for (const field of decimalFields) {
       if (normalized[field] !== undefined && normalized[field] !== null && normalized[field] !== '') {
         normalized[field] = parseFloat(normalized[field]);
       }
     }
-    
+
     // Convert week to integer if present
     if (normalized.week !== undefined && normalized.week !== null && normalized.week !== '') {
       normalized.week = parseInt(normalized.week, 10);
     }
-    
+
     return normalized;
   };
 
@@ -3365,7 +3370,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
       const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
-      
+
       // Non-admin users can only see their own expenses
       const filters: any = {};
       if (req.user?.role === "employee" || req.user?.role === "pm") {
@@ -3373,7 +3378,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       } else if (personId) {
         filters.personId = personId;
       }
-      
+
       if (projectId) filters.projectId = projectId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
@@ -3389,12 +3394,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Normalize form strings to database types
       const normalizedData = normalizeExpensePayload(req.body);
-      
+
       const validatedData = insertExpenseSchema.parse({
         ...normalizedData,
         personId: req.user!.id // Always use the authenticated user
       });
-      
+
       // Validate person assignment permissions
       if (validatedData.projectResourceId) {
         // Only admin, PM, and billing-admin can assign expenses to specific people
@@ -3404,7 +3409,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
         }
       }
-      
+
       // Additional validation for mileage expenses
       if (validatedData.category === "mileage") {
         const quantity = parseFloat(validatedData.quantity || "0");
@@ -3420,7 +3425,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         validatedData.quantity = undefined;
         validatedData.unit = undefined;
       }
-      
+
       const expense = await storage.createExpense(validatedData);
       res.status(201).json(expense);
     } catch (error) {
@@ -3452,11 +3457,26 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Normalize form strings to database types
       const normalizedData = normalizeExpensePayload(req.body);
-      
+
+      // Clean up the data before validation
+      const cleanedData = { ...normalizedData };
+
+      // Remove undefined or empty string fields to avoid validation issues with partial schema
+      Object.keys(cleanedData).forEach(key => {
+        if (cleanedData[key] === undefined || cleanedData[key] === '') {
+          delete cleanedData[key];
+        }
+      });
+
+      // Handle projectResourceId specifically - convert empty string to null if present
+      if (cleanedData.projectResourceId === '') {
+        cleanedData.projectResourceId = null;
+      }
+
       // Validate and parse update data
       const updateSchema = insertExpenseSchema.partial().omit({ personId: true });
-      const validatedData = updateSchema.parse(normalizedData);
-      
+      const validatedData = updateSchema.parse(cleanedData);
+
       // Validate person assignment permissions for updates
       if (validatedData.projectResourceId !== undefined) {
         // Only admin, PM, and billing-admin can assign/reassign expenses to specific people
@@ -3466,7 +3486,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
         }
       }
-      
+
       // Additional validation for mileage expenses
       if (validatedData.category === "mileage") {
         const quantity = parseFloat(validatedData.quantity || "0");
@@ -3482,17 +3502,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         validatedData.quantity = undefined;
         validatedData.unit = undefined;
       }
-      
+
       const updatedExpense = await storage.updateExpense(expenseId, validatedData);
-      
+
       // Expense date is already returned as a YYYY-MM-DD string from the database
       // No need for additional formatting
       res.json(updatedExpense);
     } catch (error) {
+      console.error("[EXPENSE UPDATE] Error:", error);
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
+        console.error("[EXPENSE UPDATE] Validation errors:", error.errors);
+        return res.status(400).json({ 
+          message: "Invalid expense data", 
+          errors: error.errors,
+          receivedData: req.body // Include original received data for debugging
+        });
       }
-      res.status(500).json({ message: "Failed to update expense" });
+      res.status(500).json({ 
+        message: "Failed to update expense",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
@@ -3515,7 +3544,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!canDelete) {
         return res.status(403).json({ message: "You can only delete your own expenses" });
       }
-      
+
       await storage.deleteExpense(expenseId);
       res.json({ message: "Expense deleted successfully" });
     } catch (error) {
@@ -3531,7 +3560,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         clientId,
         projectId,
         personId,
-        assignedPersonId,
+        assignedPersonId, // This is for projectResourceId
         category,
         vendor,
         startDate,
@@ -3545,11 +3574,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       } = req.query as Record<string, string>;
 
       const filters: any = {};
-      
+
       if (clientId) filters.clientId = clientId;
       if (projectId) filters.projectId = projectId;
       if (personId) filters.personId = personId;
-      if (assignedPersonId) filters.assignedPersonId = assignedPersonId;
+      if (assignedPersonId) filters.projectResourceId = assignedPersonId; // Map assignedPersonId to projectResourceId
       if (category) filters.category = category;
       if (vendor) filters.vendor = vendor;
       if (startDate) filters.startDate = startDate;
@@ -3619,13 +3648,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       .replace(/^[.\s]+/, '') // Remove leading dots and spaces
       .replace(/[.\s]+$/, '') // Remove trailing dots and spaces
       .substring(0, 255); // Limit length
-    
+
     // SECURITY FIX: Verify the sanitized filename still has an allowed extension
     const extension = sanitized.toLowerCase().substring(sanitized.lastIndexOf('.'));
     if (!allowedExtensions.includes(extension)) {
       throw new Error(`File extension '${extension}' not allowed after sanitization`);
     }
-    
+
     return sanitized;
   };
 
@@ -3634,7 +3663,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Use file-type library for comprehensive file type detection
       const detectedType = await fileTypeFromBuffer(buffer);
-      
+
       // If file-type can't detect the type, fall back to magic byte checking
       if (!detectedType) {
         // Check magic bytes for basic file types
@@ -3647,11 +3676,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
         return false;
       }
-      
+
       // Normalize MIME types for comparison
       const normalizedDetected = detectedType.mime === 'image/jpg' ? 'image/jpeg' : detectedType.mime;
       const normalizedDeclared = declaredMimeType === 'image/jpg' ? 'image/jpeg' : declaredMimeType;
-      
+
       // Verify detected type matches declared type
       return normalizedDetected === normalizedDeclared;
     } catch (error) {
@@ -3682,7 +3711,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       .leftJoin(clients, eq(projects.clientId, clients.id))
       .where(eq(expenses.id, expenseId))
       .limit(1);
-      
+
       // SECURITY FIX: Better null checking and data structure validation
       if (!expense || !expense.expenses) {
         console.log('[EXPENSE_ACCESS] Expense not found:', expenseId);
@@ -3701,7 +3730,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // SECURITY FIX: Ensure personId comparison is string-to-string
       const expensePersonId = String(expenseData.personId);
       const requestUserId = String(userId);
-      
+
       // Expense owner can always access
       if (expensePersonId === requestUserId) {
         console.log('[EXPENSE_ACCESS] Access granted - expense owner');
@@ -3792,7 +3821,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               message: error instanceof Error ? error.message : "Invalid filename after sanitization"
             });
           }
-          
+
           // Get project information for folder structure
           const project = await storage.getProject(expense.projectId);
           const projectCode = project?.code || 'unknown';
@@ -3842,9 +3871,9 @@ export async function registerRoutes(app: Express): Promise<void> {
             size: attachment.size,
             webUrl: attachment.webUrl,
             createdAt: attachment.createdAt,
-            createdByUserId: attachment.createdByUserId,
+            createdByUserId: attachment.createdByUserId
             // Include metadata status in response
-            metadataAssigned: true // Indicates that receipt metadata was processed
+            // metadataAssigned: true // Indicates that receipt metadata was processed
           });
 
         } catch (error: any) {
@@ -3922,10 +3951,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Use conservative Content-Type and force download
         const safeContentType = attachment.contentType === 'application/pdf' ? 
           'application/pdf' : 'application/octet-stream';
-        
+
         // Strip CR/LF and control characters from filename to prevent header injection
         const safeFilename = attachment.fileName.replace(/[\r\n\x00-\x1F\x7F"]/g, '_');
-        
+
         res.setHeader('Content-Type', safeContentType);
         res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`); 
         res.setHeader('Content-Length', attachment.size.toString());
@@ -3935,16 +3964,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
-        
+
         // Send file content
         res.send(downloadResult.buffer);
       } catch (error: any) {
         console.error('[ATTACHMENT_DOWNLOAD] SharePoint download error:', error);
-        
+
         if (error.status === 404) {
           return res.status(404).json({ message: "File not found in SharePoint" });
         }
-        
+
         res.status(503).json({ message: "SharePoint service temporarily unavailable" });
       }
     } catch (error: any) {
@@ -3974,7 +4003,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Additional permission check: only attachment creator, expense owner, or admin can delete
       const canDelete = attachment.createdByUserId === userId ||
                        ['admin', 'billing-admin'].includes(req.user!.role);
-      
+
       if (!canDelete) {
         return res.status(403).json({ message: "Insufficient permissions to delete this attachment" });
       }
@@ -3993,7 +4022,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         res.status(204).send();
       } catch (error: any) {
         console.error('[ATTACHMENT_DELETE] SharePoint delete error:', error);
-        
+
         // Even if SharePoint deletion fails, we should clean up the database record
         // to avoid orphaned records
         if (error.status === 404) {
@@ -4001,7 +4030,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           await storage.deleteExpenseAttachment(attachmentId);
           return res.status(204).send();
         }
-        
+
         res.status(503).json({ message: "SharePoint service temporarily unavailable" });
       }
     } catch (error: any) {
@@ -4011,7 +4040,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ========== PENDING RECEIPTS API ==========
-  
+
   // Validation schemas for pending receipts
   const bulkReceiptUploadSchema = z.object({
     projectId: z.string().optional(),
@@ -4103,7 +4132,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               tags: req.body[`tags_${index}`] || undefined
             }))
           };
-          
+
           validatedBody = bulkReceiptUploadSchema.parse(parsedBody);
         } catch (validationError: any) {
           console.error('[BULK_UPLOAD] Validation error:', validationError);
@@ -4123,7 +4152,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         for (let i = 0; i < req.files.length; i++) {
           const file = req.files[i] as Express.Multer.File;
           const receiptMetadata = validatedBody.receipts[i];
-          
+
           try {
             // Validate file properties
             const fileValidation = fileUploadValidationSchema.safeParse({
@@ -4164,7 +4193,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
             // Store file locally
             console.log('[BULK_UPLOAD] Storing file locally...');
-            
+
             // Create document metadata matching SharePoint design
             const documentMetadata: DocumentMetadata = {
               documentType: 'receipt',
@@ -4355,7 +4384,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         receiptDate: updateData.receiptDate ? toDateString(updateData.receiptDate) : undefined,
         amount: updateData.amount ? toDecimalString(updateData.amount) : undefined
       };
-      
+
       const updatedReceipt = await storage.updatePendingReceipt(receiptId, storageUpdateData);
 
       // Note: SharePoint metadata update removed - using local file storage
@@ -4364,7 +4393,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     } catch (error: any) {
       console.error('[PENDING_RECEIPT_UPDATE] Error:', error);
-      
+
       if (error.name === 'ZodError') {
         return res.status(400).json({
           message: "Invalid request data",
@@ -4401,7 +4430,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     } catch (error: any) {
       console.error('[PENDING_RECEIPT_STATUS] Error:', error);
-      
+
       if (error.name === 'ZodError') {
         return res.status(400).json({
           message: "Invalid request data",
@@ -4448,7 +4477,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     } catch (error: any) {
       console.error('[CONVERT_RECEIPT] Error:', error);
-      
+
       if (error.name === 'ZodError') {
         return res.status(400).json({
           message: "Invalid expense data",
@@ -4496,11 +4525,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     } catch (error: any) {
       console.error('[PENDING_RECEIPT_DOWNLOAD] Error:', error);
-      
+
       if (error.status === 404) {
         return res.status(404).json({ message: "File not found" });
       }
-      
+
       res.status(503).json({ message: "File download service temporarily unavailable" });
     }
   });
@@ -4547,18 +4576,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log("[DEBUG] Fetching estimates...");
       const estimates = await storage.getEstimates();
       console.log(`[DEBUG] Found ${estimates.length} estimates`);
-      
+
       // Calculate totals from line items for each estimate
       const estimatesWithTotals = await Promise.all(estimates.map(async (est, index) => {
         try {
           console.log(`[DEBUG] Processing estimate ${index + 1}/${estimates.length}: ${est.id}`);
-          
+
           let totalHours = 0;
           let totalCost = 0;
-          
+
           // Safely handle potentially null fields from older estimates
           const estimateType = est.estimateType || 'detailed';
-          
+
           // For block estimates, use the block values directly
           if (estimateType === 'block' && est.blockHours && est.blockDollars) {
             totalHours = parseFloat(est.blockHours);
@@ -4569,24 +4598,24 @@ export async function registerRoutes(app: Express): Promise<void> {
             try {
               const lineItems = await storage.getEstimateLineItems(est.id);
               console.log(`[DEBUG] Found ${lineItems.length} line items for estimate ${est.id}`);
-              
+
               totalHours = lineItems.reduce((sum, item) => {
                 const hours = item.adjustedHours ? parseFloat(item.adjustedHours) : 0;
                 return sum + (isNaN(hours) ? 0 : hours);
               }, 0);
-              
+
               totalCost = lineItems.reduce((sum, item) => {
                 const amount = item.totalAmount ? parseFloat(item.totalAmount) : 0;
                 return sum + (isNaN(amount) ? 0 : amount);
               }, 0);
-              
+
               console.log(`[DEBUG] Detailed estimate - hours: ${totalHours}, cost: ${totalCost}`);
             } catch (lineItemError) {
               console.error(`[ERROR] Failed to fetch line items for estimate ${est.id}:`, lineItemError);
               // Continue with zero totals if line items fail
             }
           }
-          
+
           return {
             id: est.id,
             name: est.name || 'Unnamed Estimate',
@@ -4622,7 +4651,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           };
         }
       }));
-      
+
       console.log(`[DEBUG] Successfully processed ${estimatesWithTotals.length} estimates`);
       res.json(estimatesWithTotals);
     } catch (error: any) {
@@ -4651,12 +4680,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { name, clientId, projectId, validDays } = req.body;
       console.log("[DEBUG] Creating estimate with:", { name, clientId, projectId, validDays });
-      
+
       const validUntil = validDays ? new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : null;
-      
+
       // Handle the "none" value from the form or undefined/empty
       const cleanProjectId = !projectId || projectId === 'none' || projectId === '' ? null : projectId;
-      
+
       console.log("[DEBUG] About to parse estimate schema...");
       const validatedData = insertEstimateSchema.parse({
         name,
@@ -4684,7 +4713,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         confidenceMediumMultiplier: "1.10",
         confidenceLowMultiplier: "1.20"
       });
-      
+
       console.log("[DEBUG] Validated data:", validatedData);
       console.log("[DEBUG] About to call storage.createEstimate...");
       const estimate = await storage.createEstimate(validatedData);
@@ -4716,28 +4745,28 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const { createProject: shouldCreateProject, blockHourDescription } = req.body;
-      
+
       // Get the full estimate details first
       const estimate = await storage.getEstimate(req.params.id);
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      
+
       // Update estimate status to approved
       const updatedEstimate = await storage.updateEstimate(req.params.id, { 
         status: "approved"
       });
-      
+
       let project = null;
       if (shouldCreateProject && updatedEstimate) {
         // Check if project already exists
         const existingProject = updatedEstimate.projectId ? 
           await storage.getProject(updatedEstimate.projectId) : null;
-        
+
         if (!existingProject) {
           // Generate project code
           const projectCode = `${estimate.name.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-          
+
           // Prepare project data
           const projectData = {
             clientId: estimate.clientId,
@@ -4754,21 +4783,21 @@ export async function registerRoutes(app: Express): Promise<void> {
             status: "active" as const,
             notes: ""
           };
-          
+
           // Use the enhanced createProjectFromEstimate method
           project = await storage.createProjectFromEstimate(
             req.params.id, 
             projectData, 
             blockHourDescription
           );
-          
+
           console.log("[DEBUG] Project created successfully:", project.id);
         } else {
           project = existingProject;
           console.log("[DEBUG] Using existing project:", project.id);
         }
       }
-      
+
       res.json({ estimate: updatedEstimate, project });
     } catch (error: any) {
       console.error("[ERROR] Failed to approve estimate:", error);
@@ -4796,14 +4825,14 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode, batchType } = req.body;
-      
+
       console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode });
-      
+
       // Handle backward compatibility with month parameter
       let finalStartDate = startDate;
       let finalEndDate = endDate;
       let finalMonth = null;
-      
+
       if (month && !startDate && !endDate) {
         // Convert month string (e.g., "2024-03") to proper date range
         const monthDate = new Date(month + "-01");
@@ -4813,19 +4842,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         finalEndDate = lastDay.toISOString().split('T')[0];
         finalMonth = finalStartDate; // Store month for backward compatibility
       }
-      
+
       if (!finalStartDate || !finalEndDate) {
         return res.status(400).json({ message: "Start date and end date are required" });
       }
-      
+
       // Validate date order
       if (new Date(finalStartDate) > new Date(finalEndDate)) {
         return res.status(400).json({ message: "Start date must be before or equal to end date" });
       }
-      
+
       // Generate batch ID using configurable system (or use provided one if given)
       const finalBatchId = providedBatchId || await storage.generateBatchId(finalStartDate, finalEndDate);
-      
+
       // Create the batch
       const batch = await storage.createInvoiceBatch({
         batchId: finalBatchId,
@@ -4841,7 +4870,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         exportedToQBO: false,
         createdBy: req.user?.id || null
       });
-      
+
       res.json(batch);
     } catch (error: any) {
       console.error("Failed to create invoice batch:", error);
@@ -4856,11 +4885,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/billing/batch-id-preview", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { startDate, endDate } = req.body;
-      
+
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "Start date and end date are required" });
       }
-      
+
       const previewId = await storage.generateBatchId(startDate, endDate);
       res.json({ batchId: previewId });
     } catch (error: any) {
@@ -4896,32 +4925,32 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.put("/api/billing/batch-settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { prefix, useSequential, includeDate, dateFormat, sequencePadding, resetSequence } = req.body;
-      
+
       // Validate inputs
       if (!prefix || prefix.trim().length === 0) {
         return res.status(400).json({ message: "Batch prefix is required" });
       }
-      
+
       if (sequencePadding < 1 || sequencePadding > 10) {
         return res.status(400).json({ message: "Sequence padding must be between 1 and 10" });
       }
-      
+
       const validDateFormats = ['YYYY-MM', 'YYYYMM', 'YYYY-MM-DD', 'YYYYMMDD'];
       if (!validDateFormats.includes(dateFormat)) {
         return res.status(400).json({ message: "Invalid date format" });
       }
-      
+
       // Update settings
       await storage.setSystemSetting('BATCH_PREFIX', prefix.trim());
       await storage.setSystemSetting('BATCH_USE_SEQUENTIAL', useSequential ? 'true' : 'false');
       await storage.setSystemSetting('BATCH_INCLUDE_DATE', includeDate ? 'true' : 'false');
       await storage.setSystemSetting('BATCH_DATE_FORMAT', dateFormat);
       await storage.setSystemSetting('BATCH_SEQUENCE_PADDING', sequencePadding.toString());
-      
+
       if (resetSequence === true) {
         await storage.setSystemSetting('BATCH_SEQUENCE_COUNTER', '0');
       }
-      
+
       res.json({ message: "Batch settings updated successfully" });
     } catch (error: any) {
       console.error("Failed to update batch settings:", error);
@@ -4931,7 +4960,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Invoice default discount settings
   app.get("/api/invoice-batches/discount-settings", requireAuth, async (req, res) => {
     try {
@@ -4940,12 +4969,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!discountType) {
         await storage.setSystemSetting('INVOICE_DEFAULT_DISCOUNT_TYPE', 'percent', 'Default discount type for invoice batches (percent or amount)', 'string');
       }
-      
+
       const discountValue = await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_VALUE');
       if (!discountValue) {
         await storage.setSystemSetting('INVOICE_DEFAULT_DISCOUNT_VALUE', '0', 'Default discount value for invoice batches', 'number');
       }
-      
+
       const settings = {
         defaultDiscountType: await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_TYPE', 'percent'),
         defaultDiscountValue: await storage.getSystemSettingValue('INVOICE_DEFAULT_DISCOUNT_VALUE', '0')
@@ -4983,7 +5012,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/details", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const batchDetails = await storage.getInvoiceBatchDetails(req.params.batchId);
-      
+
       if (!batchDetails) {
         return res.status(404).json({ message: "Invoice batch not found" });
       }
@@ -4998,12 +5027,13 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/lines", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const lines = await storage.getInvoiceLinesForBatch(req.params.batchId);
-      
+      const adjustments = await storage.getInvoiceAdjustments(req.params.batchId); // Get adjustments for calculating original amounts
+
       // Group lines by client and project
       const groupedLines = lines.reduce((acc: any, line) => {
         const clientKey = line.client.id;
         const projectKey = line.project.id;
-        
+
         if (!acc[clientKey]) {
           acc[clientKey] = {
             client: line.client,
@@ -5011,7 +5041,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             subtotal: 0
           };
         }
-        
+
         if (!acc[clientKey].projects[projectKey]) {
           acc[clientKey].projects[projectKey] = {
             project: line.project,
@@ -5019,13 +5049,22 @@ export async function registerRoutes(app: Express): Promise<void> {
             subtotal: 0
           };
         }
-        
+
         // Use billedAmount if available (after adjustments), otherwise use original amount
         const amount = parseFloat(line.billedAmount || line.amount || '0');
-        acc[clientKey].projects[projectKey].lines.push(line);
+        
+        // Find corresponding adjustment for this line if it exists
+        const adjustment = adjustments.find(adj => adj.lineItemId === line.id);
+        const originalAmount = adjustment ? parseFloat(adjustment.originalAmount) : parseFloat(line.amount || '0');
+
+        acc[clientKey].projects[projectKey].lines.push({
+          ...line,
+          originalAmount: originalAmount.toFixed(2), // Store original amount for display
+          billedAmount: amount.toFixed(2) // Ensure billed amount is formatted
+        });
         acc[clientKey].projects[projectKey].subtotal += amount;
         acc[clientKey].subtotal += amount;
-        
+
         return acc;
       }, {});
 
@@ -5040,7 +5079,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/billing/unbilled-items", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
-      
+
       const filters: any = {};
       if (personId) filters.personId = personId;
       if (projectId) filters.projectId = projectId;
@@ -5072,18 +5111,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.post("/api/invoice-batches/:batchId/generate", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { clientIds, projectIds, invoicingMode } = req.body;
-      
+
       console.log("[DEBUG] Generating invoices for batch:", { batchId: req.params.batchId, clientIds, projectIds, invoicingMode });
-      
+
       // Validate input based on invoicing mode
       if (!invoicingMode) {
         return res.status(400).json({ message: "Invoicing mode is required" });
       }
-      
+
       if (invoicingMode === "project") {
         if (!projectIds || projectIds.length === 0) {
           return res.status(400).json({ message: "Please select at least one project for project-based invoicing" });
@@ -5092,7 +5131,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(400).json({ message: "Cannot specify both projects and clients in project-based mode" });
         }
       }
-      
+
       if (invoicingMode === "client") {
         if (!clientIds || clientIds.length === 0) {
           return res.status(400).json({ message: "Please select at least one client for client-based invoicing" });
@@ -5101,7 +5140,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(400).json({ message: "Cannot specify both clients and projects in client-based mode" });
         }
       }
-      
+
       // Generate invoices for the batch
       const result = await storage.generateInvoicesForBatch(
         req.params.batchId,
@@ -5111,7 +5150,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           invoicingMode: invoicingMode || "client" 
         }
       );
-      
+
       res.json({
         message: `Generated ${result.invoicesCreated} invoices`,
         ...result
@@ -5124,21 +5163,21 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Invoice batch finalization workflow endpoints
   app.post("/api/invoice-batches/:batchId/finalize", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const userId = req.user?.id;
-      
+
       if (!userId) {
         return res.status(401).json({ message: "User ID not found" });
       }
-      
+
       console.log(`[API] Finalizing batch ${batchId} by user ${userId}`);
-      
+
       const updatedBatch = await storage.finalizeBatch(batchId, userId);
-      
+
       res.json({
         message: "Batch finalized successfully",
         batch: updatedBatch
@@ -5150,16 +5189,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.post("/api/invoice-batches/:batchId/review", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const { notes } = req.body;
-      
+
       console.log(`[API] Marking batch ${batchId} as reviewed`);
-      
+
       const updatedBatch = await storage.reviewBatch(batchId, notes);
-      
+
       res.json({
         message: "Batch marked as reviewed",
         batch: updatedBatch
@@ -5171,15 +5210,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.post("/api/invoice-batches/:batchId/unfinalize", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       console.log(`[API] Unfinalizing batch ${batchId}`);
-      
+
       const updatedBatch = await storage.unfinalizeBatch(batchId);
-      
+
       res.json({
         message: "Batch reverted to draft successfully",
         batch: updatedBatch
@@ -5191,43 +5230,43 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.patch("/api/invoice-batches/:batchId/as-of-date", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const { asOfDate } = req.body;
       const userId = req.user?.id;
-      
+
       if (!userId) {
         return res.status(401).json({ message: "User ID not found" });
       }
-      
+
       if (!asOfDate) {
         return res.status(400).json({ message: "As-of date is required" });
       }
-      
+
       // Validate date format (YYYY-MM-DD) without timezone conversion
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(asOfDate)) {
         return res.status(400).json({ message: "As-of date must be in YYYY-MM-DD format" });
       }
-      
+
       // Parse date components and validate calendar dates properly 
       const [year, month, day] = asOfDate.split('-').map(Number);
       if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
         return res.status(400).json({ message: "Invalid as-of date" });
       }
-      
+
       // Use Date object for proper calendar validation but don't store it (avoids timezone storage issues)
       const testDate = new Date(year, month - 1, day);
       if (testDate.getFullYear() !== year || testDate.getMonth() !== month - 1 || testDate.getDate() !== day) {
         return res.status(400).json({ message: "Invalid calendar date" });
       }
-      
+
       console.log(`[API] Updating batch ${batchId} as-of date to ${asOfDate} by user ${userId}`);
-      
+
       const updatedBatch = await storage.updateBatchAsOfDate(batchId, asOfDate, userId);
-      
+
       res.json({
         message: "As-of date updated successfully",
         batch: updatedBatch
@@ -5239,13 +5278,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.get("/api/invoice-batches/:batchId/status", requireAuth, async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       const status = await storage.getBatchStatus(batchId);
-      
+
       res.json(status);
     } catch (error: any) {
       console.error("Failed to get batch status:", error);
@@ -5259,7 +5298,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       // Get batch details and lines
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
@@ -5268,7 +5307,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
       const adjustments = await storage.getInvoiceAdjustments(batchId);
-      
+
       // Get company settings
       const companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
       const companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
@@ -5295,7 +5334,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="invoice-${batchId}.pdf"`);
+      res.setHeader('Content-Disposition',`attachment; filename="invoice-${batchId}.pdf"`);
       res.send(pdfBuffer);
     } catch (error: any) {
       console.error("Failed to generate PDF:", error);
@@ -5306,18 +5345,18 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Invoice Line Adjustments API Routes
-  
+
   // Line-item editing
   app.patch("/api/invoice-lines/:lineId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { lineId } = req.params;
       const updates = req.body;
-      
+
       // Validate the updates
       if (updates.billedAmount !== undefined && isNaN(parseFloat(updates.billedAmount))) {
         return res.status(400).json({ message: "Invalid billedAmount value" });
       }
-      
+
       const updatedLine = await storage.updateInvoiceLine(lineId, updates);
       res.json(updatedLine);
     } catch (error: any) {
@@ -5327,17 +5366,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Bulk line editing
   app.post("/api/invoice-batches/:batchId/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
       const { updates } = req.body;
-      
+
       if (!Array.isArray(updates)) {
         return res.status(400).json({ message: "Updates must be an array" });
       }
-      
+
       const updatedLines = await storage.bulkUpdateInvoiceLines(batchId, updates);
       res.json(updatedLines);
     } catch (error: any) {
@@ -5347,7 +5386,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Aggregate adjustment
   app.post("/api/invoice-batches/:batchId/aggregate-adjustment", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
@@ -5406,25 +5445,25 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/adjustments/history", requireAuth, async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       // Fetch real adjustments from the database
       const adjustments = await storage.getInvoiceAdjustments(batchId);
-      
+
       // Fetch invoice lines for this batch to calculate totals
       const invoiceLines = await storage.getInvoiceLinesForBatch(batchId);
-      
+
       // Process each adjustment to match frontend format
       const history = await Promise.all(adjustments.map(async (adjustment) => {
         // Get user who applied the adjustment
         const appliedByUser = await storage.getUser(adjustment.createdBy);
-        
+
         // Extract metadata if present
         const metadata = adjustment.metadata as any || {};
         const originalAmount = metadata.originalAmount || 0;
         const targetAmount = parseFloat(adjustment.targetAmount || '0');
         const variance = targetAmount - originalAmount;
         const variancePercent = originalAmount > 0 ? (variance / originalAmount) * 100 : 0;
-        
+
         // Get SOW details if referenced
         let sowReference = null;
         if (adjustment.sowId) {
@@ -5437,7 +5476,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             };
           }
         }
-        
+
         return {
           id: adjustment.id,
           batchId: adjustment.batchId,
@@ -5474,15 +5513,15 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/adjustments/summary", requireAuth, async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       // Fetch real adjustments and invoice lines from the database
       const adjustments = await storage.getInvoiceAdjustments(batchId);
       const invoiceLines = await storage.getInvoiceLinesForBatch(batchId);
-      
+
       // Calculate original total from invoice lines
       let originalTotal = 0;
       let currentTotal = 0;
-      
+
       // For each line, use originalAmount if present, otherwise use current amount
       invoiceLines.forEach(line => {
         const original = parseFloat(line.originalAmount || line.amount || '0');
@@ -5490,7 +5529,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         originalTotal += original;
         currentTotal += current;
       });
-      
+
       // Count adjustment types
       const aggregateAdjustments = adjustments.filter(adj => adj.scope === 'aggregate').length;
       const lineItemAdjustments = adjustments.filter(adj => adj.scope === 'line').length;
@@ -5498,13 +5537,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         const metadata = adj.metadata as any || {};
         return metadata.isReversal === true;
       }).length;
-      
+
       // Get last adjustment date
       const lastAdjustment = adjustments.length > 0 ? adjustments[0].createdAt : null;
-      
+
       const totalVariance = currentTotal - originalTotal;
       const variancePercent = originalTotal > 0 ? (totalVariance / originalTotal) * 100 : 0;
-      
+
       const summary = {
         originalTotal,
         currentTotal,
@@ -5531,7 +5570,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { batchId } = req.params;
       const userId = req.user!.id;
-      
+
       // Create a validation schema with coercion for numeric fields
       const adjustmentSchema = z.object({
         targetAmount: z.coerce.number().positive("Target amount must be positive"),
@@ -5550,19 +5589,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       }, {
         message: "Manual method requires allocation object"
       });
-      
+
       // Validate and coerce the request body
       const validationResult = adjustmentSchema.safeParse(req.body);
-      
+
       if (!validationResult.success) {
         return res.status(400).json({ 
           message: "Validation error",
           errors: validationResult.error.errors
         });
       }
-      
+
       const { targetAmount, method, reason, sowId, projectId, allocation } = validationResult.data;
-      
+
       const adjustment = await storage.applyAggregateAdjustment({
         batchId,
         targetAmount,
@@ -5573,10 +5612,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         userId,
         allocation
       });
-      
+
       // Get updated batch details to return new totals
       const batchDetails = await storage.getInvoiceBatchDetails(batchId);
-      
+
       res.json({
         adjustment,
         batchDetails
@@ -5588,12 +5627,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Remove adjustment
   app.delete("/api/invoice-adjustments/:adjustmentId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { adjustmentId } = req.params;
-      
+
       await storage.removeAggregateAdjustment(adjustmentId);
       res.status(204).send();
     } catch (error: any) {
@@ -5603,12 +5642,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Get adjustments for batch
   app.get("/api/invoice-batches/:batchId/adjustments", requireAuth, async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       const adjustments = await storage.getInvoiceAdjustments(batchId);
       res.json(adjustments);
     } catch (error: any) {
@@ -5623,7 +5662,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.patch("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       // Define validation schema for batch updates
       const updateSchema = z.object({
         paymentTerms: z.string().optional(),
@@ -5632,27 +5671,27 @@ export async function registerRoutes(app: Express): Promise<void> {
         invoicingMode: z.enum(["client", "project"]).optional(),
         notes: z.string().optional()
       }).strict(); // strict ensures no extra fields are accepted
-      
+
       // Validate request body
       const validatedUpdates = updateSchema.parse(req.body);
-      
+
       // Update the batch
       const updatedBatch = await storage.updateInvoiceBatch(batchId, validatedUpdates);
-      
+
       // Get the full batch details to return
       const batchDetails = await storage.getInvoiceBatchDetails(batchId);
-      
+
       res.json(batchDetails);
     } catch (error: any) {
       console.error("Failed to update invoice batch:", error);
-      
+
       if (error instanceof z.ZodError) {
         return res.status(400).json({ 
           message: "Invalid update data", 
           errors: error.errors 
         });
       }
-      
+
       res.status(error.message?.includes('finalized') ? 403 : 
                  error.message?.includes('not found') ? 404 : 400).json({ 
         message: error.message || "Failed to update invoice batch"
@@ -5681,7 +5720,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(updatedBatch);
     } catch (error: any) {
       console.error("Failed to update payment status:", error);
-      
+
       if (error.name === 'ZodError') {
         return res.status(400).json({ 
           message: "Invalid payment data", 
@@ -5699,9 +5738,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
-      
+
       await storage.deleteInvoiceBatch(batchId);
-      
+
       res.status(204).send(); // No content response for successful deletion
     } catch (error: any) {
       console.error("Failed to delete invoice batch:", error);
@@ -5711,13 +5750,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Milestone mapping
   app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { lineId } = req.params;
       const { milestoneId } = req.body;
-      
+
       const updatedLine = await storage.mapLineToMilestone(lineId, milestoneId);
       res.json(updatedLine);
     } catch (error: any) {
@@ -5727,12 +5766,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Project milestones (these may already exist, but adding for completeness)
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
       const { projectId } = req.params;
-      
+
       const milestones = await storage.getProjectMilestones(projectId);
       res.json(milestones);
     } catch (error: any) {
@@ -5742,39 +5781,48 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
-  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const milestoneData = {
         ...req.body,
-        projectId
+        projectId,
+        order: req.body.order ?? 0
       };
-      
-      // Validate milestone data
-      const validatedData = insertProjectMilestoneSchema.parse(milestoneData);
-      
-      const milestone = await storage.createProjectMilestone(validatedData);
+      const milestone = await storage.createProjectMilestone(milestoneData);
       res.json(milestone);
-    } catch (error: any) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ 
-          message: "Invalid milestone data", 
-          errors: error.errors 
-        });
-      }
-      console.error("Failed to create project milestone:", error);
-      res.status(500).json({ 
-        message: "Failed to create project milestone" 
-      });
+    } catch (error) {
+      console.error("Error creating milestone:", error);
+      res.status(500).json({ message: "Failed to create milestone" });
     }
   });
-  
+
+  // Update milestone
+  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
+      res.json(milestone);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update milestone" });
+    }
+  });
+
+  // Delete milestone
+  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      await storage.deleteProjectMilestone(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete milestone" });
+    }
+  });
+
   // Project financials
   app.get("/api/projects/:projectId/financials", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
-      
+
       const financials = await storage.getProjectFinancials(projectId);
       res.json(financials);
     } catch (error: any) {
@@ -5784,15 +5832,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // Financial comparison report
   app.get("/api/reports/financial-comparison", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { startDate, endDate, clientId, status } = req.query;
-      
+
       // Get all projects with their financials
       const projects = await storage.getProjects();
-      
+
       const financialComparison = await Promise.all(
         projects
           .filter(project => {
@@ -5815,7 +5863,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             };
           })
       );
-      
+
       // Calculate totals
       const totals = financialComparison.reduce(
         (acc, proj) => ({
@@ -5827,7 +5875,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }),
         { estimated: 0, contracted: 0, actualCost: 0, billed: 0, variance: 0 }
       );
-      
+
       res.json({
         projects: financialComparison,
         totals,
@@ -5874,9 +5922,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { email, password } = req.body;
-      
+
       console.log("[AUTH] Login attempt for:", email);
-      
+
       // Service account and admin logins for development/demo
       const serviceAccounts: Record<string, string> = {
         "chris.mcnulty@synozur.com": "admin123",  // Chris McNulty - Admin
@@ -5884,7 +5932,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         "sarah.chen@synozur.com": "admin123",  // Demo admin
         "service.admin@synozur.com": "ServiceAdmin2025!",  // Service account
       };
-      
+
       // Check if this is a service account login
       if (serviceAccounts[email]) {
         if (serviceAccounts[email] === password) {
@@ -5911,17 +5959,17 @@ export async function registerRoutes(app: Express): Promise<void> {
                 sessionId
               });
             }
-            
+
             // Check if user can login
             if (!user.canLogin) {
               console.log("[AUTH] User not allowed to login:", email);
               return res.status(403).json({ message: "This account is not authorized for login" });
             }
-            
+
             const sessionId = Math.random().toString(36).substring(7);
             sessions.set(sessionId, user);
             console.log("[AUTH] User found, created session:", sessionId);
-            
+
             return res.json({
               ...user,
               sessionId
@@ -5938,7 +5986,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(401).json({ message: "Invalid password" });
         }
       }
-      
+
       // For regular users, suggest using SSO
       const user = await storage.getUserByEmail(email);
       if (user) {
@@ -5946,7 +5994,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           message: "Please use 'Sign in with Microsoft' for SSO authentication. Service accounts can use password login." 
         });
       }
-      
+
       return res.status(401).json({ message: "User not found. Please sign in with Microsoft to create an account." });
     } catch (error: any) {
       console.error("[AUTH] Login error:", error);
@@ -5956,7 +6004,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   app.post("/api/auth/logout", async (req, res) => {
     const sessionId = req.headers['x-session-id'] as string;
     if (sessionId) {
@@ -5972,7 +6020,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         message: "SSO not configured. Please set AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_CLIENT_SECRET environment variables." 
       });
     }
-    
+
     try {
       const authUrl = await msalInstance.getAuthCodeUrl(authCodeRequest);
       res.json({ authUrl });
@@ -5986,27 +6034,27 @@ export async function registerRoutes(app: Express): Promise<void> {
     if (!isEntraConfigured || !msalInstance) {
       return res.redirect("/login?error=sso_not_configured");
     }
-    
+
     const { code } = req.query;
-    
+
     if (!code) {
       return res.redirect("/login?error=no_code");
     }
-    
+
     try {
       const tokenResponse = await msalInstance.acquireTokenByCode({
         ...tokenRequest,
         code: code as string,
       });
-      
+
       if (tokenResponse && tokenResponse.account) {
         // Create or update user in database
         const email = tokenResponse.account.username;
         const name = tokenResponse.account.name || email;
-        
+
         console.log("[DIAGNOSTIC] SSO callback - Email from Microsoft:", email);
         console.log("[DIAGNOSTIC] SSO callback - Name from Microsoft:", name);
-        
+
         // Check if user exists, create if not
         let user = await storage.getUserByEmail(email);
         console.log("[DIAGNOSTIC] SSO callback - User lookup result:", {
@@ -6037,23 +6085,23 @@ export async function registerRoutes(app: Express): Promise<void> {
             user = await storage.updateUser(user.id, { name });
           }
         }
-        
+
         // Check if user can login
         if (!user.canLogin) {
           return res.redirect("/login?error=not_authorized");
         }
-        
+
         // Create session
         const sessionId = Math.random().toString(36).substring(7);
         sessions.set(sessionId, user);
-        
+
         console.log("[DIAGNOSTIC] SSO callback - Session created:", {
           sessionId,
           userId: user.id,
           userEmail: user.email,
           userName: user.name
         });
-        
+
         // Redirect to dashboard with session ID
         res.redirect(`/?sessionId=${sessionId}`);
       } else {
@@ -6067,7 +6115,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         errorMessage: error.errorMessage,
         correlationId: error.correlationId
       });
-      
+
       // Provide more specific error message based on error type
       let errorParam = "token_acquisition_failed";
       if (error.errorCode === "invalid_grant") {
@@ -6077,7 +6125,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       } else if (error.errorMessage?.includes("redirect")) {
         errorParam = "redirect_uri_mismatch";
       }
-      
+
       res.redirect(`/login?error=${errorParam}`);
     }
   });
@@ -6087,7 +6135,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       configured: !!isEntraConfigured
     });
   });
-  
+
   // Debug endpoint to test database field mapping
   app.get("/api/debug/test-user", async (req, res) => {
     try {
@@ -6107,7 +6155,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
     }
   });
-  
+
   // User profile
   app.get("/api/auth/user", requireAuth, async (req, res) => {
     console.log("[DEBUG] Auth user request:", req.user);
@@ -6115,7 +6163,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ===================== RATE MANAGEMENT ENDPOINTS =====================
-  
+
   // Get user's default billing and cost rates
   app.get("/api/users/:userId/rates", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
@@ -6162,9 +6210,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a rate override
-  app.delete("/api/projects/:projectId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
-      await storage.deleteProjectRateOverride(req.params.overrideId);
+      await storage.deleteProjectRateOverride(req.params.id);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ message: "Failed to delete rate override" });
@@ -6172,7 +6220,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ===================== PROJECT STRUCTURE ENDPOINTS =====================
-  
+
   // Get project epics
   app.get("/api/projects/:projectId/epics", requireAuth, async (req, res) => {
     try {
@@ -6217,7 +6265,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to delete epic" });
     }
   });
-  
+
   // Get milestones for dropdown
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
@@ -6310,12 +6358,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ===================== EXPENSE MANAGEMENT ENDPOINTS =====================
-  
+
   // Bulk update expenses (billed status, person assignment)
   app.patch("/api/expenses/bulk", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const { expenseIds, updates } = req.body;
-      
+
       if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
         return res.status(400).json({ message: "expenseIds must be a non-empty array" });
       }
@@ -6360,7 +6408,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/expenses/export", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const { format = 'csv', ...filterParams } = req.query as Record<string, string>;
-      
+
       // Apply same filters as admin endpoint
       const filters: any = {};
       const { 
@@ -6379,7 +6427,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         maxAmount,
         vendor
       } = filterParams;
-      
+
       if (personId) filters.personId = personId;
       if (projectId) filters.projectId = projectId;
       if (clientId) filters.clientId = clientId;
@@ -6422,9 +6470,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
-        
+
         const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-        
+
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=expenses-export-${new Date().toISOString().split('T')[0]}.xlsx`);
         res.send(buffer);
@@ -6459,11 +6507,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/expenses/template", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const XLSX = await import('xlsx');
-      
+
       // Get active projects for the template
       const projects = await storage.getProjects();
       const sampleProjects = projects.slice(0, 3); // Get first 3 projects for samples
-      
+
       // Template headers with validation guidelines
       const headers = [
         'Date (YYYY-MM-DD)',
@@ -6476,7 +6524,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         'Billable (TRUE/FALSE)',
         'Reimbursable (TRUE/FALSE)'
       ];
-      
+
       // Sample data rows to guide users
       const sampleData = [
         {
@@ -6513,14 +6561,14 @@ export async function registerRoutes(app: Express): Promise<void> {
           'Reimbursable (TRUE/FALSE)': 'TRUE'
         }
       ];
-      
+
       // Create workbook
       const wb = XLSX.utils.book_new();
-      
+
       // Create main data sheet
       const ws = XLSX.utils.json_to_sheet(sampleData);
       XLSX.utils.book_append_sheet(wb, ws, 'Expense Data');
-      
+
       // Create instructions sheet
       const instructions = [
         { Instruction: 'How to use this template:' },
@@ -6545,24 +6593,24 @@ export async function registerRoutes(app: Express): Promise<void> {
         { Instruction: 'mileage - Vehicle mileage (amount will be calculated)' },
         { Instruction: 'other - Other business expenses' }
       ];
-      
+
       const instructionWs = XLSX.utils.json_to_sheet(instructions);
       XLSX.utils.book_append_sheet(wb, instructionWs, 'Instructions');
-      
+
       // Create projects reference sheet
       const projectsRef = projects.map(p => ({
         'Project Code': p.code,
         'Project Name': p.name,
         'Client': p.client?.name || 'Unknown'
       }));
-      
+
       if (projectsRef.length > 0) {
         const projectsWs = XLSX.utils.json_to_sheet(projectsRef);
         XLSX.utils.book_append_sheet(wb, projectsWs, 'Available Projects');
       }
-      
+
       const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-      
+
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', `attachment; filename=expense-import-template-${new Date().toISOString().split('T')[0]}.xlsx`);
       res.send(buffer);
@@ -6588,7 +6636,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             'application/vnd.ms-excel', // .xls
             'text/csv', // .csv
           ];
-          
+
           if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
           } else {
@@ -6623,7 +6671,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         try {
           const XLSX = await import('xlsx');
           let workbook;
-          
+
           // Parse file based on type
           if (req.file.mimetype === 'text/csv') {
             const csvData = req.file.buffer.toString('utf8');
@@ -6646,7 +6694,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Get projects and users for validation
           const projects = await storage.getProjects();
           const projectMap = new Map(projects.map(p => [p.code.toLowerCase(), p]));
-          
+
           const validationErrors: Array<{
             row: number;
             field?: string;
@@ -6709,7 +6757,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     throw new Error('Invalid date string format');
                   }
                 }
-                
+
                 // Handle numeric Excel serial dates
                 if (typeof serial === 'number' && !isNaN(serial) && serial > 0) {
                   // Excel stores dates as days since 1900-01-01
@@ -6721,27 +6769,27 @@ export async function registerRoutes(app: Express): Promise<void> {
                   if (serial > 73050) { // Dec 31, 2099
                     throw new Error('Date serial number too large (represents a date after 2099)');
                   }
-                  
+
                   const excelEpoch = new Date(1900, 0, 1);
                   const msPerDay = 24 * 60 * 60 * 1000;
                   const date = new Date(excelEpoch.getTime() + (serial - 2) * msPerDay); // -2 for Excel leap year bug
-                  
+
                   // Check if the resulting date is valid
                   if (isNaN(date.getTime())) {
                     throw new Error('Invalid date calculation');
                   }
-                  
+
                   // Double-check the year is reasonable
                   const year = date.getFullYear();
                   if (year < 1900 || year > 2100) {
                     throw new Error(`Calculated date year ${year} is outside reasonable range (1900-2100)`);
                   }
-                  
+
                   const month = String(date.getMonth() + 1).padStart(2, '0');
                   const day = String(date.getDate()).padStart(2, '0');
                   return `${year}-${month}-${day}`;
                 }
-                
+
                 // Handle Date objects
                 if (serial instanceof Date && !isNaN(serial.getTime())) {
                   const year = serial.getFullYear();
@@ -6753,18 +6801,18 @@ export async function registerRoutes(app: Express): Promise<void> {
                   const day = String(serial.getDate()).padStart(2, '0');
                   return `${year}-${month}-${day}`;
                 }
-                
+
                 // Handle string that represents a number (Excel serial date as string)
                 if (typeof serial === 'string' && serial.trim()) {
                   const trimmed = serial.trim();
                   const numericValue = parseFloat(trimmed);
-                  
+
                   // Check if the string represents a valid number (Excel serial date)
                   if (!isNaN(numericValue) && isFinite(numericValue) && String(numericValue) === trimmed) {
                     // Treat as Excel serial date - recursively call with the number
                     return excelDateToYYYYMMDD(numericValue);
                   }
-                  
+
                   // Try parsing as string date (handle formats like MM/DD/YYYY, DD/MM/YYYY, etc.)
                   const parsedDate = new Date(trimmed);
                   if (!isNaN(parsedDate.getTime())) {
@@ -6778,7 +6826,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     return `${year}-${month}-${day}`;
                   }
                 }
-                
+
                 throw new Error(`Unsupported date format: "${serial}" (type: ${typeof serial})`);
               } catch (error: any) {
                 throw new Error(`Unable to parse date "${serial}": ${error.message}`);
@@ -6795,7 +6843,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               try {
                 formattedDate = excelDateToYYYYMMDD(dateStr);
                 parsedDate = new Date(formattedDate);
-                
+
                 if (isNaN(parsedDate.getTime())) {
                   throw new Error('Invalid date after formatting');
                 }
@@ -6874,11 +6922,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             // Validate boolean fields
             const parseBooleanField = (value: string, fieldName: string, defaultValue: boolean = true) => {
               if (!value || value === '') return defaultValue;
-              
+
               const normalized = value.toLowerCase().trim();
               if (['true', 'yes', '1', 'y'].includes(normalized)) return true;
               if (['false', 'no', '0', 'n'].includes(normalized)) return false;
-              
+
               validationErrors.push({ 
                 row: rowNum, 
                 field: fieldName, 
@@ -6975,7 +7023,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ===================== PROFIT TRACKING ENDPOINTS =====================
-  
+
   // Get project profit/margin calculations
   app.get("/api/projects/:projectId/profit", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
