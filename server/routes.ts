@@ -3439,17 +3439,26 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.patch("/api/expenses/:id", requireAuth, async (req, res) => {
     try {
       console.log("[EXPENSE UPDATE] Request for expense:", req.params.id);
-      console.log("[EXPENSE UPDATE] Update data:", req.body);
+      console.log("[EXPENSE UPDATE] Update data:", JSON.stringify(req.body, null, 2));
+
+      // Normalize the data before validation (same as POST route)
+      const normalizedData = normalizeExpensePayload(req.body);
+      console.log("[EXPENSE UPDATE] Normalized data:", JSON.stringify(normalizedData, null, 2));
 
       // Validate the update data
-      const validationResult = insertExpenseSchema.partial().safeParse(req.body);
+      const validationResult = insertExpenseSchema.partial().safeParse(normalizedData);
       if (!validationResult.success) {
         console.error("[EXPENSE UPDATE] Validation failed:", validationResult.error);
+        console.error("[EXPENSE UPDATE] Validation errors:", validationResult.error.errors);
         return res.status(400).json({ 
           message: "Invalid expense data", 
-          errors: validationResult.error.errors 
+          errors: validationResult.error.errors,
+          receivedData: req.body,
+          normalizedData: normalizedData
         });
       }
+
+      console.log("[EXPENSE UPDATE] Validated data:", JSON.stringify(validationResult.data, null, 2));
 
       const expense = await storage.updateExpense(req.params.id, validationResult.data);
       console.log("[EXPENSE UPDATE] Success:", expense.id);
