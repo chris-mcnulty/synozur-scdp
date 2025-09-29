@@ -1,0 +1,218 @@
+Request body: {
+  "description": "test",
+  "epicId": "0ee1a829-5e84-44c1-bc15-c44b231b2816",
+  "stageId": "21a5c837-183e-44bd-b757-a6adfecdb60c",
+  "workstream": null,
+  "week": "1",
+  "baseHours": "4",
+  "factor": "1",
+  "rate": "400",
+  "costRate": "350",
+  "size": "small",
+  "complexity": "small",
+  "confidence": "high",
+  "comments": null,
+  "assignedUserId": "bb17cbbb-49bb-4b70-b124-9abe90faaa35",
+  "resourceName": "Chris McNulty",
+  "adjustedHours": "4",
+  "totalAmount": "1600",
+  "sortOrder": 18
+}
+Line item creation error: ZodError: [
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "baseHours"
+    ],
+    "message": "Expected string, received number"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "factor"
+    ],
+    "message": "Expected string, received number"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "rate"
+    ],
+    "message": "Expected string, received number"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "costRate"
+    ],
+    "message": "Expected string, received number"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "adjustedHours"
+    ],
+    "message": "Expected string, received number"
+  },
+  {
+    "code": "invalid_type",
+    "expected": "string",
+    "received": "number",
+    "path": [
+      "totalAmount"
+    ],
+    "message": "Expected string, received number"
+  }
+]
+    at get error [as error] (file:///home/runner/workspace/node_modules/zod/lib/index.mjs:587:31)
+    at ZodObject.parse (file:///home/runner/workspace/node_modules/zod/lib/index.mjs:663:22)
+    at <anonymous> (/home/runner/workspace/server/routes.ts:2195:58) {
+  issues: [
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    }
+  ],
+  addIssue: [Function (anonymous)],
+  addIssues: [Function (anonymous)],
+  errors: [
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    },
+    {
+      code: 'invalid_type',
+      expected: 'string',
+      received: 'number',
+      path: [Array],
+      message: 'Expected string, received number'
+    }
+  ]
+}
+Validation errors: [
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'baseHours' ],
+    message: 'Expected string, received number'
+  },
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'factor' ],
+    message: 'Expected string, received number'
+  },
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'rate' ],
+    message: 'Expected string, received number'
+  },
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'costRate' ],
+    message: 'Expected string, received number'
+  },
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'adjustedHours' ],
+    message: 'Expected string, received number'
+  },
+  {
+    code: 'invalid_type',
+    expected: 'string',
+    received: 'number',
+    path: [ 'totalAmount' ],
+    message: 'Expected string, received number'
+  }
+]
+10:53:56 PM [express] POST /api/estimates/9c1ac1cf-a95e-4439-bfe5-87a5f85c19ff/line-items 400 in 403m…
+[AUTH] Session check - SessionId: hwo9...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+10:54:35 PM [express] POST /api/expenses 400 in 1ms :: {"message":"Invalid expense data","errors":[{"…
