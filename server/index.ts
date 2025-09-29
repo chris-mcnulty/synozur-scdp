@@ -111,8 +111,6 @@ process.on('uncaughtException', (error) => {
       res.status(status).json({ message });
     });
 
-    
-
     // Create HTTP server
     log('Creating HTTP server...');
     const server = createServer(app);
@@ -152,60 +150,11 @@ process.on('uncaughtException', (error) => {
     } catch (routeError: any) {
       log(`⚠️ Route registration failed: ${routeError.message}`);
       if (routeError.stack) {
-        log(`Route error stack: ${routeError.stack}`);
+        log(`Route error stack: ${routeError.stack.split('\n').slice(0, 5).join('\n')}`);
       }
       log('Server will continue with health endpoints only');
-      
-      // Add a catch-all route for login to return proper JSON error
-      app.post('/api/auth/login', (req, res) => {
-        res.status(500).json({ 
-          message: "Server initialization incomplete. Please wait a moment and try again.",
-          error: "Routes not loaded"
-        });
-      });
-      
-      app.get('/api/auth/user', (req, res) => {
-        res.status(500).json({ 
-          message: "Server initialization incomplete. Please wait a moment and try again.",
-          error: "Routes not loaded"
-        });
-      });
+      // Don't crash the server - health endpoints will still work
     }
-
-    // Add a basic frontend fallback for when Vite/static serving fails
-    app.get('*', (req, res) => {
-      if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ 
-          message: "API endpoint not found",
-          path: req.path 
-        });
-      }
-      
-      // Serve a simple HTML page that loads the React app
-      const html = `
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SCDP - Synozur Consulting Delivery Platform</title>
-    <script>
-      // Simple loading message while we wait for the app to load
-      window.addEventListener('DOMContentLoaded', function() {
-        if (!document.getElementById('root').innerHTML.trim()) {
-          document.getElementById('root').innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui"><div>Loading SCDP...</div></div>';
-        }
-      });
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>`;
-      res.send(html);
-    });
 
     // Update version release date automatically on startup
     log('Updating version release date...');
@@ -256,27 +205,10 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       log('✅ Database connection successful');
     }).catch((dbError: any) => {
       log(`⚠️ Database not available: ${dbError.message}`);
-      log(`Database URL format: ${process.env.DATABASE_URL ? 'SET' : 'NOT SET'}`);
       log('Server will continue without database features');
-      
-      // Add database error routes
-      app.post('/api/auth/login', (req, res) => {
-        res.status(503).json({ 
-          message: "Database connection unavailable. Please try again in a moment.",
-          error: "Database not connected"
-        });
-      });
     });
   } else {
     log('⚠️ No DATABASE_URL provided - database features disabled');
-    
-    // Add no database routes
-    app.post('/api/auth/login', (req, res) => {
-      res.status(503).json({ 
-        message: "Database not configured. Please contact administrator.",
-        error: "No database configured"
-      });
-    });
   }
   
   // Setup Vite or static serving based on environment
