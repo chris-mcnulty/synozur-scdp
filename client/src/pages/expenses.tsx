@@ -471,21 +471,23 @@ export default function Expenses() {
 
     const submitData: any = {
       ...data,
-      amount: parseFloat(data.amount) || 0,
+      // Keep amount as string for decimal precision in PostgreSQL
+      amount: data.amount,
     };
 
     // Remove the miles field (it's only for UI)
     delete submitData.miles;
 
-    // If it's mileage, ensure quantity and unit are set with proper numeric conversion
+    // If it's mileage, ensure quantity and unit are set
     if (data.category === "mileage") {
       submitData.unit = "mile";
       const milesNum = parseFloat(data.miles || "0");
-      // Backend expects quantity as a NUMBER (decimal type in DB), not string!
-      submitData.quantity = milesNum > 0 ? milesNum : null;
+      // Backend expects quantity as a string for decimal type in DB
+      submitData.quantity = milesNum > 0 ? String(milesNum) : null;
       // Recalculate amount to ensure accuracy using the passed mileage rate
       if (milesNum > 0) {
-        submitData.amount = parseFloat((milesNum * currentMileageRate).toFixed(2));
+        // Keep as string for decimal precision
+        submitData.amount = (milesNum * currentMileageRate).toFixed(2);
         console.log('Mileage calculation:', { 
           miles: milesNum, 
           rate: currentMileageRate, 
@@ -506,8 +508,7 @@ export default function Expenses() {
       submitData.projectResourceId = null;
     }
 
-    // Ensure all numeric fields are properly typed
-    submitData.amount = parseFloat(String(submitData.amount)) || 0;
+    // Keep amount as string, ensure booleans are properly typed
     submitData.billable = Boolean(submitData.billable);
     submitData.reimbursable = Boolean(submitData.reimbursable);
 
