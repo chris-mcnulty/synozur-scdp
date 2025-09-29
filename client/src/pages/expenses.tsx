@@ -86,7 +86,7 @@ export default function Expenses() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { hasAnyRole } = useAuth();
-  
+
   // Check if current user can assign expenses to other people
   const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin']);
 
@@ -149,7 +149,7 @@ export default function Expenses() {
   useEffect(() => {
     // Skip effect during form submission to avoid race conditions
     if (isSubmitting) return;
-    
+
     if (watchedCategory === "mileage" && watchedMiles) {
       const miles = parseFloat(watchedMiles);
       if (!isNaN(miles) && miles > 0) {
@@ -167,7 +167,7 @@ export default function Expenses() {
       form.setValue("unit", undefined);
       form.setValue("miles", undefined);
     }
-    
+
     // Only update prevCategory if we have a valid category change
     if (watchedCategory !== prevCategory) {
       setPrevCategory(watchedCategory);
@@ -244,12 +244,12 @@ export default function Expenses() {
   const onSubmit = async (data: ExpenseFormData) => {
     // Prevent concurrent submissions
     if (isSubmitting) return;
-    
+
     console.log('=== CREATE EXPENSE SUBMIT ===');
     console.log('Form data received:', data);
-    
+
     setIsSubmitting(true);
-    
+
     try {
       // Validate mileage
       if (data.category === "mileage") {
@@ -264,20 +264,20 @@ export default function Expenses() {
           return;
         }
       }
-      
+
       // Use the unified transform function with current mileage rate
       const submitData = transformExpenseFormData(data, mileageRate);
       console.log('Data after transformation:', submitData);
-      
+
       // First create the expense
       const expense = await createExpenseMutation.mutateAsync(submitData);
       console.log('Expense created:', expense);
-      
+
       // If there's a receipt file, upload it
       if (receiptFile && expense.id) {
         const formData = new FormData();
         formData.append('file', receiptFile);
-        
+
         try {
           const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
             method: 'POST',
@@ -287,11 +287,11 @@ export default function Expenses() {
               'X-Session-Id': localStorage.getItem('sessionId') || '',
             },
           });
-          
+
           if (!response.ok) {
             throw new Error('Receipt upload failed');
           }
-          
+
           toast({
             title: "Receipt uploaded",
             description: "Receipt has been attached to the expense.",
@@ -321,11 +321,11 @@ export default function Expenses() {
           'X-Session-Id': localStorage.getItem('sessionId') || '',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to download template');
       }
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -335,7 +335,7 @@ export default function Expenses() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
+
       toast({
         title: "Template downloaded",
         description: "Excel template has been downloaded successfully.",
@@ -358,7 +358,7 @@ export default function Expenses() {
         'application/vnd.ms-excel', // .xls
         'text/csv', // .csv
       ];
-      
+
       if (!allowedTypes.includes(file.type)) {
         toast({
           title: "Invalid file type",
@@ -368,7 +368,7 @@ export default function Expenses() {
         event.target.value = '';
         return;
       }
-      
+
       // Validate file size (10MB limit)
       if (file.size > 10 * 1024 * 1024) {
         toast({
@@ -379,7 +379,7 @@ export default function Expenses() {
         event.target.value = '';
         return;
       }
-      
+
       setImportFile(file);
       setImportResults(null);
     }
@@ -387,13 +387,13 @@ export default function Expenses() {
 
   const processImport = async () => {
     if (!importFile) return;
-    
+
     setImportProgress(true);
-    
+
     try {
       const formData = new FormData();
       formData.append('file', importFile);
-      
+
       const response = await fetch('/api/expenses/import', {
         method: 'POST',
         body: formData,
@@ -402,20 +402,20 @@ export default function Expenses() {
           'X-Session-Id': localStorage.getItem('sessionId') || '',
         },
       });
-      
+
       const result = await response.json();
-      
+
       setImportResults(result);
-      
+
       if (result.success) {
         toast({
           title: "Import successful",
           description: `Successfully imported ${result.imported} expense(s).`,
         });
-        
+
         // Refresh expenses list
         queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
-        
+
         // Clear import state after successful import
         setTimeout(() => {
           setShowImportDialog(false);
@@ -465,15 +465,15 @@ export default function Expenses() {
     console.log('=== TRANSFORM DATA v2 FIXED ===');
     console.log('Input data:', data);
     console.log('Current mileage rate (fixed):', currentMileageRate);
-    
+
     const submitData: any = {
       ...data,
       amount: parseFloat(data.amount) || 0,
     };
-    
+
     // Remove the miles field (it's only for UI)
     delete submitData.miles;
-    
+
     // If it's mileage, ensure quantity and unit are set with proper numeric conversion
     if (data.category === "mileage") {
       submitData.unit = "mile";
@@ -497,20 +497,20 @@ export default function Expenses() {
       submitData.unit = undefined;
       console.log('Non-mileage: cleared quantity and unit');
     }
-    
+
     // Ensure projectResourceId is handled correctly - convert "unassigned" to undefined
     if (submitData.projectResourceId === "unassigned") {
       submitData.projectResourceId = undefined;
     }
-    
+
     // Ensure all numeric fields are properly typed
     submitData.amount = parseFloat(String(submitData.amount)) || 0;
     submitData.billable = Boolean(submitData.billable);
     submitData.reimbursable = Boolean(submitData.reimbursable);
-    
+
     console.log('Final transformed data:', submitData);
     console.log('=== END TRANSFORM ===');
-    
+
     return submitData;
   };
 
@@ -540,7 +540,7 @@ export default function Expenses() {
   useEffect(() => {
     // Skip effect during form submission to avoid race conditions
     if (updateExpenseMutation.isPending) return;
-    
+
     if (editWatchedCategory === "mileage" && editWatchedMiles) {
       const miles = parseFloat(editWatchedMiles);
       if (!isNaN(miles) && miles > 0) {
@@ -558,7 +558,7 @@ export default function Expenses() {
       editForm.setValue("unit", undefined);
       editForm.setValue("miles", undefined);
     }
-    
+
     // Only update prevCategory if we have a valid category change
     if (editWatchedCategory !== editPrevCategory) {
       setEditPrevCategory(editWatchedCategory);
@@ -579,11 +579,11 @@ export default function Expenses() {
       billable: expense.billable,
       reimbursable: expense.reimbursable
     });
-    
+
     setEditingExpenseId(expense.id);
     // Reset edit state first
     setEditPrevCategory("");
-    
+
     // Ensure date is properly formatted for the date input
     let formattedDate = expense.date;
     if (typeof expense.date === 'string') {
@@ -598,12 +598,12 @@ export default function Expenses() {
       // If it's any other type (Date object), format it
       formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
     }
-    
+
     console.log('Formatted date:', formattedDate);
-    
+
     // Sync the selectedDate state for the date picker
     setSelectedDate(new Date(expense.date));
-    
+
     // Populate the edit form with current expense data - ensure amount is always a string
     const formData: ExpenseFormData = {
       date: formattedDate,
@@ -620,7 +620,7 @@ export default function Expenses() {
       quantity: undefined,
       unit: undefined,
     };
-    
+
     // For mileage expenses, populate the miles field and trigger amount recalculation
     if (expense.category === "mileage" && expense.unit === "mile" && expense.quantity) {
       const miles = String(expense.quantity);
@@ -631,10 +631,10 @@ export default function Expenses() {
       formData.unit = "mile";
       console.log('Mileage expense detected, miles:', miles);
     }
-    
+
     console.log('Form data to be set:', formData);
     editForm.reset(formData);
-    
+
     // Set the previous category after reset to avoid useEffect conflicts
     setTimeout(() => {
       setEditPrevCategory(expense.category);
@@ -666,11 +666,11 @@ export default function Expenses() {
   const handleUpdateExpense = (expenseId: string, data: ExpenseFormData) => {
     // Prevent concurrent updates
     if (updateExpenseMutation.isPending) return;
-    
+
     console.log('=== UPDATE EXPENSE SUBMIT ===');
     console.log('Expense ID:', expenseId);
     console.log('Form data received:', data);
-    
+
     // Validate mileage
     if (data.category === "mileage") {
       const miles = parseFloat(data.miles || "0");
@@ -684,18 +684,18 @@ export default function Expenses() {
         return;
       }
     }
-    
+
     // Use the unified transform function with current mileage rate
     const submitData = transformExpenseFormData(data, mileageRate);
     console.log('Data after transformation:', submitData);
     console.log('=== END UPDATE SUBMIT ===');
-    
+
     updateExpenseMutation.mutate({ id: expenseId, data: submitData });
   };
 
   const getTotalExpenses = () => {
     if (!expenses) return { total: 0, billable: 0, reimbursable: 0 };
-    
+
     return expenses?.reduce(
       (acc, expense) => ({
         total: acc.total + parseFloat(expense.amount),
@@ -1246,7 +1246,7 @@ export default function Expenses() {
                   </FormItem>
                 )}
               />
-              
+
               {/* Person Assignment for Edit (Admin/PM only) */}
               {canAssignToPerson && (
                 <FormField
@@ -1278,7 +1278,7 @@ export default function Expenses() {
                   )}
                 />
               )}
-              
+
               {/* Mileage field for editing */}
               {editWatchedCategory === "mileage" && (
                 <FormField
@@ -1336,7 +1336,7 @@ export default function Expenses() {
                   <FormItem>
                     <FormLabel>Description</FormLabel>
                     <FormControl>
-                      <Textarea {...field} value={field.value || ""} data-testid="edit-input-description" />
+                      <Textarea {...field} value={field.value ?? ""} data-testid="edit-input-description" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1349,7 +1349,7 @@ export default function Expenses() {
                   <FormItem>
                     <FormLabel>Vendor</FormLabel>
                     <FormControl>
-                      <Input {...field} value={field.value || ""} placeholder="e.g., Alaska Airlines, Starbucks, Hyatt..." data-testid="edit-input-vendor" />
+                      <Input {...field} value={field.value ?? ""} placeholder="e.g., Alaska Airlines, Starbucks, Hyatt..." data-testid="edit-input-vendor" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1435,7 +1435,7 @@ export default function Expenses() {
               Upload an Excel or CSV file to bulk import expense entries
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             {!importResults && (
               <>
@@ -1443,7 +1443,7 @@ export default function Expenses() {
                   <p className="text-sm text-muted-foreground">
                     Upload an Excel (.xlsx, .xls) or CSV (.csv) file containing expense data.
                   </p>
-                  
+
                   <div className="flex items-center gap-2">
                     <Button
                       type="button"
@@ -1533,7 +1533,7 @@ export default function Expenses() {
                     </div>
                     <div className="flex-1">
                       <h4 className="font-medium">{importResults.message}</h4>
-                      
+
                       <div className="mt-2 grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <span className="font-medium">Total Rows:</span> {importResults.totalRows || 0}
