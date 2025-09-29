@@ -193,7 +193,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Register authentication routes first
   registerAuthRoutes(app);
   
-  // Sessions are now stored in the database for persistence across restarts
+  // Session storage (in-memory - appropriate for development)
+  const sessions: Map<string, any> = new Map();
 
   // Check if Entra ID is configured  
   const isEntraConfigured = !!msalInstance;
@@ -343,25 +344,27 @@ export async function registerRoutes(app: Express): Promise<void> {
       return res.status(401).json({ message: "Not authenticated" });
     }
 
-    try {
-      const session = await storage.getSession(sessionId);
-      if (!session) {
-        console.log("[AUTH] Session not found in database");
-        return res.status(401).json({ message: "Not authenticated" });
-      }
-
-      req.user = {
-        id: session.userId || session.id,
-        email: session.email,
-        name: session.name,
-        role: session.role
-      };
-      console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
-      next();
-    } catch (error) {
-      console.error("[AUTH] Error checking session:", error);
-      return res.status(500).json({ message: "Authentication error" });
+    const session = sessions.get(sessionId);
+    if (!session) {
+      console.log("[AUTH] Session not found in memory");
+      return res.status(401).json({ message: "Not authenticated" });
     }
+
+    // Check if session has expired
+    if (session.expiresAt && new Date() > new Date(session.expiresAt)) {
+      sessions.delete(sessionId);
+      console.log("[AUTH] Session expired");
+      return res.status(401).json({ message: "Session expired" });
+    }
+
+    req.user = {
+      id: session.id,
+      email: session.email,
+      name: session.name,
+      role: session.role
+    };
+    console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
+    next();
   };
 
   const requireRole = (roles: string[]) => (req: Request, res: Response, next: NextFunction) => {
@@ -6538,16 +6541,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Generate session ID
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
-      // Create session in database with 24-hour expiry
+      // Store session in memory with optional expiry
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 24);
       
-      await storage.createSession({
+      sessions.set(sessionId, {
         id: sessionId,
-        userId: user.email, // Using email as userId for demo accounts
         email: user.email,
         name: user.name,
         role: user.role,
+        createdAt: new Date(),
         expiresAt
       });
 
@@ -6573,13 +6576,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "No session ID provided" });
       }
 
-      const session = await storage.getSession(sessionId);
+      const session = sessions.get(sessionId);
       if (!session) {
         return res.status(401).json({ message: "Invalid session" });
       }
+      
+      // Check if session has expired
+      if (session.expiresAt && new Date() > new Date(session.expiresAt)) {
+        sessions.delete(sessionId);
+        return res.status(401).json({ message: "Session expired" });
+      }
 
       res.json({
-        id: session.userId || session.id,
+        id: session.id,
         email: session.email,
         name: session.name,
         role: session.role
@@ -6596,7 +6605,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const sessionId = req.headers['x-session-id'] as string;
       
       if (sessionId) {
-        await storage.deleteSession(sessionId);
+        sessions.delete(sessionId);
       }
       
       res.json({ success: true });
