@@ -1,0 +1,38 @@
+4:56:22 PM [express] Starting server initialization...
+4:56:22 PM [express] 🔍 Environment: development
+4:56:22 PM [express]   - Port: 5000 (default)
+4:56:22 PM [express] ✅ Environment validation passed
+4:56:22 PM [express] Setting up error handling middleware...
+4:56:22 PM [express] Creating HTTP server...
+4:56:22 PM [express] Binding to port 5000 immediately for deployment readiness...
+4:56:22 PM [express] ✅ Server successfully bound to port 5000
+4:56:22 PM [express] Environment: development
+4:56:22 PM [express] Process ID: 5924
+4:56:22 PM [express] Registering routes after server binding...
+4:56:22 PM [express] ⚠️ Route registration failed: Transform failed with 1 error:
+/home/runner/workspace/server/routes.ts:2227:42: ERROR: Expected ")" but found "$"
+4:56:22 PM [express] Route error stack: TransformError: Transform failed with 1 error:
+/home/runner/workspace/server/routes.ts:2227:42: ERROR: Expected ")" but found "$"
+    at failureErrorWithLog (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:1467:15)
+    at /home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:736:50
+    at responseCallbacks.<computed> (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:603:9)
+    at handleIncomingPacket (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:658:12)
+    at Socket.readFromStdout (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:581:7)
+    at Socket.emit (node:events:524:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:191:23)
+4:56:22 PM [express] Server will continue with health endpoints only
+4:56:22 PM [express] Updating version release date...
+4:56:22 PM [express] 📅 Version release date updated to: 2025-09-29
+4:56:22 PM [express] Version release date updated successfully
+4:56:22 PM [express] Starting additional services setup asynchronously...
+4:56:22 PM [express] Testing database connection...
+4:56:22 PM [express] Frontend server configuration:
+4:56:22 PM [express]   - Environment: development
+4:56:22 PM [express]   - Mode: Development (Vite)
+4:56:22 PM [express] Setting up Vite development server...
+4:56:23 PM [express] ✅ Vite development server setup successful
+4:56:23 PM [express] 📝 Frontend available at http://localhost:5000
+4:56:23 PM [express] ✅ Database connection successful
