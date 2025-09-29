@@ -103,6 +103,9 @@ export default function Expenses() {
       category: "",
       projectId: "",
       projectResourceId: "",
+      miles: "",
+      quantity: "",
+      unit: "",
     },
   });
 
@@ -163,9 +166,9 @@ export default function Expenses() {
     } else if (prevCategory === "mileage" && watchedCategory !== "mileage" && watchedCategory !== "") {
       // Clear quantity and unit when switching away from mileage to another category
       console.log('CREATE FORM: Clearing mileage fields, switching from mileage to:', watchedCategory);
-      form.setValue("quantity", undefined);
-      form.setValue("unit", undefined);
-      form.setValue("miles", undefined);
+      form.setValue("quantity", "");
+      form.setValue("unit", "");
+      form.setValue("miles", "");
     }
 
     // Only update prevCategory if we have a valid category change
@@ -195,9 +198,9 @@ export default function Expenses() {
         vendor: "",
         category: "",
         projectId: "",
-        miles: undefined,
-        quantity: undefined,
-        unit: undefined,
+        miles: "",
+        quantity: "",
+        unit: "",
       });
       // Reset component state
       setPrevCategory("");
@@ -479,7 +482,7 @@ export default function Expenses() {
       submitData.unit = "mile";
       const milesNum = parseFloat(data.miles || "0");
       // Backend expects quantity as a NUMBER (decimal type in DB), not string!
-      submitData.quantity = milesNum > 0 ? milesNum : undefined;
+      submitData.quantity = milesNum > 0 ? milesNum : null;
       // Recalculate amount to ensure accuracy using the passed mileage rate
       if (milesNum > 0) {
         submitData.amount = parseFloat((milesNum * currentMileageRate).toFixed(2));
@@ -493,14 +496,14 @@ export default function Expenses() {
       console.log('Mileage transformation:', { milesNum, quantity: submitData.quantity, amount: submitData.amount });
     } else {
       // Clear quantity and unit for non-mileage expenses
-      submitData.quantity = undefined;
-      submitData.unit = undefined;
+      submitData.quantity = null;
+      submitData.unit = null;
       console.log('Non-mileage: cleared quantity and unit');
     }
 
-    // Ensure projectResourceId is handled correctly - convert "unassigned" to undefined
-    if (submitData.projectResourceId === "unassigned") {
-      submitData.projectResourceId = undefined;
+    // Ensure projectResourceId is handled correctly - convert "unassigned" to null
+    if (submitData.projectResourceId === "unassigned" || submitData.projectResourceId === "") {
+      submitData.projectResourceId = null;
     }
 
     // Ensure all numeric fields are properly typed
@@ -528,6 +531,9 @@ export default function Expenses() {
       projectId: "",
       vendor: "",
       projectResourceId: "",
+      miles: "",
+      quantity: "",
+      unit: "",
     },
   });
 
@@ -554,9 +560,9 @@ export default function Expenses() {
     } else if (editPrevCategory === "mileage" && editWatchedCategory !== "mileage" && editWatchedCategory !== "") {
       // Clear quantity and unit when switching away from mileage to another category
       console.log('EDIT FORM: Clearing mileage fields, switching from mileage to:', editWatchedCategory);
-      editForm.setValue("quantity", undefined);
-      editForm.setValue("unit", undefined);
-      editForm.setValue("miles", undefined);
+      editForm.setValue("quantity", "");
+      editForm.setValue("unit", "");
+      editForm.setValue("miles", "");
     }
 
     // Only update prevCategory if we have a valid category change
@@ -616,9 +622,9 @@ export default function Expenses() {
       projectId: expense.projectId,
       vendor: expense.vendor || "",
       projectResourceId: expense.projectResourceId || "",
-      miles: undefined,
-      quantity: undefined,
-      unit: undefined,
+      miles: "",
+      quantity: "",
+      unit: "",
     };
 
     // For mileage expenses, populate the miles field and trigger amount recalculation
@@ -657,9 +663,9 @@ export default function Expenses() {
       projectId: "",
       vendor: "",
       projectResourceId: "",
-      miles: undefined,
-      quantity: undefined,
-      unit: undefined,
+      miles: "",
+      quantity: "",
+      unit: "",
     });
   };
 
