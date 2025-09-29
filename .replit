@@ -112,12 +112,13 @@ stopOnEntry = false
 type = "node"
 
 [workflows]
+runButton = "Run"
 
 [[workflows.workflow]]
-name = "Start Dev Server"
-mode = "sequential"
+name = "Run"
 author = 47096868
+mode = "sequential"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-command = "npm run dev"
+args = "npm run dev"

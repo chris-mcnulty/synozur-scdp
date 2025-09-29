@@ -111,6 +111,19 @@ process.on('uncaughtException', (error) => {
       res.status(status).json({ message });
     });
 
+    // Catch-all handler for unmatched routes - return JSON instead of HTML
+    app.use('*', (req: Request, res: Response) => {
+      if (req.path.startsWith('/api/')) {
+        res.status(404).json({ 
+          message: "API endpoint not found",
+          path: req.path 
+        });
+      } else {
+        // Let frontend handle non-API routes
+        res.status(404).send('Not Found');
+      }
+    });
+
     // Create HTTP server
     log('Creating HTTP server...');
     const server = createServer(app);
@@ -150,10 +163,24 @@ process.on('uncaughtException', (error) => {
     } catch (routeError: any) {
       log(`⚠️ Route registration failed: ${routeError.message}`);
       if (routeError.stack) {
-        log(`Route error stack: ${routeError.stack.split('\n').slice(0, 5).join('\n')}`);
+        log(`Route error stack: ${routeError.stack}`);
       }
       log('Server will continue with health endpoints only');
-      // Don't crash the server - health endpoints will still work
+      
+      // Add a catch-all route for login to return proper JSON error
+      app.post('/api/auth/login', (req, res) => {
+        res.status(500).json({ 
+          message: "Server initialization incomplete. Please wait a moment and try again.",
+          error: "Routes not loaded"
+        });
+      });
+      
+      app.get('/api/auth/user', (req, res) => {
+        res.status(500).json({ 
+          message: "Server initialization incomplete. Please wait a moment and try again.",
+          error: "Routes not loaded"
+        });
+      });
     }
 
     // Update version release date automatically on startup
@@ -205,10 +232,27 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       log('✅ Database connection successful');
     }).catch((dbError: any) => {
       log(`⚠️ Database not available: ${dbError.message}`);
+      log(`Database URL format: ${process.env.DATABASE_URL ? 'SET' : 'NOT SET'}`);
       log('Server will continue without database features');
+      
+      // Add database error routes
+      app.post('/api/auth/login', (req, res) => {
+        res.status(503).json({ 
+          message: "Database connection unavailable. Please try again in a moment.",
+          error: "Database not connected"
+        });
+      });
     });
   } else {
     log('⚠️ No DATABASE_URL provided - database features disabled');
+    
+    // Add no database routes
+    app.post('/api/auth/login', (req, res) => {
+      res.status(503).json({ 
+        message: "Database not configured. Please contact administrator.",
+        error: "No database configured"
+      });
+    });
   }
   
   // Setup Vite or static serving based on environment
