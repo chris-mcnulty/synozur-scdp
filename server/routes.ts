@@ -3301,12 +3301,27 @@ export async function registerRoutes(app: Express): Promise<void> {
   const normalizeExpensePayload = (data: any): any => {
     const normalized = { ...data };
 
-    // Convert string numbers to actual numbers
-    if (normalized.amount !== undefined) {
-      normalized.amount = parseFloat(normalized.amount);
+    // Keep decimal fields as strings for PostgreSQL decimal type
+    if (normalized.amount !== undefined && normalized.amount !== null) {
+      // Ensure it's a string and trim any whitespace
+      const value = String(normalized.amount).trim();
+      // Validate it's a valid number
+      if (!isNaN(parseFloat(value))) {
+        normalized.amount = value;
+      } else {
+        normalized.amount = null;
+      }
     }
+    
     if (normalized.quantity !== undefined && normalized.quantity !== null && normalized.quantity !== '') {
-      normalized.quantity = parseFloat(normalized.quantity);
+      // Ensure it's a string and trim any whitespace
+      const value = String(normalized.quantity).trim();
+      // Validate it's a valid number
+      if (!isNaN(parseFloat(value))) {
+        normalized.quantity = value;
+      } else {
+        normalized.quantity = null;
+      }
     }
 
     // Ensure date is in YYYY-MM-DD format
