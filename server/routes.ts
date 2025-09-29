@@ -193,8 +193,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Register authentication routes first
   registerAuthRoutes(app);
   
-  // Session storage (in-memory for demo, use Redis in production)
-  const sessions: Map<string, any> = new Map();
+  // Sessions are now stored in the database for persistence across restarts
 
   // Check if Entra ID is configured  
   const isEntraConfigured = !!msalInstance;
@@ -334,19 +333,35 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Auth middleware
-  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
     const sessionId = req.headers['x-session-id'] as string;
 
     console.log("[AUTH] Session check - SessionId:", sessionId ? sessionId.substring(0, 4) + '...' : 'none');
 
-    if (!sessionId || !sessions.has(sessionId)) {
-      console.log("[AUTH] Session not found - Total sessions:", sessions.size);
+    if (!sessionId) {
+      console.log("[AUTH] No session ID provided");
       return res.status(401).json({ message: "Not authenticated" });
     }
 
-    req.user = sessions.get(sessionId);
-    console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
-    next();
+    try {
+      const session = await storage.getSession(sessionId);
+      if (!session) {
+        console.log("[AUTH] Session not found in database");
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+
+      req.user = {
+        id: session.userId || session.id,
+        email: session.email,
+        name: session.name,
+        role: session.role
+      };
+      console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
+      next();
+    } catch (error) {
+      console.error("[AUTH] Error checking session:", error);
+      return res.status(500).json({ message: "Authentication error" });
+    }
   };
 
   const requireRole = (roles: string[]) => (req: Request, res: Response, next: NextFunction) => {
@@ -6523,13 +6538,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Generate session ID
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
-      // Store session
-      sessions.set(sessionId, {
+      // Create session in database with 24-hour expiry
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
+      
+      await storage.createSession({
         id: sessionId,
+        userId: user.email, // Using email as userId for demo accounts
         email: user.email,
         name: user.name,
         role: user.role,
-        createdAt: new Date()
+        expiresAt
       });
 
       res.json({
@@ -6554,13 +6573,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "No session ID provided" });
       }
 
-      const session = sessions.get(sessionId);
+      const session = await storage.getSession(sessionId);
       if (!session) {
         return res.status(401).json({ message: "Invalid session" });
       }
 
       res.json({
-        id: session.id,
+        id: session.userId || session.id,
         email: session.email,
         name: session.name,
         role: session.role
@@ -6577,7 +6596,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const sessionId = req.headers['x-session-id'] as string;
       
       if (sessionId) {
-        sessions.delete(sessionId);
+        await storage.deleteSession(sessionId);
       }
       
       res.json({ success: true });
