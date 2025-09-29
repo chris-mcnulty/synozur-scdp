@@ -69,12 +69,12 @@ export function cleanupExpiredSessions(): void {
   const now = new Date();
   let cleaned = 0;
   
-  for (const [sessionId, session] of sessions.entries()) {
+  sessions.forEach((session, sessionId) => {
     if (session.expiresAt && new Date(session.expiresAt) < now) {
       sessions.delete(sessionId);
       cleaned++;
     }
-  }
+  });
   
   if (cleaned > 0) {
     console.log(`[SESSION] Cleaned up ${cleaned} expired sessions`);
