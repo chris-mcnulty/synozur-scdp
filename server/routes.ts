@@ -186,15 +186,15 @@ function filterSensitiveData(data: any, userRole: string): any {
   return data;
 }
 
-// Import auth module
+// Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
+import { requireAuth, requireRole } from "./session-store";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Register authentication routes first
   registerAuthRoutes(app);
   
-  // Session storage (in-memory - appropriate for development)
-  const sessions: Map<string, any> = new Map();
+  // Sessions are now managed in the shared session-store module
 
   // Check if Entra ID is configured  
   const isEntraConfigured = !!msalInstance;
@@ -333,47 +333,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Auth middleware
-  const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-    const sessionId = req.headers['x-session-id'] as string;
-
-    console.log("[AUTH] Session check - SessionId:", sessionId ? sessionId.substring(0, 4) + '...' : 'none');
-
-    if (!sessionId) {
-      console.log("[AUTH] No session ID provided");
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    const session = sessions.get(sessionId);
-    if (!session) {
-      console.log("[AUTH] Session not found in memory");
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-
-    // Check if session has expired
-    if (session.expiresAt && new Date() > new Date(session.expiresAt)) {
-      sessions.delete(sessionId);
-      console.log("[AUTH] Session expired");
-      return res.status(401).json({ message: "Session expired" });
-    }
-
-    req.user = {
-      id: session.id,
-      email: session.email,
-      name: session.name,
-      role: session.role,
-      isActive: true  // In-memory sessions are always for active users
-    };
-    console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
-    next();
-  };
-
-  const requireRole = (roles: string[]) => (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Insufficient permissions" });
-    }
-    next();
-  };
+  // Auth middleware is now imported from session-store module
 
   // Compliance tracking endpoint
   app.get("/api/compliance", requireAuth, async (req, res) => {
@@ -6513,108 +6473,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // ===================== AUTHENTICATION ENDPOINTS =====================
-
-  // Login endpoint
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-
-      // Demo credentials for testing
-      const validCredentials = [
-        { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
-        { email: "chris.mcnulty@synozur.com", password: "admin123", name: "Chris McNulty", role: "admin" },
-        { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
-      ];
-
-      const user = validCredentials.find(cred => 
-        cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
-      );
-
-      if (!user) {
-        return res.status(401).json({ message: "Invalid email or password" });
-      }
-
-      // Generate session ID
-      const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-      
-      // Store session in memory with optional expiry
-      const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24);
-      
-      sessions.set(sessionId, {
-        id: sessionId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        createdAt: new Date(),
-        expiresAt
-      });
-
-      res.json({
-        id: sessionId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        sessionId
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // Get current user
-  app.get("/api/auth/user", async (req, res) => {
-    try {
-      const sessionId = req.headers['x-session-id'] as string;
-      
-      if (!sessionId) {
-        return res.status(401).json({ message: "No session ID provided" });
-      }
-
-      const session = sessions.get(sessionId);
-      if (!session) {
-        return res.status(401).json({ message: "Invalid session" });
-      }
-      
-      // Check if session has expired
-      if (session.expiresAt && new Date() > new Date(session.expiresAt)) {
-        sessions.delete(sessionId);
-        return res.status(401).json({ message: "Session expired" });
-      }
-
-      res.json({
-        id: session.id,
-        email: session.email,
-        name: session.name,
-        role: session.role
-      });
-    } catch (error) {
-      console.error("Get user error:", error);
-      res.status(500).json({ message: "Failed to get user" });
-    }
-  });
-
-  // Logout endpoint
-  app.post("/api/auth/logout", async (req, res) => {
-    try {
-      const sessionId = req.headers['x-session-id'] as string;
-      
-      if (sessionId) {
-        sessions.delete(sessionId);
-      }
-      
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Logout error:", error);
-      res.status(500).json({ message: "Logout failed" });
-    }
-  });
+  // Authentication endpoints are handled by auth-routes.ts with shared session store
 
   // SSO status endpoint
   app.get("/api/auth/sso/status", async (req, res) => {
