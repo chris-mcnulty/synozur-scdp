@@ -3323,12 +3323,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   const normalizeEstimateLineItemPayload = (data: any): any => {
     const normalized = { ...data };
 
-    // Convert string numbers to actual numbers for decimal fields
+    // Keep decimal fields as strings for PostgreSQL decimal type
+    // Only ensure they are valid numeric strings
     const decimalFields = ['baseHours', 'factor', 'rate', 'costRate', 'totalAmount', 'totalCost', 'margin', 'marginPercent', 'adjustedHours'];
 
     for (const field of decimalFields) {
       if (normalized[field] !== undefined && normalized[field] !== null && normalized[field] !== '') {
-        normalized[field] = parseFloat(normalized[field]);
+        // Ensure it's a string and trim any whitespace
+        const value = String(normalized[field]).trim();
+        // Validate it's a valid number
+        if (!isNaN(parseFloat(value))) {
+          normalized[field] = value;
+        } else {
+          normalized[field] = null;
+        }
       }
     }
 
