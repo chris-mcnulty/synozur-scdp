@@ -1,19 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-
-// Session storage (in-memory for demo)
-const sessions: Map<string, any> = new Map();
-
-// Authentication middleware
-export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-  const sessionId = req.headers['x-session-id'] as string;
-  
-  if (!sessionId || !sessions.has(sessionId)) {
-    return res.status(401).json({ message: "Authentication required" });
-  }
-  
-  req.user = sessions.get(sessionId);
-  next();
-};
+import { createSession, getSession, deleteSession, requireAuth } from "./session-store";
 
 export function registerAuthRoutes(app: Express): void {
   // Login endpoint
@@ -43,13 +29,12 @@ export function registerAuthRoutes(app: Express): void {
       // Generate session ID
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
-      // Store session
-      sessions.set(sessionId, {
+      // Store session using shared session store
+      createSession(sessionId, {
         id: sessionId,
         email: user.email,
         name: user.name,
-        role: user.role,
-        createdAt: new Date()
+        role: user.role
       });
 
       res.json({
@@ -74,7 +59,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "No session ID provided" });
       }
 
-      const session = sessions.get(sessionId);
+      const session = getSession(sessionId);
       if (!session) {
         return res.status(401).json({ message: "Invalid session" });
       }
@@ -97,7 +82,7 @@ export function registerAuthRoutes(app: Express): void {
       const sessionId = req.headers['x-session-id'] as string;
       
       if (sessionId) {
-        sessions.delete(sessionId);
+        deleteSession(sessionId);
       }
       
       res.json({ success: true });
