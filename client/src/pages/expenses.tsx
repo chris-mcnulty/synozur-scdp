@@ -535,6 +535,7 @@ export default function Expenses() {
       quantity: "",
       unit: "",
     },
+    mode: "onChange",
   });
 
   // Watch edit form category and miles for auto-calculation
@@ -610,16 +611,16 @@ export default function Expenses() {
     // Sync the selectedDate state for the date picker
     setSelectedDate(new Date(expense.date));
 
-    // Populate the edit form with current expense data - ensure amount is always a string
+    // Populate the edit form with current expense data - ensure all fields have defined values
     const formData: ExpenseFormData = {
       date: formattedDate,
       amount: typeof expense.amount === 'string' ? expense.amount : String(expense.amount),
-      currency: expense.currency,
-      billable: expense.billable,
-      reimbursable: expense.reimbursable,
-      description: expense.description,
-      category: expense.category,
-      projectId: expense.projectId,
+      currency: expense.currency || "USD",
+      billable: Boolean(expense.billable),
+      reimbursable: Boolean(expense.reimbursable),
+      description: expense.description || "",
+      category: expense.category || "",
+      projectId: expense.projectId || "",
       vendor: expense.vendor || "",
       projectResourceId: expense.projectResourceId || "",
       miles: "",
@@ -639,7 +640,11 @@ export default function Expenses() {
     }
 
     console.log('Form data to be set:', formData);
-    editForm.reset(formData);
+    
+    // Use setValue instead of reset to avoid controlled/uncontrolled issues
+    Object.entries(formData).forEach(([key, value]) => {
+      editForm.setValue(key as keyof ExpenseFormData, value);
+    });
 
     // Set the previous category after reset to avoid useEffect conflicts
     setTimeout(() => {
@@ -677,6 +682,21 @@ export default function Expenses() {
     console.log('Expense ID:', expenseId);
     console.log('Form data received:', data);
 
+    // Validate required fields
+    if (!data.projectId || !data.category || !data.description) {
+      console.error('Missing required fields:', { 
+        projectId: data.projectId, 
+        category: data.category, 
+        description: data.description 
+      });
+      toast({
+        title: "Validation Error",
+        description: "Project, category, and description are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Validate mileage
     if (data.category === "mileage") {
       const miles = parseFloat(data.miles || "0");
@@ -694,6 +714,18 @@ export default function Expenses() {
     // Use the unified transform function with current mileage rate
     const submitData = transformExpenseFormData(data, mileageRate);
     console.log('Data after transformation:', submitData);
+    
+    // Additional validation of the transformed data
+    if (!submitData.amount || submitData.amount <= 0) {
+      console.error('Invalid amount after transformation:', submitData.amount);
+      toast({
+        title: "Validation Error",
+        description: "Amount must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
     console.log('=== END UPDATE SUBMIT ===');
 
     updateExpenseMutation.mutate({ id: expenseId, data: submitData });
