@@ -361,7 +361,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       id: session.id,
       email: session.email,
       name: session.name,
-      role: session.role
+      role: session.role,
+      isActive: true  // In-memory sessions are always for active users
     };
     console.log("[AUTH] Session valid - User:", req.user?.id, req.user?.email);
     next();
