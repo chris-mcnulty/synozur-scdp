@@ -2230,7 +2230,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ 
           message: "Invalid line item data", 
           errors: error.errors,
-          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+          details: error.errors.map(e => e.path.join('.') + ': ' + e.message).join(', ')
         });
       }
       res.status(500).json({ 
@@ -2273,7 +2273,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ 
           message: "Invalid line item data", 
           errors: error.errors,
-          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+          details: error.errors.map(e => e.path.join('.') + ': ' + e.message).join(', ')
         });
       }
       res.status(500).json({ 
@@ -2519,7 +2519,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", `attachment; filename="estimate-${req.params.id}.xlsx"`);
+      res.setHeader("Content-Disposition", "attachment; filename=\"estimate-" + req.params.id + ".xlsx\"");
       res.send(buffer);
     } catch (error) {
       res.status(500).json({ message: "Failed to export Excel file" });
@@ -2959,7 +2959,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", `attachment; filename="time-entries-${new Date().toISOString().split('T')[0]}.xlsx"`);
+      res.setHeader("Content-Disposition", "attachment; filename=\"time-entries-" + new Date().toISOString().split('T')[0] + ".xlsx\"");
       res.send(buffer);
     } catch (error) {
       console.error("Error exporting time entries:", error);
@@ -3050,13 +3050,13 @@ export async function registerRoutes(app: Express): Promise<void> {
               const year = date.getFullYear();
               const month = String(date.getMonth() + 1).padStart(2, '0');
               const day = String(date.getDate()).padStart(2, '0');
-              return `${year}-${month}-${day}`;
+              return year + '-' + month + '-' + day;
             }
             if (serial instanceof Date) {
               const year = serial.getFullYear();
               const month = String(serial.getMonth() + 1).padStart(2, '0');
               const day = String(serial.getDate()).padStart(2, '0');
-              return `${year}-${month}-${day}`;
+              return year + '-' + month + '-' + day;
             }
             return serial; // Return as-is and let validation catch it
           };
@@ -3087,8 +3087,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             }
             // Map by firstName + lastName if both exist
             if (u.firstName && u.lastName) {
-              userMap.set(`${u.firstName} ${u.lastName}`.toLowerCase(), u.id);
-              userMap.set(`${u.firstName}.${u.lastName}`.toLowerCase(), u.id);
+              userMap.set((u.firstName + ' ' + u.lastName).toLowerCase(), u.id);
+              userMap.set((u.firstName + '.' + u.lastName).toLowerCase(), u.id);
             }
             // Map by just firstName or lastName if they exist
             if (u.firstName) userMap.set(u.firstName.toLowerCase(), u.id);
@@ -3100,9 +3100,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           const missingResources = new Set<string>();
 
           // Debug: Log what we found in the database
-          console.log(`Import Debug - Found ${projects.length} projects in database`);
-          console.log(`Import Debug - Found ${users.length} users in database`);
-          console.log(`Import Debug - Processing ${data.length} rows from Excel`);
+          console.log('Import Debug - Found ' + projects.length + ' projects in database');
+          console.log('Import Debug - Found ' + users.length + ' users in database');
+          console.log('Import Debug - Processing ' + data.length + ' rows from Excel');
 
           for (let i = 0; i < data.length; i++) {
             const row = data[i] as any[];
@@ -3129,7 +3129,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   for (const [key, id] of Array.from(projectMap.entries())) {
                     if (key.includes(normalizedName) || normalizedName.includes(key)) {
                       projectId = id;
-                      console.log(`Import Debug - Fuzzy matched project "${projectName}" to "${key}"`);
+                      console.log('Import Debug - Fuzzy matched project "' + projectName + '" to "' + key + '"');
                       break;
                     }
                   }
@@ -3138,7 +3138,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
               if (!projectId) {
                 missingProjects.add(projectName);
-                errors.push(`Row ${i + 3}: Project "${projectName}" not found. Available projects: ${Array.from(projectMap.keys()).slice(0, 5).join(', ')}${projectMap.size > 5 ? '...' : ''}`);
+                errors.push('Row ' + (i + 3) + ': Project "' + projectName + '" not found. Available projects: ' + Array.from(projectMap.keys()).slice(0, 5).join(', ') + (projectMap.size > 5 ? '...' : ''));
                 continue;
               }
 
@@ -3166,7 +3166,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     for (const part of nameParts) {
                       if (userMap.has(part)) {
                         foundPersonId = userMap.get(part);
-                        console.log(`Import Debug - Partial matched user "${resourceName}" by part "${part}"`);
+                        console.log('Import Debug - Partial matched user "' + resourceName + '" by part "' + part + '"');
                         break;
                       }
                     }
@@ -3178,7 +3178,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   if (["admin", "billing-admin", "pm", "executive"].includes(req.user!.role)) {
                     personId = foundPersonId;
                   } else if (foundPersonId !== req.user!.id) {
-                    warnings.push(`Row ${i + 3}: Entry assigned to you instead of ${resourceName} (no permission)`);
+                    warnings.push('Row ' + (i + 3) + ': Entry assigned to you instead of ' + resourceName + ' (no permission)');
                     personId = req.user!.id;
                   } else {
                     personId = foundPersonId;
@@ -3187,7 +3187,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   // Resource not found - provide helpful info
                   missingResources.add(resourceName);
                   const availableUsers = Array.from(userMap.keys()).filter(k => !k.includes('@')).slice(0, 3).join(', ');
-                  warnings.push(`Row ${i + 3}: Resource "${resourceName}" not found. Available users include: ${availableUsers}${userMap.size > 3 ? '...' : ''}. Entry assigned to you.`);
+                  warnings.push('Row ' + (i + 3) + ': Resource "' + resourceName + '" not found. Available users include: ' + availableUsers + (userMap.size > 3 ? '...' : '') + '. Entry assigned to you.');
                   personId = req.user!.id;
                 }
               }
@@ -3214,7 +3214,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               const timeEntry = await storage.createTimeEntry(validatedData);
               importResults.push(timeEntry);
             } catch (error) {
-              errors.push(`Row ${i + 3}: ${error instanceof Error ? error.message : "Invalid data"}`);
+              errors.push('Row ' + (i + 3) + ': ' + (error instanceof Error ? error.message : "Invalid data"));
             }
           }
 
@@ -3234,7 +3234,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             imported: importResults.length,
             errors: errors,
             warnings: warnings,
-            message: `${importResults.length > 0 ? `Successfully imported ${importResults.length} time entries` : 'No entries imported'}${errors.length > 0 ? ` (${errors.length} rows failed)` : ""}${warnings.length > 0 ? ` with ${warnings.length} warnings` : ""}`,
+            message: (importResults.length > 0 ? 'Successfully imported ' + importResults.length + ' time entries' : 'No entries imported') + (errors.length > 0 ? ' (' + errors.length + ' rows failed)' : "") + (warnings.length > 0 ? ' with ' + warnings.length + ' warnings' : ""),
             summary: {
               totalRows: data.length,
               imported: importResults.length,
@@ -5287,7 +5287,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition',`attachment; filename="invoice-${batchId}.pdf"`);
+      res.setHeader('Content-Disposition', 'attachment; filename="invoice-' + batchId + '.pdf"');
       res.send(pdfBuffer);
     } catch (error: any) {
       console.error("Failed to generate PDF:", error);
@@ -5933,7 +5933,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename=expenses-export-${new Date().toISOString().split('T')[0]}.xlsx`);
+        res.setHeader('Content-Disposition', 'attachment; filename=expenses-export-' + new Date().toISOString().split('T')[0] + '.xlsx');
         res.send(buffer);
       } else {
         // Default to CSV
@@ -5952,7 +5952,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         ].join('\n');
 
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename=expenses-export-${new Date().toISOString().split('T')[0]}.csv`);
+        res.setHeader('Content-Disposition', 'attachment; filename=expenses-export-' + new Date().toISOString().split('T')[0] + '.csv');
         res.send(csvContent);
       }
     } catch (error) {
@@ -6071,7 +6071,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=expense-import-template-${new Date().toISOString().split('T')[0]}.xlsx`);
+      res.setHeader('Content-Disposition', 'attachment; filename=expense-import-template-' + new Date().toISOString().split('T')[0] + '.xlsx');
       res.send(buffer);
     } catch (error) {
       console.error("Error generating expense template:", error);
@@ -6246,7 +6246,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
                   const month = String(date.getMonth() + 1).padStart(2, '0');
                   const day = String(date.getDate()).padStart(2, '0');
-                  return `${year}-${month}-${day}`;
+                  return year + '-' + month + '-' + day;
                 }
 
                 // Handle Date objects
@@ -6258,7 +6258,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   }
                   const month = String(serial.getMonth() + 1).padStart(2, '0');
                   const day = String(serial.getDate()).padStart(2, '0');
-                  return `${year}-${month}-${day}`;
+                  return year + '-' + month + '-' + day;
                 }
 
                 // Handle string that represents a number (Excel serial date as string)
@@ -6282,7 +6282,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     }
                     const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
                     const day = String(parsedDate.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
+                    return year + '-' + month + '-' + day;
                   }
                 }
 
