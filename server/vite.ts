@@ -19,6 +19,33 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
+export function serveStatic(app: Express) {
+  const staticPath = path.resolve(import.meta.dirname, "..", "dist", "public");
+  
+  // Check if static files exist
+  if (fs.existsSync(staticPath)) {
+    log(`Serving static files from ${staticPath}`);
+    app.use(express.static(staticPath));
+    
+    // Fallback for SPA routes
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        return next();
+      }
+      
+      const indexPath = path.join(staticPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        next();
+      }
+    });
+  } else {
+    log(`Static files not found at ${staticPath}`);
+    throw new Error(`Static files not found at ${staticPath}`);
+  }
+}
+
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
@@ -32,8 +59,9 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        log(`Vite error: ${msg}`);
         viteLogger.error(msg, options);
-        process.exit(1);
+        // Don't exit on Vite errors, just log them
       },
     },
     server: serverOptions,
@@ -41,7 +69,14 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   app.use(vite.middlewares);
-  app.use("*", async (req, res, next) => {
+  
+  // Handle frontend routes (non-API routes)
+  app.get('*', async (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+
     const url = req.originalUrl;
 
     try {
@@ -52,6 +87,11 @@ export async function setupVite(app: Express, server: Server) {
         "index.html",
       );
 
+      // Check if template exists
+      if (!fs.existsSync(clientTemplate)) {
+        throw new Error(`Template not found at ${clientTemplate}`);
+      }
+
       // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
@@ -61,6 +101,7 @@ export async function setupVite(app: Express, server: Server) {
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
+      log(`Vite transform error: ${(e as Error).message}`);
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }

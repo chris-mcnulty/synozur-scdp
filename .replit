@@ -112,7 +112,7 @@ stopOnEntry = false
 type = "node"
 
 [workflows]
-runButton = "Run"
+runButton = "Development Server"
 
 [[workflows.workflow]]
 name = "Run"
@@ -122,3 +122,12 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
+
+[[workflows.workflow]]
+name = "Development Server"
+author = 47096868
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx tsx server/index.ts"

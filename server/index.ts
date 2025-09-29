@@ -111,18 +111,7 @@ process.on('uncaughtException', (error) => {
       res.status(status).json({ message });
     });
 
-    // Catch-all handler for unmatched routes - return JSON instead of HTML
-    app.use('*', (req: Request, res: Response) => {
-      if (req.path.startsWith('/api/')) {
-        res.status(404).json({ 
-          message: "API endpoint not found",
-          path: req.path 
-        });
-      } else {
-        // Let frontend handle non-API routes
-        res.status(404).send('Not Found');
-      }
-    });
+    
 
     // Create HTTP server
     log('Creating HTTP server...');
@@ -182,6 +171,41 @@ process.on('uncaughtException', (error) => {
         });
       });
     }
+
+    // Add a basic frontend fallback for when Vite/static serving fails
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ 
+          message: "API endpoint not found",
+          path: req.path 
+        });
+      }
+      
+      // Serve a simple HTML page that loads the React app
+      const html = `
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCDP - Synozur Consulting Delivery Platform</title>
+    <script>
+      // Simple loading message while we wait for the app to load
+      window.addEventListener('DOMContentLoaded', function() {
+        if (!document.getElementById('root').innerHTML.trim()) {
+          document.getElementById('root').innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui"><div>Loading SCDP...</div></div>';
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>`;
+      res.send(html);
+    });
 
     // Update version release date automatically on startup
     log('Updating version release date...');
