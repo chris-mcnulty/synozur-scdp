@@ -1,11 +1,11 @@
 import { 
-  sessions, users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
+  users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
-  type Session, type InsertSession, type User, type InsertUser, type Client, type InsertClient, 
+  type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
@@ -176,12 +176,6 @@ function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T
 }
 
 export interface IStorage {
-  // Sessions (for authentication)
-  getSession(id: string): Promise<Session | undefined>;
-  createSession(session: InsertSession): Promise<Session>;
-  deleteSession(id: string): Promise<void>;
-  deleteExpiredSessions(): Promise<void>;
-  
   // Users
   getUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
@@ -758,30 +752,6 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // Session management
-  async getSession(id: string): Promise<Session | undefined> {
-    const [session] = await db.select()
-      .from(sessions)
-      .where(and(
-        eq(sessions.id, id),
-        gte(sessions.expiresAt, new Date())
-      ));
-    return session || undefined;
-  }
-
-  async createSession(session: InsertSession): Promise<Session> {
-    const [newSession] = await db.insert(sessions).values(session).returning();
-    return newSession;
-  }
-
-  async deleteSession(id: string): Promise<void> {
-    await db.delete(sessions).where(eq(sessions.id, id));
-  }
-
-  async deleteExpiredSessions(): Promise<void> {
-    await db.delete(sessions).where(lte(sessions.expiresAt, new Date()));
-  }
-
   async getUsers(): Promise<User[]> {
     return await db.select()
       .from(users)
