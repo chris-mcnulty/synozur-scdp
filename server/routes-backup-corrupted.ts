@@ -316,7 +316,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               healthStatus.sharepoint.error = connectivity.error;
             }
           } catch (error) {
-            healthStatus.sharepoint.error = 'SharePoint connectivity test failed: ' + (error instanceof Error ? error.message : 'Unknown error');
+            healthStatus.sharepoint.error = `SharePoint connectivity test failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         }
       }
@@ -337,7 +337,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     const sessionId = req.headers['x-session-id'] as string;
 
-    console.log("[AUTH] Session check - SessionId:", sessionId ? sessionId.substring(0, 4) + '...' : 'none');
+    console.log("[AUTH] Session check - SessionId:", sessionId ? `${sessionId.substring(0, 4)}...` : 'none');
 
     if (!sessionId || !sessions.has(sessionId)) {
       console.log("[AUTH] Session not found - Total sessions:", sessions.size);
@@ -485,7 +485,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         'application/pdf' : 'application/octet-stream';
 
       res.setHeader('Content-Type', safeContentType);
-      res.setHeader('Content-Disposition', 'attachment; filename="' + fileData.fileName.replace(/"/g, '\"') + '"');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileData.fileName.replace(/"/g, '\"')}"`);
       res.setHeader('Content-Length', fileData.size.toString());
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
@@ -687,7 +687,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         const hasAccess = await storage.checkUserClientAccess(req.user!.id, container.clientId);
 
         if (!hasAccess) {
-          console.log('[SECURITY] User ' + req.user!.id + ' denied access to container ' + req.params.containerId + ' for client ' + container.clientId);
+          console.log(`[SECURITY] User ${req.user!.id} denied access to container ${req.params.containerId} for client ${container.clientId}`);
           return res.status(403).json({ 
             message: "Access denied. You don't have permission to view this container." 
           });
@@ -1037,7 +1037,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Also sync to local database for caching and reporting
       try {
         await storage.syncDocumentMetadata(containerId, itemId, {
-          fileName: 'item_' + itemId, // Will be updated with actual filename during file sync
+          fileName: `item_${itemId}`, // Will be updated with actual filename during file sync
           projectId: receiptData.projectId,
           expenseId: receiptData.expenseId || null,
           uploadedBy: req.user!.id,
@@ -1769,7 +1769,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (```typescript
     try {
       console.log("Creating SOW with data:", req.body);
       console.log("Project ID:", req.params.id);
@@ -3220,12 +3220,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
           // Add summary of missing projects and resources to help user understand what needs to be created
           if (missingProjects.size > 0) {
-            errors.unshift('MISSING PROJECTS (create these first): ' + Array.from(missingProjects).join(', '));
+            errors.unshift(`MISSING PROJECTS (create these first): ${Array.from(missingProjects).join(', ')}`);
           }
           if (missingResources.size > 0) {
             const resourceMsg = req.user?.role === 'admin' || req.user?.role === 'billing-admin' 
-              ? 'MISSING USERS (create these or entries will be assigned to you): ' + Array.from(missingResources).join(', ')
-              : 'UNKNOWN USERS (entries assigned to you): ' + Array.from(missingResources).join(', ');
+              ? `MISSING USERS (create these or entries will be assigned to you): ${Array.from(missingResources).join(', ')}`
+              : `UNKNOWN USERS (entries assigned to you): ${Array.from(missingResources).join(', ')}`;
             warnings.unshift(resourceMsg);
           }
 
@@ -3306,7 +3306,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       res.json({
         success: true,
-        message: 'Fixed ' + fixedCount + ' time entries out of ' + entriesToFix.length + ' that had null/zero rates',
+        message: `Fixed ${fixedCount} time entries out of ${entriesToFix.length} that had null/zero rates`,
         totalEntriesChecked: allEntries.length,
         entriesNeedingFix: entriesToFix.length,
         entriesFixed: fixedCount,
@@ -3605,7 +3605,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     // SECURITY FIX: Verify the sanitized filename still has an allowed extension
     const extension = sanitized.toLowerCase().substring(sanitized.lastIndexOf('.'));
     if (!allowedExtensions.includes(extension)) {
-      throw new Error('File extension \'' + extension + '\' not allowed after sanitization');
+      throw new Error(`File extension '${extension}' not allowed after sanitization`);
     }
 
     return sanitized;
@@ -3789,7 +3789,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             amount: parseFloat(expense.amount),
             createdByUserId: userId,
             metadataVersion: 1,
-            tags: ('expense,' + projectCode + ',' + (expense.category || 'uncategorized')).toLowerCase()
+            tags: `expense,${projectCode},${expense.category || 'uncategorized'}`.toLowerCase()
           };
 
           const uploadResult = await localFileStorage.storeFile(
@@ -3805,7 +3805,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             expenseId: expenseId,
             driveId: 'local-storage', // Use local storage identifier
             itemId: uploadResult.id,
-            webUrl: '/api/expenses/' + expenseId + '/attachments/' + uploadResult.id + '/content',
+            webUrl: `/api/expenses/${expenseId}/attachments/${uploadResult.id}/content`,
             fileName: uploadResult.fileName,
             contentType: req.file.mimetype,
             size: req.file.size,
@@ -3909,7 +3909,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         const safeFilename = attachment.fileName.replace(/[\r\n\x00-\x1F\x7F"]/g, '_');
 
         res.setHeader('Content-Type', safeContentType);
-        res.setHeader('Content-Disposition', 'attachment; filename="' + safeFilename + '"'); 
+        res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`); 
         res.setHeader('Content-Length', attachment.size.toString());
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('X-Frame-Options', 'DENY');
@@ -4075,14 +4075,14 @@ export async function registerRoutes(app: Express): Promise<void> {
               fileName: file.originalname,
               contentType: file.mimetype,
               size: file.size,
-              receiptDate: req.body['receiptDate_' + index] ? new Date(req.body['receiptDate_' + index]) : undefined,
-              amount: req.body['amount_' + index] ? parseFloat(req.body['amount_' + index]) : undefined,
-              currency: req.body['currency_' + index] || 'USD',
-              category: req.body['category_' + index] || undefined,
-              vendor: req.body['vendor_' + index] || undefined,
-              description: req.body['description_' + index] || undefined,
-              isReimbursable: req.body['isReimbursable_' + index] ? req.body['isReimbursable_' + index] === 'true' : true,
-              tags: req.body['tags_' + index] || undefined
+              receiptDate: req.body[`receiptDate_${index}`] ? new Date(req.body[`receiptDate_${index}`]) : undefined,
+              amount: req.body[`amount_${index}`] ? parseFloat(req.body[`amount_${index}`]) : undefined,
+              currency: req.body[`currency_${index}`] || 'USD',
+              category: req.body[`category_${index}`] || undefined,
+              vendor: req.body[`vendor_${index}`] || undefined,
+              description: req.body[`description_${index}`] || undefined,
+              isReimbursable: req.body[`isReimbursable_${index}`] ? req.body[`isReimbursable_${index}`] === 'true' : true,
+              tags: req.body[`tags_${index}`] || undefined
             }))
           };
 
@@ -4117,7 +4117,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             if (!fileValidation.success) {
               failed.push({
                 fileName: file.originalname,
-                error: 'Invalid file: ' + fileValidation.error.errors.map(e => e.message).join(', ')
+                error: `Invalid file: ${fileValidation.error.errors.map(e => e.message).join(', ')}`
               });
               continue;
             }
@@ -4209,7 +4209,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
 
           } catch (error: any) {
-            console.error('[BULK_UPLOAD] Failed to process file ' + file.originalname + ':', error);
+            console.error(`[BULK_UPLOAD] Failed to process file ${file.originalname}:`, error);
             failed.push({
               fileName: file.originalname,
               error: error.message || 'Upload failed'
@@ -4471,7 +4471,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Set appropriate headers
       res.setHeader('Content-Type', receipt.contentType);
       res.setHeader('Content-Length', receipt.size);
-      res.setHeader('Content-Disposition', 'attachment; filename="' + receipt.originalName.replace(/"/g, '\"') + '"');
+      res.setHeader('Content-Disposition', `attachment; filename="${receipt.originalName.replace(/"/g, '\"')}"`);
 
       // Send file data
       res.send(fileContent.buffer);
@@ -4528,12 +4528,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("[DEBUG] Fetching estimates...");
       const estimates = await storage.getEstimates();
-      console.log('[DEBUG] Found ' + estimates.length + ' estimates');
+      console.log(`[DEBUG] Found ${estimates.length} estimates`);
 
       // Calculate totals from line items for each estimate
       const estimatesWithTotals = await Promise.all(estimates.map(async (est, index) => {
         try {
-          console.log('[DEBUG] Processing estimate ' + (index + 1) + '/' + estimates.length + ': ' + est.id);
+          console.log(`[DEBUG] Processing estimate ${index + 1}/${estimates.length}: ${est.id}`);
 
           let totalHours = 0;
           let totalCost = 0;
@@ -4545,12 +4545,12 @@ export async function registerRoutes(app: Express): Promise<void> {
           if (estimateType === 'block' && est.blockHours && est.blockDollars) {
             totalHours = parseFloat(est.blockHours);
             totalCost = parseFloat(est.blockDollars);
-            console.log('[DEBUG] Block estimate - hours: ' + totalHours + ', cost: ' + totalCost);
+            console.log(`[DEBUG] Block estimate - hours: ${totalHours}, cost: ${totalCost}`);
           } else {
             // For detailed estimates or when block values are missing, calculate from line items
             try {
               const lineItems = await storage.getEstimateLineItems(est.id);
-              console.log('[DEBUG] Found ' + lineItems.length + ' line items for estimate ' + est.id);
+              console.log(`[DEBUG] Found ${lineItems.length} line items for estimate ${est.id}`);
 
               totalHours = lineItems.reduce((sum, item) => {
                 const hours = item.adjustedHours ? parseFloat(item.adjustedHours) : 0;
@@ -4562,9 +4562,9 @@ export async function registerRoutes(app: Express): Promise<void> {
                 return sum + (isNaN(amount) ? 0 : amount);
               }, 0);
 
-              console.log('[DEBUG] Detailed estimate - hours: ' + totalHours + ', cost: ' + totalCost);
+              console.log(`[DEBUG] Detailed estimate - hours: ${totalHours}, cost: ${totalCost}`);
             } catch (lineItemError) {
-              console.error('[ERROR] Failed to fetch line items for estimate ' + est.id + ':', lineItemError);
+              console.error(`[ERROR] Failed to fetch line items for estimate ${est.id}:`, lineItemError);
               // Continue with zero totals if line items fail
             }
           }
@@ -4585,7 +4585,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             createdAt: est.createdAt,
           };
         } catch (estError) {
-          console.error('[ERROR] Failed to process estimate ' + est.id + ':', estError);
+          console.error(`[ERROR] Failed to process estimate ${est.id}:`, estError);
           // Return a minimal estimate object if processing fails
           return {
             id: est.id,
@@ -4605,7 +4605,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }));
 
-      console.log('[DEBUG] Successfully processed ' + estimatesWithTotals.length + ' estimates');
+      console.log(`[DEBUG] Successfully processed ${estimatesWithTotals.length} estimates`);
       res.json(estimatesWithTotals);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch estimates:", error);
@@ -4718,7 +4718,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         if (!existingProject) {
           // Generate project code
-          const projectCode = estimate.name.substring(0, 3).toUpperCase() + '-' + Date.now().toString().slice(-4);
+          const projectCode = `${estimate.name.substring(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
 
           // Prepare project data
           const projectData = {
@@ -5105,7 +5105,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       );
 
       res.json({
-        message: 'Generated ' + result.invoicesCreated + ' invoices',
+        message: `Generated ${result.invoicesCreated} invoices`,
         ...result
       });
     } catch (error: any) {
@@ -5127,7 +5127,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "User ID not found" });
       }
 
-      console.log('[API] Finalizing batch ' + batchId + ' by user ' + userId);
+      console.log(`[API] Finalizing batch ${batchId} by user ${userId}`);
 
       const updatedBatch = await storage.finalizeBatch(batchId, userId);
 
@@ -5148,7 +5148,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { batchId } = req.params;
       const { notes } = req.body;
 
-      console.log('[API] Marking batch ' + batchId + ' as reviewed');
+      console.log(`[API] Marking batch ${batchId} as reviewed`);
 
       const updatedBatch = await storage.reviewBatch(batchId, notes);
 
@@ -5168,7 +5168,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { batchId } = req.params;
 
-      console.log('[API] Unfinalizing batch ' + batchId);
+      console.log(`[API] Unfinalizing batch ${batchId}`);
 
       const updatedBatch = await storage.unfinalizeBatch(batchId);
 
@@ -5216,7 +5216,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Invalid calendar date" });
       }
 
-      console.log('[API] Updating batch ' + batchId + ' as-of date to ' + asOfDate + ' by user ' + userId);
+      console.log(`[API] Updating batch ${batchId} as-of date to ${asOfDate} by user ${userId}`);
 
       const updatedBatch = await storage.updateBatchAsOfDate(batchId, asOfDate, userId);
 
@@ -5351,8 +5351,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "User ID not found" });
       }
 
-      console.log('[API] Applying aggregate adjustment to batch ' + batchId + ' by user ' + userId);
-      console.log('[API] Target amount: ' + targetAmount + ', Method: ' + allocationMethod);
+      console.log(`[API] Applying aggregate adjustment to batch ${batchId} by user ${userId}`);
+      console.log(`[API] Target amount: ${targetAmount}, Method: ${allocationMethod}`);
 
       // Apply adjustments to each line
       const updatedLines = [];
@@ -5945,7 +5945,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               const value = (row as any)[header] || '';
               // Escape commas and quotes in CSV
               return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
-                ? '"' + value.replace(/"/g, '""') + '"'
+                ? `"${value.replace(/"/g, '""')}"` 
                 : value;
             }).join(',')
           )
@@ -6210,7 +6210,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     if (year >= 1900 && year <= 2100) {
                       return serial;
                     } else {
-                      throw new Error('Date year ' + year + ' is outside reasonable range (1900-2100)');
+                      throw new Error(`Date year ${year} is outside reasonable range (1900-2100)`);
                     }
                   } else {
                     throw new Error('Invalid date string format');
@@ -6241,7 +6241,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   // Double-check the year is reasonable
                   const year = date.getFullYear();
                   if (year < 1900 || year > 2100) {
-                    throw new Error('Calculated date year ' + year + ' is outside reasonable range (1900-2100)');
+                    throw new Error(`Calculated date year ${year} is outside reasonable range (1900-2100)`);
                   }
 
                   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -6254,7 +6254,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                   const year = serial.getFullYear();
                   // Validate reasonable date range
                   if (year < 1900 || year > 2100) {
-                    throw new Error('Date year ' + year + ' is outside reasonable range (1900-2100)');
+                    throw new Error(`Date year ${year} is outside reasonable range (1900-2100)`);
                   }
                   const month = String(serial.getMonth() + 1).padStart(2, '0');
                   const day = String(serial.getDate()).padStart(2, '0');
@@ -6278,7 +6278,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     const year = parsedDate.getFullYear();
                     // Validate reasonable date range
                     if (year < 1900 || year > 2100) {
-                      throw new Error('Parsed date year ' + year + ' is outside reasonable range (1900-2100)');
+                      throw new Error(`Parsed date year ${year} is outside reasonable range (1900-2100)`);
                     }
                     const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
                     const day = String(parsedDate.getDate()).padStart(2, '0');
@@ -6286,9 +6286,9 @@ export async function registerRoutes(app: Express): Promise<void> {
                   }
                 }
 
-                throw new Error('Unsupported date format: "' + serial + '" (type: ' + typeof serial + ')');
+                throw new Error(`Unsupported date format: "${serial}" (type: ${typeof serial})`);
               } catch (error: any) {
-                throw new Error('Unable to parse date "' + serial + '": ' + error.message);
+                throw new Error(`Unable to parse date "${serial}": ${error.message}`);
               }
             };
 
@@ -6343,7 +6343,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               validationErrors.push({ 
                 row: rowNum, 
                 field: 'category', 
-                message: 'Invalid category. Must be one of: ' + validCategories.join(', '),
+                message: `Invalid category. Must be one of: ${validCategories.join(', ')}`,
                 value: category
               });
               hasError = true;
@@ -6389,7 +6389,7 @@ export async function registerRoutes(app: Express): Promise<void> {
               validationErrors.push({ 
                 row: rowNum, 
                 field: fieldName, 
-                message: fieldName + ' must be TRUE/FALSE, YES/NO, or 1/0',
+                message: `${fieldName} must be TRUE/FALSE, YES/NO, or 1/0`,
                 value: value
               });
               hasError = true;
@@ -6422,7 +6422,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           if (validationErrors.length > 0) {
             return res.json({
               success: false,
-              message: 'Validation failed. Found ' + validationErrors.length + ' error(s) in ' + validationErrors.filter((e, i, arr) => arr.findIndex(item => item.row === e.row) === i).length + ' row(s).',
+              message: `Validation failed. Found ${validationErrors.length} error(s) in ${validationErrors.filter((e, i, arr) => arr.findIndex(item => item.row === e.row) === i).length} row(s).`,
               totalRows: rawData.length,
               validRows: validExpenses.length,
               errorRows: validationErrors.length,
@@ -6455,8 +6455,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           res.json({
             success: importErrors.length === 0,
             message: importErrors.length === 0 
-              ? 'Successfully imported ' + importResults.length + ' expense(s)'
-              : 'Imported ' + importResults.length + ' expense(s) with ' + importErrors.length + ' error(s)',
+              ? `Successfully imported ${importResults.length} expense(s)`
+              : `Imported ${importResults.length} expense(s) with ${importErrors.length} error(s)`,
             totalRows: rawData.length,
             validRows: validExpenses.length,
             imported: importResults.length,
