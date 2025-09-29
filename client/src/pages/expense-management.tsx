@@ -88,8 +88,8 @@ const individualEditSchema = z.object({
   description: z.string().optional(),
   vendor: z.string().optional(),
   category: z.string().optional(),
-  amount: z.number().positive().finite().optional(),
-  expenseDate: z.date().optional(),
+  amount: z.string().optional(), // Keep as string for decimal precision
+  date: z.string().optional(), // Use 'date' to match backend
   reimbursable: z.boolean().optional(),
   billedFlag: z.boolean().optional(),
   projectResourceId: z.string().optional(),
@@ -312,8 +312,8 @@ export default function ExpenseManagement() {
       description: expense.description || "",
       vendor: expense.vendor || "",
       category: expense.category || "",
-      amount: expense.amount || undefined,
-      expenseDate: expense.expenseDate ? new Date(expense.expenseDate) : undefined,
+      amount: expense.amount || undefined, // Already a string from backend
+      date: expense.date || undefined, // Use 'date' field from expense
       reimbursable: expense.reimbursable,
       billedFlag: expense.billedFlag,
       projectResourceId: expense.projectResourceId || undefined,
@@ -331,11 +331,6 @@ export default function ExpenseManagement() {
       if (value !== undefined && value !== "") {
         if (key === "projectResourceId" && value === "unassigned") {
           updates[key] = null;
-        } else if (key === "amount") {
-          // Keep numeric fields as numbers for backend validation
-          if (typeof value === "number") {
-            updates[key] = value;
-          }
         } else {
           updates[key] = value;
         }
@@ -1016,7 +1011,7 @@ export default function ExpenseManagement() {
             </DialogHeader>
             {selectedExpense && (
               <Form {...individualEditForm}>
-                <form onSubmit={individualEditForm.handleSubmit(handleIndividualEdit)} className="space-y-4">
+                <form onSubmit={individualEditForm.handleSubmit(handleIndividualUpdate)} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={individualEditForm.control}
@@ -1042,7 +1037,6 @@ export default function ExpenseManagement() {
                               type="number"
                               step="0.01"
                               {...field}
-                              onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
                               data-testid="input-individual-amount"
                             />
                           </FormControl>
@@ -1079,7 +1073,7 @@ export default function ExpenseManagement() {
                     />
                     <FormField
                       control={individualEditForm.control}
-                      name="expenseDate"
+                      name="date"
                       render={({ field }) => (
                         <FormItem className="flex flex-col">
                           <FormLabel>Date</FormLabel>
@@ -1095,7 +1089,7 @@ export default function ExpenseManagement() {
                                   data-testid="button-individual-date"
                                 >
                                   {field.value ? (
-                                    format(field.value, "PPP")
+                                    format(new Date(field.value), "PPP")
                                   ) : (
                                     <span>Pick a date</span>
                                   )}
@@ -1106,8 +1100,8 @@ export default function ExpenseManagement() {
                             <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 mode="single"
-                                selected={field.value}
-                                onSelect={field.onChange}
+                                selected={field.value ? new Date(field.value) : undefined}
+                                onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                                 disabled={(date) =>
                                   date > new Date() || date < new Date("1900-01-01")
                                 }
@@ -1150,7 +1144,7 @@ export default function ExpenseManagement() {
                             <SelectContent>
                               {users?.map((user) => (
                                 <SelectItem key={user.id} value={user.id}>
-                                  {user.firstName} {user.lastName}
+                                  {user.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
