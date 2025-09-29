@@ -726,9 +726,24 @@ export default function Expenses() {
       return;
     }
 
+    // Filter out fields that shouldn't be sent to the backend for updates
+    const allowedUpdateFields = [
+      'projectId', 'projectResourceId', 'date', 'category', 'amount', 
+      'quantity', 'unit', 'currency', 'billable', 'reimbursable', 
+      'description', 'vendor'
+    ];
+
+    const filteredData: any = {};
+    allowedUpdateFields.forEach(field => {
+      if (submitData.hasOwnProperty(field)) {
+        filteredData[field] = submitData[field];
+      }
+    });
+
+    console.log('Filtered data for update:', filteredData);
     console.log('=== END UPDATE SUBMIT ===');
 
-    updateExpenseMutation.mutate({ id: expenseId, data: submitData });
+    updateExpenseMutation.mutate({ id: expenseId, data: filteredData });
   };
 
   const getTotalExpenses = () => {
