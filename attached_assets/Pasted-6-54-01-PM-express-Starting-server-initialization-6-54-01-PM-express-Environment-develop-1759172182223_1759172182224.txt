@@ -1,0 +1,36 @@
+6:54:01 PM [express] Starting server initialization...
+6:54:01 PM [express] 🔍 Environment: development
+6:54:01 PM [express]   - Port: 5000 (default)
+6:54:01 PM [express] ✅ Environment validation passed
+6:54:01 PM [express] Setting up error handling middleware...
+6:54:01 PM [express] Creating HTTP server...
+6:54:01 PM [express] Binding to port 5000 immediately for deployment readiness...
+6:54:01 PM [express] ✅ Server successfully bound to port 5000
+6:54:01 PM [express] Environment: development
+6:54:01 PM [express] Process ID: 5570
+6:54:01 PM [express] Registering routes after server binding...
+6:54:01 PM [express] ⚠️ Route registration failed: Transform failed with 1 error:
+/home/runner/workspace/server/routes.ts:2233:42: ERROR: Expected ")" but found "$"
+6:54:01 PM [express] Route error stack: TransformError: Transform failed with 1 error:
+/home/runner/workspace/server/routes.ts:2233:42: ERROR: Expected ")" but found "$"
+    at failureErrorWithLog (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:1467:15)
+    at /home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:736:50
+    at responseCallbacks.<computed> (/home/runner/.npm/_npx/fd45a72a545557e9/node_modules/esbuild/lib/main.js:603:9)
+6:54:01 PM [express] Server will continue with health endpoints only
+6:54:01 PM [express] Updating version release date...
+6:54:02 PM [express] 📅 Version release date updated to: 2025-09-29
+6:54:02 PM [express] Version release date updated successfully
+6:54:02 PM [express] Starting additional services setup asynchronously...
+6:54:02 PM [express] Testing database connection...
+6:54:02 PM [express] Frontend server configuration:
+6:54:02 PM [express]   - Environment: development
+6:54:02 PM [express]   - Mode: Development (Vite)
+6:54:02 PM [express] Setting up Vite development server...
+6:54:02 PM [express] ✅ Vite development server setup successful
+6:54:02 PM [express] 📝 Frontend available at http://localhost:5000
+6:54:03 PM [express] ✅ Database connection successful
+6:54:14 PM [express] GET /api/auth/user 200 in 7ms
+6:54:14 PM [express] GET /api/auth/sso/status 200 in 4ms
+6:54:16 PM [express] POST /api/auth/login 200 in 5ms
+6:54:35 PM [express] GET /api/auth/user 200 in 8ms
+6:54:35 PM [express] GET /api/auth/sso/status 200 in 5ms
