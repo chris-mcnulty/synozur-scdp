@@ -3326,9 +3326,16 @@ export async function registerRoutes(app: Express): Promise<void> {
 
     // Ensure date is in YYYY-MM-DD format
     if (normalized.date) {
-      // If it's already a Date object or ISO string, convert to YYYY-MM-DD
-      const dateObj = new Date(normalized.date);
-      normalized.date = dateObj.toISOString().split('T')[0];
+      // If already in YYYY-MM-DD format, keep it as-is to avoid timezone shifts
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(normalized.date)) {
+        // Only convert if not already in correct format
+        const dateObj = new Date(normalized.date);
+        const year = dateObj.getUTCFullYear();
+        const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getUTCDate()).padStart(2, '0');
+        normalized.date = `${year}-${month}-${day}`;
+      }
     }
 
     return normalized;
