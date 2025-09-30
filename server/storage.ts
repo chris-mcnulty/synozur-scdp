@@ -1,7 +1,7 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
-  invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows,
+  invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
@@ -18,6 +18,7 @@ import {
   type InvoiceLine, type InsertInvoiceLine,
   type InvoiceAdjustment, type InsertInvoiceAdjustment,
   type Sow, type InsertSow,
+  type ProjectBudgetHistory, type InsertProjectBudgetHistory,
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
@@ -328,6 +329,11 @@ export interface IStorage {
   updateSow(id: string, sow: Partial<InsertSow>): Promise<Sow>;
   deleteSow(id: string): Promise<void>;
   getProjectTotalBudget(projectId: string): Promise<number>;
+  
+  // Project Budget History
+  createBudgetHistory(history: InsertProjectBudgetHistory): Promise<ProjectBudgetHistory>;
+  getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User })[]>;
+  recalculateProjectBudget(projectId: string, userId: string): Promise<{ project: Project; history: ProjectBudgetHistory[] }>;
   
   // Dashboard metrics
   getDashboardMetrics(): Promise<{
@@ -3153,6 +3159,73 @@ export class DatabaseStorage implements IStorage {
       const value = parseFloat(sow.value || '0');
       return total + value;
     }, 0);
+  }
+
+  // Project Budget History
+  async createBudgetHistory(history: InsertProjectBudgetHistory): Promise<ProjectBudgetHistory> {
+    const [created] = await db.insert(projectBudgetHistory).values(history).returning();
+    return created;
+  }
+
+  async getBudgetHistory(projectId: string): Promise<(ProjectBudgetHistory & { sow?: Sow; user: User })[]> {
+    const history = await db.select()
+      .from(projectBudgetHistory)
+      .leftJoin(sows, eq(projectBudgetHistory.sowId, sows.id))
+      .innerJoin(users, eq(projectBudgetHistory.changedBy, users.id))
+      .where(eq(projectBudgetHistory.projectId, projectId))
+      .orderBy(desc(projectBudgetHistory.createdAt));
+
+    return history.map(row => ({
+      ...row.project_budget_history,
+      sow: row.sows || undefined,
+      user: row.users
+    }));
+  }
+
+  async recalculateProjectBudget(projectId: string, userId: string): Promise<{ project: Project; history: ProjectBudgetHistory[] }> {
+    // Get current project
+    const [currentProject] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!currentProject) {
+      throw new Error('Project not found');
+    }
+
+    // Calculate new total budget from all approved SOWs
+    const newBudget = await this.getProjectTotalBudget(projectId);
+    const previousBudget = parseFloat(currentProject.sowTotal || currentProject.sowValue || '0');
+    const delta = newBudget - previousBudget;
+
+    const historyEntries: ProjectBudgetHistory[] = [];
+
+    // Only create history and update if there's a change
+    if (Math.abs(delta) > 0.01) {
+      // Update project budget
+      const [updatedProject] = await db.update(projects)
+        .set({
+          sowTotal: newBudget.toString(),
+          sowValue: newBudget.toString(),
+          hasSow: newBudget > 0
+        })
+        .where(eq(projects.id, projectId))
+        .returning();
+
+      // Log to history
+      const historyEntry = await this.createBudgetHistory({
+        projectId,
+        changeType: 'manual_adjustment',
+        fieldChanged: 'sowTotal',
+        previousValue: previousBudget.toString(),
+        newValue: newBudget.toString(),
+        deltaValue: delta.toString(),
+        changedBy: userId,
+        reason: 'Manual budget recalculation',
+        metadata: { recalculatedAt: new Date().toISOString() }
+      });
+
+      historyEntries.push(historyEntry);
+      return { project: updatedProject, history: historyEntries };
+    }
+
+    return { project: currentProject, history: historyEntries };
   }
 
   async getDashboardMetrics(): Promise<{

@@ -448,6 +448,22 @@ export const changeOrders = pgTable("change_orders", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Project Budget History - Audit trail for budget changes
+export const projectBudgetHistory = pgTable("project_budget_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id),
+  changeType: text("change_type").notNull(), // "sow_approval", "change_order_approval", "manual_adjustment", "sow_rejection"
+  fieldChanged: text("field_changed").notNull(), // "sowTotal", "baselineBudget", "sowValue"
+  previousValue: decimal("previous_value", { precision: 12, scale: 2 }),
+  newValue: decimal("new_value", { precision: 12, scale: 2 }),
+  deltaValue: decimal("delta_value", { precision: 12, scale: 2 }), // Calculated: newValue - previousValue
+  sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW if this change was triggered by SOW
+  changedBy: varchar("changed_by").notNull().references(() => users.id),
+  reason: text("reason"), // Optional explanation for manual adjustments
+  metadata: jsonb("metadata"), // Additional context (SOW name, type, etc.)
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 // Invoice batches
 export const invoiceBatches = pgTable("invoice_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -929,6 +945,11 @@ export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
   createdAt: true,
 });
 
+export const insertProjectBudgetHistorySchema = createInsertSchema(projectBudgetHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
   id: true,
   createdAt: true,
@@ -997,6 +1018,10 @@ export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
 
 export type Sow = typeof sows.$inferSelect;
 export type InsertSow = z.infer<typeof insertSowSchema>;
+
+export type ProjectBudgetHistory = typeof projectBudgetHistory.$inferSelect;
+export type InsertProjectBudgetHistory = z.infer<typeof insertProjectBudgetHistorySchema>;
+
 export type InvoiceBatch = typeof invoiceBatches.$inferSelect;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export type InvoiceAdjustment = typeof invoiceAdjustments.$inferSelect;
