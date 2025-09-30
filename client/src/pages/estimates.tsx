@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,11 +11,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+
+// Copy estimate form schemas
+const copySameClientSchema = z.object({
+  name: z.string().min(1, "Estimate name is required"),
+  projectId: z.string().nullable(),
+});
+
+const copyDifferentClientSchema = z.object({
+  name: z.string().min(1, "Estimate name is required"),
+  targetClientId: z.string().min(1, "Please select a client"),
+  projectId: z.string().nullable(),
+});
+
+const copyNewClientSchema = z.object({
+  name: z.string().min(1, "Estimate name is required"),
+  clientName: z.string().min(1, "Client name is required"),
+  billingContact: z.string().email().optional().or(z.literal("")),
+  currency: z.string(),
+});
 
 interface Estimate {
   id: string;
@@ -35,9 +59,40 @@ export default function Estimates() {
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [estimateToDelete, setEstimateToDelete] = useState<Estimate | null>(null);
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [estimateToCopy, setEstimateToCopy] = useState<Estimate | null>(null);
+  const [copyMode, setCopyMode] = useState<'same' | 'different' | 'new'>('same');
   const [estimateType, setEstimateType] = useState<string>('detailed');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  // Copy form instances
+  const copySameForm = useForm<z.infer<typeof copySameClientSchema>>({
+    resolver: zodResolver(copySameClientSchema),
+    defaultValues: {
+      name: '',
+      projectId: null,
+    },
+  });
+
+  const copyDifferentForm = useForm<z.infer<typeof copyDifferentClientSchema>>({
+    resolver: zodResolver(copyDifferentClientSchema),
+    defaultValues: {
+      name: '',
+      targetClientId: '',
+      projectId: null,
+    },
+  });
+
+  const copyNewForm = useForm<z.infer<typeof copyNewClientSchema>>({
+    resolver: zodResolver(copyNewClientSchema),
+    defaultValues: {
+      name: '',
+      clientName: '',
+      billingContact: '',
+      currency: 'USD',
+    },
+  });
 
   const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates"],
@@ -92,6 +147,33 @@ export default function Estimates() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete estimate. You may not have permission.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const copyEstimate = useMutation({
+    mutationFn: ({ id, data }: { id: string, data: any }) => apiRequest(`/api/estimates/${id}/copy`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: (newEstimate: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      setCopyDialogOpen(false);
+      setEstimateToCopy(null);
+      toast({
+        title: "Success",
+        description: "Estimate copied successfully",
+      });
+      // Navigate to the new estimate
+      setLocation(`/estimates/${newEstimate.id}`);
+    },
+    onError: (error: any) => {
+      console.error("Estimate copy error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to copy estimate. Please try again.",
         variant: "destructive",
       });
     },
@@ -270,6 +352,35 @@ export default function Estimates() {
                           )}
                           <Button size="sm" variant="ghost" data-testid={`download-estimate-${estimate.id}`}>
                             <Download className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost"
+                            data-testid={`copy-estimate-${estimate.id}`}
+                            onClick={() => {
+                              setEstimateToCopy(estimate);
+                              setCopyMode('same');
+                              // Reset forms with estimate data
+                              const copyName = `${estimate.name} (Copy)`;
+                              copySameForm.reset({
+                                name: copyName,
+                                projectId: estimate.projectId || null,
+                              });
+                              copyDifferentForm.reset({
+                                name: copyName,
+                                targetClientId: '',
+                                projectId: null,
+                              });
+                              copyNewForm.reset({
+                                name: copyName,
+                                clientName: '',
+                                billingContact: '',
+                                currency: 'USD',
+                              });
+                              setCopyDialogOpen(true);
+                            }}
+                          >
+                            <Copy className="w-4 h-4" />
                           </Button>
                           <Button 
                             size="sm" 
@@ -635,6 +746,287 @@ export default function Estimates() {
                 {deleteEstimate.isPending ? "Deleting..." : "Delete Estimate"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Copy Estimate Dialog */}
+        <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Copy Estimate: {estimateToCopy?.name}</DialogTitle>
+            </DialogHeader>
+            <Tabs value={copyMode} onValueChange={(v) => setCopyMode(v as 'same' | 'different' | 'new')}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="same" data-testid="tab-same-client">Same Client</TabsTrigger>
+                <TabsTrigger value="different" data-testid="tab-different-client">Different Client</TabsTrigger>
+                <TabsTrigger value="new" data-testid="tab-new-client">New Client</TabsTrigger>
+              </TabsList>
+
+              {/* Same Client Tab */}
+              <TabsContent value="same">
+                <Form {...copySameForm}>
+                  <form onSubmit={copySameForm.handleSubmit((data) => {
+                    if (!estimateToCopy) return;
+                    copyEstimate.mutate({
+                      id: estimateToCopy.id,
+                      data: {
+                        name: data.name,
+                        projectId: data.projectId === 'none' ? null : data.projectId,
+                      }
+                    });
+                  })}>
+                    <div className="grid gap-4 py-4">
+                      <FormField
+                        control={copySameForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estimate Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-copy-name" />
+                            </FormControl>
+                            <FormDescription>
+                              Copying to: <strong>{estimateToCopy?.clientName}</strong>
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copySameForm.control}
+                        name="projectId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Project (Optional)</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || 'none'}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-copy-project">
+                                  <SelectValue placeholder="Select a project or leave empty" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">No project</SelectItem>
+                                {projects.filter(p => p.clientId === estimateToCopy?.clientId).map(project => (
+                                  <SelectItem key={project.id} value={project.id}>
+                                    {project.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCopyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={copyEstimate.isPending} data-testid="button-copy-same">
+                        {copyEstimate.isPending ? "Copying..." : "Copy Estimate"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </TabsContent>
+
+              {/* Different Client Tab */}
+              <TabsContent value="different">
+                <Form {...copyDifferentForm}>
+                  <form onSubmit={copyDifferentForm.handleSubmit((data) => {
+                    if (!estimateToCopy) return;
+                    copyEstimate.mutate({
+                      id: estimateToCopy.id,
+                      data: {
+                        name: data.name,
+                        targetClientId: data.targetClientId,
+                        projectId: data.projectId === 'none' ? null : data.projectId,
+                      }
+                    });
+                  })}>
+                    <div className="grid gap-4 py-4">
+                      <FormField
+                        control={copyDifferentForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estimate Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-diff-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copyDifferentForm.control}
+                        name="targetClientId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Target Client</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-target-client">
+                                  <SelectValue placeholder="Select a client" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {clients.filter(c => c.id !== estimateToCopy?.clientId).map(client => (
+                                  <SelectItem key={client.id} value={client.id}>
+                                    {client.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copyDifferentForm.control}
+                        name="projectId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Project (Optional)</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value || 'none'}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-diff-project">
+                                  <SelectValue placeholder="Select a project or leave empty" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">No project</SelectItem>
+                                {projects.map(project => (
+                                  <SelectItem key={project.id} value={project.id}>
+                                    {project.name} ({clients.find(c => c.id === project.clientId)?.name})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              Make sure the project belongs to the selected client
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCopyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={copyEstimate.isPending} data-testid="button-copy-different">
+                        {copyEstimate.isPending ? "Copying..." : "Copy Estimate"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </TabsContent>
+
+              {/* New Client Tab */}
+              <TabsContent value="new">
+                <Form {...copyNewForm}>
+                  <form onSubmit={copyNewForm.handleSubmit((data) => {
+                    if (!estimateToCopy) return;
+                    copyEstimate.mutate({
+                      id: estimateToCopy.id,
+                      data: {
+                        name: data.name,
+                        newClient: {
+                          name: data.clientName,
+                          currency: data.currency,
+                          billingContact: data.billingContact || undefined,
+                          status: 'pending',
+                        }
+                      }
+                    });
+                  })}>
+                    <div className="grid gap-4 py-4">
+                      <FormField
+                        control={copyNewForm.control}
+                        name="name"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estimate Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} data-testid="input-new-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copyNewForm.control}
+                        name="clientName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>New Client Name</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g., Acme Corporation" data-testid="input-new-client-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copyNewForm.control}
+                        name="billingContact"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Billing Contact Email</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="email" placeholder="billing@acme.com" data-testid="input-new-billing-contact" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={copyNewForm.control}
+                        name="currency"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Currency</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-new-currency">
+                                  <SelectValue placeholder="Select currency" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="USD">USD</SelectItem>
+                                <SelectItem value="EUR">EUR</SelectItem>
+                                <SelectItem value="GBP">GBP</SelectItem>
+                                <SelectItem value="CAD">CAD</SelectItem>
+                                <SelectItem value="AUD">AUD</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setCopyDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={copyEstimate.isPending} data-testid="button-copy-new">
+                        {copyEstimate.isPending ? "Creating & Copying..." : "Create Client & Copy"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </div>
