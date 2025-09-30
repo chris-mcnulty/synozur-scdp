@@ -186,6 +186,10 @@ export default function ProjectDetail() {
   const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
   const [deleteTimeEntryDialogOpen, setDeleteTimeEntryDialogOpen] = useState(false);
   
+  // Budget approval confirmation state
+  const [approvingSow, setApprovingSow] = useState<Sow | null>(null);
+  const [showBudgetImpactDialog, setShowBudgetImpactDialog] = useState(false);
+  
   const { toast } = useToast();
   
   // Check if user can view Time tab
@@ -228,6 +232,12 @@ export default function ProjectDetail() {
   
   const { data: epics = [], refetch: refetchEpics } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/epics`],
+    enabled: !!id,
+  });
+  
+  // Budget history query
+  const { data: budgetHistory = [], isLoading: budgetHistoryLoading } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/budget-history`],
     enabled: !!id,
   });
   
@@ -962,6 +972,31 @@ export default function ProjectDetail() {
       .reduce((total, sow) => total + parseFloat(sow.value || "0"), 0);
   };
 
+  const calculateBudgetImpact = (sow: Sow) => {
+    const currentBudget = calculateTotalBudget();
+    const sowValue = parseFloat(sow.value || "0");
+    const newBudget = currentBudget + sowValue;
+    return {
+      currentBudget,
+      sowValue,
+      newBudget,
+      percentageIncrease: currentBudget > 0 ? ((sowValue / currentBudget) * 100) : 100
+    };
+  };
+
+  const handleApproveSowClick = (sow: Sow) => {
+    setApprovingSow(sow);
+    setShowBudgetImpactDialog(true);
+  };
+
+  const handleConfirmApproval = () => {
+    if (approvingSow) {
+      approveSowMutation.mutate(approvingSow.id);
+      setShowBudgetImpactDialog(false);
+      setApprovingSow(null);
+    }
+  };
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case "approved": return "default";
@@ -1189,6 +1224,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
+            <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
             <TabsTrigger value="epics" data-testid="tab-epics">Epics</TabsTrigger>
             <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
             <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
@@ -1610,6 +1646,62 @@ export default function ProjectDetail() {
                   </Card>
                 </div>
 
+                {/* Budget Breakdown */}
+                {sows.length > 0 && (
+                  <Card className="mb-6">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Budget Breakdown</CardTitle>
+                      <CardDescription>Project budget composition</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {sows
+                          .filter(s => s.status === "approved" && s.type === "initial")
+                          .map((sow) => (
+                            <div key={sow.id} className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <FileCheck className="w-4 h-4 text-primary" />
+                                <span className="text-sm">Initial SOW: {sow.name}</span>
+                              </div>
+                              <span className="font-semibold" data-testid={`budget-sow-${sow.id}`}>
+                                ${parseFloat(sow.value).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        
+                        {sows
+                          .filter(s => s.status === "approved" && s.type === "change_order")
+                          .map((sow) => (
+                            <div key={sow.id} className="flex justify-between items-center">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-green-600" />
+                                <span className="text-sm">Change Order: {sow.name}</span>
+                              </div>
+                              <span className="font-semibold text-green-600" data-testid={`budget-co-${sow.id}`}>
+                                +${parseFloat(sow.value).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        
+                        <Separator className="my-2" />
+                        
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold">Total Project Budget</span>
+                          <span className="text-xl font-bold text-primary" data-testid="budget-total">
+                            ${calculateTotalBudget().toLocaleString()}
+                          </span>
+                        </div>
+                        
+                        {sows.filter(s => s.status === "approved" && s.type === "change_order").length > 0 && (
+                          <div className="text-xs text-muted-foreground mt-2">
+                            Includes {sows.filter(s => s.status === "approved" && s.type === "change_order").length} approved change order(s)
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {/* SOWs Table */}
                 <Table>
                   <TableHeader>
@@ -1668,7 +1760,7 @@ export default function ProjectDetail() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => approveSowMutation.mutate(sow.id)}
+                                  onClick={() => handleApproveSowClick(sow)}
                                   data-testid={`button-approve-sow-${sow.id}`}
                                 >
                                   <Check className="w-3 h-3" />
@@ -1697,6 +1789,102 @@ export default function ProjectDetail() {
                     )}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Budget History Tab */}
+          <TabsContent value="budget-history" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Budget History</CardTitle>
+                <CardDescription>
+                  Complete audit trail of all budget changes for this project
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {budgetHistoryLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-20 w-full" />
+                    ))}
+                  </div>
+                ) : budgetHistory.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No budget changes recorded yet</p>
+                    <p className="text-sm mt-2">
+                      Budget changes will appear here when SOWs or change orders are approved
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {budgetHistory.map((entry: any, index: number) => {
+                      const isIncrease = parseFloat(entry.deltaValue || "0") > 0;
+                      const changeTypeLabel = 
+                        entry.changeType === "sow_approval" ? "SOW Approved" :
+                        entry.changeType === "change_order_approval" ? "Change Order Approved" :
+                        entry.changeType === "manual_adjustment" ? "Manual Adjustment" :
+                        "Budget Change";
+                      
+                      return (
+                        <div
+                          key={entry.id}
+                          className="border rounded-lg p-4 space-y-3"
+                          data-testid={`budget-history-entry-${index}`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded-full ${isIncrease ? 'bg-green-100' : 'bg-red-100'}`}>
+                                {isIncrease ? (
+                                  <TrendingUp className="w-4 h-4 text-green-600" />
+                                ) : (
+                                  <TrendingDown className="w-4 h-4 text-red-600" />
+                                )}
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-sm">{changeTypeLabel}</h4>
+                                <p className="text-xs text-muted-foreground">
+                                  {format(new Date(entry.createdAt), "PPp")}
+                                </p>
+                              </div>
+                            </div>
+                            <Badge variant={isIncrease ? "default" : "destructive"}>
+                              {isIncrease ? '+' : ''}${parseFloat(entry.deltaValue || "0").toLocaleString()}
+                            </Badge>
+                          </div>
+                          
+                          {entry.reason && (
+                            <p className="text-sm text-muted-foreground">{entry.reason}</p>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Previous Budget:</span>
+                              <span className="ml-2 font-semibold">
+                                ${parseFloat(entry.previousValue || "0").toLocaleString()}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">New Budget:</span>
+                              <span className="ml-2 font-semibold">
+                                ${parseFloat(entry.newValue || "0").toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {entry.metadata && (
+                            <div className="text-xs text-muted-foreground pt-2 border-t">
+                              {entry.metadata.sowName && (
+                                <div>Related to: {entry.metadata.sowName}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -2941,6 +3129,89 @@ export default function ProjectDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Budget Impact Confirmation Dialog */}
+        <AlertDialog open={showBudgetImpactDialog} onOpenChange={setShowBudgetImpactDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Approve {approvingSow?.type === "initial" ? "SOW" : "Change Order"}</AlertDialogTitle>
+              <AlertDialogDescription>
+                Approving this {approvingSow?.type === "initial" ? "SOW" : "change order"} will update the project budget.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {approvingSow && (
+              <div className="space-y-4">
+                <div className="bg-muted p-4 rounded-lg space-y-2">
+                  <h4 className="font-semibold text-sm">{approvingSow.name}</h4>
+                  {approvingSow.description && (
+                    <p className="text-sm text-muted-foreground">{approvingSow.description}</p>
+                  )}
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Current Budget:</span>
+                    <span className="font-semibold" data-testid="text-current-budget">
+                      ${calculateBudgetImpact(approvingSow).currentBudget.toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">
+                      {approvingSow.type === "initial" ? "SOW" : "Change Order"} Value:
+                    </span>
+                    <span className="font-semibold text-green-600" data-testid="text-sow-value">
+                      +${calculateBudgetImpact(approvingSow).sowValue.toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  <Separator />
+                  
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-semibold">New Budget:</span>
+                    <span className="text-lg font-bold" data-testid="text-new-budget">
+                      ${calculateBudgetImpact(approvingSow).newBudget.toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  {calculateBudgetImpact(approvingSow).currentBudget > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Budget Increase:</span>
+                      <span className="text-sm font-semibold text-green-600" data-testid="text-percentage-increase">
+                        +{calculateBudgetImpact(approvingSow).percentageIncrease.toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+                
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    This action will permanently update the project budget and log the change to the budget history.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel 
+                onClick={() => {
+                  setShowBudgetImpactDialog(false);
+                  setApprovingSow(null);
+                }}
+                data-testid="button-cancel-approve"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmApproval}
+                disabled={approveSowMutation.isPending}
+                data-testid="button-confirm-approve"
+              >
+                {approveSowMutation.isPending ? "Approving..." : "Approve & Update Budget"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );
