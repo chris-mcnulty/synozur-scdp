@@ -2267,9 +2267,9 @@ export default function EstimateDetail() {
 
           <div className="rounded-md border relative">
             <div className="overflow-auto max-h-[calc(100vh-400px)] relative">
-              <Table className="min-w-[1200px]">
-                <TableHeader className="sticky top-0 bg-white dark:bg-slate-950 z-20 border-b shadow-sm">
-                  <TableRow className="hover:bg-transparent">
+              <table className="w-full caption-bottom text-sm min-w-[1200px]">
+                <thead className="sticky top-0 bg-white dark:bg-slate-950 z-20 border-b shadow-sm">
+                  <tr className="border-b hover:bg-transparent">
                     <TableHead className="w-10 px-2 py-2 text-xs bg-white dark:bg-slate-950">
                       <input
                         type="checkbox"
@@ -2309,9 +2309,9 @@ export default function EstimateDetail() {
                     <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Margin</TableHead>
                     <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Comments</TableHead>
                     <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                </tr>
+              </thead>
+              <tbody className="[&_tr:last-child]:border-0">
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={16} className="text-center">
@@ -2655,8 +2655,8 @@ export default function EstimateDetail() {
                     </TableRow>
                   )})
                 )}
-              </TableBody>
-              </Table>
+              </tbody>
+              </table>
             </div>
           </div>
 
