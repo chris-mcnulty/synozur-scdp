@@ -123,7 +123,7 @@ export default function EstimateDetail() {
 
   // Function to get filtered line items based on current filter criteria
   const getFilteredLineItems = () => {
-    return lineItems.filter((item: EstimateLineItem) => {
+    const filtered = lineItems.filter((item: EstimateLineItem) => {
       const matchesText = !filterText || item.description.toLowerCase().includes(filterText.toLowerCase());
       const matchesEpic = filterEpic === "all" || 
         (filterEpic === "none" && (!item.epicId || item.epicId === "none")) ||
@@ -133,10 +133,19 @@ export default function EstimateDetail() {
         item.stageId === filterStage;
       const matchesWorkstream = !filterWorkstream || 
         (item.workstream && item.workstream.toLowerCase().includes(filterWorkstream.toLowerCase()));
-      const matchesWeek = filterWeek === "all" || item.week?.toString() === filterWeek;
+      // Allow filtering by week 0 - treat null/undefined as 0
+      const itemWeek = item.week ?? 0;
+      const matchesWeek = filterWeek === "all" || itemWeek.toString() === filterWeek;
       const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
       
       return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
+    });
+    
+    // Default sort by week (ascending)
+    return filtered.sort((a, b) => {
+      const weekA = a.week ?? 0;
+      const weekB = b.week ?? 0;
+      return Number(weekA) - Number(weekB);
     });
   };
 
@@ -2125,9 +2134,10 @@ export default function EstimateDetail() {
                   <SelectContent>
                     <SelectItem value="all">All Weeks</SelectItem>
                     {(() => {
-                      const weeks = Array.from(new Set(lineItems.map((item: EstimateLineItem) => item.week).filter(w => w != null))).sort((a, b) => Number(a) - Number(b));
+                      // Include week 0 and all other weeks
+                      const weeks = Array.from(new Set(lineItems.map((item: EstimateLineItem) => item.week ?? 0))).sort((a, b) => Number(a) - Number(b));
                       return weeks.map((week) => (
-                        <SelectItem key={week} value={week?.toString() || ""}>
+                        <SelectItem key={week} value={week.toString()}>
                           Week {week}
                         </SelectItem>
                       ));
@@ -2368,7 +2378,7 @@ export default function EstimateDetail() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>{item.week || "-"}</TableCell>
+                      <TableCell>{item.week ?? "0"}</TableCell>
                       <TableCell className="min-w-[200px]">
                         {editingField === `${item.id}-description` ? (
                           <Input
@@ -2663,7 +2673,7 @@ export default function EstimateDetail() {
           {/* Week Subtotals */}
           {(() => {
             const weekTotals = getFilteredLineItems().reduce((acc: any, item) => {
-              const week = item.week || "Unassigned";
+              const week = (item.week ?? 0).toString();
               if (!acc[week]) {
                 acc[week] = { hours: 0, amount: 0, count: 0 };
               }
@@ -2674,11 +2684,7 @@ export default function EstimateDetail() {
             }, {});
 
             const sortedWeeks = Object.entries(weekTotals)
-              .sort(([a], [b]) => {
-                if (a === "Unassigned") return 1;
-                if (b === "Unassigned") return -1;
-                return Number(a) - Number(b);
-              });
+              .sort(([a], [b]) => Number(a) - Number(b));
 
             if (sortedWeeks.length > 1 || (sortedWeeks.length === 1 && filterWeek === "all")) {
               return (
@@ -2688,7 +2694,7 @@ export default function EstimateDetail() {
                     {sortedWeeks.map(([week, data]: [string, any]) => (
                       <div key={week} className="flex justify-between p-2 bg-white rounded border">
                         <span className="font-medium">
-                          {week === "Unassigned" ? "No Week" : `Week ${week}`}
+                          Week {week}
                         </span>
                         <div className="text-right">
                           <div className="text-sm text-muted-foreground">
