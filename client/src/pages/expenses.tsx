@@ -264,6 +264,7 @@ export default function Expenses() {
             description: "Miles must be greater than 0 for mileage expenses",
             variant: "destructive",
           });
+          setIsSubmitting(false); // Reset flag on validation error
           return;
         }
       }
