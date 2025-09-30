@@ -86,6 +86,8 @@ export default function Login() {
     });
   };
 
+  const isDevelopment = import.meta.env.MODE === 'development';
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 to-secondary/5">
       <Card className="w-full max-w-md">
@@ -93,7 +95,14 @@ export default function Login() {
           <div className="flex items-center justify-center mb-4">
             <SynozurLogo className="h-16 w-16" />
           </div>
-          <CardTitle className="text-2xl text-center">Welcome to SCDP</CardTitle>
+          <CardTitle className="text-2xl text-center">
+            Welcome to SCDP
+            {isDevelopment && (
+              <span className="block text-sm font-normal text-muted-foreground mt-1">
+                Development
+              </span>
+            )}
+          </CardTitle>
           <CardDescription className="text-center">
             Synozur Consulting Delivery Platform
           </CardDescription>

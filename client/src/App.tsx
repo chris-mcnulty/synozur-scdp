@@ -30,6 +30,13 @@ import { setSessionId } from "@/lib/queryClient";
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
   
+  // Update page title based on environment
+  useEffect(() => {
+    const isDevelopment = import.meta.env.MODE === 'development';
+    const baseTitle = 'Synozur Consulting Delivery Platform';
+    document.title = isDevelopment ? `Development - ${baseTitle}` : baseTitle;
+  }, []);
+  
   // Handle sessionId from SSO callback FIRST
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
