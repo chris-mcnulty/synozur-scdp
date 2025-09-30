@@ -1,8 +1,8 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createSession, getSession, deleteSession, requireAuth } from "./session-store";
-import { db } from "../db";
+import { db } from "./db";
 import { users } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 export function registerAuthRoutes(app: Express): void {
   // Login endpoint
