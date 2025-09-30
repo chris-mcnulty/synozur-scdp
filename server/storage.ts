@@ -4427,20 +4427,22 @@ export class DatabaseStorage implements IStorage {
     const billableHours = Number(actualMetrics?.billableHours) || 0;
     const totalExpenses = Number(expenseMetrics?.totalExpenses) || 0;
     
+    // Calculate consumed budget from actual time and expenses
+    const timeBasedCost = Number(actualMetrics?.timeBasedRevenue) || 0;
+    const consumedBudget = timeBasedCost + totalExpenses;
+    
     // Calculate revenue based on commercial scheme
     let revenue = 0;
-    let consumedBudget = 0;
-    
     if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
-      // For fixed-price projects, revenue is based on SOW value, not billable hours
-      // If project has SOW budget, that's the total revenue available
-      revenue = totalBudget; // For fixed price, we consider the full contract value as revenue
-      consumedBudget = revenue; // The "consumed budget" is the contract value since it's fixed
+      // For fixed-price projects, revenue recognition is based on percentage of completion
+      // but consumed budget should still track actual costs
+      const completionPercentage = estimatedHours > 0 ? Math.min(1, actualHours / estimatedHours) : 0;
+      revenue = totalBudget * completionPercentage;
     } else {
-      // For time & materials projects, use time-based revenue calculation
-      revenue = Number(actualMetrics?.timeBasedRevenue) || 0;
-      consumedBudget = revenue + totalExpenses;
+      // For time & materials projects, revenue equals billed amount
+      revenue = timeBasedCost;
     }
+    
     const burnRatePercentage = totalBudget > 0 ? (consumedBudget / totalBudget) * 100 : 0;
     const hoursVariance = actualHours - estimatedHours;
 
