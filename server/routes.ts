@@ -3437,10 +3437,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const expense = await storage.createExpense(validatedData);
       res.status(201).json(expense);
     } catch (error) {
+      console.error("[EXPENSE CREATE ERROR]", error);
       if (error instanceof z.ZodError) {
+        console.error("[EXPENSE CREATE] Zod validation errors:", JSON.stringify(error.errors, null, 2));
         return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to create expense" });
+      res.status(500).json({ message: "Failed to create expense", error: error instanceof Error ? error.message : String(error) });
     }
   });
 
