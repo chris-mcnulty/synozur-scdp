@@ -1758,6 +1758,21 @@ export async function registerRoutes(app: Express): Promise<void> {
         projectId: req.params.id
       });
 
+      // VALIDATION: Prevent multiple initial SOWs per project
+      if (insertData.type === 'initial') {
+        const existingSows = await storage.getSows(req.params.id);
+        const hasInitialSow = existingSows.some(sow => 
+          sow.type === 'initial' && 
+          sow.status !== 'rejected' // Allow creating new initial SOW only if previous was rejected
+        );
+        
+        if (hasInitialSow) {
+          return res.status(400).json({ 
+            message: "This project already has an initial SOW. Please create a change order instead." 
+          });
+        }
+      }
+
       console.log("Parsed SOW data:", insertData);
       const sow = await storage.createSow(insertData);
       res.status(201).json(sow);
@@ -1781,10 +1796,39 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
+      const currentSow = await storage.getSow(req.params.id);
+      if (!currentSow) {
+        return res.status(404).json({ message: "SOW not found" });
+      }
+
+      // VALIDATION: Prevent changing a SOW to initial type if project already has one
+      if (req.body.type === 'initial' && currentSow.type !== 'initial') {
+        const existingSows = await storage.getSows(currentSow.projectId);
+        const hasInitialSow = existingSows.some(sow => 
+          sow.type === 'initial' && 
+          sow.status !== 'rejected' &&
+          sow.id !== req.params.id
+        );
+        
+        if (hasInitialSow) {
+          return res.status(400).json({ 
+            message: "This project already has an initial SOW. Cannot change this to an initial SOW." 
+          });
+        }
+      }
+
       const sow = await storage.updateSow(req.params.id, req.body);
       res.json(sow);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating SOW:", error);
+      
+      // Handle unique constraint violation from database
+      if (error.code === '23505' && error.constraint === 'unique_initial_sow_per_project') {
+        return res.status(400).json({ 
+          message: "This project already has an approved or pending initial SOW." 
+        });
+      }
+      
       res.status(500).json({ message: "Failed to update SOW" });
     }
   });
@@ -1805,6 +1849,22 @@ export async function registerRoutes(app: Express): Promise<void> {
       const sowToApprove = await storage.getSow(req.params.id);
       if (!sowToApprove) {
         return res.status(404).json({ message: "SOW not found" });
+      }
+
+      // VALIDATION: Prevent approving multiple initial SOWs per project
+      if (sowToApprove.type === 'initial') {
+        const existingSows = await storage.getSows(sowToApprove.projectId);
+        const hasApprovedInitialSow = existingSows.some(sow => 
+          sow.type === 'initial' && 
+          sow.status === 'approved' && 
+          sow.id !== req.params.id
+        );
+        
+        if (hasApprovedInitialSow) {
+          return res.status(400).json({ 
+            message: "This project already has an approved initial SOW. Cannot approve another initial SOW." 
+          });
+        }
       }
 
       // Get current project budget before approval

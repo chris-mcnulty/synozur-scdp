@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -434,7 +434,12 @@ export const sows = pgTable("sows", {
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  // Ensure only one approved or pending initial SOW per project
+  uniqueInitialSow: uniqueIndex("unique_initial_sow_per_project")
+    .on(table.projectId)
+    .where(sql`${table.type} = 'initial' AND ${table.status} IN ('approved', 'pending')`),
+}));
 
 // Keep change orders for backward compatibility but it will be replaced by SOWs with type="change_order"
 export const changeOrders = pgTable("change_orders", {
