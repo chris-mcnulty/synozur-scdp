@@ -216,6 +216,12 @@ export interface IStorage {
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
   updateEstimate(id: string, estimate: Partial<InsertEstimate>): Promise<Estimate>;
   deleteEstimate(id: string): Promise<void>;
+  copyEstimate(estimateId: string, options: {
+    targetClientId?: string;
+    newClient?: Partial<InsertClient>;
+    name?: string;
+    projectId?: string;
+  }): Promise<Estimate>;
   
   // Estimate Epics
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
@@ -1154,6 +1160,194 @@ export class DatabaseStorage implements IStorage {
     
     // Finally delete the estimate itself
     await db.delete(estimates).where(eq(estimates.id, id));
+  }
+
+  async copyEstimate(estimateId: string, options: {
+    targetClientId?: string;
+    newClient?: Partial<InsertClient>;
+    name?: string;
+    projectId?: string;
+  }): Promise<Estimate> {
+    return await db.transaction(async (tx) => {
+      // Get the original estimate
+      const [originalEstimate] = await tx.select().from(estimates).where(eq(estimates.id, estimateId));
+      if (!originalEstimate) {
+        throw new Error("Estimate not found");
+      }
+
+      // Validate target client exists if provided
+      let targetClientId = options.targetClientId || originalEstimate.clientId;
+      if (options.targetClientId) {
+        const [targetClient] = await tx.select().from(clients).where(eq(clients.id, options.targetClientId));
+        if (!targetClient) {
+          throw new Error("Target client not found");
+        }
+      }
+
+      // Create new client if provided
+      if (options.newClient) {
+        const [newClient] = await tx.insert(clients).values({
+          name: options.newClient.name || "New Client",
+          status: options.newClient.status || "pending",
+          currency: options.newClient.currency || "USD",
+          ...options.newClient
+        }).returning();
+        targetClientId = newClient.id;
+      }
+
+      // Generate new code for the estimate
+      const code = `EST-${Date.now().toString().slice(-8)}`;
+      
+      // Copy the estimate with only the fields we want to copy (exclude id, createdAt, etc.)
+      const [newEstimate] = await tx.insert(estimates).values({
+        name: options.name || `${originalEstimate.name} (Copy)`,
+        code,
+        clientId: targetClientId,
+        projectId: options.projectId || null,
+        status: "draft",
+        version: 1,
+        validUntil: null,
+        // Copy pricing and structure
+        estimateType: originalEstimate.estimateType,
+        pricingType: originalEstimate.pricingType,
+        blockHours: originalEstimate.blockHours,
+        blockDollars: originalEstimate.blockDollars,
+        blockDescription: originalEstimate.blockDescription,
+        fixedPrice: originalEstimate.fixedPrice,
+        margin: originalEstimate.margin,
+        // Copy labels
+        epicLabel: originalEstimate.epicLabel,
+        stageLabel: originalEstimate.stageLabel,
+        activityLabel: originalEstimate.activityLabel,
+        // Copy multipliers
+        sizeSmallMultiplier: originalEstimate.sizeSmallMultiplier,
+        sizeMediumMultiplier: originalEstimate.sizeMediumMultiplier,
+        sizeLargeMultiplier: originalEstimate.sizeLargeMultiplier,
+        complexitySmallMultiplier: originalEstimate.complexitySmallMultiplier,
+        complexityMediumMultiplier: originalEstimate.complexityMediumMultiplier,
+        complexityLargeMultiplier: originalEstimate.complexityLargeMultiplier,
+        confidenceHighMultiplier: originalEstimate.confidenceHighMultiplier,
+        confidenceMediumMultiplier: originalEstimate.confidenceMediumMultiplier,
+        confidenceLowMultiplier: originalEstimate.confidenceLowMultiplier,
+        // Copy totals (will be recalculated if line items are modified)
+        totalHours: originalEstimate.totalHours,
+        totalFees: originalEstimate.totalFees,
+        presentedTotal: originalEstimate.presentedTotal,
+        rackRateSnapshot: originalEstimate.rackRateSnapshot,
+        estimateDate: originalEstimate.estimateDate,
+      }).returning();
+
+      // Copy epics, stages, activities, and allocations
+      const originalEpics = await tx.select().from(estimateEpics)
+        .where(eq(estimateEpics.estimateId, estimateId))
+        .orderBy(estimateEpics.order);
+      
+      const epicIdMap: Record<string, string> = {};
+      const stageIdMap: Record<string, string> = {};
+      
+      for (const originalEpic of originalEpics) {
+        const [newEpic] = await tx.insert(estimateEpics).values({
+          estimateId: newEstimate.id,
+          name: originalEpic.name,
+          order: originalEpic.order,
+        }).returning();
+        epicIdMap[originalEpic.id] = newEpic.id;
+        
+        // Copy stages for this epic
+        const originalStages = await tx.select().from(estimateStages)
+          .where(eq(estimateStages.epicId, originalEpic.id))
+          .orderBy(estimateStages.order);
+        
+        for (const originalStage of originalStages) {
+          const [newStage] = await tx.insert(estimateStages).values({
+            epicId: newEpic.id,
+            name: originalStage.name,
+            order: originalStage.order,
+          }).returning();
+          stageIdMap[originalStage.id] = newStage.id;
+          
+          // Copy activities for this stage
+          const originalActivities = await tx.select().from(estimateActivities)
+            .where(eq(estimateActivities.stageId, originalStage.id))
+            .orderBy(estimateActivities.order);
+          
+          for (const originalActivity of originalActivities) {
+            const [newActivity] = await tx.insert(estimateActivities).values({
+              stageId: newStage.id,
+              name: originalActivity.name,
+              order: originalActivity.order,
+            }).returning();
+            
+            // Copy allocations for this activity
+            const originalAllocations = await tx.select().from(estimateAllocations)
+              .where(eq(estimateAllocations.activityId, originalActivity.id));
+            
+            for (const originalAllocation of originalAllocations) {
+              await tx.insert(estimateAllocations).values({
+                activityId: newActivity.id,
+                weekNumber: originalAllocation.weekNumber,
+                roleId: originalAllocation.roleId,
+                personId: originalAllocation.personId,
+                personEmail: originalAllocation.personEmail,
+                hours: originalAllocation.hours,
+                pricingMode: originalAllocation.pricingMode,
+                rackRate: originalAllocation.rackRate,
+                notes: originalAllocation.notes,
+              });
+            }
+          }
+        }
+      }
+
+      // Copy line items (if any) with updated epic/stage references
+      const originalLineItems = await tx.select().from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, estimateId));
+      
+      for (const originalLineItem of originalLineItems) {
+        await tx.insert(estimateLineItems).values({
+          estimateId: newEstimate.id,
+          epicId: originalLineItem.epicId ? epicIdMap[originalLineItem.epicId] : null,
+          stageId: originalLineItem.stageId ? stageIdMap[originalLineItem.stageId] : null,
+          description: originalLineItem.description,
+          category: originalLineItem.category,
+          workstream: originalLineItem.workstream,
+          week: originalLineItem.week,
+          baseHours: originalLineItem.baseHours,
+          factor: originalLineItem.factor,
+          rate: originalLineItem.rate,
+          costRate: originalLineItem.costRate,
+          assignedUserId: originalLineItem.assignedUserId,
+          roleId: originalLineItem.roleId,
+          resourceName: originalLineItem.resourceName,
+          size: originalLineItem.size,
+          complexity: originalLineItem.complexity,
+          confidence: originalLineItem.confidence,
+          adjustedHours: originalLineItem.adjustedHours,
+          totalAmount: originalLineItem.totalAmount,
+          totalCost: originalLineItem.totalCost,
+          margin: originalLineItem.margin,
+          marginPercent: originalLineItem.marginPercent,
+          comments: originalLineItem.comments,
+          sortOrder: originalLineItem.sortOrder,
+        });
+      }
+
+      // Copy milestones
+      const originalMilestones = await tx.select().from(estimateMilestones)
+        .where(eq(estimateMilestones.estimateId, estimateId));
+      
+      for (const originalMilestone of originalMilestones) {
+        await tx.insert(estimateMilestones).values({
+          estimateId: newEstimate.id,
+          name: originalMilestone.name,
+          description: originalMilestone.description,
+          dueDate: originalMilestone.dueDate,
+          isComplete: false, // Reset completion status
+        });
+      }
+
+      return newEstimate;
+    });
   }
 
   async getEstimateEpics(estimateId: string): Promise<EstimateEpic[]> {

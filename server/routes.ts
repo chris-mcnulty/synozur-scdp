@@ -4832,6 +4832,28 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Copy estimate
+  app.post("/api/estimates/:id/copy", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { targetClientId, newClient, name, projectId } = req.body;
+      
+      const copiedEstimate = await storage.copyEstimate(req.params.id, {
+        targetClientId,
+        newClient,
+        name,
+        projectId
+      });
+      
+      res.status(201).json(copiedEstimate);
+    } catch (error: any) {
+      console.error("Error copying estimate:", error);
+      res.status(500).json({ 
+        message: "Failed to copy estimate",
+        details: error.message || "Unknown error"
+      });
+    }
+  });
+
   // Approve estimate and optionally create project
   app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
