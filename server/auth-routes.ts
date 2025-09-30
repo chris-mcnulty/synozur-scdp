@@ -92,18 +92,7 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  // SSO status endpoint
-  app.get("/api/auth/sso/status", async (req, res) => {
-    try {
-      res.json({
-        configured: false,
-        enabled: false
-      });
-    } catch (error) {
-      console.error("SSO status error:", error);
-      res.status(500).json({ message: "Failed to get SSO status" });
-    }
-  });
+  // Note: SSO status endpoint is handled in routes.ts to access isEntraConfigured
 
   console.log("✅ Authentication routes registered successfully");
 }
