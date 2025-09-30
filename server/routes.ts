@@ -1801,6 +1801,16 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/sows/:id/approve", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      // Get the SOW before approval to track previous budget
+      const sowToApprove = await storage.getSow(req.params.id);
+      if (!sowToApprove) {
+        return res.status(404).json({ message: "SOW not found" });
+      }
+
+      // Get current project budget before approval
+      const [currentProject] = await db.select().from(projects).where(eq(projects.id, sowToApprove.projectId));
+      const previousBudget = parseFloat(currentProject?.sowTotal || currentProject?.sowValue || '0');
+
       // First update status to approved
       const sow = await storage.updateSow(req.params.id, { 
         status: "approved"
@@ -1815,10 +1825,67 @@ export async function registerRoutes(app: Express): Promise<void> {
         .where(eq(sows.id, req.params.id))
         .returning();
 
+      // Recalculate project budget after approval
+      const newBudget = await storage.getProjectTotalBudget(sowToApprove.projectId);
+      const delta = newBudget - previousBudget;
+
+      // Update project budget
+      await db.update(projects)
+        .set({
+          sowTotal: newBudget.toString(),
+          sowValue: newBudget.toString(),
+          hasSow: newBudget > 0
+        })
+        .where(eq(projects.id, sowToApprove.projectId));
+
+      // Log to budget history
+      await storage.createBudgetHistory({
+        projectId: sowToApprove.projectId,
+        changeType: updatedSow.type === 'initial' ? 'sow_approval' : 'change_order_approval',
+        fieldChanged: 'sowTotal',
+        previousValue: previousBudget.toString(),
+        newValue: newBudget.toString(),
+        deltaValue: delta.toString(),
+        sowId: updatedSow.id,
+        changedBy: req.user?.id || '',
+        reason: `Approved ${updatedSow.type === 'initial' ? 'SOW' : 'Change Order'}: ${updatedSow.name}`,
+        metadata: {
+          sowName: updatedSow.name,
+          sowType: updatedSow.type,
+          sowValue: updatedSow.value,
+          approvedAt: updatedSow.approvedAt?.toISOString()
+        }
+      });
+
       res.json(updatedSow);
     } catch (error) {
       console.error("Error approving SOW:", error);
       res.status(500).json({ message: "Failed to approve SOW" });
+    }
+  });
+
+  // Project Budget History
+  app.get("/api/projects/:id/budget-history", requireAuth, async (req, res) => {
+    try {
+      const history = await storage.getBudgetHistory(req.params.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching budget history:", error);
+      res.status(500).json({ message: "Failed to fetch budget history" });
+    }
+  });
+
+  app.post("/api/projects/:id/recalculate-budget", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      if (!req.user?.id) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
+      const result = await storage.recalculateProjectBudget(req.params.id, req.user.id);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error recalculating budget:", error);
+      res.status(500).json({ message: error.message || "Failed to recalculate budget" });
     }
   });
 
