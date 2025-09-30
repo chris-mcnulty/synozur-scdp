@@ -6520,4 +6520,69 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // SSO login endpoint - initiates auth flow
+  app.get("/api/auth/sso/login", async (req, res) => {
+    try {
+      if (!msalInstance) {
+        return res.status(503).json({ message: "SSO not configured" });
+      }
+
+      const authUrl = await msalInstance.getAuthCodeUrl(authCodeRequest);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("SSO login error:", error);
+      res.status(500).json({ message: "Failed to initiate SSO login" });
+    }
+  });
+
+  // SSO callback endpoint - handles Azure AD redirect
+  app.get("/api/auth/callback", async (req, res) => {
+    try {
+      if (!msalInstance) {
+        return res.redirect("/?error=sso_not_configured");
+      }
+
+      const { code } = req.query;
+      if (!code || typeof code !== 'string') {
+        return res.redirect("/?error=missing_auth_code");
+      }
+
+      // Exchange authorization code for tokens
+      const tokenResponse = await msalInstance.acquireTokenByCode({
+        ...authCodeRequest,
+        code
+      });
+
+      if (!tokenResponse?.account) {
+        return res.redirect("/?error=no_account");
+      }
+
+      // Look up user in database by email
+      const [dbUser] = await db.select()
+        .from(users)
+        .where(eq(users.email, tokenResponse.account.username));
+
+      if (!dbUser) {
+        return res.redirect("/?error=user_not_found");
+      }
+
+      // Create session with actual database user ID
+      const { createSession } = await import("./session-store.js");
+      const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      
+      createSession(sessionId, {
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role
+      });
+
+      // Redirect to app with session ID
+      res.redirect(`/?sessionId=${sessionId}`);
+    } catch (error) {
+      console.error("SSO callback error:", error);
+      res.redirect("/?error=sso_failed");
+    }
+  });
+
 }
