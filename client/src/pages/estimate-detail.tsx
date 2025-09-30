@@ -1801,8 +1801,9 @@ export default function EstimateDetail() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {stages.map((stage, index) => {
+                    {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage, index) => {
                       const epic = epics.find(e => e.id === stage.epicId);
+                      const lineItemCount = lineItems.filter(item => item.stageId === stage.id).length;
                       return (
                         <div key={stage.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
                           {editingStageId === stage.id ? (
@@ -1870,7 +1871,29 @@ export default function EstimateDetail() {
                                 >
                                   <Edit className="h-3 w-3" />
                                 </Button>
-                                <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
+                                  onClick={() => {
+                                    if (lineItemCount > 0) {
+                                      toast({
+                                        title: "Cannot delete stage",
+                                        description: `This stage has ${lineItemCount} line items. Reassign them first.`,
+                                        variant: "destructive"
+                                      });
+                                    } else {
+                                      deleteEstimateStageMutation.mutate(stage.id);
+                                    }
+                                  }}
+                                  data-testid={`button-delete-stage-${stage.id}`}
+                                >
+                                  {deleteEstimateStageMutation.isPending ? (
+                                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                                  ) : (
+                                    <Trash2 className="h-3 w-3" />
+                                  )}
+                                </Button>
                               </div>
                             </div>
                           )}
@@ -2110,7 +2133,7 @@ export default function EstimateDetail() {
                   <SelectContent>
                     <SelectItem value="all">All Stages</SelectItem>
                     <SelectItem value="none">No Stage</SelectItem>
-                    {stages.map((stage) => (
+                    {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
                       <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -3245,7 +3268,7 @@ export default function EstimateDetail() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No Stage</SelectItem>
-                  {stages.map((stage) => (
+                  {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
                     <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
                   ))}
                 </SelectContent>
