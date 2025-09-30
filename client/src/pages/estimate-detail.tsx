@@ -2303,7 +2303,7 @@ export default function EstimateDetail() {
                       }}
                     />
                     </TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">EPIC TEST</TableHead>
+                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Epic</TableHead>
                     <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Stage</TableHead>
                     <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Workstream</TableHead>
                     <TableHead className="w-12 px-2 py-2 text-xs bg-white dark:bg-slate-950">Week</TableHead>
