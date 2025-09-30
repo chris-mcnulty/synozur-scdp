@@ -1,5 +1,8 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createSession, getSession, deleteSession, requireAuth } from "./session-store";
+import { db } from "../db";
+import { users } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 
 export function registerAuthRoutes(app: Express): void {
   // Login endpoint
@@ -18,30 +21,39 @@ export function registerAuthRoutes(app: Express): void {
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
       ];
 
-      const user = validCredentials.find(cred => 
+      const credentials = validCredentials.find(cred => 
         cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
       );
 
-      if (!user) {
+      if (!credentials) {
         return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      // Look up actual user from database
+      const [dbUser] = await db.select()
+        .from(users)
+        .where(sql`LOWER(${users.email}) = LOWER(${email})`);
+
+      if (!dbUser) {
+        return res.status(401).json({ message: "User not found in database" });
       }
 
       // Generate session ID
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
-      // Store session using shared session store
+      // Store session using shared session store with ACTUAL database user ID
       createSession(sessionId, {
-        id: sessionId,
-        email: user.email,
-        name: user.name,
-        role: user.role
+        id: dbUser.id, // Use actual database user ID, not session ID
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role
       });
 
       res.json({
-        id: sessionId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
         sessionId
       });
     } catch (error) {
