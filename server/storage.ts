@@ -3,7 +3,7 @@ import {
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams,
-  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
+  projectMilestones, projectPaymentMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -21,6 +21,7 @@ import {
   type ProjectBudgetHistory, type InsertProjectBudgetHistory,
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
+  type ProjectPaymentMilestone, type InsertProjectPaymentMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
@@ -503,6 +504,13 @@ export interface IStorage {
   createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
   updateProjectMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone>;
   deleteProjectMilestone(id: string): Promise<void>;
+  // Project Payment Milestones (Financial Schedule)
+  getProjectPaymentMilestones(projectId: string): Promise<ProjectPaymentMilestone[]>;
+  getProjectPaymentMilestoneById(id: string): Promise<ProjectPaymentMilestone | undefined>;
+  createProjectPaymentMilestone(milestone: InsertProjectPaymentMilestone): Promise<ProjectPaymentMilestone>;
+  updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectPaymentMilestone>): Promise<ProjectPaymentMilestone>;
+  deleteProjectPaymentMilestone(id: string): Promise<void>;
+  copyEstimateMilestonesToProject(estimateId: string, projectId: string): Promise<void>;
   getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]>;
   createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream>;
   updateProjectWorkStream(id: string, update: Partial<InsertProjectWorkstream>): Promise<ProjectWorkstream>;
@@ -2079,6 +2087,61 @@ export class DatabaseStorage implements IStorage {
 
   async deleteProjectMilestone(id: string): Promise<void> {
     await db.delete(projectMilestones).where(eq(projectMilestones.id, id));
+  }
+
+  // Project Payment Milestones (Financial Schedule)
+  async getProjectPaymentMilestones(projectId: string): Promise<ProjectPaymentMilestone[]> {
+    return await db.select()
+      .from(projectPaymentMilestones)
+      .where(eq(projectPaymentMilestones.projectId, projectId))
+      .orderBy(projectPaymentMilestones.sortOrder);
+  }
+
+  async getProjectPaymentMilestoneById(id: string): Promise<ProjectPaymentMilestone | undefined> {
+    const [milestone] = await db.select()
+      .from(projectPaymentMilestones)
+      .where(eq(projectPaymentMilestones.id, id))
+      .limit(1);
+    return milestone;
+  }
+
+  async createProjectPaymentMilestone(milestone: InsertProjectPaymentMilestone): Promise<ProjectPaymentMilestone> {
+    const [created] = await db.insert(projectPaymentMilestones).values(milestone).returning();
+    return created;
+  }
+
+  async updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectPaymentMilestone>): Promise<ProjectPaymentMilestone> {
+    const [updated] = await db.update(projectPaymentMilestones)
+      .set({ ...update, updatedAt: sql`now()` })
+      .where(eq(projectPaymentMilestones.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectPaymentMilestone(id: string): Promise<void> {
+    await db.delete(projectPaymentMilestones).where(eq(projectPaymentMilestones.id, id));
+  }
+
+  async copyEstimateMilestonesToProject(estimateId: string, projectId: string): Promise<void> {
+    // Get estimate milestones
+    const estMilestones = await db.select()
+      .from(estimateMilestones)
+      .where(eq(estimateMilestones.estimateId, estimateId))
+      .orderBy(estimateMilestones.sortOrder);
+
+    // Copy each milestone to project payment milestones
+    for (const estMilestone of estMilestones) {
+      await db.insert(projectPaymentMilestones).values({
+        projectId,
+        estimateMilestoneId: estMilestone.id,
+        name: estMilestone.name,
+        description: estMilestone.description,
+        amount: estMilestone.amount || '0',
+        dueDate: estMilestone.dueDate,
+        status: 'planned',
+        sortOrder: estMilestone.sortOrder,
+      });
+    }
   }
 
   async createProjectWorkStream(workstream: InsertProjectWorkstream): Promise<ProjectWorkstream> {
