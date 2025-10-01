@@ -14,12 +14,12 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: "Email and password are required" });
       }
 
-      // Demo credentials for testing
-      const validCredentials = [
+      // Demo credentials for testing (only in development)
+      const validCredentials = process.env.NODE_ENV !== 'production' ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
         { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
-      ];
+      ] : [];
 
       const credentials = validCredentials.find(cred => 
         cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
