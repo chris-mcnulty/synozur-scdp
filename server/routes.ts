@@ -3212,7 +3212,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           console.log('Import Debug - Processing ' + data.length + ' rows from Excel');
 
           for (let i = 0; i < data.length; i++) {
-            const row = data[i] as any[];
+            const row = data[i] as any;
 
             // Skip empty rows
             if (!row.Date && !row["Project Name"] && !row.Description) continue;
@@ -5141,7 +5141,6 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/lines", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const lines = await storage.getInvoiceLinesForBatch(req.params.batchId);
-      const adjustments = await storage.getInvoiceAdjustments(req.params.batchId); // Get adjustments for calculating original amounts
 
       // Group lines by client and project
       const groupedLines = lines.reduce((acc: any, line) => {
@@ -5166,10 +5165,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         // Use billedAmount if available (after adjustments), otherwise use original amount
         const amount = parseFloat(line.billedAmount || line.amount || '0');
-
-        // Find corresponding adjustment for this line if it exists
-        const adjustment = adjustments.find(adj => adj.lineItemId === line.id);
-        const originalAmount = adjustment ? parseFloat(adjustment.originalAmount) : parseFloat(line.amount || '0');
+        const originalAmount = parseFloat(line.amount || '0');
 
         acc[clientKey].projects[projectKey].lines.push({
           ...line,
