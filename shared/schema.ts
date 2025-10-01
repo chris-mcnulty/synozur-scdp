@@ -242,7 +242,7 @@ export const projectWorkstreams = pgTable("project_workstreams", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Project Milestones (from estimate stages)
+// Project Milestones (from estimate stages) - DELIVERY TRACKING
 export const projectMilestones = pgTable("project_milestones", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectEpicId: varchar("project_epic_id").notNull().references(() => projectEpics.id, { onDelete: 'cascade' }),
@@ -256,6 +256,24 @@ export const projectMilestones = pgTable("project_milestones", {
   status: text("status").notNull().default('not-started'), // not-started, in-progress, completed
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Project Payment Milestones - FINANCIAL SCHEDULE
+// Copied from estimate milestones, defines when payments are due
+export const projectPaymentMilestones = pgTable("project_payment_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  estimateMilestoneId: varchar("estimate_milestone_id").references(() => estimateMilestones.id), // Link to original estimate milestone
+  deliveryMilestoneId: varchar("delivery_milestone_id").references(() => projectMilestones.id), // Optional link to delivery milestone
+  name: text("name").notNull(), // e.g., "Kickoff Payment", "Phase 1 Payment"
+  description: text("description"),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // Payment amount in dollars
+  dueDate: date("due_date"), // When payment is expected
+  status: text("status").notNull().default('planned'), // planned, invoiced, canceled
+  sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW/change order if edited
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
 // Weekly staffing allocations (Weekly Staffing Grid)
@@ -490,6 +508,8 @@ export const invoiceBatches = pgTable("invoice_batches", {
   finalizedAt: timestamp("finalized_at"),
   finalizedBy: varchar("finalized_by").references(() => users.id),
   createdBy: varchar("created_by").references(() => users.id), // Track who created the batch
+  // Payment milestone link - one invoice batch per payment milestone
+  projectPaymentMilestoneId: varchar("project_payment_milestone_id").references(() => projectPaymentMilestones.id),
   // Revenue recognition date tracking
   asOfDate: date("as_of_date"), // Date for revenue recognition (defaults to finalized date)
   asOfDateUpdatedBy: varchar("as_of_date_updated_by").references(() => users.id),
@@ -875,6 +895,12 @@ export const insertProjectMilestoneSchema = createInsertSchema(projectMilestones
   createdAt: true,
 });
 
+export const insertProjectPaymentMilestoneSchema = createInsertSchema(projectPaymentMilestones).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
   id: true,
   createdAt: true,
@@ -1001,6 +1027,8 @@ export type ProjectWorkstream = typeof projectWorkstreams.$inferSelect;
 export type InsertProjectWorkstream = z.infer<typeof insertProjectWorkstreamSchema>;
 export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
+export type ProjectPaymentMilestone = typeof projectPaymentMilestones.$inferSelect;
+export type InsertProjectPaymentMilestone = z.infer<typeof insertProjectPaymentMilestoneSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
 export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
 export type UserRateSchedule = typeof userRateSchedules.$inferSelect;
