@@ -358,6 +358,7 @@ export interface IStorage {
     totalLinesCount: number;
     clientCount: number;
     projectCount: number;
+    paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
   }) | undefined>;
   updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch>;
   updateInvoicePaymentStatus(batchId: string, paymentData: {
@@ -3918,8 +3919,9 @@ export class DatabaseStorage implements IStorage {
     clientCount: number;
     projectCount: number;
     creator?: { id: string; name: string; email: string } | null;
+    paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
   }) | undefined> {
-    // Get the batch with creator and finalizer information
+    // Get the batch with creator, finalizer, and payment milestone information
     const [result] = await db.select({
       batch: invoiceBatches,
       creator: {
@@ -3931,11 +3933,21 @@ export class DatabaseStorage implements IStorage {
         id: sql`finalizer_user.id`, 
         name: sql`finalizer_user.name`,
         email: sql`finalizer_user.email`
+      },
+      paymentMilestone: {
+        id: sql`milestone.id`,
+        name: sql`milestone.name`,
+        amount: sql`milestone.amount`,
+        status: sql`milestone.status`,
+        projectId: sql`milestone.project_id`,
+        projectName: sql`milestone_project.name`
       }
     })
     .from(invoiceBatches)
     .leftJoin(sql`users as creator_user`, sql`creator_user.id = ${invoiceBatches.createdBy}`)
     .leftJoin(sql`users as finalizer_user`, sql`finalizer_user.id = ${invoiceBatches.finalizedBy}`)
+    .leftJoin(sql`project_payment_milestones as milestone`, sql`milestone.id = ${invoiceBatches.projectPaymentMilestoneId}`)
+    .leftJoin(sql`projects as milestone_project`, sql`milestone_project.id = milestone.project_id`)
     .where(eq(invoiceBatches.batchId, batchId));
     
     if (!result) {
@@ -3985,6 +3997,14 @@ export class DatabaseStorage implements IStorage {
         id: String(result.finalizer.id),
         name: String(result.finalizer.name),
         email: String(result.finalizer.email)
+      } : null,
+      paymentMilestone: result.paymentMilestone?.id ? {
+        id: String(result.paymentMilestone.id),
+        name: String(result.paymentMilestone.name),
+        amount: String(result.paymentMilestone.amount),
+        status: String(result.paymentMilestone.status),
+        projectId: String(result.paymentMilestone.projectId),
+        projectName: String(result.paymentMilestone.projectName)
       } : null
     });
   }

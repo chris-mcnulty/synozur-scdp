@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams, useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -118,6 +118,7 @@ interface InvoiceBatchDetails {
   asOfDate?: string | null;
   asOfDateUpdatedBy?: string | null;
   asOfDateUpdatedAt?: string | null;
+  paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
 }
 
 interface InvoiceLine {
@@ -1256,6 +1257,54 @@ export default function BatchDetail() {
                 {batchDetails.creator?.name || 'System'}
               </p>
             </div>
+            
+            {/* Payment Milestone Info */}
+            {batchDetails.paymentMilestone && (
+              <>
+                <Separator className="my-4" />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <Target className="mr-1 h-3 w-3" />
+                      Payment Milestone
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium" data-testid="text-milestone-name">
+                        {batchDetails.paymentMilestone.name}
+                      </p>
+                      <Badge 
+                        variant={batchDetails.paymentMilestone.status === 'invoiced' ? 'default' : batchDetails.paymentMilestone.status === 'planned' ? 'secondary' : 'destructive'}
+                        data-testid="badge-milestone-status"
+                      >
+                        {batchDetails.paymentMilestone.status === 'invoiced' ? 'Invoiced' : batchDetails.paymentMilestone.status === 'planned' ? 'Planned' : 'Canceled'}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <FolderOpen className="mr-1 h-3 w-3" />
+                      Project
+                    </div>
+                    <Link 
+                      href={`/projects/${batchDetails.paymentMilestone.projectId}`}
+                      className="font-medium text-blue-600 hover:underline dark:text-blue-400" 
+                      data-testid="link-milestone-project"
+                    >
+                      {batchDetails.paymentMilestone.projectName}
+                    </Link>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center text-sm text-muted-foreground">
+                      <DollarSign className="mr-1 h-3 w-3" />
+                      Target Amount
+                    </div>
+                    <p className="font-medium" data-testid="text-milestone-amount">
+                      ${Number(batchDetails.paymentMilestone.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
             
             {/* Finalization Info */}
             {batchDetails.status === 'finalized' && batchDetails.finalizedAt && (
