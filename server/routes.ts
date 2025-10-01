@@ -5969,6 +5969,144 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Export invoice batch to QuickBooks CSV
+  app.get("/api/invoice-batches/:batchId/export-qbo-csv", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Helper function to safely escape and quote CSV values
+      const csvField = (value: any): string => {
+        if (value === null || value === undefined) return '""';
+        
+        let str = String(value);
+        
+        // Prevent CSV/Excel formula injection by prefixing dangerous chars with space
+        if (str.length > 0 && ['=', '+', '-', '@', '\t', '\r'].includes(str[0])) {
+          str = ' ' + str;
+        }
+        
+        // Escape double quotes by doubling them
+        str = str.replace(/"/g, '""');
+        
+        // Strip newlines and carriage returns
+        str = str.replace(/[\r\n]/g, ' ');
+        
+        // Always wrap in quotes for proper CSV format
+        return `"${str}"`;
+      };
+      
+      // Helper to format date as MM/DD/YYYY for QuickBooks (avoid timezone issues)
+      const formatQBODate = (dateStr: string): string => {
+        // Parse YYYY-MM-DD without timezone conversion
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const monthStr = String(month).padStart(2, '0');
+        const dayStr = String(day).padStart(2, '0');
+        return `${monthStr}/${dayStr}/${year}`;
+      };
+      
+      // Helper to format amount to 2 decimal places
+      const formatAmount = (value: any): string => {
+        const num = parseFloat(value || '0');
+        return num.toFixed(2);
+      };
+      
+      // Get batch details to check status and get invoice date
+      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
+      
+      if (!batchDetails) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+      
+      // Only allow export for finalized batches
+      if (batchDetails.status !== 'finalized') {
+        return res.status(400).json({ message: "Only finalized batches can be exported to QuickBooks" });
+      }
+      
+      // Get invoice lines with client and project details
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      
+      if (lines.length === 0) {
+        return res.status(400).json({ message: "No invoice lines found in batch" });
+      }
+      
+      // Use asOfDate if available, otherwise use finalized date, fallback to end date
+      const rawInvoiceDate = batchDetails.asOfDate || batchDetails.finalizedAt?.split('T')[0] || batchDetails.endDate;
+      const invoiceDate = formatQBODate(rawInvoiceDate);
+      
+      // Build CSV content with QuickBooks format
+      // Header: Customer, InvoiceDate, InvoiceNo, Item, ItemQuantity, ItemRate, ItemAmount
+      let csv = 'Customer,InvoiceDate,InvoiceNo,Item,ItemQuantity,ItemRate,ItemAmount\n';
+      
+      // Group lines by client to generate one invoice per client
+      const linesByClient = lines.reduce((acc: any, line) => {
+        const clientId = line.client.id;
+        if (!acc[clientId]) {
+          acc[clientId] = {
+            client: line.client,
+            lines: [],
+            clientIndex: Object.keys(acc).length + 1
+          };
+        }
+        acc[clientId].lines.push(line);
+        return acc;
+      }, {});
+      
+      // Generate CSV rows
+      for (const [clientId, group] of Object.entries(linesByClient) as any[]) {
+        
+        for (const line of group.lines) {
+          // Use billedAmount if available (after adjustments), otherwise use amount
+          const rawAmount = line.billedAmount || line.amount || '0';
+          const itemAmount = formatAmount(rawAmount);
+          
+          // Handle quantity and rate properly for fixed-price vs time-based items
+          // For time/rate items: provide Qty and Rate, leave ItemAmount empty (QBO calculates it)
+          // For fixed-price items: Qty=1, Rate=amount, leave ItemAmount empty
+          let quantity: string;
+          let rate: string;
+          
+          if (line.rate && parseFloat(line.rate) > 0) {
+            // Time-based or rate-based item: use actual quantity and rate
+            quantity = formatAmount(line.quantity || '1');
+            rate = formatAmount(line.rate);
+          } else {
+            // Fixed-price item: set quantity to 1, rate to total amount
+            quantity = '1.00';
+            rate = itemAmount;
+          }
+          
+          // Build item description: "Project: [Name] - [Type] - [Description]"
+          let itemParts: string[] = [line.project.name];
+          if (line.type) {
+            itemParts.push(line.type.charAt(0).toUpperCase() + line.type.slice(1));
+          }
+          if (line.description) {
+            itemParts.push(line.description);
+          }
+          const itemDescription = itemParts.join(' - ');
+          
+          // Generate unique invoice number per client: batchId-C1, batchId-C2, etc.
+          const clientInvoiceNo = `${batchId}-C${group.clientIndex}`;
+          
+          // Add row with all fields properly CSV-escaped and quoted
+          // Leave ItemAmount empty to let QuickBooks calculate Qty × Rate
+          csv += `${csvField(group.client.name)},${csvField(invoiceDate)},${csvField(clientInvoiceNo)},${csvField(itemDescription)},${csvField(quantity)},${csvField(rate)},\n`;
+        }
+      }
+      
+      // Set headers for CSV download
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice-${batchId}-qbo.csv"`);
+      
+      res.send(csv);
+    } catch (error: any) {
+      console.error("Failed to export to QuickBooks CSV:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to export to QuickBooks CSV" 
+      });
+    }
+  });
+
   // Delete invoice batch
   app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
