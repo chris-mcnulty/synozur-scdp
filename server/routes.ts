@@ -188,7 +188,7 @@ function filterSensitiveData(data: any, userRole: string): any {
 
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
-import { requireAuth, requireRole } from "./session-store";
+import { requireAuth, requireRole, getAllSessions } from "./session-store";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Register authentication routes first
@@ -2787,6 +2787,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("[TIME_ENTRY] Creating time entry:", req.body);
       console.log("[TIME_ENTRY] User:", req.user?.id, "Role:", req.user?.role);
+      const sessions = getAllSessions();
       console.log("[DIAGNOSTIC] Authenticated user full details:", {
         id: req.user?.id,
         email: req.user?.email,
