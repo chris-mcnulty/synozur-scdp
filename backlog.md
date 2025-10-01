@@ -194,6 +194,14 @@
 - [ ] Executive dashboard view
 - [ ] Team performance dashboards
 
+### Time Tracking UX Improvements
+- [ ] **User-Scoped Time Entry View**
+  - Default view: show only current user's time entries
+  - Admin/PM/Executive roles: "Show All/Hide All" toggle
+  - Persist view preference per user
+  - Clear indicator of current filter state
+  - Quick switch between "My Time" and "All Time"
+
 ---
 
 ## 🤖 P3 - AI & AUTOMATION (Weeks 9-12)

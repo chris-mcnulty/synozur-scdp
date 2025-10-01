@@ -1483,7 +1483,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Project Milestones endpoints
+  // Project Milestones endpoints (Delivery Tracking)
   app.get("/api/projects/:projectId/milestones", requireAuth, async (req, res) => {
     try {
       const milestones = await storage.getProjectMilestones(req.params.projectId);
@@ -1491,6 +1491,47 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch project milestones:", error);
       res.status(500).json({ message: "Failed to fetch project milestones" });
+    }
+  });
+
+  // Project Payment Milestones endpoints (Financial Schedule)
+  app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
+    try {
+      const milestones = await storage.getProjectPaymentMilestones(req.params.projectId);
+      res.json(milestones);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch payment milestones:", error);
+      res.status(500).json({ message: "Failed to fetch payment milestones" });
+    }
+  });
+
+  app.post("/api/payment-milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const milestone = await storage.createProjectPaymentMilestone(req.body);
+      res.json(milestone);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create payment milestone:", error);
+      res.status(500).json({ message: "Failed to create payment milestone" });
+    }
+  });
+
+  app.patch("/api/payment-milestones/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const milestone = await storage.updateProjectPaymentMilestone(req.params.id, req.body);
+      res.json(milestone);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to update payment milestone:", error);
+      res.status(500).json({ message: "Failed to update payment milestone" });
+    }
+  });
+
+  app.delete("/api/payment-milestones/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectPaymentMilestone(req.params.id);
+      res.json({ message: "Payment milestone deleted successfully" });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to delete payment milestone:", error);
+      res.status(500).json({ message: "Failed to delete payment milestone" });
     }
   });
 
