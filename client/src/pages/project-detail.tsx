@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -153,6 +153,7 @@ type EpicFormData = z.infer<typeof epicFormSchema>;
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
@@ -189,6 +190,12 @@ export default function ProjectDetail() {
   // Budget approval confirmation state
   const [approvingSow, setApprovingSow] = useState<Sow | null>(null);
   const [showBudgetImpactDialog, setShowBudgetImpactDialog] = useState(false);
+  
+  // Payment milestone invoice state
+  const [generatingInvoiceForMilestone, setGeneratingInvoiceForMilestone] = useState<any>(null);
+  const [showMilestoneInvoiceDialog, setShowMilestoneInvoiceDialog] = useState(false);
+  const [milestoneInvoiceDates, setMilestoneInvoiceDates] = useState({ startDate: '', endDate: '' });
+  const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   
   const { toast } = useToast();
   
@@ -2206,6 +2213,11 @@ export default function ProjectDetail() {
                                     <Button
                                       size="sm"
                                       variant="outline"
+                                      onClick={() => {
+                                        setGeneratingInvoiceForMilestone(pm);
+                                        setMilestoneInvoiceDates({ startDate: '', endDate: '' });
+                                        setShowMilestoneInvoiceDialog(true);
+                                      }}
                                       data-testid={`button-generate-invoice-${pm.id}`}
                                     >
                                       Generate Invoice
@@ -3084,6 +3096,107 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-delete-workstream"
               >
                 Delete Workstream
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Generate Invoice from Payment Milestone Dialog */}
+        <Dialog open={showMilestoneInvoiceDialog} onOpenChange={setShowMilestoneInvoiceDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Generate Invoice from Payment Milestone</DialogTitle>
+              <DialogDescription>
+                Create an invoice batch for payment milestone: {generatingInvoiceForMilestone?.name}
+                <br />
+                <span className="font-semibold">Amount: ${Number(generatingInvoiceForMilestone?.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="invoice-start-date">Start Date</Label>
+                <Input
+                  id="invoice-start-date"
+                  type="date"
+                  value={milestoneInvoiceDates.startDate}
+                  onChange={(e) => setMilestoneInvoiceDates(prev => ({ ...prev, startDate: e.target.value }))}
+                  data-testid="input-milestone-invoice-start-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="invoice-end-date">End Date</Label>
+                <Input
+                  id="invoice-end-date"
+                  type="date"
+                  value={milestoneInvoiceDates.endDate}
+                  onChange={(e) => setMilestoneInvoiceDates(prev => ({ ...prev, endDate: e.target.value }))}
+                  data-testid="input-milestone-invoice-end-date"
+                />
+              </div>
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Note</AlertTitle>
+                <AlertDescription>
+                  This will create an invoice batch for the selected date range. You'll need to generate invoice lines and adjust amounts to match the milestone amount before finalizing.
+                </AlertDescription>
+              </Alert>
+            </div>
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowMilestoneInvoiceDialog(false)}
+                data-testid="button-cancel-generate-invoice"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  const { startDate, endDate } = milestoneInvoiceDates;
+                  
+                  if (!startDate || !endDate) {
+                    toast({
+                      title: "Missing dates",
+                      description: "Please select both start and end dates",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  
+                  setIsGeneratingInvoice(true);
+                  
+                  try {
+                    const response = await apiRequest(
+                      `/api/payment-milestones/${generatingInvoiceForMilestone.id}/generate-invoice`,
+                      {
+                        method: "POST",
+                        body: JSON.stringify({ startDate, endDate })
+                      }
+                    );
+                    
+                    toast({
+                      title: "Invoice batch created",
+                      description: `Invoice batch ${response.batch.batchId} created successfully`,
+                    });
+                    
+                    setShowMilestoneInvoiceDialog(false);
+                    refetchPaymentMilestones();
+                    
+                    // Navigate to invoice batch page using wouter
+                    navigate(`/invoice-batches/${response.batch.batchId}`);
+                  } catch (error: any) {
+                    toast({
+                      title: "Failed to create invoice batch",
+                      description: error.message || "An error occurred",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setIsGeneratingInvoice(false);
+                  }
+                }}
+                disabled={isGeneratingInvoice}
+                data-testid="button-confirm-generate-invoice"
+              >
+                {isGeneratingInvoice ? "Creating..." : "Generate Invoice Batch"}
               </Button>
             </DialogFooter>
           </DialogContent>

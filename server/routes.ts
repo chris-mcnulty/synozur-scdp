@@ -1504,6 +1504,90 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to fetch payment milestones" });
     }
   });
+  
+  // Generate invoice batch from payment milestone
+  app.post("/api/payment-milestones/:milestoneId/generate-invoice", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { milestoneId } = req.params;
+      
+      // Validate request body
+      const bodySchema = z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format"),
+      }).refine(data => data.startDate <= data.endDate, {
+        message: "Start date must be before or equal to end date"
+      });
+      
+      const validatedData = bodySchema.parse(req.body);
+      const { startDate, endDate } = validatedData;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+      
+      // Get the milestone
+      const [milestone] = await db.select()
+        .from(projectPaymentMilestones)
+        .where(eq(projectPaymentMilestones.id, milestoneId));
+      
+      if (!milestone) {
+        return res.status(404).json({ message: "Payment milestone not found" });
+      }
+      
+      if (milestone.status !== 'planned') {
+        return res.status(400).json({ message: `Cannot generate invoice for milestone with status: ${milestone.status}` });
+      }
+      
+      // Check for existing invoice batch linked to this milestone
+      const [existingBatch] = await db.select()
+        .from(invoiceBatches)
+        .where(eq(invoiceBatches.projectPaymentMilestoneId, milestoneId));
+      
+      if (existingBatch) {
+        return res.status(409).json({ 
+          message: `Invoice batch ${existingBatch.batchId} is already linked to this milestone. Please use the existing batch or unlink it first.` 
+        });
+      }
+      
+      // Generate batch ID
+      const batchId = await storage.generateBatchId(startDate, endDate);
+      
+      // Normalize month to first day of start month
+      const startDateObj = new Date(startDate);
+      const normalizedMonth = `${startDateObj.getFullYear()}-${String(startDateObj.getMonth() + 1).padStart(2, '0')}-01`;
+      
+      // Create invoice batch linked to milestone
+      const batch = await storage.createInvoiceBatch({
+        batchId,
+        startDate,
+        endDate,
+        month: normalizedMonth,
+        pricingSnapshotDate: new Date().toISOString().split('T')[0],
+        discountPercent: null,
+        discountAmount: null,
+        totalAmount: "0",
+        invoicingMode: "project",
+        batchType: "time_and_expense",
+        projectPaymentMilestoneId: milestoneId,
+        exportedToQBO: false,
+        createdBy: userId
+      });
+      
+      res.json({ batch, milestone });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to generate invoice from milestone:", error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid request data", 
+          errors: error.errors 
+        });
+      }
+      
+      res.status(500).json({ message: "Failed to generate invoice from milestone" });
+    }
+  });
 
   app.post("/api/payment-milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
