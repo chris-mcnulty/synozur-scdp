@@ -246,9 +246,32 @@
 ## 🔗 P4 - PLATFORM CAPABILITIES (2026+)
 
 ### Extended Integrations Ecosystem
-- [ ] **CRM Integrations**
+
+#### HubSpot Integration - LOWER PRIORITY
+*Note: Focus on exposing SCDP data to HubSpot rather than deep bidirectional sync*
+
+- [ ] **Core HubSpot Features**
+  - Contact synchronization (SCDP clients ↔ HubSpot contacts)
+  - Expose proposals/estimates to HubSpot deals
+  - Expose projects to HubSpot as custom objects
+  - Expose invoices to HubSpot for visibility
+  
+- [ ] **Automated Deal-to-Project Flow**
+  - Auto-create SCDP client when HubSpot deal reaches specified percentage
+  - Auto-generate estimate from deal properties
+  - Deal stage triggers for project creation
+  - Sync deal value to estimate amount
+
+- [ ] **Data Exposure (Read-Only in HubSpot)**
+  - Project status and milestones
+  - Invoice status and payment tracking
+  - Estimate/proposal documents as attachments
+  - Budget vs actual visibility
+
+*Not recommended: Resource planning sync, activity tracking sync, time tracking integration (poor conceptual mesh with HubSpot)*
+
+- [ ] **Other CRM Integrations**
   - Salesforce bi-directional sync
-  - HubSpot pipeline integration
   - Microsoft Dynamics 365
   - Custom CRM webhooks
   
