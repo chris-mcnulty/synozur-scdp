@@ -7018,4 +7018,64 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Demo login endpoint for development/testing
+  app.post("/api/auth/demo-login", async (req, res) => {
+    try {
+      // Only allow in development mode
+      if (process.env.NODE_ENV === 'production') {
+        return res.status(403).json({ message: "Demo login not available in production" });
+      }
+
+      const { email, password } = req.body;
+      
+      // Simple demo credentials check
+      if (email === 'demo@example.com' && password === 'demo') {
+        // Get or create demo user
+        let [demoUser] = await db.select()
+          .from(users)
+          .where(eq(users.email, 'demo@example.com'));
+        
+        if (!demoUser) {
+          // Create demo user if it doesn't exist
+          const [newUser] = await db.insert(users).values({
+            id: 'demo-user-' + Date.now(),
+            email: 'demo@example.com',
+            name: 'Demo User',
+            role: 'admin' as const,
+            costRate: 100,
+            billingRate: 200
+          }).returning();
+          demoUser = newUser;
+        }
+
+        // Create session
+        const { createSession } = await import("./session-store.js");
+        const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        
+        createSession(sessionId, {
+          id: demoUser.id,
+          email: demoUser.email,
+          name: demoUser.name,
+          role: demoUser.role
+        });
+
+        res.json({ 
+          success: true,
+          sessionId,
+          user: {
+            id: demoUser.id,
+            email: demoUser.email,
+            name: demoUser.name,
+            role: demoUser.role
+          }
+        });
+      } else {
+        res.status(401).json({ message: "Invalid email or password" });
+      }
+    } catch (error) {
+      console.error("Demo login error:", error);
+      res.status(500).json({ message: "Demo login failed" });
+    }
+  });
+
 }
