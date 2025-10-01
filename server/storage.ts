@@ -4889,20 +4889,26 @@ export class DatabaseStorage implements IStorage {
     const billableHours = Number(actualMetrics?.billableHours) || 0;
     const totalExpenses = Number(expenseMetrics?.totalExpenses) || 0;
     
-    // Calculate consumed budget from actual time and expenses
+    // Calculate consumed budget based on commercial scheme
     const timeBasedCost = Number(actualMetrics?.timeBasedRevenue) || 0;
-    const consumedBudget = timeBasedCost + totalExpenses;
-    
-    // Calculate revenue based on commercial scheme
+    let consumedBudget = 0;
     let revenue = 0;
+    
     if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
-      // For fixed-price projects, revenue recognition is based on percentage of completion
-      // but consumed budget should still track actual costs
+      // For fixed-price projects (retainer/milestone):
+      // - Consumed budget tracks only time-based costs against the hours budget
+      // - Expenses are tracked separately and don't consume the hours budget
+      consumedBudget = timeBasedCost; // Only hours count against budget
+      
+      // Revenue recognition is based on percentage of completion
       const completionPercentage = estimatedHours > 0 ? Math.min(1, actualHours / estimatedHours) : 0;
       revenue = totalBudget * completionPercentage;
     } else {
-      // For time & materials projects, revenue equals billed amount
-      revenue = timeBasedCost;
+      // For time & materials projects:
+      // - Both time and expenses count as consumed budget
+      // - Revenue equals the actual billed amount
+      consumedBudget = timeBasedCost + totalExpenses;
+      revenue = consumedBudget; // T&M revenue = time + expenses
     }
     
     const burnRatePercentage = totalBudget > 0 ? (consumedBudget / totalBudget) * 100 : 0;
