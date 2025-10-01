@@ -62,8 +62,8 @@ externalPort = 8008
 localPort = 43353
 externalPort = 3000
 
-[env]
-NODE_ENV = "production"
+#[env]
+#NODE_ENV = "production"
 
 [gitHubImport]
 requiredFiles = [".replit", "replit.nix"]
