@@ -14,8 +14,9 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: "Email and password are required" });
       }
 
-      // Demo credentials for testing (only in development)
-      const validCredentials = process.env.NODE_ENV !== 'production' ? [
+      // Demo credentials for testing (only when not deployed/published)
+      // REPLIT_DEPLOYMENT is set to "1" when app is published, so check it's not set
+      const validCredentials = !process.env.REPLIT_DEPLOYMENT ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
         { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
