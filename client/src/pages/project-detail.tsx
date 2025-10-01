@@ -225,6 +225,11 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
   
+  const { data: paymentMilestones = [], isLoading: paymentMilestonesLoading, refetch: refetchPaymentMilestones } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/payment-milestones`],
+    enabled: !!id,
+  });
+  
   const { data: workstreams = [], refetch: refetchWorkstreams } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/workstreams`],
     enabled: !!id,
@@ -1227,6 +1232,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
             <TabsTrigger value="epics" data-testid="tab-epics">Epics</TabsTrigger>
             <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
+            <TabsTrigger value="payment-milestones" data-testid="tab-payment-milestones">Payment Milestones</TabsTrigger>
             <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
@@ -2123,6 +2129,96 @@ export default function ProjectDetail() {
                     )}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Payment Milestones Tab */}
+          <TabsContent value="payment-milestones" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Payment Milestones</CardTitle>
+                  <CardDescription>
+                    Financial schedule and invoicing milestones for this project
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {paymentMilestonesLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Linked to</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paymentMilestones.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground">
+                            Payment milestones are automatically created when a project is created from an estimate with milestones.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        [...paymentMilestones]
+                          .sort((a, b) => {
+                            if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+                            if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+                            return 0;
+                          })
+                          .map((pm: any) => {
+                            const linkedMilestone = pm.deliveryMilestoneId ? 
+                              milestones.find(m => m.id === pm.deliveryMilestoneId) : null;
+                            
+                            return (
+                              <TableRow key={pm.id} data-testid={`payment-milestone-row-${pm.id}`}>
+                                <TableCell className="font-medium">{pm.name}</TableCell>
+                                <TableCell>${Number(pm.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                                <TableCell>{pm.dueDate ? format(parseISO(pm.dueDate), 'MMM d, yyyy') : '-'}</TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={pm.status === 'invoiced' ? 'default' : pm.status === 'planned' ? 'secondary' : 'destructive'}
+                                    data-testid={`badge-status-${pm.id}`}
+                                  >
+                                    {pm.status === 'invoiced' ? 'Invoiced' : pm.status === 'planned' ? 'Planned' : 'Canceled'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {linkedMilestone ? (
+                                    <span className="text-sm text-muted-foreground">
+                                      {linkedMilestone.name}
+                                    </span>
+                                  ) : '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {pm.status === 'planned' && ['admin', 'billing-admin'].includes(user?.role || '') && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      data-testid={`button-generate-invoice-${pm.id}`}
+                                    >
+                                      Generate Invoice
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
