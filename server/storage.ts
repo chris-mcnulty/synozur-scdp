@@ -4176,6 +4176,94 @@ export class DatabaseStorage implements IStorage {
         throw new Error('Cannot finalize batch without any invoice lines');
       }
       
+      // If batch is linked to a payment milestone, validate and update
+      if (batch.projectPaymentMilestoneId) {
+        const [milestone] = await tx.select()
+          .from(projectPaymentMilestones)
+          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+        
+        if (!milestone) {
+          throw new Error('Linked payment milestone not found');
+        }
+        
+        // Validate milestone is in 'planned' state
+        if (milestone.status !== 'planned') {
+          throw new Error(`Payment milestone must be in 'planned' state to invoice (current: ${milestone.status})`);
+        }
+        
+        // Enforce single-project batch when linked to milestone
+        const allBatchLines = await tx.select()
+          .from(invoiceLines)
+          .where(eq(invoiceLines.batchId, batchId));
+        
+        const projectIds = new Set(allBatchLines.map(line => line.projectId));
+        if (projectIds.size > 1 || (projectIds.size === 1 && !projectIds.has(milestone.projectId))) {
+          throw new Error('Invoice batch linked to payment milestone must contain only lines from the milestone\'s project');
+        }
+        
+        // Get all invoice lines for this batch filtered to milestone's project
+        const batchLines = allBatchLines.filter(line => line.projectId === milestone.projectId);
+        
+        // Calculate total from lines belonging to milestone's project
+        const billedDelta = batchLines.reduce((sum, line) => {
+          return sum + normalizeAmount(line.lineTotal);
+        }, 0);
+        
+        const milestoneAmount = normalizeAmount(milestone.amount);
+        
+        // Validate milestone amount matches billed delta (with 1 cent tolerance)
+        if (Math.abs(round2(billedDelta) - round2(milestoneAmount)) > 0.01) {
+          throw new Error(`Invoice total for project ($${round2(billedDelta).toFixed(2)}) does not match milestone amount ($${round2(milestoneAmount).toFixed(2)})`);
+        }
+        
+        // Update milestone status to 'invoiced'
+        await tx.update(projectPaymentMilestones)
+          .set({ status: 'invoiced' })
+          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+        
+        // Update project billedTotal
+        const [project] = await tx.select()
+          .from(projects)
+          .where(eq(projects.id, milestone.projectId));
+        
+        if (project) {
+          const currentBilled = normalizeAmount(project.billedTotal);
+          const newBilledTotal = round2(currentBilled + billedDelta).toString();
+          const previousBilled = project.billedTotal || '0';
+          
+          await tx.update(projects)
+            .set({ billedTotal: newBilledTotal })
+            .where(eq(projects.id, milestone.projectId));
+          
+          // Create budget history entry with invoice batch reference
+          await tx.insert(projectBudgetHistory).values({
+            projectId: milestone.projectId,
+            changeType: 'billing',
+            fieldChanged: 'billedTotal',
+            previousValue: previousBilled,
+            newValue: newBilledTotal,
+            changeDescription: `Invoice batch ${batchId} finalized for payment milestone: ${milestone.name}`,
+            changedBy: userId,
+            metadata: JSON.stringify({ 
+              batchId, 
+              milestoneId: milestone.id,
+              billedDelta: billedDelta.toString()
+            }),
+          });
+        }
+        
+        // If milestone is linked to a delivery milestone, mark it complete (with tracking)
+        if (milestone.deliveryMilestoneId) {
+          await tx.update(projectMilestones)
+            .set({ 
+              status: 'completed',
+              completedBy: 'system',
+              completedReason: `Auto-completed by invoice batch ${batchId} finalization`
+            })
+            .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
+        }
+      }
+      
       // Update the batch status
       const [updatedBatch] = await tx.update(invoiceBatches)
         .set({
@@ -4244,6 +4332,84 @@ export class DatabaseStorage implements IStorage {
       // Check if batch has been exported
       if (batch.exportedToQBO) {
         throw new Error('Cannot unfinalize a batch that has been exported to QuickBooks');
+      }
+      
+      // If batch is linked to a payment milestone, revert the updates
+      if (batch.projectPaymentMilestoneId) {
+        const [milestone] = await tx.select()
+          .from(projectPaymentMilestones)
+          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+        
+        if (milestone) {
+          // Revert milestone status back to 'planned'
+          await tx.update(projectPaymentMilestones)
+            .set({ status: 'planned' })
+            .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+          
+          // Get all invoice lines for this batch filtered to milestone's project
+          const batchLines = await tx.select()
+            .from(invoiceLines)
+            .where(and(
+              eq(invoiceLines.batchId, batchId),
+              eq(invoiceLines.projectId, milestone.projectId)
+            ));
+          
+          // Calculate the exact billed delta to reverse (same as finalize)
+          const billedDelta = batchLines.reduce((sum, line) => {
+            return sum + normalizeAmount(line.lineTotal);
+          }, 0);
+          
+          // Revert project billedTotal with exact delta
+          const [project] = await tx.select()
+            .from(projects)
+            .where(eq(projects.id, milestone.projectId));
+          
+          if (project) {
+            const previousBilled = project.billedTotal || '0';
+            const currentBilled = normalizeAmount(previousBilled);
+            const newBilledTotal = round2(currentBilled - billedDelta).toString();
+            
+            await tx.update(projects)
+              .set({ billedTotal: newBilledTotal })
+              .where(eq(projects.id, milestone.projectId));
+            
+            // Create compensating budget history entry for reversal (preserve audit trail)
+            await tx.insert(projectBudgetHistory).values({
+              projectId: milestone.projectId,
+              changeType: 'billing_reversal',
+              fieldChanged: 'billedTotal',
+              previousValue: previousBilled,
+              newValue: newBilledTotal,
+              changeDescription: `Invoice batch ${batchId} unfinalized - reverting payment milestone: ${milestone.name}`,
+              changedBy: batch.finalizedBy || 'system',
+              metadata: JSON.stringify({ 
+                batchId, 
+                milestoneId: milestone.id,
+                billedDelta: (-billedDelta).toString(),
+                reversedEntryType: 'billing'
+              }),
+            });
+          }
+          
+          // Revert delivery milestone only if it was auto-completed by system
+          if (milestone.deliveryMilestoneId) {
+            const [deliveryMilestone] = await tx.select()
+              .from(projectMilestones)
+              .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
+            
+            // Only revert if it was system-completed and contains the batch reference
+            if (deliveryMilestone?.completedBy === 'system' && 
+                deliveryMilestone?.completedReason?.includes(batchId)) {
+              await tx.update(projectMilestones)
+                .set({ 
+                  status: 'in-progress',
+                  completedBy: null,
+                  completedReason: null
+                })
+                .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
+            }
+          }
+        }
       }
       
       // Update the batch status back to draft
