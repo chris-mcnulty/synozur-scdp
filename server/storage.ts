@@ -3729,7 +3729,26 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
-        // 5. Create project rate overrides from estimate line items that have assigned users
+        // 5. Copy payment milestones from estimate
+        const estMilestones = await tx.select()
+          .from(estimateMilestones)
+          .where(eq(estimateMilestones.estimateId, estimateId))
+          .orderBy(estimateMilestones.sortOrder);
+
+        for (const estMilestone of estMilestones) {
+          await tx.insert(projectPaymentMilestones).values({
+            projectId: project.id,
+            estimateMilestoneId: estMilestone.id,
+            name: estMilestone.name,
+            description: estMilestone.description,
+            amount: estMilestone.amount || '0',
+            dueDate: estMilestone.dueDate,
+            status: 'planned',
+            sortOrder: estMilestone.sortOrder,
+          });
+        }
+        
+        // 6. Create project rate overrides from estimate line items that have assigned users
         const lineItemsWithUsers = await tx.select()
           .from(estimateLineItems)
           .where(and(
@@ -3760,7 +3779,7 @@ export class DatabaseStorage implements IStorage {
           });
         }
         
-        // 6. Create initial SOW with estimate total value
+        // 7. Create initial SOW with estimate total value
         const estimateValue = estimate.presentedTotal || estimate.totalFees || '0';
         const estimateHours = estimate.totalHours || estimate.blockHours || '0';
         
@@ -3777,7 +3796,7 @@ export class DatabaseStorage implements IStorage {
           notes: `Created from estimate: ${estimate.name}`,
         }).returning();
         
-        // 7. Update project with SOW information
+        // 8. Update project with SOW information
         await tx.update(projects)
           .set({
             sowValue: estimateValue,
@@ -3787,7 +3806,7 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(projects.id, project.id));
         
-        // 8. Update the estimate to link it to the project
+        // 9. Update the estimate to link it to the project
         await tx.update(estimates)
           .set({ 
             projectId: project.id,
