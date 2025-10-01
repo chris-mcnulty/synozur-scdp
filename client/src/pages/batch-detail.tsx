@@ -981,6 +981,84 @@ export default function BatchDetail() {
             Export CSV
           </Button>
           
+          {/* QuickBooks CSV Export - only for admins/billing-admins, enabled when finalized */}
+          {['admin', 'billing-admin'].includes(user?.role || '') && (
+            <Button
+              onClick={async () => {
+                if (!batchId) return;
+                
+                try {
+                  // Get session ID from localStorage for authenticated request
+                  const sessionId = localStorage.getItem('sessionId');
+                  
+                  if (!sessionId) {
+                    toast({
+                      title: "Authentication required",
+                      description: "Please log in to export to QuickBooks CSV",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  
+                  const response = await fetch(`/api/invoice-batches/${batchId}/export-qbo-csv`, {
+                    credentials: 'include',
+                    headers: {
+                      'X-Session-Id': sessionId
+                    }
+                  });
+                  
+                  if (!response.ok) {
+                    let errorMessage = 'Failed to export to QuickBooks CSV';
+                    
+                    // Try to parse JSON error, fallback to text
+                    try {
+                      const errorData = await response.json();
+                      errorMessage = errorData.message || errorMessage;
+                    } catch {
+                      const errorText = await response.text();
+                      if (errorText) errorMessage = errorText;
+                    }
+                    
+                    // Special handling for auth errors
+                    if (response.status === 401 || response.status === 403) {
+                      errorMessage = 'Authentication required. Please log in again.';
+                    }
+                    
+                    throw new Error(errorMessage);
+                  }
+                  
+                  // Download the CSV file
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `invoice-${batchId}-qbo.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.URL.revokeObjectURL(url);
+                  
+                  toast({
+                    title: "Export successful",
+                    description: "QuickBooks CSV has been downloaded.",
+                  });
+                } catch (error: any) {
+                  toast({
+                    title: "Export failed",
+                    description: error.message || "Failed to export to QuickBooks CSV",
+                    variant: "destructive"
+                  });
+                }
+              }}
+              variant="outline"
+              disabled={batchDetails?.status !== 'finalized'}
+              data-testid="button-export-qbo-csv"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Export to QuickBooks CSV
+            </Button>
+          )}
+          
           <Button
             onClick={handleDownloadPDF}
             variant="outline"
