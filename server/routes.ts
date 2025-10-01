@@ -3247,7 +3247,31 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/time-entries/import", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const multer = await import("multer");
-      const upload = multer.default({ storage: multer.default.memoryStorage() });
+      
+      // Configure multer with file size limits and type validation
+      const upload = multer.default({ 
+        storage: multer.default.memoryStorage(),
+        limits: { 
+          fileSize: 10 * 1024 * 1024 // 10MB limit
+        },
+        fileFilter: (req, file, cb) => {
+          // Accept only Excel files
+          const allowedMimeTypes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'application/x-excel',
+            'application/x-msexcel'
+          ];
+          
+          const allowedExtensions = /\.(xlsx|xls)$/i;
+          
+          if (allowedMimeTypes.includes(file.mimetype) || allowedExtensions.test(file.originalname)) {
+            cb(null, true);
+          } else {
+            cb(new Error('Only Excel files (.xlsx, .xls) are allowed'));
+          }
+        }
+      });
 
       upload.single("file")(req, res, async (uploadError) => {
         if (uploadError) {
