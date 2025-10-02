@@ -81,6 +81,8 @@ export default function EstimateDetail() {
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
   const [editingEpicId, setEditingEpicId] = useState<string | null>(null);
   const [editingEpicName, setEditingEpicName] = useState<string>("");
+  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<string | null>(null);
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [editingStageName, setEditingStageName] = useState<string>("");
   const [newItem, setNewItem] = useState({
@@ -817,20 +819,42 @@ export default function EstimateDetail() {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const base64 = e.target?.result?.toString().split(",")[1];
-      try {
-        const response = await apiRequest(`/api/estimates/${id}/import-excel`, {
-          method: "POST",
-          body: JSON.stringify({ file: base64 })
-        });
-        toast({ title: `Successfully imported ${response.itemsCreated} line items` });
-        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
-      } catch (error) {
-        toast({ title: "Failed to import Excel file", variant: "destructive" });
-      }
+      if (!base64) return;
+      
+      // Store the file data and show confirmation dialog
+      setPendingImportFile(base64);
+      setShowImportConfirmDialog(true);
     };
     reader.readAsDataURL(file);
+    
+    // Reset file input so the same file can be selected again
+    event.target.value = '';
+  };
+
+  const executeImport = async (removeExisting: boolean) => {
+    if (!pendingImportFile) return;
+    
+    try {
+      const response = await apiRequest(`/api/estimates/${id}/import-excel`, {
+        method: "POST",
+        body: JSON.stringify({ 
+          file: pendingImportFile,
+          removeExisting 
+        })
+      });
+      
+      const action = response.mode === 'replaced' ? 'replaced with' : 'added';
+      toast({ title: `Successfully ${action} ${response.itemsCreated} line items` });
+      
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      
+      setShowImportConfirmDialog(false);
+      setPendingImportFile(null);
+    } catch (error) {
+      toast({ title: "Failed to import Excel file", variant: "destructive" });
+    }
   };
 
   const totalHours = (lineItems || []).reduce((sum: number, item: EstimateLineItem) => 
@@ -3680,6 +3704,61 @@ export default function EstimateDetail() {
             {approveEstimateMutation.isPending 
               ? (estimate?.status === 'approved' ? "Creating Project..." : "Approving...") 
               : (estimate?.status === 'approved' ? "Create Project" : "Approve Estimate")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Excel Import Confirmation Dialog */}
+    <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Import Excel File</DialogTitle>
+          <DialogDescription>
+            Would you like to remove all existing line items or keep them and add the imported items?
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            Choose how to handle your existing {lineItems.length} line item{lineItems.length !== 1 ? 's' : ''}:
+          </p>
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 p-3 border rounded-lg hover:bg-gray-50">
+              <div className="flex-1">
+                <p className="font-medium">Remove and Replace</p>
+                <p className="text-sm text-muted-foreground">Delete all existing items and import new ones</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2 p-3 border rounded-lg hover:bg-gray-50">
+              <div className="flex-1">
+                <p className="font-medium">Keep and Add</p>
+                <p className="text-sm text-muted-foreground">Keep existing items and add imported ones</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowImportConfirmDialog(false);
+              setPendingImportFile(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => executeImport(false)}
+            data-testid="button-import-keep-add"
+          >
+            Keep and Add
+          </Button>
+          <Button
+            onClick={() => executeImport(true)}
+            data-testid="button-import-remove-replace"
+          >
+            Remove and Replace
           </Button>
         </DialogFooter>
       </DialogContent>

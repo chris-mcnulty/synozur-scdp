@@ -2653,11 +2653,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(400).json({ message: "No non-blank epics found in estimate. Please create epics first." });
         }
 
-        // Get PM role rack rate
-        const roles = await storage.getRoles();
-        const pmRole = roles.find(r => r.name.toLowerCase() === 'pm' || r.name.toLowerCase() === 'project manager');
-        const pmRate = pmRole?.defaultRackRate ? Number(pmRole.defaultRackRate) : 150; // Default to $150 if not found
-        const pmCostRate = pmRate * 0.67; // Assume 33% margin for cost rate
+        // Get system default rates (no hardcoded fallbacks - use actual system defaults)
+        const pmRate = await storage.getDefaultBillingRate();
+        const pmCostRate = await storage.getDefaultCostRate();
 
         const createdItems = [];
         
@@ -2887,8 +2885,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
-      // Parse base64 file data
+      // Parse base64 file data and import mode
       const fileData = req.body.file;
+      const removeExisting = req.body.removeExisting !== false; // Default to true for backwards compatibility
       const buffer = Buffer.from(fileData, "base64");
 
       const workbook = xlsx.read(buffer, { type: "buffer" });
@@ -2968,14 +2967,20 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      // Delete existing line items and insert new ones
-      const existingItems = await storage.getEstimateLineItems(req.params.id);
-      for (const item of existingItems) {
-        await storage.deleteEstimateLineItem(item.id);
+      // Delete existing line items if requested, otherwise append
+      if (removeExisting) {
+        const existingItems = await storage.getEstimateLineItems(req.params.id);
+        for (const item of existingItems) {
+          await storage.deleteEstimateLineItem(item.id);
+        }
       }
 
       const createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
-      res.json({ success: true, itemsCreated: createdItems.length });
+      res.json({ 
+        success: true, 
+        itemsCreated: createdItems.length,
+        mode: removeExisting ? 'replaced' : 'appended'
+      });
     } catch (error) {
       console.error("Excel import error:", error);
       res.status(500).json({ message: "Failed to import Excel file" });
