@@ -586,10 +586,20 @@ export default function BatchDetail() {
     });
   };
 
+  const [isPDFGenerating, setIsPDFGenerating] = useState(false);
+
   const handleDownloadPDF = async () => {
     if (!batchId) return;
     
     try {
+      setIsPDFGenerating(true);
+      
+      // Show loading message
+      toast({
+        title: "Generating PDF",
+        description: "Please wait, this may take a few seconds...",
+      });
+      
       // Get session ID from localStorage for authenticated request
       const sessionId = localStorage.getItem('sessionId');
       
@@ -599,6 +609,7 @@ export default function BatchDetail() {
           description: "Please log in to download PDFs.",
           variant: "destructive"
         });
+        setIsPDFGenerating(false);
         return;
       }
 
@@ -618,6 +629,7 @@ export default function BatchDetail() {
             description: "Session expired. Please log in again.",
             variant: "destructive"
           });
+          setIsPDFGenerating(false);
           return;
         }
         
@@ -639,8 +651,8 @@ export default function BatchDetail() {
       URL.revokeObjectURL(url);
 
       toast({
-        title: "PDF download started",
-        description: "The invoice PDF is being downloaded.",
+        title: "PDF download complete",
+        description: "The invoice PDF has been downloaded.",
       });
     } catch (error: any) {
       console.error("PDF download error:", error);
@@ -649,6 +661,8 @@ export default function BatchDetail() {
         description: error.message || "Failed to download PDF. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setIsPDFGenerating(false);
     }
   };
 
@@ -1062,10 +1076,11 @@ export default function BatchDetail() {
           <Button
             onClick={handleDownloadPDF}
             variant="outline"
+            disabled={isPDFGenerating}
             data-testid="button-download-pdf"
           >
             <FileText className="mr-2 h-4 w-4" />
-            Download PDF
+            {isPDFGenerating ? "Generating PDF..." : "Download PDF"}
           </Button>
 
           {batchDetails?.status === 'finalized' && (
