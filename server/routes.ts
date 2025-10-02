@@ -6074,7 +6074,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       // Use asOfDate if available, otherwise use finalized date, fallback to end date
-      const rawInvoiceDate = batchDetails.asOfDate || batchDetails.finalizedAt?.split('T')[0] || batchDetails.endDate;
+      let rawInvoiceDate = batchDetails.asOfDate;
+      if (!rawInvoiceDate && batchDetails.finalizedAt) {
+        // Convert Date to string if needed
+        rawInvoiceDate = typeof batchDetails.finalizedAt === 'string' 
+          ? batchDetails.finalizedAt.split('T')[0]
+          : batchDetails.finalizedAt.toISOString().split('T')[0];
+      }
+      if (!rawInvoiceDate) {
+        rawInvoiceDate = batchDetails.endDate;
+      }
       const invoiceDate = formatQBODate(rawInvoiceDate);
       
       // Build CSV content with QuickBooks format
