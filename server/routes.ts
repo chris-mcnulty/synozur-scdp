@@ -3359,6 +3359,14 @@ export async function registerRoutes(app: Express): Promise<void> {
           console.log('Import Debug - Found ' + projects.length + ' projects in database');
           console.log('Import Debug - Found ' + users.length + ' users in database');
           console.log('Import Debug - Processing ' + data.length + ' rows from Excel');
+          
+          // Log the actual column names found in the Excel file for debugging
+          if (data.length > 0) {
+            const firstRow = data[0] as any;
+            const columnNames = Object.keys(firstRow);
+            console.log('Import Debug - Column names in Excel:', columnNames);
+            console.log('Import Debug - Expected columns: Date, Project Name, Resource Name, Description, Hours, Billable, Phase');
+          }
 
           for (let i = 0; i < data.length; i++) {
             const row = data[i] as any;
@@ -3474,6 +3482,18 @@ export async function registerRoutes(app: Express): Promise<void> {
             }
           }
 
+          // Check if column names match expected format
+          if (data.length > 0 && errors.length > 0) {
+            const firstRow = data[0] as any;
+            const columnNames = Object.keys(firstRow);
+            const expectedColumns = ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", "Phase"];
+            const missingColumns = expectedColumns.filter(col => !columnNames.includes(col));
+            
+            if (missingColumns.length > 0) {
+              errors.unshift('COLUMN MISMATCH: Excel file is missing required columns: ' + missingColumns.join(', ') + '. Found columns: ' + columnNames.join(', ') + '. Please use the download template button to get the correct format.');
+            }
+          }
+          
           // Add summary of missing projects and resources to help user understand what needs to be created
           if (missingProjects.size > 0) {
             errors.unshift('MISSING PROJECTS (create these first): ' + Array.from(missingProjects).join(', '));
