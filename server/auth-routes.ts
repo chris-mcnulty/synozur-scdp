@@ -15,26 +15,17 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       // Demo credentials for testing (only in development environment)
-      console.log('🔐 LOGIN DEBUG:');
-      console.log('  - NODE_ENV:', process.env.NODE_ENV);
-      console.log('  - Login attempt for:', email);
-      
       const validCredentials = process.env.NODE_ENV === 'development' ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
         { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
       ] : [];
 
-      console.log('  - Valid credentials count:', validCredentials.length);
-
       const credentials = validCredentials.find(cred => 
         cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
       );
 
-      console.log('  - Credentials match:', !!credentials);
-
       if (!credentials) {
-        console.log('  ❌ FAILED: Invalid demo credentials or not in development mode');
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
