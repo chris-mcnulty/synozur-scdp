@@ -2671,39 +2671,39 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         const createdItems = [];
         
-        // Create one line item per week (NOT per epic)
-        // PM work accrues to all epics but is not attached to any specific epic
-        const hoursPerWeek = epics.length * Number(hoursPerWeekPerEpic);
-        
-        for (let week = 1; week <= maxWeeks; week++) {
-          const totalAmount = hoursPerWeek * pmRate;
-          const totalCost = hoursPerWeek * pmCostRate;
-          
-          const lineItemData = {
-            estimateId,
-            epicId: null, // PM work is NOT attached to specific epics
-            stageId: null,
-            description: "Project Management",
-            workstream: "Project Management",
-            week,
-            baseHours: String(hoursPerWeek),
-            factor: "1",
-            rate: String(pmRate),
-            costRate: String(pmCostRate),
-            size: "small",
-            complexity: "small",
-            confidence: "high",
-            adjustedHours: String(hoursPerWeek),
-            totalAmount: String(totalAmount),
-            totalCost: String(totalCost),
-            margin: String(totalAmount - totalCost),
-            marginPercent: String(totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount) * 100 : 0),
-            comments: null
-          };
+        // Create one line item per week per epic (attached to specific epics)
+        for (const epic of epics) {
+          for (let week = 1; week <= maxWeeks; week++) {
+            const adjustedHours = Number(hoursPerWeekPerEpic);
+            const totalAmount = adjustedHours * pmRate;
+            const totalCost = adjustedHours * pmCostRate;
+            
+            const lineItemData = {
+              estimateId,
+              epicId: epic.id, // PM work IS attached to specific epics
+              stageId: null,
+              description: "Project Management",
+              workstream: "Project Management",
+              week,
+              baseHours: String(hoursPerWeekPerEpic),
+              factor: "1",
+              rate: String(pmRate),
+              costRate: String(pmCostRate),
+              size: "small",
+              complexity: "small",
+              confidence: "high",
+              adjustedHours: String(hoursPerWeekPerEpic),
+              totalAmount: String(totalAmount),
+              totalCost: String(totalCost),
+              margin: String(totalAmount - totalCost),
+              marginPercent: String(totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount) * 100 : 0),
+              comments: null
+            };
 
-          const validatedData = insertEstimateLineItemSchema.parse(lineItemData);
-          const created = await storage.createEstimateLineItem(validatedData);
-          createdItems.push(created);
+            const validatedData = insertEstimateLineItemSchema.parse(lineItemData);
+            const created = await storage.createEstimateLineItem(validatedData);
+            createdItems.push(created);
+          }
         }
 
         return res.json({

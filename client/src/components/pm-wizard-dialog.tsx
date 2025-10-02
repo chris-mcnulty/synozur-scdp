@@ -312,14 +312,7 @@ export function PMWizardDialog({ estimateId, open, onOpenChange }: PMWizardDialo
             <Alert>
               <CheckCircle className="h-4 w-4" />
               <AlertDescription>
-                Ready to create {maxWeeks} PM line items ({totalPMHours} total hours)
-              </AlertDescription>
-            </Alert>
-
-            <Alert className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
-              <AlertDescription className="text-sm">
-                <strong>Note:</strong> PM work is not attached to specific epics - it accrues across all {pmData?.epics?.length || 0} epics.
-                Each week will have {(pmData?.epics?.length || 0) * hoursPerWeekPerEpic} hours ({pmData?.epics?.length || 0} epics × {hoursPerWeekPerEpic} hrs/epic).
+                Ready to create {(pmData?.epics?.length || 0) * maxWeeks} PM line items ({totalPMHours} total hours)
               </AlertDescription>
             </Alert>
 
@@ -327,24 +320,23 @@ export function PMWizardDialog({ estimateId, open, onOpenChange }: PMWizardDialo
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Epic</TableHead>
                     <TableHead>Week</TableHead>
                     <TableHead>Hours</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead>Epic</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {Array.from({ length: maxWeeks }, (_, i) => i + 1).map((week) => {
-                    const hoursPerWeek = (pmData?.epics?.length || 0) * hoursPerWeekPerEpic;
-                    return (
-                      <TableRow key={week}>
+                  {pmData?.epics?.map((epic: any) => 
+                    Array.from({ length: maxWeeks }, (_, i) => i + 1).map((week) => (
+                      <TableRow key={`${epic.id}-${week}`}>
+                        <TableCell>{epic.name}</TableCell>
                         <TableCell>{week}</TableCell>
-                        <TableCell>{hoursPerWeek}</TableCell>
+                        <TableCell>{hoursPerWeekPerEpic}</TableCell>
                         <TableCell>Project Management</TableCell>
-                        <TableCell className="text-muted-foreground">All epics</TableCell>
                       </TableRow>
-                    );
-                  })}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
