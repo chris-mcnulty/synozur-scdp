@@ -54,3 +54,14 @@ Preferred communication style: Simple, everyday language.
 - **UI Libraries**: Radix UI, Lucide React (icons), Tailwind CSS.
 - **Data Management**: TanStack Query, React Hook Form, Date-fns.
 - **Build & Runtime**: ESBuild, PostCSS, WS (WebSockets for Neon).
+
+## Key Features & Behaviors
+
+### Estimate Excel Import/Export
+- **Export**: Includes resource names for all line items
+- **Import**: Reads resource names and automatically assigns users by matching names (case-insensitive)
+- **Import Modes**: 
+  - "Remove and Replace" - clears existing items before import
+  - "Keep and Add" - appends imported items to existing ones
+- **Column Flexibility**: Handles both admin exports (with Cost Rate) and non-admin exports
+- **Bulk Editing**: Users can export an estimate, modify resource assignments in Excel, and import to a new estimate to preserve resourcing

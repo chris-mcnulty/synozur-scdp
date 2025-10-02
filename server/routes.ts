@@ -2900,22 +2900,41 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Estimate not found" });
       }
 
-      // Get epics and stages for lookup
+      // Get epics, stages, and users for lookup
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
+      const users = await storage.getUsers();
 
       // Create lookup maps for epic and stage IDs by name
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
       const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
+      
+      // Create user lookup by name (case-insensitive)
+      const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
 
       // Skip header rows and process data
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
-        // Updated column indices for new format with Factor
-        // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 6: Base Hours, 7: Factor, 8: Rate
-        // 9: Size, 10: Complexity, 11: Confidence, 12: Comments
-        if (!row[4] || !row[6] || !row[8]) continue; // Skip if no description, hours, or rate
+        // Column indices matching export format:
+        // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 
+        // 6: Resource, 7: Base Hours, 8: Factor, 9: Rate, (10: Cost Rate - admin only)
+        // Then: Size, Complexity, Confidence, Comments
+        
+        // Determine column indices based on whether cost rate is present
+        // For non-admin exports, columns after Rate are: Size, Complexity, Confidence, Comments
+        // For admin exports, columns after Rate are: Cost Rate, Size, Complexity, Confidence, Comments
+        
+        // We need to be flexible - check if there's a Cost Rate column or not
+        const hasCostRate = row[10] !== undefined && (row[10] === '' || !isNaN(Number(row[10])));
+        const costRateOffset = hasCostRate ? 1 : 0;
+        
+        const sizeCol = 10 + costRateOffset;
+        const complexityCol = 11 + costRateOffset;
+        const confidenceCol = 12 + costRateOffset;
+        const commentsCol = 13 + costRateOffset;
+        
+        if (!row[4] || !row[7] || !row[9]) continue; // Skip if no description, hours, or rate
 
         // Lookup epic and stage IDs from names
         const epicName = row[0] ? String(row[0]).toLowerCase() : "";
@@ -2923,9 +2942,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         const epicId = epicName ? (epicNameToId.get(epicName) || null) : null;
         const stageId = stageName ? (stageNameToId.get(stageName) || null) : null;
 
-        const size = row[9] || "small";
-        const complexity = row[10] || "small";
-        const confidence = row[11] || "high";
+        // Lookup user by resource name
+        const resourceName = row[6] ? String(row[6]).trim() : "";
+        const assignedUserId = resourceName ? (userNameToId.get(resourceName.toLowerCase()) || null) : null;
+
+        const size = row[sizeCol] || "small";
+        const complexity = row[complexityCol] || "small";
+        const confidence = row[confidenceCol] || "high";
 
         // Calculate multipliers
         let sizeMultiplier = 1.0;
@@ -2940,9 +2963,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
         else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
 
-        const baseHours = Number(row[6]);
-        const factor = Number(row[7]) || 1;
-        const rate = Number(row[8]);
+        const baseHours = Number(row[7]);
+        const factor = Number(row[8]) || 1;
+        const rate = Number(row[9]);
+        const costRate = hasCostRate ? Number(row[10]) : null;
         const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
 
@@ -2954,13 +2978,16 @@ export async function registerRoutes(app: Express): Promise<void> {
           week: row[3] ? Number(row[3]) : null,
           description: String(row[4]),
           category: row[5] ? String(row[5]) : null,
+          assignedUserId,
+          resourceName: resourceName || null,
           baseHours: baseHours.toString(),
           factor: factor.toString(),
           rate: rate.toString(),
+          costRate: costRate !== null ? costRate.toString() : null,
           size,
           complexity,
           confidence,
-          comments: row[12] ? String(row[12]) : null,
+          comments: row[commentsCol] ? String(row[commentsCol]) : null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
           sortOrder: i - 3
@@ -6203,12 +6230,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       // Use asOfDate if available, otherwise use finalized date, fallback to end date
-      let rawInvoiceDate = batchDetails.asOfDate;
+      let rawInvoiceDate: string | null = batchDetails.asOfDate;
       if (!rawInvoiceDate && batchDetails.finalizedAt) {
         // Convert Date to string if needed
-        rawInvoiceDate = typeof batchDetails.finalizedAt === 'string' 
-          ? batchDetails.finalizedAt.split('T')[0]
-          : batchDetails.finalizedAt.toISOString().split('T')[0];
+        const finalizedDate = batchDetails.finalizedAt;
+        if (typeof finalizedDate === 'string') {
+          rawInvoiceDate = finalizedDate.split('T')[0];
+        } else if (finalizedDate instanceof Date) {
+          rawInvoiceDate = finalizedDate.toISOString().split('T')[0];
+        }
       }
       if (!rawInvoiceDate) {
         rawInvoiceDate = batchDetails.endDate;
