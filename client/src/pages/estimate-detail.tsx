@@ -1956,177 +1956,237 @@ export default function EstimateDetail() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4 mb-4">
-            <div className="grid grid-cols-7 gap-2">
-              <div className="flex gap-1">
-                <Select
-                  value={newItem.epicId}
-                  onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Epic" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
-                      <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowEpicDialog(true)}
-                  title="Add new Epic"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+            {/* Two-column layout on wide screens */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left Column - Core Fields */}
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-sm font-medium mb-1.5 block">Description *</Label>
+                  <Input
+                    placeholder="Enter description"
+                    value={newItem.description}
+                    onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                    data-testid="input-description"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Epic</Label>
+                    <div className="flex gap-1">
+                      <Select
+                        value={newItem.epicId}
+                        onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
+                      >
+                        <SelectTrigger data-testid="select-epic">
+                          <SelectValue placeholder="Select Epic" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
+                            <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowEpicDialog(true)}
+                        title="Add new Epic"
+                        data-testid="button-add-epic"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Stage</Label>
+                    <div className="flex gap-1">
+                      <Select
+                        value={newItem.stageId}
+                        onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
+                      >
+                        <SelectTrigger data-testid="select-stage">
+                          <SelectValue placeholder="Select Stage" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
+                            <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowStageDialog(true)}
+                        title="Add new Stage"
+                        disabled={epics.length === 0}
+                        data-testid="button-add-stage"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Workstream</Label>
+                    <Input
+                      placeholder="Workstream"
+                      value={newItem.workstream}
+                      onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
+                      data-testid="input-workstream"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Week #</Label>
+                    <Input
+                      placeholder="Week #"
+                      type="number"
+                      value={newItem.week}
+                      onChange={(e) => setNewItem({ ...newItem, week: e.target.value })}
+                      data-testid="input-week"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium mb-1.5 block">Resource</Label>
+                  <Select
+                    value={newItem.userId || "unassigned"}
+                    onValueChange={(value) => {
+                      const selectedUser = users.find((s: any) => s.id === value);
+                      if (value === "unassigned") {
+                        setNewItem({ ...newItem, userId: "", resourceName: "", rate: "0", costRate: "0" });
+                      } else if (selectedUser) {
+                        setNewItem({ 
+                          ...newItem, 
+                          userId: selectedUser.id, 
+                          resourceName: selectedUser.name,
+                          rate: selectedUser.defaultBillingRate?.toString() || "0",
+                          costRate: selectedUser.defaultCostRate?.toString() || "0"
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-resource">
+                      <SelectValue placeholder="Select Resource" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {users.filter((user: any) => user.isAssignable).map((member: any) => (
+                        <SelectItem key={member.id} value={member.id}>
+                          {member.name} - ${member.defaultBillingRate}/hr
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex gap-1">
-                <Select
-                  value={newItem.stageId}
-                  onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Stage" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
-                      <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowStageDialog(true)}
-                  title="Add new Stage"
-                  disabled={epics.length === 0}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+              
+              {/* Right Column - Metrics & Attributes */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Hours *</Label>
+                    <Input
+                      placeholder="Hours"
+                      type="number"
+                      value={newItem.baseHours}
+                      onChange={(e) => setNewItem({ ...newItem, baseHours: e.target.value })}
+                      data-testid="input-hours"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Factor</Label>
+                    <Input
+                      placeholder="Factor"
+                      type="number"
+                      value={newItem.factor}
+                      onChange={(e) => setNewItem({ ...newItem, factor: e.target.value })}
+                      title="Multiplier (e.g., 4 interviews × 3 hours)"
+                      data-testid="input-factor"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Rate ($) *</Label>
+                    <Input
+                      placeholder="Rate"
+                      type="number"
+                      value={newItem.rate}
+                      onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
+                      data-testid="input-rate"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Size</Label>
+                    <Select
+                      value={newItem.size}
+                      onValueChange={(value) => setNewItem({ ...newItem, size: value })}
+                    >
+                      <SelectTrigger data-testid="select-size">
+                        <SelectValue placeholder="Size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="small">Small</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="large">Large</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Complexity</Label>
+                    <Select
+                      value={newItem.complexity}
+                      onValueChange={(value) => setNewItem({ ...newItem, complexity: value })}
+                    >
+                      <SelectTrigger data-testid="select-complexity">
+                        <SelectValue placeholder="Complexity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="small">Small</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="large">Large</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium mb-1.5 block">Confidence</Label>
+                    <Select
+                      value={newItem.confidence}
+                      onValueChange={(value) => setNewItem({ ...newItem, confidence: value })}
+                    >
+                      <SelectTrigger data-testid="select-confidence">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium mb-1.5 block">Comments</Label>
+                  <Input
+                    placeholder="Optional comments"
+                    value={newItem.comments}
+                    onChange={(e) => setNewItem({ ...newItem, comments: e.target.value })}
+                    data-testid="input-comments"
+                  />
+                </div>
               </div>
-              <Input
-                placeholder="Workstream"
-                value={newItem.workstream}
-                onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
-              />
-              <Input
-                placeholder="Week #"
-                type="number"
-                value={newItem.week}
-                onChange={(e) => setNewItem({ ...newItem, week: e.target.value })}
-              />
-              <Input
-                placeholder="Hours"
-                type="number"
-                value={newItem.baseHours}
-                onChange={(e) => setNewItem({ ...newItem, baseHours: e.target.value })}
-              />
-              <Input
-                placeholder="Factor"
-                type="number"
-                value={newItem.factor}
-                onChange={(e) => setNewItem({ ...newItem, factor: e.target.value })}
-                title="Multiplier (e.g., 4 interviews × 3 hours)"
-              />
-              <Input
-                placeholder="Rate ($)"
-                type="number"
-                value={newItem.rate}
-                onChange={(e) => setNewItem({ ...newItem, rate: e.target.value })}
-              />
             </div>
-            <div className="grid grid-cols-6 gap-2">
-              <Input
-                placeholder="Description"
-                value={newItem.description}
-                onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                className="col-span-2"
-              />
-              <Select
-                value={newItem.size}
-                onValueChange={(value) => setNewItem({ ...newItem, size: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Size" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="small">Small</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="large">Large</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={newItem.complexity}
-                onValueChange={(value) => setNewItem({ ...newItem, complexity: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Complexity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="small">Small</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="large">Large</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={newItem.confidence}
-              onValueChange={(value) => setNewItem({ ...newItem, confidence: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Select
-              value={newItem.userId || "unassigned"}
-              onValueChange={(value) => {
-                const selectedUser = users.find((s: any) => s.id === value);
-                if (value === "unassigned") {
-                  setNewItem({ ...newItem, userId: "", resourceName: "", rate: "0", costRate: "0" });
-                } else if (selectedUser) {
-                  setNewItem({ 
-                    ...newItem, 
-                    userId: selectedUser.id, 
-                    resourceName: selectedUser.name,
-                    rate: selectedUser.defaultBillingRate?.toString() || "0",
-                    costRate: selectedUser.defaultCostRate?.toString() || "0"
-                  });
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Resource" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {users.filter((user: any) => user.isAssignable).map((member: any) => (
-                  <SelectItem key={member.id} value={member.id}>
-                    {member.name} - ${member.defaultBillingRate}/hr
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Comments (optional)"
-              value={newItem.comments}
-              onChange={(e) => setNewItem({ ...newItem, comments: e.target.value })}
-            />
-          </div>
-        </div>
           <Button
             onClick={handleAddItem}
             disabled={!newItem.description || !newItem.baseHours || !newItem.rate || createLineItemMutation.isPending}
             className="mb-4"
             variant="default"
             size="default"
+            data-testid="button-add-input"
           >
             <Plus className="h-4 w-4 mr-2" />
             {createLineItemMutation.isPending ? "Adding..." : "Add Input"}
