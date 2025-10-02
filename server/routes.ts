@@ -2936,6 +2936,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
+      
+      // Get client information for header
+      const client = estimate?.clientId ? await storage.getClient(estimate.clientId) : null;
 
       // Create lookup maps for epic and stage names
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
@@ -2956,25 +2959,53 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const worksheetData = [
-        ["Estimate Line Items Export"],
+        [`Client: ${client?.name || 'Unknown'} | Estimate: ${estimate?.name || 'Untitled'}`],
         [],
         headers,
         ...filteredLineItems.map((item: any) => {
+          // Recalculate all values from scratch for accuracy
+          const baseHours = Number(item.baseHours);
+          const factor = Number(item.factor || 1);
+          const rate = Number(item.rate);
+          const costRate = Number(item.costRate || 0);
+          
+          // Get multipliers from estimate
+          let sizeMultiplier = 1.0;
+          if (item.size === "medium") sizeMultiplier = Number(estimate?.sizeMediumMultiplier || 1.05);
+          else if (item.size === "large") sizeMultiplier = Number(estimate?.sizeLargeMultiplier || 1.10);
+          
+          let complexityMultiplier = 1.0;
+          if (item.complexity === "medium") complexityMultiplier = Number(estimate?.complexityMediumMultiplier || 1.05);
+          else if (item.complexity === "large") complexityMultiplier = Number(estimate?.complexityLargeMultiplier || 1.10);
+          
+          let confidenceMultiplier = 1.0;
+          if (item.confidence === "medium") confidenceMultiplier = Number(estimate?.confidenceMediumMultiplier || 1.10);
+          else if (item.confidence === "low") confidenceMultiplier = Number(estimate?.confidenceLowMultiplier || 1.20);
+          
+          // Calculate adjusted hours: base × factor × all multipliers
+          const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+          
+          // Calculate amounts
+          const totalAmount = adjustedHours * rate;
+          const totalCost = adjustedHours * costRate;
+          const margin = totalAmount - totalCost;
+          const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+          
           const row = [
             item.epicId ? (epicMap.get(item.epicId) || "") : "",
             item.stageId ? (stageMap.get(item.stageId) || "") : "",
             item.workstream || "",
-            item.week || "",
+            item.week || 0,
             item.description,
             item.category || "",
             item.resourceName || "",
-            Number(item.baseHours),
-            Number(item.factor || 1),
-            Number(item.rate)
+            baseHours,
+            factor,
+            rate
           ];
 
           if (canViewCostMargins) {
-            row.push(Number(item.costRate || 0));
+            row.push(costRate);
           }
 
           row.push(
@@ -2982,14 +3013,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             item.complexity,
             item.confidence,
             item.comments || "",
-            Number(item.adjustedHours),
-            Number(item.totalAmount)
+            adjustedHours,
+            totalAmount
           );
 
           if (canViewCostMargins) {
-            const totalCost = Number(item.costRate || 0) * Number(item.adjustedHours || 0);
-            const margin = Number(item.margin || 0);
-            const marginPercent = Number(item.marginPercent || 0);
             row.push(totalCost, margin, marginPercent);
           }
 
@@ -2999,7 +3027,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Add empty rows for new items
       for (let i = 0; i < 20; i++) {
-        worksheetData.push(["", "", "", "", "", "", "", "", 1, 0, 0, "small", "small", "high", "", "", "", "", "", ""]);
+        worksheetData.push(["", "", "", 0, "", "", "", "", 1, 0, 0, "small", "small", "high", "", "", "", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
