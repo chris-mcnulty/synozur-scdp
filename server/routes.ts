@@ -6079,6 +6079,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       for (const [clientId, group] of Object.entries(linesByClient) as any[]) {
         
         for (const line of group.lines) {
+          // Validate required fields
+          if (!line.client?.name) {
+            throw new Error(`Invoice line missing client name`);
+          }
+          if (!line.project?.name) {
+            throw new Error(`Invoice line missing project name`);
+          }
+          
           // Use billedAmount if available (after adjustments), otherwise use amount
           const rawAmount = line.billedAmount || line.amount || '0';
           const itemAmount = formatAmount(rawAmount);
@@ -6118,7 +6126,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
       
-      // Set headers for CSV download
+      // All validation passed - NOW set headers for CSV download (after all error checks)
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="invoice-${batchId}-qbo.csv"`);
       
