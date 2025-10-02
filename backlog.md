@@ -1,70 +1,33 @@
 # SCDP Product Backlog - Corrected Comprehensive Version
 
-## 🚨 P0 - CRITICAL GAPS (Week 1)
+## 🚨 P0 - CRITICAL GAPS (Weeks 1-6)
 
-### QuickBooks Online Integration - COMPLETELY MISSING
-- [ ] OAuth2 authentication setup with QuickBooks
-- [ ] Client → QBO Customer mapping interface
-- [ ] Role/Service → QBO Items (Service) mapping
-- [ ] Expense categories → QBO Account mappings
-- [ ] Invoice Batch → QBO Invoice (Draft) creation with:
-  - Service lines with qty/hours × rate
-  - Discount lines and zero-charge lines
-  - Billable expenses as invoice lines
-- [ ] Batch ID deduplication to prevent duplicate exports
-- [ ] Retry mechanism and validation error handling
-- [ ] Webhook integration for bi-directional sync status
-- [ ] QBO sync status dashboard
+### Comprehensive Notifications System
+**Status:** ENTIRELY MISSING - See [Detailed Implementation Plan](./notifications-plan.md)
 
-### Mobile Web Interface Optimization
-- [ ] Touch-first time entry with large touch targets
-- [ ] Quick time tracking with start/stop buttons
-- [ ] Timer-based time tracking for real-time capture
-- [ ] Mobile expense capture with camera integration
-- [ ] Offline capability with sync when connected
-- [ ] Swipe gestures for common actions
-- [ ] Mobile-optimized navigation patterns
-- [ ] Location-based automatic project detection
-- [ ] Voice notes for descriptions
+**Why P0:** Critical for user engagement, timely approvals, and operational efficiency.
+
+**Summary:**
+- In-app notification center with bell icon, dropdown, and full page view
+- Email notifications via SendGrid integration
+- User preferences with granular controls per notification type
+- System-wide admin controls to enable/disable notification types globally
+
+**Key Features:**
+- Time entry reminders (requires project staffing feature)
+- Expense approval requests ($500+ threshold)
+- Expense status updates (approved/rejected)
+- Invoice batch status notices
+- Budget threshold alerts
+- Project deadline reminders
+
+**Timeline:** 6 weeks (see detailed plan for phased approach)
+
+**[→ View Full Implementation Plan](./notifications-plan.md)**
 
 ---
 
 ## 🔔 P1 - HIGH PRIORITY (Weeks 2-4)
-
-### Comprehensive Notifications System - ENTIRELY MISSING
-- [ ] **Email Notifications Infrastructure**
-  - SendGrid/SMTP integration
-  - HTML email templates
-  - Notification preferences per user
-  - Unsubscribe management
-  
-- [ ] **Notification Triggers**
-  - Time entry submission reminders
-  - Expense approval requests
-  - Invoice batch finalization notices
-  - Budget threshold alerts (80%, 90%, 100%)
-  - Project deadline reminders
-  - Missing time entry warnings
-  
-- [ ] **In-App Notification Center**
-  - Bell icon with unread count
-  - Notification feed with history
-  - Mark as read/unread functionality
-  - Filter by type and date
-  - Quick actions from notifications
-  
-- [ ] **Approval Workflows**
-  - Time entry approval chains
-  - Expense reimbursement workflows
-  - SOW approval processes
-  - Estimate sign-off workflows
-  - Multi-stage approval support
-  
-- [ ] **Escalation Rules**
-  - Automatic escalation for overdue items
-  - Manager notification chains
-  - SLA tracking and alerts
-  - Custom escalation paths per client
 
 ### Commercial Schemes Implementation
 *Note: Database fields exist but business logic is missing*
@@ -136,6 +99,41 @@
 ---
 
 ## 📊 P2 - IMPORTANT FEATURES (Weeks 5-8)
+
+### QuickBooks Online Integration
+**Status:** COMPLETELY MISSING - Downgraded from P0
+
+**Why Deferred:** Focus on core UX improvements first. QBO integration valuable but not blocking core operations.
+
+**Scope:**
+- [ ] OAuth2 authentication setup with QuickBooks
+- [ ] Client → QBO Customer mapping interface
+- [ ] Role/Service → QBO Items (Service) mapping
+- [ ] Expense categories → QBO Account mappings
+- [ ] Invoice Batch → QBO Invoice (Draft) creation with:
+  - Service lines with qty/hours × rate
+  - Discount lines and zero-charge lines
+  - Billable expenses as invoice lines
+- [ ] Batch ID deduplication to prevent duplicate exports
+- [ ] Retry mechanism and validation error handling
+- [ ] Webhook integration for bi-directional sync status
+- [ ] QBO sync status dashboard
+
+### Mobile Web Interface Optimization
+**Status:** Deferred - Downgraded from P0
+
+**Why Deferred:** Will implement after core UX streamlined (~1 month out). Mobile optimization makes sense once desktop experience is polished.
+
+**Scope:**
+- [ ] Touch-first time entry with large touch targets
+- [ ] Quick time tracking with start/stop buttons
+- [ ] Timer-based time tracking for real-time capture
+- [ ] Mobile expense capture with camera integration
+- [ ] Offline capability with sync when connected
+- [ ] Swipe gestures for common actions
+- [ ] Mobile-optimized navigation patterns
+- [ ] Location-based automatic project detection
+- [ ] Voice notes for descriptions
 
 ### SharePoint Embedded UI & Admin Workflows
 *Note: Backend and middleware are implemented, UI and admin workflows are missing*
