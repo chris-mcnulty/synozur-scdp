@@ -1,0 +1,65 @@
+Project Management Wizard - Feature Spec
+Overview
+A multi-step wizard that helps users ensure PM hours are properly allocated across all epics and weeks in an estimate. Accessible from a button on the estimate detail page.
+
+User Flow
+Step 1: Check for Existing PM Hours
+
+Query: Find all line items where:
+workstream = "Project Management" OR
+roleId matches PM role OR
+description contains "project management" (case-insensitive)
+If found → Show table of existing PM line items and ask "Do you want to keep these PM hours?"
+Yes → Exit wizard
+No → Continue to Step 2
+If none found → Continue to Step 2
+Step 2: Project Context
+
+Auto-calculate project weeks: MAX(line_items.week, allocations.weekNumber)
+Show: "This estimate has X epics and Y weeks"
+Allow user to edit weeks if needed (input field)
+List all epic names for confirmation
+Step 3: Hours Per Week Per Epic
+
+Input: "How many PM hours per week per epic?" (number input)
+Show calculation preview: {weeks} × {epics} × {hours} = {total} PM hours
+Example: "6 weeks × 2 epics × 2 hours = 24 PM hours"
+Step 4: Confirmation & Creation
+
+Show summary table of line items to be created:
+Epic	Week	Hours	Description
+Epic 1	1	2	Project Management
+Epic 1	2	2	Project Management
+...	...	...	...
+Buttons: "Add PM Hours" / "Cancel"
+On confirm: Bulk create line items
+Data Structure for Created Line Items
+{
+  estimateId: string,
+  epicId: string,        // Each epic's ID
+  stageId: null,         // No stage assignment
+  description: "Project Management",
+  workstream: "Project Management",
+  week: number,          // 1 to maxWeeks
+  baseHours: number,     // User input
+  factor: 1,
+  rate: 0,              // TBD - could use PM rack rate
+  costRate: 0,          // TBD
+  adjustedHours: baseHours, // Same as baseHours since factor=1
+  totalAmount: 0,
+  // ... other required fields
+}
+UI Components Needed
+PMWizardButton - Trigger button on estimate detail page
+PMWizardDialog - Multi-step modal with:
+ExistingPMReview (Step 1)
+ProjectContext (Step 2)
+HoursInput (Step 3)
+Confirmation (Step 4)
+API Endpoint: POST /api/estimates/:estimateId/pm-hours
+Backend Logic
+Query existing PM line items
+Calculate project weeks from max week/weekNumber
+Bulk insert line items - One per week per epic
+Recalculate estimate totals after insertion
+Ready to build this? I'll create a task list with the implementation steps. The wizard will be a clean, guided experience that ensures PM hours are never forgotten in estimates.

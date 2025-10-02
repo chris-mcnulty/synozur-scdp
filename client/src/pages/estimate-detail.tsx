@@ -12,10 +12,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
+import { PMWizardDialog } from "@/components/pm-wizard-dialog";
 
 export default function EstimateDetail() {
   const { id } = useParams();
@@ -73,6 +74,7 @@ export default function EstimateDetail() {
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
+  const [showPMWizard, setShowPMWizard] = useState(false);
   const [blockHoursInput, setBlockHoursInput] = useState<string>("");
   const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
@@ -1030,6 +1032,10 @@ export default function EstimateDetail() {
             </>
           )}
           
+          <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
+            <Wand2 className="h-4 w-4 mr-2" />
+            PM Wizard
+          </Button>
           <Button onClick={handleDownloadTemplate} variant="outline">
             <FileDown className="h-4 w-4 mr-2" />
             Download Template
@@ -3654,6 +3660,15 @@ export default function EstimateDetail() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* PM Wizard Dialog */}
+    {id && (
+      <PMWizardDialog
+        estimateId={id}
+        open={showPMWizard}
+        onOpenChange={setShowPMWizard}
+      />
+    )}
 
     </div>
     </div>

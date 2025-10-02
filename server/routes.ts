@@ -2589,6 +2589,136 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // PM Wizard - Check for existing PM hours and create new ones
+  app.post("/api/estimates/:estimateId/pm-hours", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { estimateId } = req.params;
+      const { action, hoursPerWeekPerEpic, maxWeeks, removeExisting } = req.body;
+
+      // Get all line items for this estimate
+      const lineItems = await storage.getEstimateLineItems(estimateId);
+      
+      // Get PM role ID
+      const roles = await storage.getRoles();
+      const pmRole = roles.find(r => r.name.toLowerCase() === 'pm' || r.name.toLowerCase() === 'project manager');
+      
+      // Find existing PM line items
+      const existingPMItems = lineItems.filter(item => 
+        item.workstream?.toLowerCase() === 'project management' ||
+        (pmRole && item.roleId === pmRole.id) ||
+        item.description?.toLowerCase().includes('project management')
+      );
+
+      // If action is 'check', return existing items
+      if (action === 'check') {
+        // Calculate max weeks from BOTH line items AND allocations
+        const lineItemMaxWeek = Math.max(
+          ...lineItems.map(item => item.week || 0),
+          0
+        );
+        
+        // Get allocations to check their weekNumber
+        const allocations = await storage.getEstimateAllocations(estimateId);
+        const allocationMaxWeek = Math.max(
+          ...allocations.map((alloc: any) => alloc.weekNumber || 0),
+          0
+        );
+        
+        // Use max of both, with minimum of 1 week for new estimates
+        const calculatedMaxWeeks = Math.max(lineItemMaxWeek, allocationMaxWeek, 1);
+        
+        // Get epics
+        const epics = await storage.getEstimateEpics(estimateId);
+        
+        return res.json({
+          existingPMItems,
+          maxWeeks: calculatedMaxWeeks,
+          epics,
+          hasExistingPM: existingPMItems.length > 0
+        });
+      }
+      
+      // If action is 'remove', delete existing PM items
+      if (action === 'remove') {
+        for (const item of existingPMItems) {
+          await storage.deleteEstimateLineItem(item.id);
+        }
+        return res.json({
+          success: true,
+          removed: existingPMItems.length,
+          message: `Removed ${existingPMItems.length} existing PM line items`
+        });
+      }
+
+      // If action is 'create', create PM line items
+      if (action === 'create' && hoursPerWeekPerEpic && maxWeeks) {
+        const epics = await storage.getEstimateEpics(estimateId);
+        const { insertEstimateLineItemSchema } = await import("@shared/schema");
+        
+        if (epics.length === 0) {
+          return res.status(400).json({ message: "No epics found in estimate. Please create epics first." });
+        }
+
+        // Get PM role rack rate
+        const roles = await storage.getRoles();
+        const pmRole = roles.find(r => r.name.toLowerCase() === 'pm' || r.name.toLowerCase() === 'project manager');
+        const pmRate = pmRole?.defaultRackRate ? Number(pmRole.defaultRackRate) : 150; // Default to $150 if not found
+        const pmCostRate = pmRate * 0.67; // Assume 33% margin for cost rate
+
+        const createdItems = [];
+        
+        // Create one line item per week per epic
+        for (const epic of epics) {
+          for (let week = 1; week <= maxWeeks; week++) {
+            const adjustedHours = Number(hoursPerWeekPerEpic);
+            const totalAmount = adjustedHours * pmRate;
+            const totalCost = adjustedHours * pmCostRate;
+            
+            const lineItemData = {
+              estimateId,
+              epicId: epic.id,
+              stageId: null,
+              description: "Project Management",
+              workstream: "Project Management",
+              week,
+              baseHours: String(hoursPerWeekPerEpic),
+              factor: "1",
+              rate: String(pmRate),
+              costRate: String(pmCostRate),
+              size: "small",
+              complexity: "small",
+              confidence: "high",
+              adjustedHours: String(hoursPerWeekPerEpic),
+              totalAmount: String(totalAmount),
+              totalCost: String(totalCost),
+              margin: String(totalAmount - totalCost),
+              marginPercent: String(totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount) * 100 : 0),
+              comments: null
+            };
+
+            const validatedData = insertEstimateLineItemSchema.parse(lineItemData);
+            const created = await storage.createEstimateLineItem(validatedData);
+            createdItems.push(created);
+          }
+        }
+
+        return res.json({
+          success: true,
+          created: createdItems.length,
+          items: createdItems,
+          totalHours: createdItems.length * hoursPerWeekPerEpic
+        });
+      }
+
+      res.status(400).json({ message: "Invalid action. Use 'check' or 'create'." });
+    } catch (error: any) {
+      console.error("PM wizard error:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to process PM hours" 
+      });
+    }
+  });
+
   // Excel template download (empty template for users to fill)
   app.get("/api/estimates/template-excel", requireAuth, async (req, res) => {
     try {
