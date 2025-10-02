@@ -96,6 +96,46 @@
   - Export with client terminology
   - Email templates with custom terms
 
+### Project Assignments & Resource Balancing
+**Status:** MISSING - Critical for multi-project resource management
+
+**Why High Priority:** Essential for managing consultant workload across multiple projects, preventing over-allocation, and optimizing resource utilization.
+
+**Scope:**
+- [ ] **Project Assignments Structure**
+  - Create project assignments table linking users to projects
+  - Assignment start/end dates
+  - Allocation percentage (e.g., 50% on Project A, 30% on Project B)
+  - Role on project
+  - Billable/non-billable designation
+  
+- [ ] **Cross-Project Workload View**
+  - Unified view of each person's assignments across all active projects
+  - Visual timeline showing concurrent project assignments
+  - Capacity utilization percentage (total allocation across all projects)
+  - Over-allocation alerts (>100% capacity)
+  - Available capacity indicators
+  
+- [ ] **Resource Rebalancing Tools**
+  - Drag-and-drop reassignment interface
+  - Rescheduling tools to shift assignments
+  - Workload rebalancing suggestions
+  - Impact analysis before making changes
+  - Bulk assignment operations
+  
+- [ ] **Create Project from Estimate Integration**
+  - Automatically convert estimate line item resource assignments to project assignments
+  - Preserve allocated hours and weekly distribution
+  - Map estimate epics/stages to project tasks
+  - Prompt for assignment start/end dates during project creation
+  
+- [ ] **Capacity Planning & Analytics**
+  - Team capacity dashboard
+  - Utilization forecasting
+  - Bench time visibility
+  - Resource demand vs. supply analysis
+  - Historical utilization trends
+
 ---
 
 ## 📊 P2 - IMPORTANT FEATURES (Weeks 5-8)
