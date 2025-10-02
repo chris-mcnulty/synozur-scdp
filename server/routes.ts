@@ -2555,7 +2555,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
         
         const resource = resourceMap.get(resourceKey)!;
-        resource.totalHours += Number(item.hours) || 0;
+        resource.totalHours += Number(item.adjustedHours) || 0;
         resource.lineItemIds.push(String(item.id));
       }
 
