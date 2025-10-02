@@ -3182,7 +3182,7 @@ export default function ProjectDetail() {
                     refetchPaymentMilestones();
                     
                     // Navigate to invoice batch page using wouter
-                    navigate(`/invoice-batches/${response.batch.batchId}`);
+                    navigate(`/billing/batches/${response.batch.batchId}`);
                   } catch (error: any) {
                     toast({
                       title: "Failed to create invoice batch",
