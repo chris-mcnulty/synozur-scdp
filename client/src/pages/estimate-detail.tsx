@@ -1510,7 +1510,7 @@ export default function EstimateDetail() {
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
                             <div className="flex gap-6">
-                              <span className="text-muted-foreground">{Math.round(data.hours)} hrs</span>
+                              <span className="text-muted-foreground">{data.hours.toFixed(2)} hrs</span>
                               <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
                             </div>
                           </div>
@@ -1519,7 +1519,7 @@ export default function EstimateDetail() {
                           <div className="flex justify-between text-lg font-semibold">
                             <span>Total</span>
                             <div className="flex gap-6">
-                              <span>{Math.round(totalHours)} hrs</span>
+                              <span>{totalHours.toFixed(2)} hrs</span>
                               <span>${Math.round(totalAmount).toLocaleString()}</span>
                             </div>
                           </div>
@@ -1556,7 +1556,7 @@ export default function EstimateDetail() {
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
                             <div className="flex gap-6">
-                              <span className="text-muted-foreground">{Math.round(data.hours)} hrs</span>
+                              <span className="text-muted-foreground">{data.hours.toFixed(2)} hrs</span>
                               <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
                             </div>
                           </div>
@@ -1565,7 +1565,7 @@ export default function EstimateDetail() {
                           <div className="flex justify-between text-lg font-semibold">
                             <span>Total</span>
                             <div className="flex gap-6">
-                              <span>{Math.round(totalHours)} hrs</span>
+                              <span>{totalHours.toFixed(2)} hrs</span>
                               <span>${Math.round(totalAmount).toLocaleString()}</span>
                             </div>
                           </div>
