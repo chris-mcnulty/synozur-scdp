@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy } from "lucide-react";
@@ -716,13 +716,10 @@ export default function Estimates() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Delete Estimate</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete the estimate "{estimateToDelete?.name}"? This action cannot be undone. All related data including line items, milestones, epics, and stages will be permanently deleted.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <p>Are you sure you want to delete the estimate "{estimateToDelete?.name}"?</p>
-              <p className="text-sm text-muted-foreground">
-                This action cannot be undone. All related data including line items, milestones, epics, and stages will be permanently deleted.
-              </p>
-            </div>
             <DialogFooter>
               <Button 
                 variant="outline" 

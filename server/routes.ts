@@ -5158,6 +5158,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.delete("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteEstimate(req.params.id);
+      res.json({ success: true, message: "Estimate deleted successfully" });
+    } catch (error) {
+      console.error("Delete estimate error:", error);
+      res.status(500).json({ message: "Failed to delete estimate" });
+    }
+  });
+
   // Copy estimate
   app.post("/api/estimates/:id/copy", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
