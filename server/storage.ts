@@ -7766,9 +7766,25 @@ export async function generateInvoicePDF(params: {
   // Generate PDF using Puppeteer
   let browser;
   try {
+    // Determine Chromium executable path with fallback chain
+    let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    
+    if (!executablePath) {
+      // Try to find chromium in PATH
+      try {
+        const { execSync } = await import('child_process');
+        executablePath = execSync('which chromium').toString().trim();
+      } catch {
+        // Fallback to common Nix path pattern (won't work everywhere but better than nothing)
+        executablePath = 'chromium';
+      }
+    }
+    
+    console.log('[PDF] Using Chromium executable:', executablePath);
+    
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || 'chromium',
+      executablePath,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
     });
     

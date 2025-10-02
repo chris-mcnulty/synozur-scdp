@@ -1,0 +1,173 @@
+🔐 LOGIN DEBUG:
+  - NODE_ENV: development
+  - Login attempt for: chris.mcnulty@synozur.com
+  - Valid credentials count: 3
+  - Credentials match: true
+[SESSION] Created new session: 45l7... for user: chris.mcnulty@synozur.com
+3:17:42 AM [express] POST /api/auth/login 200 in 468ms :: {"id":"bb17cbbb-49bb-4b70-b124-9abe90faaa3…
+🔐 LOGIN DEBUG:
+  - NODE_ENV: development
+  - Login attempt for: chris.mcnulty@synozur.com
+  - Valid credentials count: 3
+  - Credentials match: true
+[SESSION] Created new session: fb82... for user: chris.mcnulty@synozur.com
+3:17:50 AM [express] POST /api/auth/login 200 in 67ms :: {"id":"bb17cbbb-49bb-4b70-b124-9abe90faaa35…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[DEBUG] Fetching estimates...
+3:17:50 AM [express] GET /api/time-entries 200 in 120ms :: [{"id":"1cb3185c-a5ef-4479-b981-b1d51effc…
+3:17:51 AM [express] GET /api/invoice-batches 304 in 441ms :: []
+[DEBUG] Found 4 estimates
+[DEBUG] Processing estimate 1/4: 44535590-efda-49bc-88b1-834157055592
+[DEBUG] Processing estimate 2/4: 4607688f-2fa2-4d10-ab99-75f34bb2d42b
+[DEBUG] Processing estimate 3/4: 9c1ac1cf-a95e-4439-bfe5-87a5f85c19ff
+[DEBUG] Processing estimate 4/4: test-estimate-001
+[DEBUG] Found 0 line items for estimate 4607688f-2fa2-4d10-ab99-75f34bb2d42b
+[DEBUG] Detailed estimate - hours: 0, cost: 0
+[DEBUG] Found 0 line items for estimate 44535590-efda-49bc-88b1-834157055592
+[DEBUG] Detailed estimate - hours: 0, cost: 0
+[DEBUG] Found 2 line items for estimate test-estimate-001
+[DEBUG] Detailed estimate - hours: 60, cost: 8400
+3:17:51 AM [express] GET /api/dashboard/metrics 200 in 653ms :: {"activeProjects":3,"utilizationRate…
+[DEBUG] Found 19 line items for estimate 9c1ac1cf-a95e-4439-bfe5-87a5f85c19ff
+[DEBUG] Detailed estimate - hours: 203.1, cost: 61802.5
+[DEBUG] Successfully processed 4 estimates
+3:17:51 AM [express] GET /api/estimates 200 in 833ms :: [{"id":"44535590-efda-49bc-88b1-834157055592…
+3:17:53 AM [express] GET /api/projects 200 in 2903ms :: [{"id":"5df48f01-f68f-46c2-abcf-95dfa857202e…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:18:59 AM [express] GET /api/users 304 in 416ms :: [{"id":"f9027ba9-4994-46c6-9f6d-9161d85cc70c","e…
+3:18:59 AM [express] GET /api/clients 200 in 414ms :: [{"id":"de11ff24-d798-42cc-ab90-8292ec16dff8",…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/sows 200 in 69ms :: [{"i…
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/epics 200 in 35ms
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/estimates 200 in 736ms :…
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/payment-milestones 200 i…
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/workstreams 200 in 739ms…
+3:19:01 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/milestones 200 in 736ms …
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:19:06 AM [express] GET /api/time-entries 200 in 2115ms :: [{"id":"ad668f19-faea-41b3-8a05-73a0de34…
+3:19:06 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/analytics 200 in 5592ms …
+3:19:06 AM [express] GET /api/projects/5df48f01-f68f-46c2-abcf-95dfa857202e/budget-history 200 in 52…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:20:22 AM [express] GET /api/expenses/mileage-rate 304 in 408ms :: {"rate":0.7}
+3:20:22 AM [express] GET /api/expenses 200 in 481ms :: [{"id":"405a25a8-f93f-49ae-a396-dcd87b2650c0"…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:21:26 AM [express] GET /api/invoice-batches/discount-settings 200 in 609ms :: {"defaultDiscountTyp…
+3:21:26 AM [express] GET /api/billing/unbilled-items 200 in 631ms :: {"timeEntries":[{"id":"b8a089fd…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:21:33 AM [express] GET /api/billing/unbilled-items 200 in 263ms :: {"timeEntries":[{"id":"b8a089fd…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[DEBUG] Creating invoice batch with: {
+  providedBatchId: 'INV-20240801-8601',
+  startDate: '2024-08-01',
+  endDate: '2025-10-01',
+  month: undefined,
+  invoicingMode: 'client'
+}
+3:21:59 AM [express] POST /api/invoice-batches 200 in 407ms :: {"id":"1b4e51fb-797c-4cb7-8df2-2c88c7…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[DEBUG] Generating invoices for batch: {
+  batchId: 'INV-20240801-8601',
+  clientIds: [ '98e5a89a-1088-4ecb-834c-2ba57e81a1c9' ],
+  projectIds: [],
+  invoicingMode: 'client'
+}
+[STORAGE] Generating invoices for batch INV-20240801-8601 from 2024-08-01 to 2025-10-01 (mode: client, type: mixed)
+[STORAGE] Generated invoice for project Reveille GTM: $4800.00
+[STORAGE] Generated consolidated invoice for client 98e5a89a-1088-4ecb-834c-2ba57e81a1c9: $4800.00
+3:22:00 AM [express] POST /api/invoice-batches/INV-20240801-8601/generate 200 in 854ms :: {"message"…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:22:00 AM [express] GET /api/invoice-batches 200 in 260ms :: [{"id":"1b4e51fb-797c-4cb7-8df2-2c88c7…
+3:22:01 AM [express] GET /api/billing/unbilled-items 200 in 531ms :: {"timeEntries":[{"id":"b8a089fd…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:22:08 AM [express] GET /api/system-settings/PAYMENT_TERMS 200 in 32ms
+3:22:08 AM [express] GET /api/invoice-batches/INV-20240801-8601/lines 200 in 72ms :: {"98e5a89a-1088…
+3:22:08 AM [express] GET /api/invoice-batches/INV-20240801-8601/details 200 in 135ms :: {"id":"1b4e5…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+Failed to generate PDF: Error: Browser was not found at the configured executablePath (chromium)
+    at ChromeLauncher.launch (/home/runner/workspace/node_modules/puppeteer-core/lib/esm/puppeteer/node/BrowserLauncher.js:53:19)
+    at async generateInvoicePDF (/home/runner/workspace/server/storage.ts:7769:15)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:5580:25)
+3:22:12 AM [express] GET /api/invoice-batches/INV-20240801-8601/pdf 500 in 794ms :: {"message":"Brow…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:22:52 AM [express] GET /api/time-entries 200 in 422ms :: [{"id":"1cb3185c-a5ef-4479-b981-b1d51effc…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+Import Debug - Found 6 projects in database
+Import Debug - Found 8 users in database
+Import Debug - Processing 100 rows from Excel
+3:23:01 AM [express] POST /api/time-entries/import 200 in 1216ms :: {"success":false,"imported":0,"e…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+3:23:02 AM [express] GET /api/time-entries 304 in 78ms :: [{"id":"1cb3185c-a5ef-4479-b981-b1d51effc2…
+3:24:10 AM [express] GET /api/system-settings/PAYMENT_TERMS 200 in 12ms
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[API] Marking batch INV-20240801-8601 as reviewed
+[STORAGE] Batch INV-20240801-8601 marked as reviewed
+3:24:20 AM [express] POST /api/invoice-batches/INV-20240801-8601/review 200 in 3775ms :: {"message":…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[API] Finalizing batch INV-20240801-8601 by user bb17cbbb-49bb-4b70-b124-9abe90faaa35
+[STORAGE] Batch INV-20240801-8601 finalized by user bb17cbbb-49bb-4b70-b124-9abe90faaa35
+3:24:29 AM [express] POST /api/invoice-batches/INV-20240801-8601/finalize 200 in 431ms :: {"message"…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[API] Marking batch INV-20240801-8601 as reviewed
+Failed to review batch: Error: Only draft batches can be marked as reviewed
+    at DatabaseStorage.reviewBatch (/home/runner/workspace/server/storage.ts:4324:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:5459:28)
+3:24:47 AM [express] POST /api/invoice-batches/INV-20240801-8601/review 400 in 2418ms :: {"message":…
+[AUTH] Session check - SessionId: fb82...
+[AUTH] Session valid - User: chris.mcnulty@synozur.com Role: admin
+[API] Finalizing batch INV-20240801-8601 by user bb17cbbb-49bb-4b70-b124-9abe90faaa35
+Failed to finalize batch: Error: Batch is already finalized
+    at <anonymous> (/home/runner/workspace/server/storage.ts:4186:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async NeonSession.transaction (/home/runner/workspace/node_modules/src/neon-serverless/session.ts:203:19)
+    at async DatabaseStorage.finalizeBatch (/home/runner/workspace/server/storage.ts:4176:12)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:5438:28)
+3:25:01 AM [express] POST /api/invoice-batches/INV-20240801-8601/finalize 400 in 2527ms :: {"message…
