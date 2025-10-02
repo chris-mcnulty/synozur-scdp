@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -76,6 +76,7 @@ export default function EstimateDetail() {
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [showPMWizard, setShowPMWizard] = useState(false);
+  const [showRecalcDialog, setShowRecalcDialog] = useState(false);
   const [blockHoursInput, setBlockHoursInput] = useState<string>("");
   const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
@@ -400,6 +401,30 @@ export default function EstimateDetail() {
     onError: (error: any) => {
       toast({ 
         title: "Failed to update estimate", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  const recalculateEstimateMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/estimates/${id}/recalculate`, {
+        method: 'POST'
+      });
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      setShowRecalcDialog(false);
+      toast({ 
+        title: "Estimate recalculated successfully",
+        description: data.message
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to recalculate estimate", 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -1946,12 +1971,24 @@ export default function EstimateDetail() {
                 Add and manage estimate inputs with factor multipliers and confidence adjustments
               </CardDescription>
             </div>
-            {estimate?.estimateType === 'detailed' && estimate?.status === 'draft' && (
-              <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
-                <Wand2 className="h-4 w-4 mr-2" />
-                PM Wizard
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {estimate?.estimateType === 'detailed' && estimate?.status === 'draft' && (
+                <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  PM Wizard
+                </Button>
+              )}
+              {estimate?.estimateType === 'detailed' && (
+                <Button 
+                  onClick={() => setShowRecalcDialog(true)} 
+                  variant="outline" 
+                  data-testid="button-recalculate"
+                >
+                  <Calculator className="h-4 w-4 mr-2" />
+                  Recalculate All
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -3825,6 +3862,45 @@ export default function EstimateDetail() {
             data-testid="button-import-remove-replace"
           >
             Remove and Replace
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Recalculate Confirmation Dialog */}
+    <Dialog open={showRecalcDialog} onOpenChange={setShowRecalcDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Recalculate All Values?</DialogTitle>
+          <DialogDescription>
+            This will update all line items with the following changes:
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-4">
+          <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+            <li>Lookup current billing and cost rates for each assigned resource</li>
+            <li>Reapply size, complexity, and confidence factor multipliers</li>
+            <li>Recalculate adjusted hours, amounts, costs, and margins</li>
+            <li>Update estimate totals</li>
+          </ul>
+          <p className="text-sm font-medium text-orange-600 mt-4">
+            This will overwrite any manual rate adjustments you may have made.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setShowRecalcDialog(false)}
+            data-testid="button-cancel-recalc"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => recalculateEstimateMutation.mutate()}
+            disabled={recalculateEstimateMutation.isPending}
+            data-testid="button-confirm-recalc"
+          >
+            {recalculateEstimateMutation.isPending ? "Recalculating..." : "Recalculate All"}
           </Button>
         </DialogFooter>
       </DialogContent>

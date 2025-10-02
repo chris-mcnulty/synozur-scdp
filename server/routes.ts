@@ -2581,6 +2581,110 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Recalculate all line items for an estimate
+  app.post("/api/estimates/:id/recalculate", requireAuth, async (req, res) => {
+    try {
+      const estimateId = req.params.id;
+      
+      // Get the estimate to access multipliers
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Get all line items
+      const lineItems = await storage.getEstimateLineItems(estimateId);
+      
+      // Get all users to lookup current rates
+      const users = await storage.getUsers();
+      const userMap = new Map(users.map(u => [u.id, u]));
+
+      let updatedCount = 0;
+
+      // Recalculate each line item
+      for (const item of lineItems) {
+        // Get multipliers from estimate
+        const sizeMultiplier = item.size === 'small' ? Number(estimate.sizeSmallMultiplier || 1) :
+                               item.size === 'medium' ? Number(estimate.sizeMediumMultiplier || 1) :
+                               Number(estimate.sizeLargeMultiplier || 1);
+        
+        const complexityMultiplier = item.complexity === 'small' ? Number(estimate.complexitySmallMultiplier || 1) :
+                                     item.complexity === 'medium' ? Number(estimate.complexityMediumMultiplier || 1) :
+                                     Number(estimate.complexityLargeMultiplier || 1);
+        
+        const confidenceMultiplier = item.confidence === 'high' ? Number(estimate.confidenceHighMultiplier || 1) :
+                                     item.confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
+                                     Number(estimate.confidenceLowMultiplier || 1);
+
+        // Get current rates from user if assigned
+        let rate = Number(item.rate || 0);
+        let costRate = Number(item.costRate || 0);
+        
+        if (item.assignedUserId) {
+          const user = userMap.get(item.assignedUserId);
+          if (user) {
+            rate = Number(user.defaultBillingRate || 0);
+            costRate = Number(user.defaultCostRate || 0);
+          }
+        }
+
+        // Calculate adjusted hours
+        const baseHours = Number(item.baseHours || 0);
+        const factor = Number(item.factor || 1);
+        const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+
+        // Calculate amounts
+        const totalAmount = adjustedHours * rate;
+        const totalCost = adjustedHours * costRate;
+        const margin = totalAmount - totalCost;
+        const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+
+        // Update the line item
+        await storage.updateEstimateLineItem(item.id, {
+          rate: String(rate),
+          costRate: String(costRate),
+          adjustedHours: String(adjustedHours),
+          totalAmount: String(totalAmount),
+          totalCost: String(totalCost),
+          margin: String(margin),
+          marginPercent: String(marginPercent)
+        });
+
+        updatedCount++;
+      }
+
+      // Recalculate estimate totals
+      const updatedLineItems = await storage.getEstimateLineItems(estimateId);
+      const totalHours = updatedLineItems.reduce((sum, item) => sum + Number(item.adjustedHours || 0), 0);
+      const totalFees = updatedLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+      const totalCost = updatedLineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+      const totalMargin = totalFees - totalCost;
+      const marginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
+
+      await storage.updateEstimate(estimateId, {
+        totalHours: String(totalHours),
+        totalFees: String(totalFees),
+        presentedTotal: String(totalFees),
+        margin: String(marginPercent)
+      });
+
+      res.json({ 
+        success: true, 
+        message: `Recalculated ${updatedCount} line items`,
+        totals: {
+          totalHours,
+          totalFees,
+          totalCost,
+          totalMargin,
+          marginPercent
+        }
+      });
+    } catch (error) {
+      console.error("Error recalculating estimate:", error);
+      res.status(500).json({ message: "Failed to recalculate estimate" });
+    }
+  });
+
   // Estimate milestones
   app.get("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
     try {
