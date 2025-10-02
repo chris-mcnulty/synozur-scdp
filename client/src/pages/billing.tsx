@@ -23,7 +23,6 @@ import {
   DollarSign, 
   Clock, 
   Receipt,
-  Send,
   CheckCircle,
   AlertCircle,
   Filter,
@@ -177,26 +176,6 @@ export default function Billing() {
             Draft
           </Badge>
         );
-    }
-  };
-
-  // Helper function for exporting to QuickBooks
-  const handleExportToQBO = async (batchId: string) => {
-    try {
-      const response = await apiRequest(`/api/invoice-batches/${batchId}/export`, {
-        method: 'POST',
-      });
-      
-      toast({
-        title: "Export successful",
-        description: "Invoice batch has been exported to QuickBooks Online.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Export failed",
-        description: error.message || "Failed to export to QuickBooks Online.",
-        variant: "destructive",
-      });
     }
   };
 
@@ -692,23 +671,6 @@ export default function Billing() {
                               Payment
                             </Button>
                           )}
-                          {batch.status === 'finalized' && !batch.exportedToQBO && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleExportToQBO(batch.id)}
-                              data-testid={`button-export-${batch.id}`}
-                            >
-                              <Send className="w-4 h-4 mr-1" />
-                              Export to QBO
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            data-testid={`button-view-batch-${batch.id}`}
-                          >
-                            View Details
-                          </Button>
                         </div>
                       </div>
                     </div>
