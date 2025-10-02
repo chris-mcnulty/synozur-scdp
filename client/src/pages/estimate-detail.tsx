@@ -923,7 +923,7 @@ export default function EstimateDetail() {
 
     return (
       <Layout>
-      <div className="container mx-auto py-8 px-4 max-w-7xl">
+      <div className="container mx-auto py-8 px-4 max-w-[1600px]">
       <div className="space-y-6">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -1411,9 +1411,10 @@ export default function EstimateDetail() {
       ) : (
       /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="outputs">Quotes</TabsTrigger>
           <TabsTrigger value="inputs">Inputs</TabsTrigger>
+          <TabsTrigger value="resources">Resources</TabsTrigger>
           <TabsTrigger value="factors">Factors</TabsTrigger>
           <TabsTrigger value="management">Structure</TabsTrigger>
         </TabsList>
@@ -2812,6 +2813,11 @@ export default function EstimateDetail() {
       </Card>
         </TabsContent>
 
+        {/* Resources Tab */}
+        <TabsContent value="resources" className="space-y-6">
+          <ResourcesView estimateId={id!} epics={epics} stages={stages} />
+        </TabsContent>
+
         {/* Structure Management Tab */}
         <TabsContent value="management" className="space-y-6">
           <Card>
@@ -3776,5 +3782,120 @@ export default function EstimateDetail() {
     </div>
     </div>
     </Layout>
+  );
+}
+
+// ResourcesView Component
+interface ResourcesViewProps {
+  estimateId: string;
+  epics: EstimateEpic[];
+  stages: EstimateStage[];
+}
+
+function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
+  const [filterEpic, setFilterEpic] = useState('all');
+  const [filterStage, setFilterStage] = useState('all');
+
+  const { data: resourceSummary, isLoading } = useQuery({
+    queryKey: [`/api/estimates/${estimateId}/resource-summary`, filterEpic, filterStage],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filterEpic !== 'all') params.append('epic', filterEpic);
+      if (filterStage !== 'all') params.append('stage', filterStage);
+      
+      const response = await fetch(`/api/estimates/${estimateId}/resource-summary?${params.toString()}`);
+      if (!response.ok) throw new Error('Failed to fetch resource summary');
+      return response.json();
+    }
+  });
+
+  const filteredStages = filterEpic === 'all' 
+    ? stages 
+    : stages.filter(s => String(s.epicId) === filterEpic);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Resource Summary</CardTitle>
+            <CardDescription>Total hours allocation by resource</CardDescription>
+          </div>
+          <div className="flex gap-4">
+            <div className="w-48">
+              <Label htmlFor="epic-filter" className="text-sm">Filter by Epic</Label>
+              <Select value={filterEpic} onValueChange={setFilterEpic}>
+                <SelectTrigger id="epic-filter" data-testid="select-epic-filter">
+                  <SelectValue placeholder="All Epics" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Epics</SelectItem>
+                  {epics.map(epic => (
+                    <SelectItem key={epic.id} value={String(epic.id)}>{epic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-48">
+              <Label htmlFor="stage-filter" className="text-sm">Filter by Stage</Label>
+              <Select value={filterStage} onValueChange={setFilterStage} disabled={filterEpic === 'all'}>
+                <SelectTrigger id="stage-filter" data-testid="select-stage-filter">
+                  <SelectValue placeholder="All Stages" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Stages</SelectItem>
+                  {filteredStages.map(stage => (
+                    <SelectItem key={stage.id} value={String(stage.id)}>{stage.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading resource summary...</div>
+        ) : !resourceSummary || resourceSummary.resources.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No resources assigned to line items yet.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40%]">Resource Name</TableHead>
+                  <TableHead className="w-[30%] text-right">Total Hours</TableHead>
+                  <TableHead className="w-[30%] text-right">% of Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resourceSummary.resources.map((resource: any, index: number) => (
+                  <TableRow key={index} data-testid={`resource-row-${resource.resourceId || 'unassigned'}`}>
+                    <TableCell className="font-medium">
+                      {resource.resourceName}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {resource.totalHours.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {resource.percentage}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            
+            <div className="pt-4 border-t">
+              <div className="flex justify-between items-center font-semibold">
+                <span>Total Hours:</span>
+                <span>{resourceSummary.totalHours.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

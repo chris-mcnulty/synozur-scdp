@@ -2523,6 +2523,64 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Estimate resource summary
+  app.get("/api/estimates/:id/resource-summary", requireAuth, async (req, res) => {
+    try {
+      const { epic, stage } = req.query;
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      
+      // Filter by epic/stage if provided
+      let filteredItems = lineItems;
+      if (epic && epic !== 'all' && typeof epic === 'string') {
+        filteredItems = filteredItems.filter(item => item.epicId === epic);
+      }
+      if (stage && stage !== 'all' && typeof stage === 'string') {
+        filteredItems = filteredItems.filter(item => item.stageId === stage);
+      }
+
+      // Aggregate by resource
+      const resourceMap = new Map<string, { resourceId: string | null, resourceName: string, totalHours: number, lineItemIds: string[] }>();
+      
+      for (const item of filteredItems) {
+        const resourceKey = item.assignedUserId ? `user-${item.assignedUserId}` : 'unassigned';
+        const resourceName = item.resourceName || 'Unassigned';
+        
+        if (!resourceMap.has(resourceKey)) {
+          resourceMap.set(resourceKey, {
+            resourceId: item.assignedUserId,
+            resourceName,
+            totalHours: 0,
+            lineItemIds: []
+          });
+        }
+        
+        const resource = resourceMap.get(resourceKey)!;
+        resource.totalHours += Number(item.hours) || 0;
+        resource.lineItemIds.push(String(item.id));
+      }
+
+      // Calculate total hours and percentages
+      const totalHours = Array.from(resourceMap.values()).reduce((sum, r) => sum + r.totalHours, 0);
+      
+      const resources = Array.from(resourceMap.values()).map(r => ({
+        ...r,
+        percentage: totalHours > 0 ? (r.totalHours / totalHours * 100).toFixed(1) : '0.0'
+      })).sort((a, b) => b.totalHours - a.totalHours);
+
+      res.json({
+        resources,
+        totalHours,
+        filters: {
+          epic: epic || 'all',
+          stage: stage || 'all'
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching resource summary:", error);
+      res.status(500).json({ message: "Failed to fetch resource summary" });
+    }
+  });
+
   // Estimate milestones
   app.get("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
     try {
