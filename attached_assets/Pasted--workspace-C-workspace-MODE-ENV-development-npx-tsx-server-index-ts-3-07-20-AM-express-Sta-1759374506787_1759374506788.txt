@@ -1,0 +1,42 @@
+~/workspace$ ^C
+~/workspace$ MODE=ENV=development npx tsx server/index.ts
+3:07:20 AM [express] Starting server initialization...
+3:07:20 AM [express] 🔍 Environment: production
+3:07:20 AM [express]   - Port: 5000 (default)
+3:07:20 AM [express] ✅ Environment validation passed
+3:07:20 AM [express] Setting up error handling middleware...
+3:07:20 AM [express] Creating HTTP server...
+3:07:20 AM [express] Binding to port 5000 immediately for deployment readiness...
+3:07:20 AM [express] ❌ Server binding error: listen EADDRINUSE: address already in use 0.0.0.0:5000
+3:07:20 AM [express] Port 5000 is already in use
+3:07:20 AM [express] ❌ Failed to start server: listen EADDRINUSE: address already in use 0.0.0.0:5000
+3:07:20 AM [express] Stack trace: Error: listen EADDRINUSE: address already in use 0.0.0.0:5000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at doListen (node:net:2139:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+~/workspace$ npx kill-port 5000
+Need to install the following packages:
+kill-port@2.0.1
+Ok to proceed? (y) y
+
+Process on port 5000 killed
+~/workspace$ MODE=ENV=development npx tsx server/index.ts
+3:08:00 AM [express] Starting server initialization...
+3:08:00 AM [express] 🔍 Environment: production
+3:08:00 AM [express]   - Port: 5000 (default)
+3:08:00 AM [express] ✅ Environment validation passed
+3:08:00 AM [express] Setting up error handling middleware...
+3:08:00 AM [express] Creating HTTP server...
+3:08:00 AM [express] Binding to port 5000 immediately for deployment readiness...
+3:08:00 AM [express] ❌ Server binding error: listen EADDRINUSE: address already in use 0.0.0.0:5000
+3:08:00 AM [express] Port 5000 is already in use
+3:08:00 AM [express] ❌ Failed to start server: listen EADDRINUSE: address already in use 0.0.0.0:5000
+3:08:00 AM [express] Stack trace: Error: listen EADDRINUSE: address already in use 0.0.0.0:5000
+    at Server.setupListenHandle [as _listen2] (node:net:1908:16)
+    at listenInCluster (node:net:1965:12)
+    at doListen (node:net:2139:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+~/workspace$ 
+
+
