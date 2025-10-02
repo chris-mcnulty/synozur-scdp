@@ -2627,13 +2627,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Use max of both, with minimum of 1 week for new estimates
         const calculatedMaxWeeks = Math.max(lineItemMaxWeek, allocationMaxWeek, 1);
         
-        // Get epics
-        const epics = await storage.getEstimateEpics(estimateId);
+        // Get epics and filter out blank ones
+        const allEpics = await storage.getEstimateEpics(estimateId);
+        const epics = allEpics.filter(epic => epic.name && epic.name.trim() !== '');
         
         return res.json({
           existingPMItems,
           maxWeeks: calculatedMaxWeeks,
-          epics,
+          epics, // Only non-blank epics
           hasExistingPM: existingPMItems.length > 0
         });
       }
@@ -2652,11 +2653,14 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // If action is 'create', create PM line items
       if (action === 'create' && hoursPerWeekPerEpic && maxWeeks) {
-        const epics = await storage.getEstimateEpics(estimateId);
+        const allEpics = await storage.getEstimateEpics(estimateId);
         const { insertEstimateLineItemSchema } = await import("@shared/schema");
         
+        // Filter out blank epics (empty or whitespace names)
+        const epics = allEpics.filter(epic => epic.name && epic.name.trim() !== '');
+        
         if (epics.length === 0) {
-          return res.status(400).json({ message: "No epics found in estimate. Please create epics first." });
+          return res.status(400).json({ message: "No non-blank epics found in estimate. Please create epics first." });
         }
 
         // Get PM role rack rate
@@ -2667,39 +2671,39 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         const createdItems = [];
         
-        // Create one line item per week per epic
-        for (const epic of epics) {
-          for (let week = 1; week <= maxWeeks; week++) {
-            const adjustedHours = Number(hoursPerWeekPerEpic);
-            const totalAmount = adjustedHours * pmRate;
-            const totalCost = adjustedHours * pmCostRate;
-            
-            const lineItemData = {
-              estimateId,
-              epicId: epic.id,
-              stageId: null,
-              description: "Project Management",
-              workstream: "Project Management",
-              week,
-              baseHours: String(hoursPerWeekPerEpic),
-              factor: "1",
-              rate: String(pmRate),
-              costRate: String(pmCostRate),
-              size: "small",
-              complexity: "small",
-              confidence: "high",
-              adjustedHours: String(hoursPerWeekPerEpic),
-              totalAmount: String(totalAmount),
-              totalCost: String(totalCost),
-              margin: String(totalAmount - totalCost),
-              marginPercent: String(totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount) * 100 : 0),
-              comments: null
-            };
+        // Create one line item per week (NOT per epic)
+        // PM work accrues to all epics but is not attached to any specific epic
+        const hoursPerWeek = epics.length * Number(hoursPerWeekPerEpic);
+        
+        for (let week = 1; week <= maxWeeks; week++) {
+          const totalAmount = hoursPerWeek * pmRate;
+          const totalCost = hoursPerWeek * pmCostRate;
+          
+          const lineItemData = {
+            estimateId,
+            epicId: null, // PM work is NOT attached to specific epics
+            stageId: null,
+            description: "Project Management",
+            workstream: "Project Management",
+            week,
+            baseHours: String(hoursPerWeek),
+            factor: "1",
+            rate: String(pmRate),
+            costRate: String(pmCostRate),
+            size: "small",
+            complexity: "small",
+            confidence: "high",
+            adjustedHours: String(hoursPerWeek),
+            totalAmount: String(totalAmount),
+            totalCost: String(totalCost),
+            margin: String(totalAmount - totalCost),
+            marginPercent: String(totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount) * 100 : 0),
+            comments: null
+          };
 
-            const validatedData = insertEstimateLineItemSchema.parse(lineItemData);
-            const created = await storage.createEstimateLineItem(validatedData);
-            createdItems.push(created);
-          }
+          const validatedData = insertEstimateLineItemSchema.parse(lineItemData);
+          const created = await storage.createEstimateLineItem(validatedData);
+          createdItems.push(created);
         }
 
         return res.json({
