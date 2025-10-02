@@ -202,6 +202,24 @@
   - Clear indicator of current filter state
   - Quick switch between "My Time" and "All Time"
 
+### Estimate Adjustment Factors - System Defaults
+- [ ] **System-Wide Default Adjustment Factors**
+  - Admin UI for setting default Size, Complexity, and Confidence factors
+  - Stored in system settings table
+  - Applied to all new estimates by default
+  
+- [ ] **Estimate-Level Factor Overrides**
+  - Toggle on estimate to enable/disable override
+  - When override OFF: estimate inherits system defaults (prevents zeroing out)
+  - When override ON: estimate uses custom factors
+  - Clear visual indicator of which factor source is active
+  
+- [ ] **Factor Management Interface**
+  - Settings page for system-wide factors
+  - Estimate detail page override controls
+  - Historical tracking of factor changes
+  - Impact preview before applying changes
+
 ---
 
 ## 🤖 P3 - AI & AUTOMATION (Weeks 9-12)

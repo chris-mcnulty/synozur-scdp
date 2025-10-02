@@ -64,6 +64,7 @@ export default function EstimateDetail() {
   const [filterWorkstream, setFilterWorkstream] = useState("");
   const [filterWeek, setFilterWeek] = useState("all");
   const [filterUnresourced, setFilterUnresourced] = useState(false);
+  const [filterResource, setFilterResource] = useState("all");
   const [showResourceSummary, setShowResourceSummary] = useState(false);
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
@@ -139,8 +140,11 @@ export default function EstimateDetail() {
       const itemWeek = item.week ?? 0;
       const matchesWeek = filterWeek === "all" || itemWeek.toString() === filterWeek;
       const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
+      const matchesResource = filterResource === "all" || 
+        (filterResource === "unassigned" && !item.assignedUserId && !item.roleId) ||
+        (filterResource !== "unassigned" && item.resourceName === filterResource);
       
-      return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced;
+      return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced && matchesResource;
     });
     
     // Default sort by week (ascending)
@@ -2182,16 +2186,29 @@ export default function EstimateDetail() {
               </div>
             </div>
             <div className="flex items-center gap-4 mt-3">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="filter-unresourced"
-                  checked={filterUnresourced}
-                  onChange={(e) => setFilterUnresourced(e.target.checked)}
-                />
-                <Label htmlFor="filter-unresourced">Show Unresourced Only</Label>
+              <div className="flex-1">
+                <Label htmlFor="filter-resource">Resource</Label>
+                <Select value={filterResource} onValueChange={setFilterResource}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Resources" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Resources</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {(() => {
+                      const uniqueResources = Array.from(new Set(
+                        lineItems
+                          .map((item: EstimateLineItem) => item.resourceName)
+                          .filter((name): name is string => !!name)
+                      )).sort();
+                      return uniqueResources.map((resource) => (
+                        <SelectItem key={resource} value={resource}>{resource}</SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 mt-6">
                 <input
                   type="checkbox"
                   id="show-resource-summary"
@@ -2201,7 +2218,7 @@ export default function EstimateDetail() {
                 <Label htmlFor="show-resource-summary">Show Resource Summary</Label>
               </div>
             </div>
-            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterWeek !== "all" || filterUnresourced) && (
+            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterWeek !== "all" || filterUnresourced || filterResource !== "all") && (
               <div className="mt-3">
                 <Button
                   onClick={() => {
@@ -2211,6 +2228,7 @@ export default function EstimateDetail() {
                     setFilterWorkstream("");
                     setFilterWeek("all");
                     setFilterUnresourced(false);
+                    setFilterResource("all");
                   }}
                   variant="outline"
                   size="sm"
@@ -2449,7 +2467,7 @@ export default function EstimateDetail() {
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
                             title="Click to edit hours"
                           >
-                            {Math.round(Number(item.baseHours))}
+                            {Number(item.baseHours).toFixed(2)}
                           </div>
                         )}
                       </TableCell>
@@ -2637,7 +2655,7 @@ export default function EstimateDetail() {
                             </Select>
                         </div>
                       </TableCell>
-                      <TableCell>{Math.round(Number(item.adjustedHours))}</TableCell>
+                      <TableCell>{Number(item.adjustedHours).toFixed(2)}</TableCell>
                       <TableCell>${Math.round(Number(item.totalAmount)).toLocaleString()}</TableCell>
                       <TableCell>
                         {canViewCostMargins && item.margin ? (
