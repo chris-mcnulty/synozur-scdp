@@ -2611,21 +2611,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // If action is 'check', return existing items
       if (action === 'check') {
-        // Calculate max weeks from BOTH line items AND allocations
-        const lineItemMaxWeek = Math.max(
+        // Calculate max weeks from line items, with minimum of 1 week for new estimates
+        const calculatedMaxWeeks = Math.max(
           ...lineItems.map(item => item.week || 0),
-          0
+          1
         );
-        
-        // Get allocations to check their weekNumber
-        const allocations = await storage.getEstimateAllocations(estimateId);
-        const allocationMaxWeek = Math.max(
-          ...allocations.map((alloc: any) => alloc.weekNumber || 0),
-          0
-        );
-        
-        // Use max of both, with minimum of 1 week for new estimates
-        const calculatedMaxWeeks = Math.max(lineItemMaxWeek, allocationMaxWeek, 1);
         
         // Get epics and filter out blank ones
         const allEpics = await storage.getEstimateEpics(estimateId);

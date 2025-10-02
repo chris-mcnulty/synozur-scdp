@@ -1032,10 +1032,6 @@ export default function EstimateDetail() {
             </>
           )}
           
-          <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
-            <Wand2 className="h-4 w-4 mr-2" />
-            PM Wizard
-          </Button>
           <Button onClick={handleDownloadTemplate} variant="outline">
             <FileDown className="h-4 w-4 mr-2" />
             Download Template
@@ -1914,10 +1910,20 @@ export default function EstimateDetail() {
 
           <Card>
         <CardHeader>
-          <CardTitle>Estimate Inputs</CardTitle>
-          <CardDescription>
-            Add and manage estimate inputs with factor multipliers and confidence adjustments
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Estimate Inputs</CardTitle>
+              <CardDescription>
+                Add and manage estimate inputs with factor multipliers and confidence adjustments
+              </CardDescription>
+            </div>
+            {estimate?.estimateType === 'detailed' && estimate?.status === 'draft' && (
+              <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
+                <Wand2 className="h-4 w-4 mr-2" />
+                PM Wizard
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-4 mb-4">
