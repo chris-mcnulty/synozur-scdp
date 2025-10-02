@@ -1978,16 +1978,14 @@ export default function EstimateDetail() {
                   PM Wizard
                 </Button>
               )}
-              {estimate?.estimateType === 'detailed' && (
-                <Button 
-                  onClick={() => setShowRecalcDialog(true)} 
-                  variant="outline" 
-                  data-testid="button-recalculate"
-                >
-                  <Calculator className="h-4 w-4 mr-2" />
-                  Recalculate All
-                </Button>
-              )}
+              <Button 
+                onClick={() => setShowRecalcDialog(true)} 
+                variant="outline" 
+                data-testid="button-recalculate"
+              >
+                <Calculator className="h-4 w-4 mr-2" />
+                Recalculate All
+              </Button>
             </div>
           </div>
         </CardHeader>

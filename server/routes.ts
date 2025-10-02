@@ -2542,7 +2542,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const resourceMap = new Map<string, { resourceId: string | null, resourceName: string, totalHours: number, lineItemIds: string[] }>();
       
       for (const item of filteredItems) {
-        const resourceKey = item.assignedUserId ? `user-${item.assignedUserId}` : 'unassigned';
+        // Use assignedUserId if available, otherwise use resourceName for grouping
+        // This handles cases where line items have resourceName but no assignedUserId
+        const resourceKey = item.assignedUserId 
+          ? `user-${item.assignedUserId}` 
+          : (item.resourceName ? `name-${item.resourceName}` : 'unassigned');
         const resourceName = item.resourceName || 'Unassigned';
         
         if (!resourceMap.has(resourceKey)) {
