@@ -132,6 +132,12 @@ export function PMWizardDialog({ estimateId, open, onOpenChange }: PMWizardDialo
     resetWizard();
   };
 
+  const handleKeepAndAddNew = () => {
+    // Keep existing hours and continue to add more
+    setMaxWeeks(pmData?.maxWeeks || 0);
+    setStep("context");
+  };
+
   const handleRemoveAndContinue = () => {
     removePMMutation.mutate();
   };
@@ -202,6 +208,13 @@ export function PMWizardDialog({ estimateId, open, onOpenChange }: PMWizardDialo
                 <div className="flex gap-2">
                   <Button onClick={handleKeepExisting} variant="outline" data-testid="button-keep-existing">
                     Keep These Hours
+                  </Button>
+                  <Button 
+                    onClick={handleKeepAndAddNew} 
+                    variant="default" 
+                    data-testid="button-keep-and-add"
+                  >
+                    Keep & Add New
                   </Button>
                   <Button 
                     onClick={handleRemoveAndContinue} 
