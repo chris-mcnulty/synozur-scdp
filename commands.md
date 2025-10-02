@@ -1,5 +1,5 @@
 // custom start for dev server
-MODE=ENV=development npx tsx server/index.ts
+NODE_ENV=development npx tsx server/index.ts
 
 //custom build for production server
 ./build.sh
