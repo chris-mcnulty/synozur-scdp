@@ -324,7 +324,7 @@ export default function Estimates() {
                         </span>
                       </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
-                      <TableCell>{estimate.totalHours || 0}</TableCell>
+                      <TableCell>{(estimate.totalHours || 0).toFixed(2)}</TableCell>
                       <TableCell>${(estimate.totalCost || 0).toLocaleString()}</TableCell>
                       <TableCell>{estimate.validUntil ? format(new Date(estimate.validUntil), "MMM d, yyyy") : "-"}</TableCell>
                       <TableCell>
