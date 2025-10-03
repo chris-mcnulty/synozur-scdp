@@ -1503,9 +1503,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {
-    return await db.select().from(estimateLineItems)
+    const items = await db.select({
+      lineItem: estimateLineItems,
+      assignedUser: users,
+      role: roles
+    }).from(estimateLineItems)
+      .leftJoin(users, eq(estimateLineItems.assignedUserId, users.id))
+      .leftJoin(roles, eq(estimateLineItems.roleId, roles.id))
       .where(eq(estimateLineItems.estimateId, estimateId))
       .orderBy(estimateLineItems.sortOrder);
+    
+    // Transform the result to include user and role as nested objects
+    return items.map(item => ({
+      ...item.lineItem,
+      assignedUser: item.assignedUser,
+      role: item.role
+    }));
   }
 
   async createEstimateLineItem(insertLineItem: InsertEstimateLineItem): Promise<EstimateLineItem> {

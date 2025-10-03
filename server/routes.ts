@@ -2873,6 +2873,80 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Resource summary endpoint
+  app.get("/api/estimates/:id/resource-summary", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { epic, stage } = req.query;
+      
+      // Get all line items for this estimate
+      let lineItems = await storage.getEstimateLineItems(id);
+      
+      // Apply filters if provided
+      if (epic && epic !== 'all') {
+        lineItems = lineItems.filter(item => String(item.epicId) === epic);
+      }
+      if (stage && stage !== 'all') {
+        lineItems = lineItems.filter(item => String(item.stageId) === stage);
+      }
+      
+      // Group by resource
+      const resourceGroups = new Map<string, { name: string; hours: number }>();
+      
+      for (const item of lineItems) {
+        let resourceKey: string;
+        let resourceName: string;
+        
+        // Determine resource grouping based on assignment
+        if (item.assignedUserId) {
+          // Person-based assignment
+          const user = item.assignedUser || { name: 'Unknown User' };
+          resourceKey = `user-${item.assignedUserId}`;
+          resourceName = user.name || 'Unknown User';
+        } else if (item.roleId) {
+          // Role-based assignment
+          const role = item.role || { name: 'Unknown Role' };
+          resourceKey = `role-${item.roleId}`;
+          resourceName = `[Role] ${role.name || 'Unknown Role'}`;
+        } else if (item.resourceName) {
+          // Resource name only (unmatched)
+          resourceKey = `resource-${item.resourceName}`;
+          resourceName = item.resourceName;
+        } else {
+          // Unassigned
+          resourceKey = 'unassigned';
+          resourceName = 'Unassigned';
+        }
+        
+        // Add hours to the resource group
+        if (!resourceGroups.has(resourceKey)) {
+          resourceGroups.set(resourceKey, { name: resourceName, hours: 0 });
+        }
+        const group = resourceGroups.get(resourceKey)!;
+        group.hours += Number(item.adjustedHours || 0);
+      }
+      
+      // Calculate total hours
+      const totalHours = Array.from(resourceGroups.values()).reduce((sum, r) => sum + r.hours, 0);
+      
+      // Convert to array and calculate percentages
+      const resources = Array.from(resourceGroups.entries()).map(([key, data]) => ({
+        resourceId: key,
+        resourceName: data.name,
+        totalHours: data.hours,
+        percentage: totalHours > 0 ? Math.round((data.hours / totalHours) * 100) : 0
+      })).sort((a, b) => b.totalHours - a.totalHours);
+      
+      res.json({
+        resources,
+        totalHours
+      });
+    } catch (error) {
+      console.error("Error fetching resource summary:", error);
+      res.status(500).json({ message: "Failed to fetch resource summary" });
+    }
+  });
+
   // Split line item
   app.post("/api/estimates/:estimateId/line-items/:id/split", requireAuth, async (req, res) => {
     try {

@@ -3961,16 +3961,13 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
   const [filterStage, setFilterStage] = useState('all');
 
   const { data: resourceSummary, isLoading } = useQuery({
-    queryKey: [`/api/estimates/${estimateId}/resource-summary`, filterEpic, filterStage],
-    queryFn: async () => {
+    queryKey: [`/api/estimates/${estimateId}/resource-summary?${(() => {
       const params = new URLSearchParams();
       if (filterEpic !== 'all') params.append('epic', filterEpic);
       if (filterStage !== 'all') params.append('stage', filterStage);
-      
-      const response = await fetch(`/api/estimates/${estimateId}/resource-summary?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch resource summary');
-      return response.json();
-    }
+      return params.toString();
+    })()}`],
+    // Don't provide queryFn - use the default fetcher configured in queryClient
   });
 
   const filteredStages = filterEpic === 'all' 
