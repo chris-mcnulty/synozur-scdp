@@ -1,3 +1,4 @@
+run = ["sh", "-c", "NODE_ENV=development npm run dev"]
 entrypoint = "server/index.ts"
 modules = ["nodejs-20", "web", "postgresql-16"]
 
@@ -142,14 +143,3 @@ request = "launch"
 sourceMaps = true
 stopOnEntry = false
 type = "node"
-
-[workflows]
-
-[[workflows.workflow]]
-name = "Start Dev Server"
-mode = "sequential"
-author = 47096868
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-command = "npm run dev"
