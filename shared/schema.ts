@@ -276,6 +276,28 @@ export const projectPaymentMilestones = pgTable("project_payment_milestones", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
+// Project Resource Allocations - mirrors estimate allocations for actual project work
+export const projectAllocations = pgTable("project_allocations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  projectActivityId: varchar("project_activity_id").references(() => projectActivities.id),
+  projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id),
+  projectWorkstreamId: varchar("project_workstream_id").references(() => projectWorkstreams.id),
+  weekNumber: integer("week_number").notNull(), // Original week number from estimate
+  plannedStartDate: date("planned_start_date"), // Calculated from kickoff date
+  plannedEndDate: date("planned_end_date"), // End of week date
+  roleId: varchar("role_id").references(() => roles.id), // Role-based assignment
+  personId: varchar("person_id").references(() => users.id), // Person-based assignment
+  resourceName: text("resource_name"), // For unmatched resources from estimate
+  hours: decimal("hours", { precision: 10, scale: 2 }).notNull(),
+  pricingMode: text("pricing_mode").notNull(), // "role", "person", or "resource_name"
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id), // Link to original estimate
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
 // Weekly staffing allocations (Weekly Staffing Grid)
 export const estimateAllocations = pgTable("estimate_allocations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -901,6 +923,11 @@ export const insertProjectPaymentMilestoneSchema = createInsertSchema(projectPay
   updatedAt: true,
 });
 
+export const insertProjectAllocationSchema = createInsertSchema(projectAllocations).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
   id: true,
   createdAt: true,
@@ -1029,6 +1056,8 @@ export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
 export type ProjectPaymentMilestone = typeof projectPaymentMilestones.$inferSelect;
 export type InsertProjectPaymentMilestone = z.infer<typeof insertProjectPaymentMilestoneSchema>;
+export type ProjectAllocation = typeof projectAllocations.$inferSelect;
+export type InsertProjectAllocation = z.infer<typeof insertProjectAllocationSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
 export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
 export type UserRateSchedule = typeof userRateSchedules.$inferSelect;

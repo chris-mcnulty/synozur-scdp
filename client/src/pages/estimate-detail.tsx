@@ -74,6 +74,7 @@ export default function EstimateDetail() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
+  const [kickoffDate, setKickoffDate] = useState<string>("");
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [showPMWizard, setShowPMWizard] = useState(false);
   const [showRecalcDialog, setShowRecalcDialog] = useState(false);
@@ -448,16 +449,17 @@ export default function EstimateDetail() {
   }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars, estimate?.blockDescription]);
 
   const approveEstimateMutation = useMutation({
-    mutationFn: async ({ createProject, blockHourDescription }: { createProject: boolean; blockHourDescription?: string }) => {
+    mutationFn: async ({ createProject, blockHourDescription, kickoffDate }: { createProject: boolean; blockHourDescription?: string; kickoffDate?: string }) => {
       return apiRequest(`/api/estimates/${id}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ createProject, blockHourDescription }),
+        body: JSON.stringify({ createProject, blockHourDescription, kickoffDate }),
       });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
       setShowApprovalDialog(false);
       setBlockHourDescription("");
+      setKickoffDate("");
       if (data.project) {
         toast({ 
           title: estimate?.status === 'approved' ? "Project created" : "Estimate approved", 
@@ -3771,15 +3773,41 @@ export default function EstimateDetail() {
           )}
           
           {shouldCreateProject && (
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h4 className="font-medium text-sm mb-2">Project will be created with:</h4>
-              <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• All epics, stages, and activities from this estimate</li>
-                <li>• Rate overrides from resource allocations</li>
-                <li>• Time tracking phase templates</li>
-                <li>• Budget: {estimate?.presentedTotal || estimate?.totalFees || estimate?.blockDollars || '0'}</li>
-              </ul>
-            </div>
+            <>
+              <div>
+                <Label htmlFor="kickoff-date">
+                  Kickoff Meeting Date (Optional)
+                  <span className="text-sm text-muted-foreground ml-2">
+                    Week 1 activities will start from Monday of this week
+                  </span>
+                </Label>
+                <Input
+                  id="kickoff-date"
+                  type="date"
+                  value={kickoffDate}
+                  onChange={(e) => setKickoffDate(e.target.value)}
+                  className="mt-1"
+                  data-testid="input-kickoff-date"
+                />
+                {kickoffDate && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Week 0: Week of {new Date(new Date(kickoffDate).getTime() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • 
+                    Week 1: Week of {new Date(kickoffDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </p>
+                )}
+              </div>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-sm mb-2">Project will be created with:</h4>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• All epics, stages, and activities from this estimate</li>
+                  <li>• Rate overrides from resource allocations</li>
+                  <li>• Resource assignments transferred from line items</li>
+                  <li>• Time tracking phase templates</li>
+                  <li>• Budget: {estimate?.presentedTotal || estimate?.totalFees || estimate?.blockDollars || '0'}</li>
+                  {kickoffDate && <li>• Activities scheduled based on kickoff date</li>}
+                </ul>
+              </div>
+            </>
           )}
         </div>
         <DialogFooter>
@@ -3787,6 +3815,7 @@ export default function EstimateDetail() {
             onClick={() => {
               setShowApprovalDialog(false);
               setBlockHourDescription("");
+              setKickoffDate("");
             }}
             variant="outline"
           >
@@ -3796,7 +3825,8 @@ export default function EstimateDetail() {
             onClick={() => {
               approveEstimateMutation.mutate({ 
                 createProject: shouldCreateProject,
-                blockHourDescription: blockHourDescription || undefined
+                blockHourDescription: blockHourDescription || undefined,
+                kickoffDate: kickoffDate || undefined
               });
             }}
             disabled={approveEstimateMutation.isPending}
