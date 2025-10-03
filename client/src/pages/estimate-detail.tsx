@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -3975,11 +3975,11 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
     if (!lineItems) return { resources: [], weeks: [], totalByWeek: {} };
     
     // Filter line items based on epic and stage
-    let filtered = lineItems;
+    let filtered = lineItems as any[];
     if (filterEpic !== 'all') {
       const epicStages = stages.filter(s => String(s.epicId) === filterEpic);
       const stageIds = epicStages.map(s => s.id);
-      filtered = lineItems.filter((item: any) => stageIds.includes(item.stageId));
+      filtered = filtered.filter((item: any) => stageIds.includes(item.stageId));
     }
     if (filterStage !== 'all') {
       filtered = filtered.filter((item: any) => String(item.stageId) === filterStage);
@@ -4097,7 +4097,7 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
       <CardContent>
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading resource allocation...</div>
-        ) : !lineItems || lineItems.length === 0 ? (
+        ) : !lineItems || (lineItems as any[]).length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No line items in this estimate yet.
           </div>
