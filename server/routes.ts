@@ -5387,7 +5387,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Approve estimate and optionally create project
   app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
-      const { createProject: shouldCreateProject, blockHourDescription } = req.body;
+      const { createProject: shouldCreateProject, blockHourDescription, kickoffDate } = req.body;
 
       // Get the full estimate details first
       const estimate = await storage.getEstimate(req.params.id);
@@ -5431,7 +5431,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           project = await storage.createProjectFromEstimate(
             req.params.id, 
             projectData, 
-            blockHourDescription
+            blockHourDescription,
+            kickoffDate
           );
 
           console.log("[DEBUG] Project created successfully:", project.id);

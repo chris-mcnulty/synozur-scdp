@@ -2,7 +2,7 @@ import {
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
-  projectEpics, projectStages, projectActivities, projectWorkstreams,
+  projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations,
   projectMilestones, projectPaymentMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
@@ -3629,7 +3629,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string): Promise<Project> {
+  async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string): Promise<Project> {
     try {
       return await db.transaction(async (tx) => {
         // 1. Get the estimate details first
@@ -3814,6 +3814,72 @@ export class DatabaseStorage implements IStorage {
             status: 'approved'
           })
           .where(eq(estimates.id, estimateId));
+        
+        // 10. Create project allocations from estimate line items
+        const allLineItems = await tx.select()
+          .from(estimateLineItems)
+          .where(eq(estimateLineItems.estimateId, estimateId));
+        
+        // Import the week-date calculator helper
+        const { calculateWeekDates, dateToString } = await import('./utils/week-date-calculator.js');
+        
+        for (const lineItem of allLineItems) {
+          // Determine assignment mode based on what's set in the line item
+          let assignmentMode: 'person' | 'role' | 'resource' = 'resource';
+          let personId: string | null = null;
+          let roleId: string | null = null;
+          
+          if (lineItem.assignedUserId) {
+            assignmentMode = 'person';
+            personId = lineItem.assignedUserId;
+            roleId = lineItem.roleId; // Keep role for reference
+          } else if (lineItem.roleId) {
+            assignmentMode = 'role';
+            roleId = lineItem.roleId;
+          }
+          
+          // Calculate dates if kickoff date provided
+          let startDate: string | null = null;
+          let endDate: string | null = null;
+          
+          if (kickoffDate && lineItem.week !== null) {
+            // Parse week as a number (e.g., "1" -> 1, "1-2" -> take first week)
+            let weekNumber = 0;
+            const weekStr = String(lineItem.week);
+            if (weekStr.includes('-')) {
+              // For ranges, use the starting week
+              weekNumber = parseInt(weekStr.split('-')[0]);
+            } else {
+              weekNumber = parseInt(weekStr);
+            }
+            
+            if (!isNaN(weekNumber)) {
+              const weekDates = calculateWeekDates(kickoffDate, weekNumber);
+              startDate = dateToString(weekDates.startDate);
+              endDate = dateToString(weekDates.endDate);
+            }
+          }
+          
+          // Create project allocation
+          await tx.insert(projectAllocations).values({
+            projectId: project.id,
+            estimateLineItemId: lineItem.id,
+            assignmentMode,
+            personId,
+            roleId,
+            resourceName: lineItem.resourceName || lineItem.workstream || 'Unassigned',
+            allocatedHours: lineItem.adjustedHours || '0',
+            rate: lineItem.rate,
+            costRate: lineItem.costRate,
+            startDate,
+            endDate,
+            weekNumber: lineItem.week,
+            workstream: lineItem.workstream,
+            epicId: epicMapping.get(lineItem.epicId || '') || null,
+            stageId: lineItem.stageId,
+            activityId: null, // Will be linked later when activities are assigned
+          });
+        }
         
         return project;
       });
