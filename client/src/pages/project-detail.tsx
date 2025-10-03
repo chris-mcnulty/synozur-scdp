@@ -1520,11 +1520,8 @@ export default function ProjectDetail() {
                 <Button 
                   variant="outline"
                   onClick={() => {
-                    // Export to CSV functionality will be added
-                    toast({
-                      title: "Export to CSV",
-                      description: "This feature will be available soon",
-                    });
+                    // Download CSV file
+                    window.location.href = `/api/projects/${id}/allocations/export`;
                   }}
                   data-testid="button-export-allocations"
                 >
