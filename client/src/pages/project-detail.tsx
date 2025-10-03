@@ -258,6 +258,12 @@ export default function ProjectDetail() {
     queryKey: [`/api/time-entries?projectId=${id}`],
     enabled: !!id && canViewTime,
   });
+
+  // Project allocations query - fetch resource assignments
+  const { data: allocations = [], isLoading: allocationsLoading } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/allocations`],
+    enabled: !!id,
+  });
   
   // Processed time entries with filtering and grouping
   const processedTimeEntries = useMemo(() => {
@@ -1234,6 +1240,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="monthly" data-testid="tab-monthly">Monthly Trends</TabsTrigger>
             <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
+            <TabsTrigger value="allocations" data-testid="tab-allocations">Team & Assignments</TabsTrigger>
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
             <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
@@ -1498,6 +1505,120 @@ export default function ProjectDetail() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Team & Assignments Tab */}
+          <TabsContent value="allocations" className="space-y-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Team Assignments</CardTitle>
+                  <CardDescription>Resource allocations and task assignments for this project</CardDescription>
+                </div>
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    // Export to CSV functionality will be added
+                    toast({
+                      title: "Export to CSV",
+                      description: "This feature will be available soon",
+                    });
+                  }}
+                  data-testid="button-export-allocations"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export to CSV
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {allocationsLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : allocations.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No team assignments found</p>
+                    <p className="text-sm mt-2">
+                      Assignments are created when projects are generated from approved estimates
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Resource</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Workstream</TableHead>
+                        <TableHead>Epic/Stage</TableHead>
+                        <TableHead className="text-right">Hours</TableHead>
+                        <TableHead>Start Date</TableHead>
+                        <TableHead>End Date</TableHead>
+                        <TableHead>Week</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allocations.map((allocation: any) => (
+                        <TableRow key={allocation.id} data-testid={`allocation-row-${allocation.id}`}>
+                          <TableCell className="font-medium">
+                            {allocation.person ? (
+                              <div className="flex items-center gap-2">
+                                <User className="w-4 h-4 text-muted-foreground" />
+                                {allocation.person.name}
+                              </div>
+                            ) : allocation.role ? (
+                              <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-muted-foreground" />
+                                {allocation.resourceName || 'Unassigned'}
+                                <Badge variant="outline" className="ml-1">Role-based</Badge>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 text-amber-500" />
+                                {allocation.resourceName || 'Unassigned'}
+                                <Badge variant="secondary" className="ml-1">Unmatched</Badge>
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>{allocation.role?.name || '—'}</TableCell>
+                          <TableCell>{allocation.workstream || '—'}</TableCell>
+                          <TableCell>
+                            {allocation.epic && allocation.stage ? (
+                              <span className="text-sm">
+                                {allocation.epic.name} / {allocation.stage.name}
+                              </span>
+                            ) : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {parseFloat(allocation.allocatedHours || '0').toFixed(1)}
+                          </TableCell>
+                          <TableCell>
+                            {allocation.startDate ? 
+                              format(new Date(allocation.startDate), "MMM d, yyyy") : 
+                              '—'
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {allocation.endDate ? 
+                              format(new Date(allocation.endDate), "MMM d, yyyy") : 
+                              '—'
+                            }
+                          </TableCell>
+                          <TableCell>
+                            {allocation.weekNumber !== null ? 
+                              `Week ${allocation.weekNumber}` : 
+                              '—'
+                            }
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
