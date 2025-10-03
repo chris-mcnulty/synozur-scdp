@@ -3960,19 +3960,99 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
   const [filterEpic, setFilterEpic] = useState('all');
   const [filterStage, setFilterStage] = useState('all');
 
-  const { data: resourceSummary, isLoading } = useQuery({
-    queryKey: [`/api/estimates/${estimateId}/resource-summary?${(() => {
-      const params = new URLSearchParams();
-      if (filterEpic !== 'all') params.append('epic', filterEpic);
-      if (filterStage !== 'all') params.append('stage', filterStage);
-      return params.toString();
-    })()}`],
+  // Fetch line items instead of summary to build weekly view
+  const { data: lineItems, isLoading } = useQuery({
+    queryKey: [`/api/estimates/${estimateId}/line-items`],
     // Don't provide queryFn - use the default fetcher configured in queryClient
   });
 
   const filteredStages = filterEpic === 'all' 
     ? stages 
     : stages.filter(s => String(s.epicId) === filterEpic);
+  
+  // Process line items to create weekly resource allocation
+  const resourceWeeklyData = useMemo(() => {
+    if (!lineItems) return { resources: [], weeks: [], totalByWeek: {} };
+    
+    // Filter line items based on epic and stage
+    let filtered = lineItems;
+    if (filterEpic !== 'all') {
+      const epicStages = stages.filter(s => String(s.epicId) === filterEpic);
+      const stageIds = epicStages.map(s => s.id);
+      filtered = lineItems.filter((item: any) => stageIds.includes(item.stageId));
+    }
+    if (filterStage !== 'all') {
+      filtered = filtered.filter((item: any) => String(item.stageId) === filterStage);
+    }
+    
+    // Get unique weeks from all line items
+    const allWeeks = new Set<string>();
+    filtered.forEach((item: any) => {
+      if (item.weekNumber) {
+        allWeeks.add(`Week ${item.weekNumber}`);
+      }
+    });
+    const sortedWeeks = Array.from(allWeeks).sort((a, b) => {
+      const weekA = parseInt(a.replace('Week ', ''));
+      const weekB = parseInt(b.replace('Week ', ''));
+      return weekA - weekB;
+    });
+    
+    // Group line items by resource
+    const resourceMap = new Map<string, Map<string, number>>();
+    const resourceNames = new Map<string, string>();
+    
+    filtered.forEach((item: any) => {
+      // Determine resource identifier and name
+      let resourceId = 'unassigned';
+      let resourceName = 'Unassigned';
+      
+      if (item.assignedUserId && item.assignedUser) {
+        resourceId = `user-${item.assignedUserId}`;
+        resourceName = item.assignedUser.name || 'Unknown User';
+      } else if (item.roleId && item.role) {
+        resourceId = `role-${item.roleId}`;
+        resourceName = `[Role] ${item.role.name}`;
+      } else if (item.resourceName) {
+        resourceId = `resource-${item.resourceName}`;
+        resourceName = item.resourceName;
+      }
+      
+      // Initialize resource if not exists
+      if (!resourceMap.has(resourceId)) {
+        resourceMap.set(resourceId, new Map<string, number>());
+        resourceNames.set(resourceId, resourceName);
+      }
+      
+      // Add hours to the appropriate week
+      if (item.weekNumber) {
+        const weekKey = `Week ${item.weekNumber}`;
+        const currentHours = resourceMap.get(resourceId)!.get(weekKey) || 0;
+        resourceMap.get(resourceId)!.set(weekKey, currentHours + parseFloat(item.adjustedHours || 0));
+      }
+    });
+    
+    // Convert to array format for display
+    const resources = Array.from(resourceMap.entries()).map(([resourceId, weekData]) => {
+      const totalHours = Array.from(weekData.values()).reduce((sum, hours) => sum + hours, 0);
+      return {
+        resourceId,
+        resourceName: resourceNames.get(resourceId) || 'Unknown',
+        weekData: Object.fromEntries(weekData),
+        totalHours
+      };
+    }).sort((a, b) => b.totalHours - a.totalHours);
+    
+    // Calculate total by week
+    const totalByWeek: Record<string, number> = {};
+    sortedWeeks.forEach(week => {
+      totalByWeek[week] = resources.reduce((sum, resource) => 
+        sum + (resource.weekData[week] || 0), 0
+      );
+    });
+    
+    return { resources, weeks: sortedWeeks, totalByWeek };
+  }, [lineItems, filterEpic, filterStage, stages]);
 
   return (
     <Card>
@@ -4016,44 +4096,80 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading resource summary...</div>
-        ) : !resourceSummary || resourceSummary.resources.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">Loading resource allocation...</div>
+        ) : !lineItems || lineItems.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No line items in this estimate yet.
+          </div>
+        ) : resourceWeeklyData.resources.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No resources assigned to line items yet.
           </div>
         ) : (
           <div className="space-y-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[40%]">Resource Name</TableHead>
-                  <TableHead className="w-[30%] text-right">Total Hours</TableHead>
-                  <TableHead className="w-[30%] text-right">% of Total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {resourceSummary.resources.map((resource: any, index: number) => (
-                  <TableRow key={index} data-testid={`resource-row-${resource.resourceId || 'unassigned'}`}>
-                    <TableCell className="font-medium">
-                      {resource.resourceName}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">Resource Name</TableHead>
+                    {resourceWeeklyData.weeks.map(week => (
+                      <TableHead key={week} className="text-center min-w-[100px]">
+                        {week}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-right min-w-[100px] font-semibold">Total Hours</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {resourceWeeklyData.resources.map((resource: any) => {
+                    const grandTotal = resourceWeeklyData.resources.reduce((sum, r) => sum + r.totalHours, 0);
+                    const percentage = grandTotal > 0 ? ((resource.totalHours / grandTotal) * 100).toFixed(1) : '0';
+                    
+                    return (
+                      <TableRow key={resource.resourceId} data-testid={`resource-row-${resource.resourceId}`}>
+                        <TableCell className="sticky left-0 bg-background z-10 font-medium">
+                          {resource.resourceName}
+                        </TableCell>
+                        {resourceWeeklyData.weeks.map(week => {
+                          const hours = resource.weekData[week] || 0;
+                          return (
+                            <TableCell key={week} className="text-center">
+                              {hours > 0 ? hours.toFixed(1) : '-'}
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-right font-semibold">
+                          {resource.totalHours.toFixed(1)}
+                          <span className="text-muted-foreground text-xs ml-2">
+                            ({percentage}%)
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {/* Total row */}
+                  <TableRow className="border-t-2 font-semibold bg-muted/50">
+                    <TableCell className="sticky left-0 bg-muted/50 z-10">
+                      Total
                     </TableCell>
+                    {resourceWeeklyData.weeks.map(week => (
+                      <TableCell key={week} className="text-center">
+                        {resourceWeeklyData.totalByWeek[week]?.toFixed(1) || '0'}
+                      </TableCell>
+                    ))}
                     <TableCell className="text-right">
-                      {resource.totalHours.toFixed(2)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {resource.percentage}%
+                      {resourceWeeklyData.resources.reduce((sum, r) => sum + r.totalHours, 0).toFixed(1)}
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            
-            <div className="pt-4 border-t">
-              <div className="flex justify-between items-center font-semibold">
-                <span>Total Hours:</span>
-                <span>{resourceSummary.totalHours.toFixed(2)}</span>
-              </div>
+                </TableBody>
+              </Table>
             </div>
+            
+            {resourceWeeklyData.weeks.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground">
+                No week numbers assigned to line items. Add week numbers in the Inputs tab to see weekly allocation.
+              </div>
+            )}
           </div>
         )}
       </CardContent>
