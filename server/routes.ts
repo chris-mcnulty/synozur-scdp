@@ -1494,6 +1494,47 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Project Allocations endpoints
+  app.get("/api/projects/:projectId/allocations", requireAuth, async (req, res) => {
+    try {
+      const allocations = await storage.getProjectAllocations(req.params.projectId);
+      res.json(allocations);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project allocations:", error);
+      res.status(500).json({ message: "Failed to fetch project allocations" });
+    }
+  });
+
+  app.put("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const updated = await storage.updateProjectAllocation(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to update project allocation:", error);
+      res.status(500).json({ message: "Failed to update project allocation" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectAllocation(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[ERROR] Failed to delete project allocation:", error);
+      res.status(500).json({ message: "Failed to delete project allocation" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/allocations/bulk-update", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const updated = await storage.bulkUpdateProjectAllocations(req.params.projectId, req.body.allocations);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to bulk update project allocations:", error);
+      res.status(500).json({ message: "Failed to bulk update project allocations" });
+    }
+  });
+
   // Project Payment Milestones endpoints (Financial Schedule)
   app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
     try {

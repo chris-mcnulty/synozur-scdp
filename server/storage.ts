@@ -201,7 +201,13 @@ export interface IStorage {
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
   copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void>;
-  createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string): Promise<Project>;
+  createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string): Promise<Project>;
+  
+  // Project Allocations
+  getProjectAllocations(projectId: string): Promise<any[]>;
+  updateProjectAllocation(id: string, updates: any): Promise<any>;
+  deleteProjectAllocation(id: string): Promise<void>;
+  bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]>;
   
   // Roles
   getRoles(): Promise<Role[]>;
@@ -3887,6 +3893,70 @@ export class DatabaseStorage implements IStorage {
       console.error("Error creating project from estimate:", error);
       throw new Error(`Failed to create project from estimate: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  async getProjectAllocations(projectId: string): Promise<any[]> {
+    const allocations = await db
+      .select({
+        allocation: projectAllocations,
+        person: users,
+        role: roles,
+        epic: projectEpics,
+        stage: estimateStages,
+      })
+      .from(projectAllocations)
+      .where(eq(projectAllocations.projectId, projectId))
+      .leftJoin(users, eq(projectAllocations.personId, users.id))
+      .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+      .leftJoin(projectEpics, eq(projectAllocations.epicId, projectEpics.id))
+      .leftJoin(estimateStages, eq(projectAllocations.stageId, estimateStages.id))
+      .orderBy(projectAllocations.startDate, projectAllocations.resourceName);
+    
+    return allocations.map(row => ({
+      ...row.allocation,
+      person: row.person,
+      role: row.role,
+      epic: row.epic,
+      stage: row.stage,
+    }));
+  }
+  
+  async updateProjectAllocation(id: string, updates: any): Promise<any> {
+    const [updated] = await db
+      .update(projectAllocations)
+      .set(updates)
+      .where(eq(projectAllocations.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async deleteProjectAllocation(id: string): Promise<void> {
+    await db.delete(projectAllocations).where(eq(projectAllocations.id, id));
+  }
+  
+  async bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]> {
+    return await db.transaction(async (tx) => {
+      const results = [];
+      for (const update of updates) {
+        if (update.id) {
+          // Update existing allocation
+          const [updated] = await tx
+            .update(projectAllocations)
+            .set(update)
+            .where(eq(projectAllocations.id, update.id))
+            .returning();
+          results.push(updated);
+        } else {
+          // Create new allocation
+          const [created] = await tx
+            .insert(projectAllocations)
+            .values({ ...update, projectId })
+            .returning();
+          results.push(created);
+        }
+      }
+      return results;
+    });
   }
 
   async createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch> {
