@@ -1535,6 +1535,99 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Export project allocations to CSV (Planner-compatible format)
+  app.get("/api/projects/:projectId/allocations/export", requireAuth, async (req, res) => {
+    try {
+      const allocations = await storage.getProjectAllocations(req.params.projectId);
+      const project = await storage.getProject(req.params.projectId);
+      
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Create CSV header (Planner-compatible columns)
+      const headers = [
+        "Task Name",
+        "Assigned To",
+        "Start Date",
+        "Due Date",
+        "Labels",
+        "Notes",
+        "Bucket",
+        "Progress",
+        "Priority",
+        "Description"
+      ];
+
+      // Convert allocations to CSV rows
+      const rows = allocations.map((allocation: any) => {
+        // Build task name from epic/stage/workstream
+        let taskName = allocation.workstream || "Task";
+        if (allocation.epic && allocation.stage) {
+          taskName = `${allocation.epic.name} - ${allocation.stage.name}: ${taskName}`;
+        }
+
+        // Determine assignee
+        let assignedTo = "";
+        if (allocation.person) {
+          assignedTo = allocation.person.email || allocation.person.name;
+        } else if (allocation.resourceName) {
+          assignedTo = allocation.resourceName;
+        }
+
+        // Format dates
+        const startDate = allocation.startDate || "";
+        const dueDate = allocation.endDate || "";
+
+        // Create labels from role and assignment mode
+        const labels = [];
+        if (allocation.role) {
+          labels.push(allocation.role.name);
+        }
+        if (allocation.assignmentMode === "role") {
+          labels.push("Role-based");
+        } else if (allocation.assignmentMode === "resource") {
+          labels.push("Unassigned");
+        }
+        if (allocation.weekNumber !== null) {
+          labels.push(`Week ${allocation.weekNumber}`);
+        }
+
+        // Notes include hours and rate info
+        const notes = `Allocated Hours: ${allocation.allocatedHours || 0}, Rate: $${allocation.rate || 0}/hr`;
+
+        // Use workstream as bucket
+        const bucket = allocation.workstream || "General";
+
+        return [
+          taskName,
+          assignedTo,
+          startDate,
+          dueDate,
+          labels.join("; "),
+          notes,
+          bucket,
+          "Not Started", // Progress
+          "Medium", // Priority
+          `Hours: ${allocation.allocatedHours || 0}` // Description
+        ];
+      });
+
+      // Generate CSV content
+      const XLSX = await import('xlsx');
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const csv = XLSX.utils.sheet_to_csv(worksheet);
+
+      // Send CSV file
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="project-${project.code}-assignments.csv"`);
+      res.send(csv);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to export project allocations:", error);
+      res.status(500).json({ message: "Failed to export project allocations" });
+    }
+  });
+
   // Project Payment Milestones endpoints (Financial Schedule)
   app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
     try {
