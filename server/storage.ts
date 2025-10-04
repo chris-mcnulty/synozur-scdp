@@ -22,6 +22,7 @@ import {
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
+  type ProjectAllocation, type InsertProjectAllocation,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
@@ -204,6 +205,7 @@ export interface IStorage {
   
   // Project Allocations
   getProjectAllocations(projectId: string): Promise<any[]>;
+  createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation>;
   updateProjectAllocation(id: string, updates: any): Promise<any>;
   deleteProjectAllocation(id: string): Promise<void>;
   bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]>;
@@ -3955,6 +3957,14 @@ export class DatabaseStorage implements IStorage {
     }));
   }
   
+  async createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation> {
+    const [created] = await db
+      .insert(projectAllocations)
+      .values(allocation)
+      .returning();
+    return created;
+  }
+
   async updateProjectAllocation(id: string, updates: any): Promise<any> {
     const [updated] = await db
       .update(projectAllocations)

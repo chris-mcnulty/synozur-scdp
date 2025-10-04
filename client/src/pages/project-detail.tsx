@@ -193,6 +193,10 @@ export default function ProjectDetail() {
   // Assignment state
   const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<any>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState<"append" | "replace">("append");
+  const [importError, setImportError] = useState<string | null>(null);
   
   // Time entries state
   const [timeGrouping, setTimeGrouping] = useState<"none" | "month" | "workstream" | "stage">("none");
@@ -897,6 +901,64 @@ export default function ProjectDetail() {
       });
     }
   });
+
+  const importAssignmentsMutation = useMutation({
+    mutationFn: async (data: { file: string; removeExisting: boolean }) => {
+      return apiRequest(`/api/projects/${id}/allocations/import`, {
+        method: "POST",
+        body: JSON.stringify(data)
+      });
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      setShowImportDialog(false);
+      setImportFile(null);
+      setImportError(null);
+      
+      if (result.errors && result.errors.length > 0) {
+        toast({
+          title: "Import Completed with Errors",
+          description: `Created ${result.itemsCreated} assignments. ${result.errors.length} errors occurred.`,
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: `Successfully imported ${result.itemsCreated} assignments`
+        });
+      }
+    },
+    onError: (error: any) => {
+      setImportError(error.message || "Failed to import file");
+      toast({
+        title: "Error",
+        description: error.message || "Failed to import assignments",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleImportFile = async () => {
+    if (!importFile) {
+      setImportError("Please select a file");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result?.toString().split(',')[1];
+      if (!base64) {
+        setImportError("Failed to read file");
+        return;
+      }
+
+      importAssignmentsMutation.mutate({
+        file: base64,
+        removeExisting: importMode === "replace"
+      });
+    };
+    reader.readAsDataURL(importFile);
+  };
 
   const approveSowMutation = useMutation({
     mutationFn: async (sowId: string) => {
@@ -1841,6 +1903,14 @@ export default function ProjectDetail() {
                   <CardDescription>Resource allocations and task assignments for this project</CardDescription>
                 </div>
                 <div className="flex gap-2">
+                  <Button 
+                    onClick={() => setShowImportDialog(true)}
+                    variant="outline"
+                    data-testid="button-import-assignments"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Import
+                  </Button>
                   <Button 
                     onClick={() => setShowAssignmentDialog(true)}
                     data-testid="button-add-assignment"
@@ -3958,6 +4028,90 @@ export default function ProjectDetail() {
                 </Button>
               </DialogFooter>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Import Assignments Dialog */}
+        <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Import Team Assignments</DialogTitle>
+              <DialogDescription>
+                Upload an Excel or CSV file with assignment data. The file should have columns for:
+                Person Name, Role Name, Workstream, Epic, Stage, Hours, Pricing Mode, Start Date, End Date, Notes
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="file">Select File</Label>
+                <Input 
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setImportFile(file);
+                      setImportError(null);
+                    }
+                  }}
+                  data-testid="input-import-file"
+                />
+                {importFile && (
+                  <p className="text-sm text-muted-foreground">
+                    Selected: {importFile.name}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="importMode">Import Mode</Label>
+                <Select value={importMode} onValueChange={(v: "append" | "replace") => setImportMode(v)}>
+                  <SelectTrigger data-testid="select-import-mode">
+                    <SelectValue placeholder="Select import mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="append">Keep and Add - Append to existing assignments</SelectItem>
+                    <SelectItem value="replace">Remove and Replace - Clear existing assignments first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {importError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{importError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="bg-muted/50 p-3 rounded-lg text-sm space-y-1">
+                <p className="font-medium">Template Format:</p>
+                <p className="text-muted-foreground">Row 1: Headers</p>
+                <p className="text-muted-foreground">Row 2+: Data</p>
+                <p className="text-muted-foreground mt-2">Example:</p>
+                <div className="font-mono text-xs bg-background p-2 rounded">
+                  <p>Person Name | Role Name | Workstream | Epic | Stage | Hours | Pricing Mode | Start Date | End Date | Notes</p>
+                  <p>John Doe | Developer | Frontend | Phase 1 | Design | 40 | role | 2024-01-01 | 2024-01-31 | Working on UI</p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setShowImportDialog(false);
+                setImportFile(null);
+                setImportError(null);
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleImportFile} 
+                disabled={!importFile || importAssignmentsMutation.isPending}
+                data-testid="button-confirm-import"
+              >
+                {importAssignmentsMutation.isPending ? "Importing..." : "Import Assignments"}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

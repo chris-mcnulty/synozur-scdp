@@ -139,7 +139,7 @@ const metadataQuerySchema = z.object({
   skip: z.coerce.number().min(0).optional().default(0)
 });
 
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient } from "./services/graph-client.js";
@@ -1625,6 +1625,196 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error("[ERROR] Failed to export project allocations:", error);
       res.status(500).json({ message: "Failed to export project allocations" });
+    }
+  });
+
+  // Create new project allocation
+  app.post("/api/project-allocations", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { insertProjectAllocationSchema } = await import("@shared/schema");
+      const data = insertProjectAllocationSchema.parse(req.body);
+      const allocation = await storage.createProjectAllocation(data);
+      res.json(allocation);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create project allocation:", error);
+      res.status(500).json({ message: "Failed to create project allocation" });
+    }
+  });
+
+  // Import allocations from Excel/CSV
+  app.post("/api/projects/:projectId/allocations/import", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      const { insertProjectAllocationSchema } = await import("@shared/schema");
+      
+      const projectId = req.params.projectId;
+      
+      // Parse base64 file data
+      const fileData = req.body.file;
+      const removeExisting = req.body.removeExisting === true;
+      const buffer = Buffer.from(fileData, "base64");
+      
+      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      // Get project data for validation
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Get lookup data
+      const users = await storage.getUsers();
+      const roles = await storage.getRoles();
+      const workstreams = await storage.getProjectWorkStreams(projectId);
+      const epics = await storage.getProjectEpics(projectId);
+      const stages = await storage.getProjectStages(projectId);
+      
+      // Create lookup maps (case-insensitive)
+      const userNameToId = new Map(users.map((u: any) => [u.name.toLowerCase(), u.id]));
+      const roleNameToId = new Map(roles.map((r: any) => [r.name.toLowerCase(), r.id]));
+      const workstreamNameToId = new Map(workstreams.map((w: any) => [w.name.toLowerCase(), w.id]));
+      const epicNameToId = new Map(epics.map((e: any) => [e.name.toLowerCase(), e.id]));
+      const stageNameToId = new Map(stages.map((s: any) => [s.name.toLowerCase(), s.id]));
+      
+      // If removeExisting is true, delete existing allocations
+      if (removeExisting) {
+        const existingAllocations = await storage.getProjectAllocations(projectId);
+        for (const allocation of existingAllocations) {
+          await storage.deleteProjectAllocation(allocation.id);
+        }
+      }
+      
+      // Process data rows (skip header)
+      const allocations = [];
+      const errors = [];
+      
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i] as any[];
+        
+        // Expected columns:
+        // 0: Person Name, 1: Role Name, 2: Workstream, 3: Epic, 4: Stage,
+        // 5: Hours, 6: Pricing Mode, 7: Start Date, 8: End Date, 9: Notes
+        
+        // Skip empty rows
+        if (!row[0] && !row[5]) continue;
+        
+        // Validate required fields
+        if (!row[0]) {
+          errors.push({ row: i + 1, message: "Person name is required" });
+          continue;
+        }
+        if (!row[5] || isNaN(Number(row[5]))) {
+          errors.push({ row: i + 1, message: "Valid hours value is required" });
+          continue;
+        }
+        
+        // Lookup person
+        const personName = String(row[0]).trim().toLowerCase();
+        const personId = userNameToId.get(personName);
+        if (!personId) {
+          errors.push({ row: i + 1, message: `Person not found: ${row[0]}` });
+          continue;
+        }
+        
+        // Lookup optional fields
+        const roleName = row[1] ? String(row[1]).trim().toLowerCase() : null;
+        const roleId = roleName ? roleNameToId.get(roleName) : null;
+        
+        const workstreamName = row[2] ? String(row[2]).trim().toLowerCase() : null;
+        const workstreamId = workstreamName ? workstreamNameToId.get(workstreamName) : null;
+        
+        const epicName = row[3] ? String(row[3]).trim().toLowerCase() : null;
+        const epicId = epicName ? epicNameToId.get(epicName) : null;
+        
+        const stageName = row[4] ? String(row[4]).trim().toLowerCase() : null;
+        const stageId = stageName ? stageNameToId.get(stageName) : null;
+        
+        // Parse pricing mode
+        const pricingModeStr = row[6] ? String(row[6]).toLowerCase() : "role";
+        let pricingMode: "role" | "person" | "resource_name" = "role";
+        if (pricingModeStr.includes("person")) pricingMode = "person";
+        else if (pricingModeStr.includes("resource")) pricingMode = "resource_name";
+        
+        // Parse dates (handle various formats)
+        const parseDate = (dateValue: any): string | null => {
+          if (!dateValue) return null;
+          
+          // Handle Excel date numbers
+          if (typeof dateValue === 'number') {
+            const date = xlsx.SSF.parse_date_code(dateValue);
+            return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+          }
+          
+          // Handle string dates
+          const dateStr = String(dateValue).trim();
+          if (!dateStr) return null;
+          
+          // Already in YYYY-MM-DD format
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+          
+          // Try parsing
+          const parsedDate = new Date(dateStr);
+          if (!isNaN(parsedDate.getTime())) {
+            const year = parsedDate.getFullYear();
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(parsedDate.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          }
+          
+          return null;
+        };
+        
+        const allocation = {
+          projectId,
+          personId,
+          roleId: roleId || null,
+          projectWorkstreamId: workstreamId || null,
+          projectActivityId: null, // We don't have activities in import yet
+          projectMilestoneId: null, // We don't have milestones in import yet
+          weekNumber: 1, // Default week number, could be parsed from file
+          hours: Number(row[5]),
+          pricingMode,
+          plannedStartDate: parseDate(row[7]),
+          plannedEndDate: parseDate(row[8]),
+          resourceName: null, // Could be added if person not found
+          billingRate: null, // Will be calculated based on role/person
+          costRate: null, // Will be calculated based on role/person
+          notes: row[9] ? String(row[9]) : null,
+          estimateLineItemId: null, // No link to estimate when importing
+          status: "open" as const,
+          startedDate: null,
+          completedDate: null
+        };
+        
+        allocations.push(allocation);
+      }
+      
+      // Bulk create allocations
+      const createdAllocations = [];
+      for (const allocation of allocations) {
+        try {
+          const created = await storage.createProjectAllocation(allocation);
+          createdAllocations.push(created);
+        } catch (error: any) {
+          errors.push({ 
+            message: `Failed to create allocation for person ${allocation.personId}`,
+            error: error.message 
+          });
+        }
+      }
+      
+      res.json({
+        success: true,
+        itemsCreated: createdAllocations.length,
+        mode: removeExisting ? "replaced" : "appended",
+        errors: errors.length > 0 ? errors : undefined
+      });
+      
+    } catch (error: any) {
+      console.error("[ERROR] Import allocations error:", error);
+      res.status(500).json({ message: "Failed to import allocations file" });
     }
   });
 
