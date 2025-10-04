@@ -3883,20 +3883,20 @@ export class DatabaseStorage implements IStorage {
           await tx.insert(projectAllocations).values({
             projectId: project.id,
             estimateLineItemId: lineItem.id,
-            assignmentMode,
+            pricingMode: assignmentMode || 'resource_name', // Map to correct field name
             personId,
             roleId,
             resourceName: lineItem.resourceName || lineItem.workstream || 'Unassigned',
-            allocatedHours: lineItem.adjustedHours || '0',
-            rate: lineItem.rate,
+            hours: lineItem.adjustedHours || '0', // Changed from allocatedHours to hours
+            billingRate: lineItem.rate, // Changed from rate to billingRate
             costRate: lineItem.costRate,
-            startDate,
-            endDate,
-            weekNumber: lineItem.week,
-            workstream: lineItem.workstream,
-            epicId: epicMapping.get(lineItem.epicId || '') || null,
-            stageId: lineItem.stageId,
-            activityId: null, // Will be linked later when activities are assigned
+            plannedStartDate: startDate, // Changed from startDate to plannedStartDate
+            plannedEndDate: endDate, // Changed from endDate to plannedEndDate
+            weekNumber: lineItem.week || 0, // Ensure weekNumber is not null
+            notes: null, // Add notes field
+            projectActivityId: null, // Will be linked later when activities are assigned
+            projectMilestoneId: null,
+            projectWorkstreamId: null,
           });
         }
         
