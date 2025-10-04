@@ -73,3 +73,15 @@ For development testing, use the following login credentials:
   - "Keep and Add" - appends imported items to existing ones
 - **Column Flexibility**: Handles both admin exports (with Cost Rate) and non-admin exports
 - **Bulk Editing**: Users can export an estimate, modify resource assignments in Excel, and import to a new estimate to preserve resourcing
+
+### Invoice Finalization
+- **Review Dialog**: When finalizing an invoice batch, a comprehensive review dialog displays all line items grouped by client and project
+- **Inline Editing**: Each line item has an Edit button that opens the line edit dialog for making adjustments before finalizing
+- **Displayed Information**: Description, quantity, rate, and amount for each line item
+- **Subtotals**: Client and project subtotals are shown for easy verification
+- **Finalize Action**: Once reviewed and edited, users can confirm finalization which locks the batch and time entries
+
+### Project Structure Transfer
+- **From Estimates to Projects**: When creating a project from an estimate, epics and stages are automatically transferred to the project
+- **Structure Tab Display**: Project Structure tab shows epics with their nested stages (blue background, Zap icon) and milestones (Target icon)
+- **API Endpoints**: `/api/projects/:projectId/epics` and `/api/projects/:projectId/stages` provide hierarchical structure data
