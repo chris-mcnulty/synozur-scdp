@@ -3988,8 +3988,8 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
     // Get unique weeks from all line items
     const allWeeks = new Set<string>();
     filtered.forEach((item: any) => {
-      if (item.weekNumber) {
-        allWeeks.add(`Week ${item.weekNumber}`);
+      if (item.week !== null && item.week !== undefined) {
+        allWeeks.add(`Week ${item.week}`);
       }
     });
     const sortedWeeks = Array.from(allWeeks).sort((a, b) => {
@@ -4025,8 +4025,8 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
       }
       
       // Add hours to the appropriate week
-      if (item.weekNumber) {
-        const weekKey = `Week ${item.weekNumber}`;
+      if (item.week !== null && item.week !== undefined) {
+        const weekKey = `Week ${item.week}`;
         const currentHours = resourceMap.get(resourceId)!.get(weekKey) || 0;
         resourceMap.get(resourceId)!.set(weekKey, currentHours + parseFloat(item.adjustedHours || 0));
       }
