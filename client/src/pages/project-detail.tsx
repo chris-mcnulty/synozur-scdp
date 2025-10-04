@@ -270,6 +270,11 @@ export default function ProjectDetail() {
     queryKey: [`/api/projects/${id}/epics`],
     enabled: !!id,
   });
+  
+  const { data: stages = [], refetch: refetchStages } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/stages`],
+    enabled: !!id,
+  });
 
   // Users and roles for assignment dialog
   const { data: users = [] } = useQuery<any[]>({
@@ -1690,6 +1695,7 @@ export default function ProjectDetail() {
                       <div className="space-y-3">
                         {epics.map((epic: any) => {
                           const epicMilestones = milestones.filter((m: any) => m.projectEpicId === epic.id);
+                          const epicStages = stages.filter((s: any) => s.epicId === epic.id);
                           return (
                             <div key={epic.id} className="border rounded-lg p-4" data-testid={`epic-card-${epic.id}`}>
                               <div className="flex items-start justify-between mb-3">
@@ -1718,6 +1724,21 @@ export default function ProjectDetail() {
                                   </Button>
                                 </div>
                               </div>
+                              
+                              {/* Stages for this Epic */}
+                              {epicStages.length > 0 && (
+                                <div className="ml-6 space-y-2 mb-3">
+                                  <div className="text-xs font-medium text-muted-foreground mb-2">Stages</div>
+                                  {epicStages.map((stage: any) => (
+                                    <div key={stage.id} className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
+                                      <div className="flex items-center gap-3">
+                                        <Zap className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                        <span className="text-sm font-medium">{stage.name}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                               
                               {/* Milestones for this Epic */}
                               {epicMilestones.length > 0 && (

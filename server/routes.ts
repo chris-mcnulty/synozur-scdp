@@ -1516,6 +1516,25 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get all stages for a project
+  app.get("/api/projects/:projectId/stages", requireAuth, async (req, res) => {
+    try {
+      // First get all epics for the project
+      const epics = await storage.getProjectEpics(req.params.projectId);
+      // Then get all stages for each epic
+      const stagesPromises = epics.map(epic => storage.getProjectStages(epic.id));
+      const stagesArrays = await Promise.all(stagesPromises);
+      // Flatten and add epic information to each stage
+      const allStages = stagesArrays.flatMap((stages, index) => 
+        stages.map(stage => ({ ...stage, epicId: epics[index].id }))
+      );
+      res.json(allStages);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project stages:", error);
+      res.status(500).json({ message: "Failed to fetch project stages" });
+    }
+  });
+
   // Project Allocations endpoints
   app.get("/api/projects/:projectId/allocations", requireAuth, async (req, res) => {
     try {
