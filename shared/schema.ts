@@ -70,6 +70,7 @@ export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   clientId: varchar("client_id").notNull().references(() => clients.id),
   name: text("name").notNull(),
+  description: text("description"), // Vision statement/overview (paragraph length)
   code: text("code").notNull().unique(),
   pm: varchar("pm").references(() => users.id), // Project Manager - reference to users table
   startDate: date("start_date"),
