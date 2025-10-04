@@ -6306,8 +6306,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
 
         // Use billedAmount if available (after adjustments), otherwise use original amount
-        const amount = parseFloat(line.billedAmount || line.amount || '0');
-        const originalAmount = parseFloat(line.amount || '0');
+        // Note: billedAmount can be 0 (zero), so we must check for null/undefined explicitly
+        const amount = line.billedAmount !== null && line.billedAmount !== undefined 
+          ? parseFloat(String(line.billedAmount)) 
+          : parseFloat(String(line.amount || '0'));
+        const originalAmount = parseFloat(String(line.amount || '0'));
 
         acc[clientKey].projects[projectKey].lines.push({
           ...line,
