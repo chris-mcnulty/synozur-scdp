@@ -1,11 +1,54 @@
 # SCDP Product Backlog - Corrected Comprehensive Version
 
-## 🚨 P0 - CRITICAL GAPS (Weeks 1-6)
+## 🚨 P0 - CRITICAL GAPS (Immediate Priority)
+
+### Project Assignments & Resource Management
+**Status:** CRITICAL GAP - No way to manually assign people to projects without estimates
+
+**Why P0:** Essential foundation for all resource management, time tracking, and billing operations. Without this, projects created without estimates have no staff assignments.
+
+**Scope:**
+- [ ] **Manual Assignment UI**
+  - Add person + role to project with allocation details
+  - Assign to specific activities, milestones, or workstreams
+  - Set allocation hours and billing rates
+  - Define assignment dates (planned start/end)
+  
+- [ ] **Unified Structure Tab**
+  - Consolidate epics, stages, workstreams, and milestones in single view
+  - Hierarchical tree structure with expand/collapse
+  - Inline editing capabilities
+  - Visual distinction between payment milestones and delivery milestones
+  
+- [ ] **Assignment Import**
+  - Excel/CSV bulk import for project assignments
+  - Template download with required fields
+  - Validation and error reporting
+  - Support for role-based and person-based assignments
+  
+- [ ] **My Assignments View (Employee)**
+  - Show all assignments across active projects
+  - Update assignment status (open, in_progress, completed, cancelled)
+  - Track completion dates automatically
+  - Filter by project, date range, status
+  
+- [ ] **Resource Management View (Leaders)**
+  - View ALL assignments across ALL projects
+  - Edit assignments inline or via bulk actions
+  - Reassign work between resources
+  - Identify over-allocation and gaps
+  - Export to Excel for offline planning
+
+**Timeline:** 2-3 weeks
+
+---
+
+## 🔔 P1 - HIGH PRIORITY (Weeks 3-4)
 
 ### Comprehensive Notifications System
-**Status:** ENTIRELY MISSING - See [Detailed Implementation Plan](./notifications-plan.md)
+**Status:** MISSING - Moved from P0 to make room for critical assignment management
 
-**Why P0:** Critical for user engagement, timely approvals, and operational efficiency.
+**Why P1:** Important for user engagement and operational efficiency, but not blocking core operations.
 
 **Summary:**
 - In-app notification center with bell icon, dropdown, and full page view
@@ -21,13 +64,9 @@
 - Budget threshold alerts
 - Project deadline reminders
 
-**Timeline:** 6 weeks (see detailed plan for phased approach)
+**Timeline:** 4-6 weeks (see detailed plan for phased approach)
 
 **[→ View Full Implementation Plan](./notifications-plan.md)**
-
----
-
-## 🔔 P1 - HIGH PRIORITY (Weeks 2-4)
 
 ### Commercial Schemes Implementation
 *Note: Database fields exist but business logic is missing*
@@ -187,6 +226,39 @@
 - [ ] Bulk document operations UI
 - [ ] Version history viewer
 - [ ] Document approval workflow UI
+
+### Project Status Report Generation - NEW
+**Status:** PLANNING - Essential for project visibility and communication
+
+**Why P2:** Important for stakeholder communication and project tracking, but core operations can function without it initially.
+
+**Scope:**
+- [ ] **Comprehensive Status Reports**
+  - Project overview with vision/description
+  - Milestone progress (target vs actual dates)
+  - Assignment completion rates by person/role
+  - Budget vs actual (time and expenses)
+  - Variance analysis and trending
+  
+- [ ] **Date Range Filtering**
+  - Generate reports for specific periods
+  - Weekly, monthly, quarterly options
+  - Custom date ranges
+  - Point-in-time snapshots
+  
+- [ ] **Report Templates**
+  - Executive summary format
+  - Detailed technical format
+  - Client-facing format (hide internal costs)
+  - Custom template builder
+  
+- [ ] **Export Options**
+  - PDF generation with branding
+  - Excel export with raw data
+  - Email distribution lists
+  - Scheduled report generation
+
+**Timeline:** 3-4 weeks (after assignment management complete)
 
 ### Advanced Financial Reporting
 
