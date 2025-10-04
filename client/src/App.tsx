@@ -18,6 +18,7 @@ import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
+import { MyAssignments } from "@/pages/my-assignments";
 import SystemSettings from "@/pages/system-settings";
 import About from "@/pages/about";
 import Login from "@/pages/login";
@@ -114,6 +115,9 @@ function Router() {
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/my-assignments">
+        {user ? <MyAssignments /> : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}

@@ -12,7 +12,8 @@ import {
   BarChart3,
   Settings,
   Building2,
-  Info
+  Info,
+  Briefcase
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -104,6 +105,12 @@ export function Sidebar() {
           />
           
           <SidebarSection title="Operations" />
+          
+          <SidebarItem
+            href="/my-assignments"
+            icon={<Briefcase />}
+            label="My Assignments"
+          />
           
           <SidebarItem
             href="/time"

@@ -1818,6 +1818,93 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get current user's assignments
+  app.get("/api/my-assignments", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      // Get all allocations for the current user
+      const allocations = await db
+        .select({
+          id: projectAllocations.id,
+          projectId: projectAllocations.projectId,
+          project: projects,
+          client: clients,
+          workstreamId: projectAllocations.projectWorkstreamId,
+          workstream: projectWorkstreams.name,
+          roleId: projectAllocations.roleId,
+          role: roles,
+          hours: projectAllocations.hours,
+          plannedStartDate: projectAllocations.plannedStartDate,
+          plannedEndDate: projectAllocations.plannedEndDate,
+          notes: projectAllocations.notes,
+          status: projectAllocations.status,
+          startedDate: projectAllocations.startedDate,
+          completedDate: projectAllocations.completedDate,
+          weekNumber: projectAllocations.weekNumber
+        })
+        .from(projectAllocations)
+        .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
+        .innerJoin(clients, eq(projects.clientId, clients.id))
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+        .where(eq(projectAllocations.personId, userId))
+        .orderBy(desc(projectAllocations.plannedStartDate));
+      
+      // Format the response
+      const formattedAllocations = allocations.map(row => ({
+        id: row.id,
+        projectId: row.projectId,
+        project: {
+          id: row.project.id,
+          name: row.project.name,
+          client: {
+            id: row.client.id,
+            name: row.client.name
+          }
+        },
+        workstream: row.workstream,
+        role: row.role ? { id: row.role.id, name: row.role.name } : null,
+        hours: row.hours,
+        plannedStartDate: row.plannedStartDate,
+        plannedEndDate: row.plannedEndDate,
+        notes: row.notes,
+        status: row.status,
+        startedDate: row.startedDate,
+        completedDate: row.completedDate,
+        weekNumber: row.weekNumber
+      }));
+      
+      res.json(formattedAllocations);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch user assignments:", error);
+      res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
+  // Get current user info
+  app.get("/api/users/me", requireAuth, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json(user);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch current user:", error);
+      res.status(500).json({ message: "Failed to fetch user info" });
+    }
+  });
+
   // Project Payment Milestones endpoints (Financial Schedule)
   app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
     try {
