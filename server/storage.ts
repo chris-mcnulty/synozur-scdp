@@ -4166,10 +4166,10 @@ export class DatabaseStorage implements IStorage {
     const uniqueClients = new Set(lines.map(l => l.clientId));
     const uniqueProjects = new Set(lines.map(l => l.projectId));
 
-    // Update the batch's totalAmount if it's not already set
+    // Always use the calculated totalAmount from the lines (accounts for adjustments)
     const updatedBatch = {
       ...batch,
-      totalAmount: batch.totalAmount || round2(totalAmount).toString()
+      totalAmount: round2(totalAmount).toString()
     };
 
     // Convert decimal fields to numbers before returning
