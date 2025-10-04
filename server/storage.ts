@@ -7837,7 +7837,10 @@ export async function generateInvoicePDF(params: {
     
     // Prepare line data for template
     const originalAmount = parseFloat(line.originalAmount || line.amount || '0');
-    const billedAmount = line.billedAmount ? parseFloat(line.billedAmount) : parseFloat(line.amount || '0');
+    // Use billedAmount if it's explicitly set (including 0), otherwise use amount
+    const billedAmount = line.billedAmount !== null && line.billedAmount !== undefined
+      ? parseFloat(String(line.billedAmount))
+      : parseFloat(line.amount || '0');
     const variance = billedAmount - originalAmount;
     
     const lineData = {
@@ -7860,8 +7863,11 @@ export async function generateInvoicePDF(params: {
 
   // Calculate totals
   const subtotal = lines.reduce((sum, line) => {
-    const amount = line.billedAmount || line.amount || '0';
-    return sum + parseFloat(amount);
+    // Use billedAmount if it's explicitly set (including 0), otherwise use amount
+    const amount = line.billedAmount !== null && line.billedAmount !== undefined 
+      ? line.billedAmount 
+      : line.amount || '0';
+    return sum + parseFloat(String(amount));
   }, 0);
 
   const discountAmount = batch.discountAmount ? parseFloat(batch.discountAmount) : 0;
