@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -139,7 +139,7 @@ const metadataQuerySchema = z.object({
   skip: z.coerce.number().min(0).optional().default(0)
 });
 
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient } from "./services/graph-client.js";
@@ -1774,7 +1774,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           projectActivityId: null, // We don't have activities in import yet
           projectMilestoneId: null, // We don't have milestones in import yet
           weekNumber: 1, // Default week number, could be parsed from file
-          hours: Number(row[5]),
+          hours: String(row[5]),
           pricingMode,
           plannedStartDate: parseDate(row[7]),
           plannedEndDate: parseDate(row[8]),
