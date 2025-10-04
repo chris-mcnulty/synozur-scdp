@@ -1631,8 +1631,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Project Payment Milestones endpoints (Financial Schedule)
   app.get("/api/projects/:projectId/payment-milestones", requireAuth, async (req, res) => {
     try {
-      const milestones = await storage.getProjectPaymentMilestones(req.params.projectId);
-      res.json(milestones);
+      // Get all milestones and filter for payment milestones
+      const allMilestones = await storage.getProjectMilestones(req.params.projectId);
+      const paymentMilestones = allMilestones.filter((m: any) => m.isPaymentMilestone === true);
+      res.json(paymentMilestones);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch payment milestones:", error);
       res.status(500).json({ message: "Failed to fetch payment milestones" });
@@ -1728,7 +1730,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/payment-milestones", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const milestone = await storage.createProjectPaymentMilestone(req.body);
+      // Create a milestone with isPaymentMilestone flag set to true
+      const milestoneData = {
+        ...req.body,
+        isPaymentMilestone: true
+      };
+      const milestone = await storage.createProjectMilestone(milestoneData);
       res.json(milestone);
     } catch (error: any) {
       console.error("[ERROR] Failed to create payment milestone:", error);
@@ -1738,7 +1745,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/payment-milestones/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const milestone = await storage.updateProjectPaymentMilestone(req.params.id, req.body);
+      // Update milestone, ensuring isPaymentMilestone stays true
+      const updateData = {
+        ...req.body,
+        isPaymentMilestone: true
+      };
+      const milestone = await storage.updateProjectMilestone(req.params.id, updateData);
       res.json(milestone);
     } catch (error: any) {
       console.error("[ERROR] Failed to update payment milestone:", error);
@@ -1748,7 +1760,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/payment-milestones/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      await storage.deleteProjectPaymentMilestone(req.params.id);
+      await storage.deleteProjectMilestone(req.params.id);
       res.json({ message: "Payment milestone deleted successfully" });
     } catch (error: any) {
       console.error("[ERROR] Failed to delete payment milestone:", error);

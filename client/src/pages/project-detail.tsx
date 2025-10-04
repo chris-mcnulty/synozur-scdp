@@ -1240,14 +1240,11 @@ export default function ProjectDetail() {
             <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
             <TabsTrigger value="monthly" data-testid="tab-monthly">Monthly Trends</TabsTrigger>
             <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
+            <TabsTrigger value="structure" data-testid="tab-structure">Structure</TabsTrigger>
             <TabsTrigger value="allocations" data-testid="tab-allocations">Team & Assignments</TabsTrigger>
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
             <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
-            <TabsTrigger value="epics" data-testid="tab-epics">Epics</TabsTrigger>
-            <TabsTrigger value="milestones" data-testid="tab-milestones">Milestones</TabsTrigger>
-            <TabsTrigger value="payment-milestones" data-testid="tab-payment-milestones">Payment Milestones</TabsTrigger>
-            <TabsTrigger value="workstreams" data-testid="tab-workstreams">Workstreams</TabsTrigger>
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
             )}
@@ -1505,6 +1502,262 @@ export default function ProjectDetail() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Structure Tab - Unified view of Epics, Stages, Workstreams, and Milestones */}
+          <TabsContent value="structure" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Project Structure</CardTitle>
+                    <CardDescription>
+                      Organize your project with epics, stages, workstreams, and milestones
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleOpenEpicDialog()}
+                      data-testid="button-add-epic"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Epic
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenMilestoneDialog()}
+                      data-testid="button-add-milestone"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Milestone
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleOpenWorkstreamDialog()}
+                      data-testid="button-add-workstream"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Workstream
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Epics Section */}
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">Epics & Milestones</h4>
+                    {epics.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                        <Briefcase className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <p>No epics found. Click "Add Epic" to create project structure.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {epics.map((epic: any) => {
+                          const epicMilestones = milestones.filter((m: any) => m.projectEpicId === epic.id);
+                          return (
+                            <div key={epic.id} className="border rounded-lg p-4" data-testid={`epic-card-${epic.id}`}>
+                              <div className="flex items-start justify-between mb-3">
+                                <div>
+                                  <h5 className="font-semibold">{epic.name}</h5>
+                                  {epic.description && (
+                                    <p className="text-sm text-muted-foreground mt-1">{epic.description}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleOpenEpicDialog(epic)}
+                                    data-testid={`button-edit-epic-${epic.id}`}
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setDeletingEpicId(epic.id)}
+                                    data-testid={`button-delete-epic-${epic.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              
+                              {/* Milestones for this Epic */}
+                              {epicMilestones.length > 0 && (
+                                <div className="ml-6 space-y-2">
+                                  <div className="text-xs font-medium text-muted-foreground mb-2">Milestones</div>
+                                  {epicMilestones.map((milestone: any) => (
+                                    <div key={milestone.id} className="flex items-center justify-between p-2 bg-muted/30 rounded">
+                                      <div className="flex items-center gap-3">
+                                        <Target className="w-4 h-4 text-muted-foreground" />
+                                        <div>
+                                          <span className="text-sm font-medium">{milestone.name}</span>
+                                          {milestone.isPaymentMilestone && (
+                                            <Badge className="ml-2" variant="outline">Payment</Badge>
+                                          )}
+                                          {milestone.targetDate && (
+                                            <span className="text-xs text-muted-foreground ml-2">
+                                              Target: {format(new Date(milestone.targetDate), 'MMM d, yyyy')}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant={milestone.status === "completed" ? "default" : "secondary"}>
+                                          {milestone.status}
+                                        </Badge>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => handleOpenMilestoneDialog(milestone)}
+                                          data-testid={`button-edit-milestone-${milestone.id}`}
+                                        >
+                                          <Edit className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  {/* Workstreams Section */}
+                  <div>
+                    <h4 className="text-sm font-semibold mb-3">Workstreams</h4>
+                    {workstreams.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                        <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <p>No workstreams found. Click "Add Workstream" to organize work.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {workstreams.map((workstream: any) => {
+                          const variance = (workstream.budgetHours || 0) - (workstream.actualHours || 0);
+                          return (
+                            <div key={workstream.id} className="border rounded-lg p-4" data-testid={`workstream-card-${workstream.id}`}>
+                              <div className="flex items-start justify-between mb-2">
+                                <div>
+                                  <h5 className="font-semibold">{workstream.name}</h5>
+                                  {workstream.description && (
+                                    <p className="text-xs text-muted-foreground mt-1">{workstream.description}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleOpenWorkstreamDialog(workstream)}
+                                    data-testid={`button-edit-workstream-${workstream.id}`}
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setDeletingWorkstreamId(workstream.id)}
+                                    data-testid={`button-delete-workstream-${workstream.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground">Budget</p>
+                                  <p className="font-semibold">{workstream.budgetHours || '—'}h</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Actual</p>
+                                  <p className="font-semibold">{workstream.actualHours || '0'}h</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Variance</p>
+                                  {workstream.budgetHours ? (
+                                    <p className={`font-semibold ${variance < 0 ? "text-destructive" : "text-green-600"}`}>
+                                      {variance > 0 ? '+' : ''}{variance.toFixed(1)}h
+                                    </p>
+                                  ) : (
+                                    <p className="font-semibold">—</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Standalone Milestones (not tied to epics) */}
+                  {(() => {
+                    const standaloneMilestones = milestones.filter((m: any) => !m.projectEpicId);
+                    return standaloneMilestones.length > 0 && (
+                      <>
+                        <Separator />
+                        <div>
+                          <h4 className="text-sm font-semibold mb-3">Project Milestones</h4>
+                          <div className="space-y-2">
+                            {standaloneMilestones.map((milestone: any) => (
+                              <div key={milestone.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                <div className="flex items-center gap-3">
+                                  <Target className="w-4 h-4 text-muted-foreground" />
+                                  <div>
+                                    <span className="font-medium">{milestone.name}</span>
+                                    {milestone.isPaymentMilestone && (
+                                      <Badge className="ml-2" variant="outline">Payment</Badge>
+                                    )}
+                                    {milestone.description && (
+                                      <p className="text-xs text-muted-foreground">{milestone.description}</p>
+                                    )}
+                                    {milestone.targetDate && (
+                                      <p className="text-xs text-muted-foreground">
+                                        Target: {format(new Date(milestone.targetDate), 'MMM d, yyyy')}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant={milestone.status === "completed" ? "default" : "secondary"}>
+                                    {milestone.status}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleOpenMilestoneDialog(milestone)}
+                                    data-testid={`button-edit-milestone-${milestone.id}`}
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setDeletingMilestoneId(milestone.id)}
+                                    data-testid={`button-delete-milestone-${milestone.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
