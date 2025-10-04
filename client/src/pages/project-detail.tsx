@@ -38,9 +38,9 @@ import {
 } from "recharts";
 import { 
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
-  DollarSign, Users, Calendar, CheckCircle, AlertCircle, Activity,
+  DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter
+  Check, X, FileCheck, Lock, Filter, Download
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
