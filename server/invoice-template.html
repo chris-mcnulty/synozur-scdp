@@ -226,14 +226,6 @@
         page-break-before: always;
       }
     }
-
-    .variance-positive {
-      color: #059669;
-    }
-
-    .variance-negative {
-      color: #dc2626;
-    }
   </style>
 </head>
 <body>
@@ -307,23 +299,17 @@
     <table class="invoice-table">
       <thead>
         <tr>
-          <th style="width: 20%">Description</th>
-          <th style="width: 12%">Type</th>
-          <th style="width: 10%">Quantity</th>
-          <th style="width: 12%">Rate</th>
-          <th style="width: 12%">Original Amount</th>
-          {{#if hasAdjustments}}
-          <th style="width: 12%">Billed Amount</th>
-          <th style="width: 10%">Variance</th>
-          {{else}}
-          <th style="width: 12%">Amount</th>
-          {{/if}}
+          <th style="width: 35%">Description</th>
+          <th style="width: 15%">Type</th>
+          <th style="width: 15%">Quantity</th>
+          <th style="width: 15%">Rate</th>
+          <th style="width: 20%">Amount</th>
         </tr>
       </thead>
       <tbody>
         {{#each groupedLines}}
         <tr class="project-header">
-          <td colspan="{{../columnCount}}">{{this.client.name}} - {{this.project.name}}</td>
+          <td colspan="5">{{this.client.name}} - {{this.project.name}}</td>
         </tr>
         {{#each this.lines}}
         <tr>
@@ -331,15 +317,7 @@
           <td>{{this.type}}</td>
           <td class="text-right font-mono">{{#if this.quantity}}{{this.quantity}}{{else}}-{{/if}}</td>
           <td class="text-right font-mono">{{#if this.rate}}${{this.rate}}{{else}}-{{/if}}</td>
-          <td class="text-right font-mono amount">${{this.originalAmount}}</td>
-          {{#if ../hasAdjustments}}
           <td class="text-right font-mono amount">${{this.billedAmount}}</td>
-          <td class="text-right font-mono {{#if this.varianceIsPositive}}variance-positive{{else}}variance-negative{{/if}}">
-            {{#if this.varianceAmount}}${{this.varianceAmount}}{{else}}-{{/if}}
-          </td>
-          {{else}}
-          <td class="text-right font-mono amount">${{this.amount}}</td>
-          {{/if}}
         </tr>
         {{/each}}
         {{/each}}
@@ -360,7 +338,7 @@
     <!-- Totals -->
     <div class="totals-section">
       <table class="totals-table">
-        <tr>
+        <tr class="subtotal-row">
           <td>Subtotal:</td>
           <td class="text-right font-mono">${{subtotal}}</td>
         </tr>
@@ -368,18 +346,6 @@
         <tr>
           <td>Discount {{#if discountPercent}}({{discountPercent}}%){{/if}}:</td>
           <td class="text-right font-mono">-${{discountAmount}}</td>
-        </tr>
-        {{/if}}
-        {{#if hasAdjustments}}
-        <tr class="subtotal-row">
-          <td>Original Total:</td>
-          <td class="text-right font-mono">${{originalTotal}}</td>
-        </tr>
-        <tr>
-          <td>Total Adjustments:</td>
-          <td class="text-right font-mono {{#if totalAdjustmentIsPositive}}variance-positive{{else}}variance-negative{{/if}}">
-            ${{totalAdjustments}}
-          </td>
         </tr>
         {{/if}}
         <tr class="total-row">
