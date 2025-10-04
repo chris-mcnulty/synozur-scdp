@@ -2156,29 +2156,104 @@ export default function BatchDetail() {
         </Card>
       </div>
       
-      {/* Finalize Confirmation Dialog */}
-      <AlertDialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Finalize Invoice Batch?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action will lock the batch and all associated time entries. 
-              Once finalized, the invoice lines cannot be edited.
+      {/* Finalize Review Dialog */}
+      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Review Invoice Before Finalizing</DialogTitle>
+            <DialogDescription>
+              Review and edit line items before finalizing. Once finalized, the batch will be locked and time entries cannot be modified.
               {batchDetails.status === 'draft' && (
                 <div className="mt-2 text-sm text-yellow-600 dark:text-yellow-400">
                   Note: This batch has not been reviewed yet. Consider marking it as reviewed first.
                 </div>
               )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => finalizeMutation.mutate()}>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {groupedLines && Object.entries(groupedLines).map(([clientId, clientData]) => (
+              <Card key={clientId}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{clientData.client.name}</CardTitle>
+                    <Badge variant="secondary">
+                      ${clientData.subtotal.toFixed(2)}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {Object.entries(clientData.projects).map(([projectId, projectData]) => (
+                    <div key={projectId} className="mb-4">
+                      <div className="flex items-center justify-between mb-2 pb-2 border-b">
+                        <h4 className="font-semibold">{projectData.project.name}</h4>
+                        <span className="text-sm text-muted-foreground">
+                          ${projectData.subtotal.toFixed(2)}
+                        </span>
+                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[40%]">Description</TableHead>
+                            <TableHead className="w-[15%]">Quantity</TableHead>
+                            <TableHead className="w-[15%]">Rate</TableHead>
+                            <TableHead className="w-[15%]">Amount</TableHead>
+                            <TableHead className="w-[15%]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {projectData.lines.map((line) => (
+                            <TableRow key={line.id}>
+                              <TableCell className="font-medium">{line.description || line.type}</TableCell>
+                              <TableCell>{line.quantity || '-'}</TableCell>
+                              <TableCell>{line.rate ? `$${parseFloat(line.rate).toFixed(2)}` : '-'}</TableCell>
+                              <TableCell>${parseFloat(line.billedAmount || line.amount).toFixed(2)}</TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingLine(line);
+                                    setShowEditDialog(true);
+                                  }}
+                                  data-testid={`button-edit-line-${line.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowFinalizeDialog(false)}
+              data-testid="button-cancel-finalize"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setShowFinalizeDialog(false);
+                finalizeMutation.mutate();
+              }}
+              disabled={finalizeMutation.isPending}
+              data-testid="button-confirm-finalize"
+            >
+              <Lock className="mr-2 h-4 w-4" />
               Finalize Batch
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Unfinalize Confirmation Dialog */}
       <AlertDialog open={showUnfinalizeDialog} onOpenChange={setShowUnfinalizeDialog}>
