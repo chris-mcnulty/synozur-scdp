@@ -3729,6 +3729,7 @@ export class DatabaseStorage implements IStorage {
             
             // Create project milestone from estimate stage
             await tx.insert(projectMilestones).values({
+              projectId: project.id,
               projectEpicId: projectEpic.id,
               estimateStageId: stage.id, // Link to original estimate stage
               name: stage.name,
