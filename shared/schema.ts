@@ -243,39 +243,44 @@ export const projectWorkstreams = pgTable("project_workstreams", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
-// Project Milestones (from estimate stages) - DELIVERY TRACKING
+// Unified Project Milestones (both delivery gates and payment milestones)
 export const projectMilestones = pgTable("project_milestones", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectEpicId: varchar("project_epic_id").notNull().references(() => projectEpics.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  projectEpicId: varchar("project_epic_id").references(() => projectEpics.id, { onDelete: 'cascade' }), // Optional for delivery milestones
   estimateStageId: varchar("estimate_stage_id").references(() => estimateStages.id), // Link to original estimate stage
+  estimateMilestoneId: varchar("estimate_milestone_id").references(() => estimateMilestones.id), // Link to original estimate milestone
   name: text("name").notNull(),
   description: text("description"),
-  startDate: date("start_date"),
-  endDate: date("end_date"),
+  
+  // Type indicator
+  isPaymentMilestone: boolean("is_payment_milestone").notNull().default(false), // TRUE = payment due, FALSE = delivery gate
+  
+  // Timing fields
+  startDate: date("start_date"), // For delivery milestones
+  endDate: date("end_date"), // For delivery milestones
+  targetDate: date("target_date"), // When milestone should be achieved (replaces dueDate)
+  completedDate: date("completed_date"), // When actually completed
+  
+  // Payment fields (only used when isPaymentMilestone = true)
+  amount: decimal("amount", { precision: 10, scale: 2 }), // Payment amount
+  invoiceStatus: text("invoice_status"), // null, planned, invoiced, paid (replaces status for payment milestones)
+  
+  // Tracking fields
+  status: text("status").notNull().default('not-started'), // not-started, in-progress, completed, cancelled
   budgetHours: decimal("budget_hours", { precision: 10, scale: 2 }),
   actualHours: decimal("actual_hours", { precision: 10, scale: 2 }).default('0'),
-  status: text("status").notNull().default('not-started'), // not-started, in-progress, completed
-  order: integer("order").notNull(),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
-
-// Project Payment Milestones - FINANCIAL SCHEDULE
-// Copied from estimate milestones, defines when payments are due
-export const projectPaymentMilestones = pgTable("project_payment_milestones", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  estimateMilestoneId: varchar("estimate_milestone_id").references(() => estimateMilestones.id), // Link to original estimate milestone
-  deliveryMilestoneId: varchar("delivery_milestone_id").references(() => projectMilestones.id), // Optional link to delivery milestone
-  name: text("name").notNull(), // e.g., "Kickoff Payment", "Phase 1 Payment"
-  description: text("description"),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(), // Payment amount in dollars
-  dueDate: date("due_date"), // When payment is expected
-  status: text("status").notNull().default('planned'), // planned, invoiced, canceled
+  
+  // References
   sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW/change order if edited
   sortOrder: integer("sort_order").notNull().default(0),
+  
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
+
+// NOTE: projectPaymentMilestones has been consolidated into projectMilestones table
+// Use isPaymentMilestone flag to distinguish between delivery and payment milestones
 
 // Project Resource Allocations - mirrors estimate allocations for actual project work
 export const projectAllocations = pgTable("project_allocations", {
@@ -532,7 +537,7 @@ export const invoiceBatches = pgTable("invoice_batches", {
   finalizedBy: varchar("finalized_by").references(() => users.id),
   createdBy: varchar("created_by").references(() => users.id), // Track who created the batch
   // Payment milestone link - one invoice batch per payment milestone
-  projectPaymentMilestoneId: varchar("project_payment_milestone_id").references(() => projectPaymentMilestones.id),
+  projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id), // Now references unified milestones table
   // Revenue recognition date tracking
   asOfDate: date("as_of_date"), // Date for revenue recognition (defaults to finalized date)
   asOfDateUpdatedBy: varchar("as_of_date_updated_by").references(() => users.id),
@@ -916,12 +921,9 @@ export const insertProjectWorkstreamSchema = createInsertSchema(projectWorkstrea
 export const insertProjectMilestoneSchema = createInsertSchema(projectMilestones).omit({
   id: true,
   createdAt: true,
-});
-
-export const insertProjectPaymentMilestoneSchema = createInsertSchema(projectPaymentMilestones).omit({
-  id: true,
-  createdAt: true,
   updatedAt: true,
+  actualHours: true,
+  completedDate: true,
 });
 
 export const insertProjectAllocationSchema = createInsertSchema(projectAllocations).omit({
@@ -1055,8 +1057,6 @@ export type ProjectWorkstream = typeof projectWorkstreams.$inferSelect;
 export type InsertProjectWorkstream = z.infer<typeof insertProjectWorkstreamSchema>;
 export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
-export type ProjectPaymentMilestone = typeof projectPaymentMilestones.$inferSelect;
-export type InsertProjectPaymentMilestone = z.infer<typeof insertProjectPaymentMilestoneSchema>;
 export type ProjectAllocation = typeof projectAllocations.$inferSelect;
 export type InsertProjectAllocation = z.infer<typeof insertProjectAllocationSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;

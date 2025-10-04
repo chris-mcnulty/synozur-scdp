@@ -1660,23 +1660,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "User ID not found" });
       }
       
-      // Get the milestone
+      // Get the milestone (must be a payment milestone)
       const [milestone] = await db.select()
-        .from(projectPaymentMilestones)
-        .where(eq(projectPaymentMilestones.id, milestoneId));
+        .from(projectMilestones)
+        .where(and(
+          eq(projectMilestones.id, milestoneId),
+          eq(projectMilestones.isPaymentMilestone, true)
+        ));
       
       if (!milestone) {
         return res.status(404).json({ message: "Payment milestone not found" });
       }
       
-      if (milestone.status !== 'planned') {
-        return res.status(400).json({ message: `Cannot generate invoice for milestone with status: ${milestone.status}` });
+      if (milestone.invoiceStatus !== 'planned') {
+        return res.status(400).json({ message: `Cannot generate invoice for milestone with invoice status: ${milestone.invoiceStatus}` });
       }
       
       // Check for existing invoice batch linked to this milestone
       const [existingBatch] = await db.select()
         .from(invoiceBatches)
-        .where(eq(invoiceBatches.projectPaymentMilestoneId, milestoneId));
+        .where(eq(invoiceBatches.projectMilestoneId, milestoneId));
       
       if (existingBatch) {
         return res.status(409).json({ 
@@ -1703,7 +1706,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         totalAmount: "0",
         invoicingMode: "project",
         batchType: "mixed",
-        projectPaymentMilestoneId: milestoneId,
+        projectMilestoneId: milestoneId,
         exportedToQBO: false,
         createdBy: userId
       });

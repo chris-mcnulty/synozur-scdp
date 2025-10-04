@@ -3,7 +3,7 @@ import {
   estimateMilestones, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations,
-  projectMilestones, projectPaymentMilestones, projectRateOverrides, userRateSchedules, systemSettings,
+  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -21,7 +21,6 @@ import {
   type ProjectBudgetHistory, type InsertProjectBudgetHistory,
   type ProjectEpic, type InsertProjectEpic,
   type ProjectMilestone, type InsertProjectMilestone,
-  type ProjectPaymentMilestone, type InsertProjectPaymentMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
@@ -511,11 +510,12 @@ export interface IStorage {
   createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
   updateProjectMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone>;
   deleteProjectMilestone(id: string): Promise<void>;
-  // Project Payment Milestones (Financial Schedule)
-  getProjectPaymentMilestones(projectId: string): Promise<ProjectPaymentMilestone[]>;
-  getProjectPaymentMilestoneById(id: string): Promise<ProjectPaymentMilestone | undefined>;
-  createProjectPaymentMilestone(milestone: InsertProjectPaymentMilestone): Promise<ProjectPaymentMilestone>;
-  updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectPaymentMilestone>): Promise<ProjectPaymentMilestone>;
+  // Project Milestones (Unified - both delivery and payment)
+  getProjectPaymentMilestones(projectId: string): Promise<ProjectMilestone[]>; // Returns only payment milestones
+  getProjectDeliveryMilestones(projectId: string): Promise<ProjectMilestone[]>; // Returns only delivery milestones  
+  getProjectPaymentMilestoneById(id: string): Promise<ProjectMilestone | undefined>;
+  createProjectPaymentMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
+  updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone>;
   deleteProjectPaymentMilestone(id: string): Promise<void>;
   copyEstimateMilestonesToProject(estimateId: string, projectId: string): Promise<void>;
   getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]>;
@@ -2081,7 +2081,7 @@ export class DatabaseStorage implements IStorage {
       .from(projectMilestones)
       .innerJoin(projectEpics, eq(projectMilestones.projectEpicId, projectEpics.id))
       .where(eq(projectEpics.projectId, projectId))
-      .orderBy(projectMilestones.order)
+      .orderBy(projectMilestones.sortOrder)
       .then(rows => rows.map(r => r.project_milestones));
   }
 
@@ -2109,37 +2109,55 @@ export class DatabaseStorage implements IStorage {
     await db.delete(projectMilestones).where(eq(projectMilestones.id, id));
   }
 
-  // Project Payment Milestones (Financial Schedule)
-  async getProjectPaymentMilestones(projectId: string): Promise<ProjectPaymentMilestone[]> {
+  // Project Milestones - Unified implementation (both delivery and payment)
+  async getProjectPaymentMilestones(projectId: string): Promise<ProjectMilestone[]> {
     return await db.select()
-      .from(projectPaymentMilestones)
-      .where(eq(projectPaymentMilestones.projectId, projectId))
-      .orderBy(projectPaymentMilestones.sortOrder);
+      .from(projectMilestones)
+      .where(and(
+        eq(projectMilestones.projectId, projectId),
+        eq(projectMilestones.isPaymentMilestone, true)
+      ))
+      .orderBy(projectMilestones.sortOrder);
+  }
+  
+  async getProjectDeliveryMilestones(projectId: string): Promise<ProjectMilestone[]> {
+    return await db.select()
+      .from(projectMilestones)
+      .where(and(
+        eq(projectMilestones.projectId, projectId),
+        eq(projectMilestones.isPaymentMilestone, false)
+      ))
+      .orderBy(projectMilestones.sortOrder);
   }
 
-  async getProjectPaymentMilestoneById(id: string): Promise<ProjectPaymentMilestone | undefined> {
+  async getProjectPaymentMilestoneById(id: string): Promise<ProjectMilestone | undefined> {
     const [milestone] = await db.select()
-      .from(projectPaymentMilestones)
-      .where(eq(projectPaymentMilestones.id, id))
+      .from(projectMilestones)
+      .where(and(
+        eq(projectMilestones.id, id),
+        eq(projectMilestones.isPaymentMilestone, true)
+      ))
       .limit(1);
     return milestone;
   }
 
-  async createProjectPaymentMilestone(milestone: InsertProjectPaymentMilestone): Promise<ProjectPaymentMilestone> {
-    const [created] = await db.insert(projectPaymentMilestones).values(milestone).returning();
+  async createProjectPaymentMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone> {
+    // Ensure it's marked as a payment milestone
+    const paymentMilestone = { ...milestone, isPaymentMilestone: true };
+    const [created] = await db.insert(projectMilestones).values(paymentMilestone).returning();
     return created;
   }
 
-  async updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectPaymentMilestone>): Promise<ProjectPaymentMilestone> {
-    const [updated] = await db.update(projectPaymentMilestones)
+  async updateProjectPaymentMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone> {
+    const [updated] = await db.update(projectMilestones)
       .set({ ...update, updatedAt: sql`now()` })
-      .where(eq(projectPaymentMilestones.id, id))
+      .where(eq(projectMilestones.id, id))
       .returning();
     return updated;
   }
 
   async deleteProjectPaymentMilestone(id: string): Promise<void> {
-    await db.delete(projectPaymentMilestones).where(eq(projectPaymentMilestones.id, id));
+    await db.delete(projectMilestones).where(eq(projectMilestones.id, id));
   }
 
   async copyEstimateMilestonesToProject(estimateId: string, projectId: string): Promise<void> {
@@ -2149,15 +2167,16 @@ export class DatabaseStorage implements IStorage {
       .where(eq(estimateMilestones.estimateId, estimateId))
       .orderBy(estimateMilestones.sortOrder);
 
-    // Copy each milestone to project payment milestones
+    // Copy each milestone to project milestones as payment milestones
     for (const estMilestone of estMilestones) {
-      await db.insert(projectPaymentMilestones).values({
+      await db.insert(projectMilestones).values({
         projectId,
         estimateMilestoneId: estMilestone.id,
         name: estMilestone.name,
         description: estMilestone.description,
+        isPaymentMilestone: true, // Mark as payment milestone
         amount: estMilestone.amount || '0',
-        dueDate: estMilestone.dueDate,
+        targetDate: estMilestone.dueDate,
         status: 'planned',
         sortOrder: estMilestone.sortOrder,
       });
@@ -3756,14 +3775,16 @@ export class DatabaseStorage implements IStorage {
           .orderBy(estimateMilestones.sortOrder);
 
         for (const estMilestone of estMilestones) {
-          await tx.insert(projectPaymentMilestones).values({
+          await tx.insert(projectMilestones).values({
             projectId: project.id,
             estimateMilestoneId: estMilestone.id,
             name: estMilestone.name,
             description: estMilestone.description,
+            isPaymentMilestone: true, // Mark as payment milestone
             amount: estMilestone.amount || '0',
-            dueDate: estMilestone.dueDate,
-            status: 'planned',
+            targetDate: estMilestone.dueDate,
+            invoiceStatus: 'planned',
+            status: 'not-started',
             sortOrder: estMilestone.sortOrder,
           });
         }
@@ -4095,7 +4116,7 @@ export class DatabaseStorage implements IStorage {
     .from(invoiceBatches)
     .leftJoin(sql`users as creator_user`, sql`creator_user.id = ${invoiceBatches.createdBy}`)
     .leftJoin(sql`users as finalizer_user`, sql`finalizer_user.id = ${invoiceBatches.finalizedBy}`)
-    .leftJoin(sql`project_payment_milestones as milestone`, sql`milestone.id = ${invoiceBatches.projectPaymentMilestoneId}`)
+    .leftJoin(sql`project_milestones as milestone`, sql`milestone.id = ${invoiceBatches.projectMilestoneId}`)
     .leftJoin(sql`projects as milestone_project`, sql`milestone_project.id = milestone.project_id`)
     .where(eq(invoiceBatches.batchId, batchId));
     
@@ -4346,10 +4367,13 @@ export class DatabaseStorage implements IStorage {
       }
       
       // If batch is linked to a payment milestone, validate and update
-      if (batch.projectPaymentMilestoneId) {
+      if (batch.projectMilestoneId) {
         const [milestone] = await tx.select()
-          .from(projectPaymentMilestones)
-          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+          .from(projectMilestones)
+          .where(and(
+            eq(projectMilestones.id, batch.projectMilestoneId),
+            eq(projectMilestones.isPaymentMilestone, true)
+          ));
         
         if (!milestone) {
           throw new Error('Linked payment milestone not found');
@@ -4386,9 +4410,9 @@ export class DatabaseStorage implements IStorage {
         }
         
         // Update milestone status to 'invoiced'
-        await tx.update(projectPaymentMilestones)
-          .set({ status: 'invoiced' })
-          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+        await tx.update(projectMilestones)
+          .set({ invoiceStatus: 'invoiced' })
+          .where(eq(projectMilestones.id, batch.projectMilestoneId));
         
         // Update project billedTotal
         const [project] = await tx.select()
@@ -4421,16 +4445,8 @@ export class DatabaseStorage implements IStorage {
           });
         }
         
-        // If milestone is linked to a delivery milestone, mark it complete (with tracking)
-        if (milestone.deliveryMilestoneId) {
-          await tx.update(projectMilestones)
-            .set({ 
-              status: 'completed',
-              completedBy: 'system',
-              completedReason: `Auto-completed by invoice batch ${batchId} finalization`
-            })
-            .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
-        }
+        // Payment milestones can now track their own completion
+        // No need to update a separate delivery milestone
       }
       
       // Update the batch status
@@ -4504,16 +4520,19 @@ export class DatabaseStorage implements IStorage {
       }
       
       // If batch is linked to a payment milestone, revert the updates
-      if (batch.projectPaymentMilestoneId) {
+      if (batch.projectMilestoneId) {
         const [milestone] = await tx.select()
-          .from(projectPaymentMilestones)
-          .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+          .from(projectMilestones)
+          .where(and(
+            eq(projectMilestones.id, batch.projectMilestoneId),
+            eq(projectMilestones.isPaymentMilestone, true)
+          ));
         
         if (milestone) {
           // Revert milestone status back to 'planned'
-          await tx.update(projectPaymentMilestones)
-            .set({ status: 'planned' })
-            .where(eq(projectPaymentMilestones.id, batch.projectPaymentMilestoneId));
+          await tx.update(projectMilestones)
+            .set({ invoiceStatus: 'planned' })
+            .where(eq(projectMilestones.id, batch.projectMilestoneId));
           
           // Get all invoice lines for this batch filtered to milestone's project
           const batchLines = await tx.select()
@@ -4560,24 +4579,7 @@ export class DatabaseStorage implements IStorage {
             });
           }
           
-          // Revert delivery milestone only if it was auto-completed by system
-          if (milestone.deliveryMilestoneId) {
-            const [deliveryMilestone] = await tx.select()
-              .from(projectMilestones)
-              .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
-            
-            // Only revert if it was system-completed and contains the batch reference
-            if (deliveryMilestone?.completedBy === 'system' && 
-                deliveryMilestone?.completedReason?.includes(batchId)) {
-              await tx.update(projectMilestones)
-                .set({ 
-                  status: 'in-progress',
-                  completedBy: null,
-                  completedReason: null
-                })
-                .where(eq(projectMilestones.id, milestone.deliveryMilestoneId));
-            }
-          }
+          // Delivery milestone reversal no longer needed in unified structure
         }
       }
       
