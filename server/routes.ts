@@ -2149,6 +2149,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       await storage.copyEstimateStructureToProject(estimateId, req.params.id);
+      // Also copy estimate milestones to project milestones
+      await storage.copyEstimateMilestonesToProject(estimateId, req.params.id);
       res.json({ message: "Estimate structure copied to project successfully" });
     } catch (error: any) {
       console.error("[ERROR] Failed to copy estimate structure:", error);
