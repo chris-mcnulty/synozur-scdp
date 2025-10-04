@@ -8,6 +8,14 @@ SCDP is a comprehensive consulting delivery platform designed to manage the enti
 
 Preferred communication style: Simple, everyday language.
 
+## Testing Credentials
+
+For development testing, use the following login credentials:
+- Email: chris.mcnulty@synozur.com
+- Password: deom123
+- Do NOT use the demo button for testing
+- Do NOT use SSO login (doesn't work in dev environment)
+
 ## System Architecture
 
 ### Frontend
