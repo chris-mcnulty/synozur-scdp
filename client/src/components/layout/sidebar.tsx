@@ -113,6 +113,13 @@ export function Sidebar() {
           />
           
           <SidebarItem
+            href="/resource-management"
+            icon={<Users />}
+            label="Resource Management"
+            requiredRoles={["admin", "pm", "executive"]}
+          />
+          
+          <SidebarItem
             href="/time"
             icon={<Clock />}
             label="Time Tracking"

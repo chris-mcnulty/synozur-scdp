@@ -1818,6 +1818,75 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get all assignments (for resource management)
+  app.get("/api/assignments", requireAuth, hasAnyRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      // Get all allocations across all projects
+      const allocations = await db
+        .select({
+          id: projectAllocations.id,
+          projectId: projectAllocations.projectId,
+          project: projects,
+          client: clients,
+          personId: projectAllocations.personId,
+          person: users,
+          workstreamId: projectAllocations.projectWorkstreamId,
+          workstream: projectWorkstreams.name,
+          roleId: projectAllocations.roleId,
+          role: roles,
+          hours: projectAllocations.hours,
+          plannedStartDate: projectAllocations.plannedStartDate,
+          plannedEndDate: projectAllocations.plannedEndDate,
+          notes: projectAllocations.notes,
+          status: projectAllocations.status,
+          startedDate: projectAllocations.startedDate,
+          completedDate: projectAllocations.completedDate,
+          weekNumber: projectAllocations.weekNumber
+        })
+        .from(projectAllocations)
+        .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
+        .innerJoin(clients, eq(projects.clientId, clients.id))
+        .leftJoin(users, eq(projectAllocations.personId, users.id))
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+        .orderBy(desc(projectAllocations.plannedStartDate));
+      
+      // Format the response
+      const formattedAllocations = allocations.map(row => ({
+        id: row.id,
+        projectId: row.projectId,
+        project: {
+          id: row.project.id,
+          name: row.project.name,
+          client: {
+            id: row.client.id,
+            name: row.client.name
+          }
+        },
+        person: row.person ? {
+          id: row.person.id,
+          name: row.person.name,
+          email: row.person.email
+        } : null,
+        workstream: row.workstream,
+        role: row.role ? { id: row.role.id, name: row.role.name } : null,
+        hours: row.hours,
+        plannedStartDate: row.plannedStartDate,
+        plannedEndDate: row.plannedEndDate,
+        notes: row.notes,
+        status: row.status,
+        startedDate: row.startedDate,
+        completedDate: row.completedDate,
+        weekNumber: row.weekNumber
+      }));
+      
+      res.json(formattedAllocations);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch assignments:", error);
+      res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
   // Get current user's assignments
   app.get("/api/my-assignments", requireAuth, async (req, res) => {
     try {
