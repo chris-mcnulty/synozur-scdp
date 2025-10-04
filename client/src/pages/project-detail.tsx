@@ -150,6 +150,22 @@ const epicFormSchema = z.object({
 
 type EpicFormData = z.infer<typeof epicFormSchema>;
 
+// Assignment schema  
+const assignmentFormSchema = z.object({
+  personId: z.string().min(1, "Person is required"),
+  roleId: z.string().optional(),
+  workstreamId: z.string().optional(),
+  epicId: z.string().optional(),
+  stageId: z.string().optional(),
+  hours: z.string().min(1, "Hours is required"),
+  pricingMode: z.enum(["role", "person", "resource_name"]),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  notes: z.string().optional()
+});
+
+type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -173,6 +189,10 @@ export default function ProjectDetail() {
   const [showEpicDialog, setShowEpicDialog] = useState(false);
   const [editingEpic, setEditingEpic] = useState<any>(null);
   const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
+  
+  // Assignment state
+  const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
+  const [editingAssignment, setEditingAssignment] = useState<any>(null);
   
   // Time entries state
   const [timeGrouping, setTimeGrouping] = useState<"none" | "month" | "workstream" | "stage">("none");
@@ -245,6 +265,17 @@ export default function ProjectDetail() {
   const { data: epics = [], refetch: refetchEpics } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/epics`],
     enabled: !!id,
+  });
+
+  // Users and roles for assignment dialog
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ['/api/users'],
+    enabled: showAssignmentDialog,
+  });
+  
+  const { data: roles = [] } = useQuery<any[]>({
+    queryKey: ['/api/roles'],
+    enabled: showAssignmentDialog,
   });
   
   // Budget history query
@@ -823,6 +854,45 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete epic",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Assignment mutations
+  const createAssignmentMutation = useMutation({
+    mutationFn: async (data: AssignmentFormData) => {
+      const processedData = {
+        ...data,
+        projectId: id,
+        hours: parseFloat(data.hours),
+        roleId: data.roleId || null,
+        workstreamId: data.workstreamId || null,
+        epicId: data.epicId || null,
+        stageId: data.stageId || null,
+        startDate: data.startDate || null,
+        endDate: data.endDate || null,
+        notes: data.notes || null,
+        status: 'open'
+      };
+      return apiRequest('/api/project-allocations', {
+        method: "POST",
+        body: JSON.stringify(processedData)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      setShowAssignmentDialog(false);
+      setEditingAssignment(null);
+      toast({
+        title: "Success",
+        description: "Assignment created successfully"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create assignment",
         variant: "destructive"
       });
     }
@@ -1770,17 +1840,26 @@ export default function ProjectDetail() {
                   <CardTitle>Team Assignments</CardTitle>
                   <CardDescription>Resource allocations and task assignments for this project</CardDescription>
                 </div>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    // Download CSV file
-                    window.location.href = `/api/projects/${id}/allocations/export`;
-                  }}
-                  data-testid="button-export-allocations"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Export to CSV
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={() => setShowAssignmentDialog(true)}
+                    data-testid="button-add-assignment"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Assignment
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      // Download CSV file
+                      window.location.href = `/api/projects/${id}/allocations/export`;
+                    }}
+                    data-testid="button-export-allocations"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export to CSV
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {allocationsLoading ? (
@@ -3721,6 +3800,166 @@ export default function ProjectDetail() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Assignment Dialog */}
+        <Dialog open={showAssignmentDialog} onOpenChange={setShowAssignmentDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add Team Assignment</DialogTitle>
+              <DialogDescription>
+                Assign a team member to this project with specific role and hours
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const data: AssignmentFormData = {
+                personId: formData.get('personId') as string,
+                roleId: formData.get('roleId') as string || undefined,
+                workstreamId: formData.get('workstreamId') as string || undefined,
+                epicId: formData.get('epicId') as string || undefined,
+                stageId: formData.get('stageId') as string || undefined,
+                hours: formData.get('hours') as string,
+                pricingMode: formData.get('pricingMode') as "role" | "person" | "resource_name",
+                startDate: formData.get('startDate') as string || undefined,
+                endDate: formData.get('endDate') as string || undefined,
+                notes: formData.get('notes') as string || undefined
+              };
+              createAssignmentMutation.mutate(data);
+            }} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="personId">Person *</Label>
+                  <Select name="personId" required>
+                    <SelectTrigger data-testid="select-person">
+                      <SelectValue placeholder="Select a person" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((user: any) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="roleId">Role</Label>
+                  <Select name="roleId">
+                    <SelectTrigger data-testid="select-role">
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {roles.map((role: any) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="workstreamId">Workstream</Label>
+                  <Select name="workstreamId">
+                    <SelectTrigger data-testid="select-workstream">
+                      <SelectValue placeholder="Select a workstream" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {workstreams.map((workstream: any) => (
+                        <SelectItem key={workstream.id} value={workstream.id}>
+                          {workstream.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="epicId">Epic</Label>
+                  <Select name="epicId">
+                    <SelectTrigger data-testid="select-epic">
+                      <SelectValue placeholder="Select an epic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">None</SelectItem>
+                      {epics.map((epic: any) => (
+                        <SelectItem key={epic.id} value={epic.id}>
+                          {epic.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hours">Hours *</Label>
+                  <Input 
+                    name="hours" 
+                    type="number" 
+                    step="0.5"
+                    placeholder="e.g., 40" 
+                    required
+                    data-testid="input-hours"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pricingMode">Pricing Mode *</Label>
+                  <Select name="pricingMode" defaultValue="role">
+                    <SelectTrigger data-testid="select-pricing-mode">
+                      <SelectValue placeholder="Select pricing mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="role">By Role</SelectItem>
+                      <SelectItem value="person">By Person</SelectItem>
+                      <SelectItem value="resource_name">By Resource Name</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="startDate">Start Date</Label>
+                  <Input 
+                    name="startDate" 
+                    type="date"
+                    data-testid="input-start-date"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="endDate">End Date</Label>
+                  <Input 
+                    name="endDate" 
+                    type="date"
+                    data-testid="input-end-date"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea 
+                  name="notes"
+                  placeholder="Additional notes about this assignment..."
+                  data-testid="input-notes"
+                />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowAssignmentDialog(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createAssignmentMutation.isPending}>
+                  {createAssignmentMutation.isPending ? "Creating..." : "Create Assignment"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
