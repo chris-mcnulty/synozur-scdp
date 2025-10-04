@@ -133,6 +133,7 @@ export function AggregateAdjustmentDialog({
     variance: number;
     description: string;
   }>>([]);
+  const [manualAllocations, setManualAllocations] = useState<Record<string, number>>({});
 
   const form = useForm<AdjustmentFormData>({
     resolver: zodResolver(adjustmentFormSchema),
@@ -153,6 +154,24 @@ export function AggregateAdjustmentDialog({
   // Watch form values for preview calculation
   const targetAmount = form.watch("targetAmount");
   const allocationMethod = form.watch("allocationMethod");
+
+  // Initialize manual allocations when switching to manual mode
+  useEffect(() => {
+    if (allocationMethod === 'manual' && lines.length > 0) {
+      // Initialize with current amounts for all lines if not already set
+      const initialAllocations: Record<string, number> = {};
+      lines.forEach(line => {
+        const originalAmount = normalizeAmount(line.billedAmount || line.amount);
+        // Only set if not already in state (preserve user edits)
+        if (!(line.id in manualAllocations)) {
+          initialAllocations[line.id] = originalAmount;
+        }
+      });
+      if (Object.keys(initialAllocations).length > 0) {
+        setManualAllocations(prev => ({ ...prev, ...initialAllocations }));
+      }
+    }
+  }, [allocationMethod, lines]);
 
   // Calculate preview using useMemo for better performance and accuracy
   const calculatedPreview = useMemo(() => {
@@ -203,8 +222,8 @@ export function AggregateAdjustmentDialog({
         }
           
         case "manual": {
-          // Keep original for now, will handle manual allocation separately
-          newAmount = originalAmount;
+          // Use manually specified amount if available, otherwise keep original
+          newAmount = manualAllocations[line.id] ?? originalAmount;
           break;
         }
       }
@@ -223,7 +242,7 @@ export function AggregateAdjustmentDialog({
     });
     
     return preview;
-  }, [targetAmount, allocationMethod, lines, currentTotal]);
+  }, [targetAmount, allocationMethod, lines, currentTotal, manualAllocations]);
 
   // Update preview data when calculated preview changes
   useEffect(() => {
@@ -233,16 +252,30 @@ export function AggregateAdjustmentDialog({
   // Apply adjustment mutation
   const applyAdjustmentMutation = useMutation({
     mutationFn: async (data: AdjustmentFormData) => {
+      // Build request body
+      const requestBody: any = {
+        targetAmount: data.targetAmount,
+        method: data.allocationMethod,
+        reason: data.adjustmentReason,
+        sowId: data.sowId,
+        projectId: projectId,
+      };
+      
+      // Include allocation object for manual method
+      if (data.allocationMethod === 'manual') {
+        // Ensure all lines have an allocation value
+        const completeAllocation: Record<string, number> = {};
+        lines.forEach(line => {
+          const originalAmount = normalizeAmount(line.billedAmount || line.amount);
+          completeAllocation[line.id] = manualAllocations[line.id] ?? originalAmount;
+        });
+        requestBody.allocation = completeAllocation;
+      }
+      
       // Use the proper backend endpoint that correctly calculates adjustments
       return await apiRequest(`/api/invoice-batches/${batchId}/adjustments`, {
         method: "POST",
-        body: JSON.stringify({
-          targetAmount: data.targetAmount,
-          method: data.allocationMethod,
-          reason: data.adjustmentReason,
-          sowId: data.sowId,
-          projectId: projectId,
-        }),
+        body: JSON.stringify(requestBody),
       });
     },
     onSuccess: () => {
@@ -478,19 +511,23 @@ export function AggregateAdjustmentDialog({
             {/* Preview Section */}
             {previewData.length > 0 && (
               <div className="space-y-2">
-                <Label>Preview of Line Adjustments</Label>
+                <Label>
+                  {allocationMethod === 'manual' ? 'Manual Allocation - Enter Amounts' : 'Preview of Line Adjustments'}
+                </Label>
                 <div className="border rounded-lg">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Description</TableHead>
                         <TableHead className="text-right">Original</TableHead>
-                        <TableHead className="text-right">Adjusted</TableHead>
+                        <TableHead className="text-right">
+                          {allocationMethod === 'manual' ? 'New Amount' : 'Adjusted'}
+                        </TableHead>
                         <TableHead className="text-right">Variance</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {previewData.slice(0, 5).map((preview) => (
+                      {(allocationMethod === 'manual' ? previewData : previewData.slice(0, 5)).map((preview) => (
                         <TableRow key={preview.lineId}>
                           <TableCell className="text-sm">
                             {preview.description}
@@ -499,7 +536,25 @@ export function AggregateAdjustmentDialog({
                             ${preview.originalAmount.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-right font-medium">
-                            ${preview.newAmount.toFixed(2)}
+                            {allocationMethod === 'manual' ? (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={manualAllocations[preview.lineId] ?? preview.originalAmount}
+                                onChange={(e) => {
+                                  const value = parseFloat(e.target.value) || 0;
+                                  setManualAllocations(prev => ({
+                                    ...prev,
+                                    [preview.lineId]: value
+                                  }));
+                                }}
+                                className="w-32 text-right"
+                                data-testid={`input-manual-amount-${preview.lineId}`}
+                              />
+                            ) : (
+                              `$${preview.newAmount.toFixed(2)}`
+                            )}
                           </TableCell>
                           <TableCell className={`text-right ${
                             preview.variance < 0 ? "text-destructive" : "text-green-600"
@@ -509,7 +564,7 @@ export function AggregateAdjustmentDialog({
                           </TableCell>
                         </TableRow>
                       ))}
-                      {previewData.length > 5 && (
+                      {previewData.length > 5 && allocationMethod !== 'manual' && (
                         <TableRow>
                           <TableCell colSpan={4} className="text-center text-muted-foreground">
                             ... and {previewData.length - 5} more lines
@@ -519,6 +574,11 @@ export function AggregateAdjustmentDialog({
                     </TableBody>
                   </Table>
                 </div>
+                {allocationMethod === 'manual' && (
+                  <p className="text-sm text-muted-foreground">
+                    Enter the desired amount for each line item. The total should match your target amount.
+                  </p>
+                )}
               </div>
             )}
 
