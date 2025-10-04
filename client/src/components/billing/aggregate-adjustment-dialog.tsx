@@ -135,9 +135,6 @@ export function AggregateAdjustmentDialog({
   }>>([]);
   const [manualAllocations, setManualAllocations] = useState<Record<string, number>>({});
 
-  // Debug logging
-  console.log('AggregateAdjustmentDialog - lines received:', lines.length, lines);
-
   const form = useForm<AdjustmentFormData>({
     resolver: zodResolver(adjustmentFormSchema),
     defaultValues: {
@@ -160,7 +157,6 @@ export function AggregateAdjustmentDialog({
 
   // Initialize manual allocations when switching to manual mode
   useEffect(() => {
-    console.log('Manual allocation effect triggered - method:', allocationMethod, 'lines:', lines.length);
     if (allocationMethod === 'manual' && lines.length > 0) {
       // Initialize with current amounts for all lines if not already set
       const initialAllocations: Record<string, number> = {};
@@ -171,7 +167,6 @@ export function AggregateAdjustmentDialog({
           initialAllocations[line.id] = originalAmount;
         }
       });
-      console.log('Setting initial manual allocations:', initialAllocations);
       if (Object.keys(initialAllocations).length > 0) {
         setManualAllocations(prev => ({ ...prev, ...initialAllocations }));
       }
@@ -283,12 +278,14 @@ export function AggregateAdjustmentDialog({
         body: JSON.stringify(requestBody),
       });
     },
-    onSuccess: () => {
-      // Invalidate all relevant queries to ensure UI updates immediately
-      queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
+    onSuccess: async () => {
+      // Force refetch all relevant queries to ensure UI updates immediately
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['/api/invoice-batches'] }),
+        queryClient.refetchQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] }),
+        queryClient.refetchQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] }),
+        queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] }),
+      ]);
       toast({
         title: "Contract adjustment applied",
         description: `Invoice adjusted to match contract amount of $${normalizeAmount(form.getValues("targetAmount")).toLocaleString()}`,
