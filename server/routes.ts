@@ -1819,7 +1819,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Get all assignments (for resource management)
-  app.get("/api/assignments", requireAuth, hasAnyRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/assignments", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       // Get all allocations across all projects
       const allocations = await db
