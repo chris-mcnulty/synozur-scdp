@@ -1494,6 +1494,28 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Project Epics endpoints
+  app.get("/api/projects/:projectId/epics", requireAuth, async (req, res) => {
+    try {
+      const epics = await storage.getProjectEpics(req.params.projectId);
+      res.json(epics);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project epics:", error);
+      res.status(500).json({ message: "Failed to fetch project epics" });
+    }
+  });
+
+  // Project Stages endpoints
+  app.get("/api/projects/:projectId/stages/:epicId", requireAuth, async (req, res) => {
+    try {
+      const stages = await storage.getProjectStages(req.params.epicId);
+      res.json(stages);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch project stages:", error);
+      res.status(500).json({ message: "Failed to fetch project stages" });
+    }
+  });
+
   // Project Allocations endpoints
   app.get("/api/projects/:projectId/allocations", requireAuth, async (req, res) => {
     try {

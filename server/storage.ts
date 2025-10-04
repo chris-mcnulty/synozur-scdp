@@ -20,6 +20,7 @@ import {
   type Sow, type InsertSow,
   type ProjectBudgetHistory, type InsertProjectBudgetHistory,
   type ProjectEpic, type InsertProjectEpic,
+  type ProjectStage, type InsertProjectStage,
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectAllocation, type InsertProjectAllocation,
@@ -505,6 +506,7 @@ export interface IStorage {
   
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
+  getProjectStages(epicId: string): Promise<ProjectStage[]>;
   createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
   updateProjectEpic(id: string, update: Partial<InsertProjectEpic>): Promise<ProjectEpic>;
   deleteProjectEpic(id: string): Promise<void>;
@@ -2059,6 +2061,13 @@ export class DatabaseStorage implements IStorage {
       .from(projectEpics)
       .where(eq(projectEpics.projectId, projectId))
       .orderBy(projectEpics.order);
+  }
+
+  async getProjectStages(epicId: string): Promise<ProjectStage[]> {
+    return await db.select()
+      .from(projectStages)
+      .where(eq(projectStages.epicId, epicId))
+      .orderBy(projectStages.order);
   }
 
   async createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic> {
