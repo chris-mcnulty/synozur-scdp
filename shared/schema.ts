@@ -301,6 +301,10 @@ export const projectAllocations = pgTable("project_allocations", {
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
   notes: text("notes"),
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id), // Link to original estimate
+  // Assignment tracking fields
+  status: text("status").notNull().default('open'), // open, in_progress, completed, cancelled
+  startedDate: date("started_date"), // Automatically set when status → in_progress
+  completedDate: date("completed_date"), // Automatically set when status → completed
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
