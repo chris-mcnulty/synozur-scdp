@@ -79,12 +79,13 @@ export default function Login() {
     loginMutation.mutate({ email, password });
   };
 
-  const handleDemoLogin = () => {
-    loginMutation.mutate({ 
-      email: "chris.mcnulty@synozur.com", 
-      password: "demo123" 
-    });
-  };
+  // TODO: Re-enable for multi-tenant version with proper demo accounts
+  // const handleDemoLogin = () => {
+  //   loginMutation.mutate({ 
+  //     email: "chris.mcnulty@synozur.com", 
+  //     password: "demo123" 
+  //   });
+  // };
 
   const isDevelopment = import.meta.env.MODE === 'development';
 
@@ -151,26 +152,8 @@ export default function Login() {
             </Button>
           </form>
           
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-muted-foreground">Or</span>
-            </div>
-          </div>
+          {/* TODO: Re-enable demo login for multi-tenant version with proper demo accounts (see replit.md backlog) */}
           
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleDemoLogin}
-            disabled={loginMutation.isPending}
-            data-testid="button-demo-login"
-          >
-            Continue with Demo Account
-          </Button>
-
           {(ssoStatus as any)?.configured === true && (
             <>
               <div className="relative my-4">
@@ -214,7 +197,7 @@ export default function Login() {
           
           <p className="text-center text-sm text-muted-foreground mt-4">
             {(ssoStatus as any)?.configured === true
-              ? "Use your corporate Microsoft account or demo credentials"
+              ? "Use your corporate Microsoft account to sign in"
               : "For production SSO, configure Azure AD environment variables"
             }
           </p>

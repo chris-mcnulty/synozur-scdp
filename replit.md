@@ -12,8 +12,7 @@ Preferred communication style: Simple, everyday language.
 
 For development testing, use the following login credentials:
 - Email: chris.mcnulty@synozur.com
-- Password: deom123
-- Do NOT use the demo button for testing
+- Password: demo123
 - Do NOT use SSO login (doesn't work in dev environment)
 
 ## System Architecture
@@ -85,3 +84,10 @@ For development testing, use the following login credentials:
 - **From Estimates to Projects**: When creating a project from an estimate, epics and stages are automatically transferred to the project
 - **Structure Tab Display**: Project Structure tab shows epics with their nested stages (blue background, Zap icon) and milestones (Target icon)
 - **API Endpoints**: `/api/projects/:projectId/epics` and `/api/projects/:projectId/stages` provide hierarchical structure data
+
+## Backlog / Future Enhancements
+
+### Multi-Tenant Support
+- **Demo Login**: Re-enable demo login functionality with proper multi-tenant account structure
+  - Currently commented out in `client/src/pages/login.tsx`
+  - Will require proper tenant isolation and demo account management
