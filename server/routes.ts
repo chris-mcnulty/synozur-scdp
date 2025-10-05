@@ -1546,6 +1546,24 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/projects/:projectId/allocations", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const allocationData = {
+        ...req.body,
+        projectId: req.params.projectId
+      };
+      const validatedData = insertProjectAllocationSchema.parse(allocationData);
+      const created = await storage.createProjectAllocation(validatedData);
+      res.status(201).json(created);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid allocation data", errors: error.errors });
+      }
+      console.error("[ERROR] Failed to create project allocation:", error);
+      res.status(500).json({ message: "Failed to create project allocation" });
+    }
+  });
+
   app.put("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const updated = await storage.updateProjectAllocation(req.params.id, req.body);

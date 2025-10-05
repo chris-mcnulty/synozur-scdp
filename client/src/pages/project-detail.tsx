@@ -3950,12 +3950,17 @@ export default function ProjectDetail() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+              const roleIdValue = formData.get('roleId') as string;
+              const workstreamIdValue = formData.get('workstreamId') as string;
+              const epicIdValue = formData.get('epicId') as string;
+              const stageIdValue = formData.get('stageId') as string;
+              
               const data: AssignmentFormData = {
                 personId: formData.get('personId') as string,
-                roleId: formData.get('roleId') as string || undefined,
-                workstreamId: formData.get('workstreamId') as string || undefined,
-                epicId: formData.get('epicId') as string || undefined,
-                stageId: formData.get('stageId') as string || undefined,
+                roleId: roleIdValue === 'none' ? undefined : roleIdValue || undefined,
+                workstreamId: workstreamIdValue === 'none' ? undefined : workstreamIdValue || undefined,
+                epicId: epicIdValue === 'none' ? undefined : epicIdValue || undefined,
+                stageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
                 hours: formData.get('hours') as string,
                 pricingMode: formData.get('pricingMode') as "role" | "person" | "resource_name",
                 startDate: formData.get('startDate') as string || undefined,
@@ -3983,12 +3988,12 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="roleId">Role</Label>
-                  <Select name="roleId">
+                  <Select name="roleId" defaultValue="none">
                     <SelectTrigger data-testid="select-role">
                       <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {roles.map((role: any) => (
                         <SelectItem key={role.id} value={role.id}>
                           {role.name}
@@ -4000,12 +4005,12 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="workstreamId">Workstream</Label>
-                  <Select name="workstreamId">
+                  <Select name="workstreamId" defaultValue="none">
                     <SelectTrigger data-testid="select-workstream">
                       <SelectValue placeholder="Select a workstream" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {workstreams.map((workstream: any) => (
                         <SelectItem key={workstream.id} value={workstream.id}>
                           {workstream.name}
@@ -4017,12 +4022,12 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="epicId">Epic</Label>
-                  <Select name="epicId">
+                  <Select name="epicId" defaultValue="none">
                     <SelectTrigger data-testid="select-epic">
                       <SelectValue placeholder="Select an epic" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {epics.map((epic: any) => (
                         <SelectItem key={epic.id} value={epic.id}>
                           {epic.name}
