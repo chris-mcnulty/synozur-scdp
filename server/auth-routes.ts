@@ -17,7 +17,7 @@ export function registerAuthRoutes(app: Express): void {
       // Demo credentials for testing (only in development environment)
       const validCredentials = process.env.NODE_ENV === 'development' ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
-        { email: "chris.mcnulty@synozur.com", password: "deom123", name: "Chris McNulty", role: "admin" },
+        { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
       ] : [];
 
