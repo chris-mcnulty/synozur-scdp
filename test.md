@@ -47,48 +47,51 @@
 
 ## File Cleanup Tracking
 
-### Files to Archive (Task #3)
-*One-time scripts and deprecated files to move to archive folder*
+### Files to Archive (Task #3) ✅ COMPLETED
+*One-time scripts and deprecated files moved to archive folder*
 
-#### PowerShell Scripts (11 files)
-- [ ] Configure-SCDP-Metadata-DeviceCode.ps1
-- [ ] Configure-SCDP-Metadata-Fixed.ps1
-- [ ] Configure-SCDP-Metadata.ps1
-- [ ] ContainerMetadata.ps1
-- [ ] Fix-Container-Permissions.ps1
-- [ ] Register-Container-Type.ps1
-- [ ] Register-GraphCLI-With-ContainerType.ps1
-- [ ] Simple-Container-Check.ps1
-- [ ] Use-GraphCLI-With-Registration.ps1
+#### PowerShell Scripts (9 files) ✅
+- [x] Configure-SCDP-Metadata-DeviceCode.ps1
+- [x] Configure-SCDP-Metadata-Fixed.ps1
+- [x] Configure-SCDP-Metadata.ps1
+- [x] ContainerMetadata.ps1
+- [x] Fix-Container-Permissions.ps1
+- [x] Register-Container-Type.ps1
+- [x] Register-GraphCLI-With-ContainerType.ps1
+- [x] Simple-Container-Check.ps1
+- [x] Use-GraphCLI-With-Registration.ps1
 
-#### One-Time Recovery Scripts (5 files)
-- [ ] server/scripts/recover-time-entries.ts
-- [ ] server/scripts/recover-time-entries-production.ts
-- [ ] server/scripts/fix-resource-assignments.ts
-- [ ] server/scripts/fix-resource-assignments-prod.ts
-- [ ] server/add-rate-defaults.ts
+#### One-Time Recovery Scripts (5 files) ✅
+- [x] server/scripts/recover-time-entries.ts → archive/scripts/recovery/
+- [x] server/scripts/recover-time-entries-production.ts → archive/scripts/recovery/
+- [x] server/scripts/fix-resource-assignments.ts → archive/scripts/recovery/
+- [x] server/scripts/fix-resource-assignments-prod.ts → archive/scripts/recovery/
+- [x] server/add-rate-defaults.ts → archive/scripts/recovery/
 
-#### Test Scripts (3 files)
-- [ ] test-azure-setup.cjs
-- [ ] test-pending-receipts-workflow.js
-- [ ] run-container-migration-verification.js/cjs
+#### Test Scripts (4 files) ✅
+- [x] test-azure-setup.cjs → archive/scripts/migration/
+- [x] test-pending-receipts-workflow.js → archive/scripts/migration/
+- [x] run-container-migration-verification.js → archive/scripts/migration/
+- [x] run-container-migration-verification.cjs → archive/scripts/migration/
 
-#### Redundant Startup Scripts (6 files)
-- [ ] dev.sh
-- [ ] start-dev.sh
-- [ ] run-server.sh
-- [ ] start-server.sh
-- [ ] run.js
-- [ ] run-dev-server.js
+#### Redundant Startup Scripts (6 files) ✅
+- [x] dev.sh → archive/startup-scripts/
+- [x] start-dev.sh → archive/startup-scripts/
+- [x] run-server.sh → archive/startup-scripts/
+- [x] start-server.sh → archive/startup-scripts/
+- [x] run.js → archive/startup-scripts/
+- [x] run-dev-server.js → archive/startup-scripts/
 
-#### Corrupted/Backup Files (2 files)
-- [ ] server/routes-backup-corrupted.ts
-- [ ] server/routes-corrupted.ts
+#### Corrupted/Backup Files (2 files) ✅
+- [x] server/routes-backup-corrupted.ts → archive/corrupted/
+- [x] server/routes-corrupted.ts → archive/corrupted/
 
-#### Completed Documentation (3 files)
-- [ ] Recovery.md
-- [ ] PRODUCTION_RECOVERY_INSTRUCTIONS.md
-- [ ] commands.md (merge content to replit.md)
+#### Completed Documentation (3 files) ✅
+- [x] Recovery.md → archive/docs/recovery/
+- [x] PRODUCTION_RECOVERY_INSTRUCTIONS.md → archive/docs/recovery/
+- [x] commands.md → merged to replit.md, archived to archive/docs/
+
+**Total Archived: 29 files**
 
 #### Excel/Assets Cleanup
 - [ ] Review attached_assets folder (100+ images, text files, old exports)

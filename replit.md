@@ -91,3 +91,26 @@ For development testing, use the following login credentials:
 - **Demo Login**: Re-enable demo login functionality with proper multi-tenant account structure
   - Currently commented out in `client/src/pages/login.tsx`
   - Will require proper tenant isolation and demo account management
+
+## Development Commands
+
+### Server Commands
+```bash
+# Start development server
+NODE_ENV=development npx tsx server/index.ts
+
+# Build for production
+./build.sh
+
+# Kill dev server on port 5000
+npx kill-port 5000
+```
+
+### Database Commands
+```bash
+# Push schema changes to database
+npm run db:push
+
+# Force push schema changes (use with caution)
+npm run db:push --force
+```
