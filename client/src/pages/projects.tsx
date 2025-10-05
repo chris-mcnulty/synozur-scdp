@@ -382,6 +382,7 @@ export default function Projects() {
               const pmValue = formData.get('pm') as string;
               createProject.mutate({
                 name: formData.get('name'),
+                description: formData.get('description') || undefined,
                 clientId: formData.get('clientId'),
                 code: formData.get('code'),
                 pm: pmValue === 'none' ? null : pmValue || null,
@@ -400,6 +401,17 @@ export default function Projects() {
                     placeholder="e.g., Digital Transformation Phase 1"
                     required
                     data-testid="input-project-name"
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Description / Summary</Label>
+                  <textarea
+                    id="description"
+                    name="description"
+                    placeholder="Vision statement or project overview"
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    data-testid="textarea-description"
                   />
                 </div>
                 
@@ -640,6 +652,7 @@ export default function Projects() {
                   id: projectToEdit.id,
                   data: {
                     name: formData.get('name'),
+                    description: formData.get('description') || undefined,
                     clientId: formData.get('clientId'),
                     code: formData.get('code'),
                     startDate: formData.get('startDate') || undefined,
@@ -661,6 +674,18 @@ export default function Projects() {
                       defaultValue={projectToEdit.name}
                       required
                       data-testid="input-edit-project-name"
+                    />
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-description">Description / Summary</Label>
+                    <textarea
+                      id="edit-description"
+                      name="description"
+                      defaultValue={projectToEdit.description || ""}
+                      placeholder="Vision statement or project overview"
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="textarea-edit-description"
                     />
                   </div>
                   
