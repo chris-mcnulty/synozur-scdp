@@ -198,6 +198,10 @@ export default function ProjectDetail() {
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
   const [importError, setImportError] = useState<string | null>(null);
   
+  // Edit project state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<any>(null);
+  
   // Time entries state
   const [timeGrouping, setTimeGrouping] = useState<"none" | "month" | "workstream" | "stage">("none");
   const [timeFilters, setTimeFilters] = useState({
@@ -276,15 +280,19 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
-  // Users and roles for assignment dialog
+  // Users and roles for assignment dialog and edit project dialog
   const { data: users = [] } = useQuery<any[]>({
     queryKey: ['/api/users'],
-    enabled: showAssignmentDialog,
   });
   
   const { data: roles = [] } = useQuery<any[]>({
     queryKey: ['/api/roles'],
     enabled: showAssignmentDialog,
+  });
+  
+  // Clients for edit project dialog
+  const { data: clients = [] } = useQuery<any[]>({
+    queryKey: ['/api/clients'],
   });
   
   // Budget history query
@@ -506,6 +514,32 @@ export default function ProjectDetail() {
       description: "",
       order: 0
     }
+  });
+
+  // Edit project mutation
+  const editProject = useMutation({
+    mutationFn: ({ data }: { data: any }) => apiRequest(`/api/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/analytics`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setEditDialogOpen(false);
+      setProjectToEdit(null);
+      toast({
+        title: "Success",
+        description: "Project updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Project edit error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update project. Please check your permissions and try again.",
+        variant: "destructive",
+      });
+    },
   });
 
   const createSowMutation = useMutation({
@@ -1206,7 +1240,7 @@ export default function ProjectDetail() {
   // Format monthly data for charts
   const monthlyChartData = monthlyMetrics.map(m => ({
     ...m,
-    month: format(new Date(m.month + "-01"), "MMM yyyy"),
+    month: format(parseISO(m.month + "-01"), "MMM yyyy"),
     totalHours: m.billableHours + m.nonBillableHours,
     efficiency: m.billableHours > 0 ? ((m.billableHours / (m.billableHours + m.nonBillableHours)) * 100).toFixed(1) : 0
   }));
@@ -1216,7 +1250,7 @@ export default function ProjectDetail() {
   const cumulativeBurnData = monthlyMetrics.map(m => {
     cumulativeRevenue += m.revenue + m.expenseAmount;
     return {
-      month: format(new Date(m.month + "-01"), "MMM yyyy"),
+      month: format(parseISO(m.month + "-01"), "MMM yyyy"),
       cumulative: cumulativeRevenue,
       budget: burnRate.totalBudget,
       projected: burnRate.totalBudget * (cumulativeRevenue / burnRate.consumedBudget)
@@ -1242,7 +1276,7 @@ export default function ProjectDetail() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between">
-          <div className="space-y-1">
+          <div className="space-y-1 flex-1">
             <div className="flex items-center gap-2">
               <Link href="/projects">
                 <Button variant="ghost" size="sm" data-testid="button-back">
@@ -1257,8 +1291,20 @@ export default function ProjectDetail() {
             <p className="text-muted-foreground" data-testid="client-name">
               {project.client.name} • {project.type}
             </p>
+            {project.description && (
+              <p className="text-sm text-muted-foreground mt-2" data-testid="project-description">
+                {project.description}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => {
+              setProjectToEdit(analytics.project);
+              setEditDialogOpen(true);
+            }} data-testid="button-edit-project">
+              <Edit className="w-4 h-4 mr-2" />
+              Edit Project
+            </Button>
             <Badge className={`${health.color} text-white`} data-testid="health-status">
               <health.icon className="w-3 h-3 mr-1" />
               {health.status}
@@ -4133,6 +4179,197 @@ export default function ProjectDetail() {
                 {importAssignmentsMutation.isPending ? "Importing..." : "Import Assignments"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Project Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Project</DialogTitle>
+            </DialogHeader>
+            {projectToEdit && (
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const endDateValue = formData.get('endDate') as string;
+                editProject.mutate({
+                  data: {
+                    name: formData.get('name'),
+                    description: formData.get('description') || undefined,
+                    clientId: formData.get('clientId'),
+                    code: formData.get('code'),
+                    startDate: formData.get('startDate') || undefined,
+                    endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
+                    commercialScheme: formData.get('commercialScheme'),
+                    status: formData.get('status'),
+                    pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
+                    hasSow: formData.get('hasSow') === 'true',
+                    retainerTotal: formData.get('retainerTotal') || undefined,
+                  }
+                });
+              }}>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-name">Project Name</Label>
+                    <Input
+                      id="edit-name"
+                      name="name"
+                      defaultValue={projectToEdit.name}
+                      required
+                      data-testid="input-edit-project-name"
+                    />
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-description">Description / Summary</Label>
+                    <textarea
+                      id="edit-description"
+                      name="description"
+                      defaultValue={projectToEdit.description || ""}
+                      placeholder="Vision statement or project overview"
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="textarea-edit-description"
+                    />
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-code">Project Code</Label>
+                    <Input
+                      id="edit-code"
+                      name="code"
+                      defaultValue={projectToEdit.code}
+                      required
+                      data-testid="input-edit-project-code"
+                    />
+                  </div>
+                  
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-clientId">Client</Label>
+                    <Select name="clientId" defaultValue={projectToEdit.clientId} required>
+                      <SelectTrigger data-testid="select-edit-client">
+                        <SelectValue placeholder="Select a client" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clients.map(client => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-status">Status</Label>
+                    <Select name="status" defaultValue={projectToEdit.status} required>
+                      <SelectTrigger data-testid="select-edit-status">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="on track">On Track</SelectItem>
+                        <SelectItem value="at risk">At Risk</SelectItem>
+                        <SelectItem value="delayed">Delayed</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="on hold">On Hold</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-pm">Project Manager</Label>
+                    <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
+                      <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
+                        <SelectValue placeholder="Select project manager" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No PM Assigned</SelectItem>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
+                    <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
+                      <SelectTrigger data-testid="select-edit-commercial-scheme">
+                        <SelectValue placeholder="Select scheme" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="time-and-materials">Time & Materials</SelectItem>
+                        <SelectItem value="fixed-price">Fixed Price</SelectItem>
+                        <SelectItem value="retainer">Retainer</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-startDate">Start Date</Label>
+                      <Input
+                        id="edit-startDate"
+                        name="startDate"
+                        type="date"
+                        defaultValue={projectToEdit.startDate ? new Date(projectToEdit.startDate).toISOString().split('T')[0] : ""}
+                        data-testid="input-edit-start-date"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-endDate">End Date</Label>
+                      <Input
+                        id="edit-endDate"
+                        name="endDate"
+                        type="date"
+                        defaultValue={projectToEdit.endDate ? new Date(projectToEdit.endDate).toISOString().split('T')[0] : ""}
+                        data-testid="input-edit-end-date"
+                      />
+                    </div>
+                  </div>
+
+                  {projectToEdit.commercialScheme === 'retainer' && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
+                      <Input
+                        id="edit-retainerTotal"
+                        name="retainerTotal"
+                        type="number"
+                        defaultValue={projectToEdit.retainerTotal || ""}
+                        data-testid="input-edit-retainer-total"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="edit-hasSow"
+                      name="hasSow"
+                      value="true"
+                      defaultChecked={projectToEdit.hasSow}
+                      data-testid="checkbox-edit-has-sow"
+                    />
+                    <Label htmlFor="edit-hasSow">SOW Signed</Label>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setEditDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={editProject.isPending} data-testid="button-save-project">
+                    {editProject.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            )}
           </DialogContent>
         </Dialog>
       </div>

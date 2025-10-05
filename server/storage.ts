@@ -7962,11 +7962,17 @@ export async function generateInvoicePDF(params: {
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
+      timeout: 120000 // 2 minutes for browser launch
     });
     
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // Set a longer timeout for page operations
+    page.setDefaultNavigationTimeout(120000); // 2 minutes
+    page.setDefaultTimeout(120000); // 2 minutes
+    
+    // Use 'domcontentloaded' instead of 'networkidle0' for faster rendering
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
     
     const pdf = await page.pdf({
       format: 'A4',

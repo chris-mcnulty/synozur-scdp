@@ -18,6 +18,7 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
   totalBudget?: number;
   burnedAmount?: number;
   utilizationRate?: number;
+  description?: string;
 }
 
 export default function Projects() {
@@ -32,7 +33,11 @@ export default function Projects() {
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
 
-  // Check for URL parameters and auto-open client creation dialog
+  const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  // Check for URL parameters and auto-open dialogs
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('action') === 'create-client') {
@@ -41,11 +46,20 @@ export default function Projects() {
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
     }
-  }, []);
-
-  const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
-    queryKey: ["/api/projects"],
-  });
+    
+    // Handle edit project parameter
+    const editProjectId = urlParams.get('edit');
+    if (editProjectId && projects) {
+      const project = projects.find(p => p.id === editProjectId);
+      if (project) {
+        setProjectToEdit(project);
+        setEditDialogOpen(true);
+        // Clean the URL parameter
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [projects]);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
