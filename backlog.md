@@ -1,45 +1,91 @@
 # SCDP Product Backlog - Corrected Comprehensive Version
 
+## ✅ Recently Completed (Week of Oct 5, 2025)
+
+### Day 1 Foundation & Cleanup
+- [x] Fixed 11 TypeScript errors in server/storage.ts (schema alignment)
+- [x] Created test.md for test backlog tracking and sprint management
+- [x] Archived 29 legacy files (PowerShell scripts, one-time recovery scripts, corrupted files)
+- [x] Merged dev commands to replit.md
+- [x] Established organized archive structure
+
 ## 🚨 P0 - CRITICAL GAPS (Immediate Priority)
 
-### Project Assignments & Resource Management
-**Status:** CRITICAL GAP - No way to manually assign people to projects without estimates
+### Vocabulary Customization System (Days 2-3) 🔥 IN PROGRESS
+**Status:** FOUNDATION REQUIREMENT - Must be implemented before continuing feature development
 
-**Why P0:** Essential foundation for all resource management, time tracking, and billing operations. Without this, projects created without estimates have no staff assignments.
+**Why P0:** Currently hard-coding terminology (Epic/Stage/Milestone/Workstream) throughout the UI. Implementing vocabulary system now prevents massive future refactoring when clients need custom terminology.
+
+**Database:** Fields exist (epicLabel/stageLabel/activityLabel/workstreamLabel) but no UI or cascading logic
 
 **Scope:**
-- [ ] **Manual Assignment UI**
+- [x] Day 1: Foundation cleanup complete
+- [ ] Day 2: Organization-level vocabulary defaults
+  - Admin settings UI for global terminology
+  - Default: Epic → Stage → Milestone → Workstream
+  - Industry presets (Program → Phase → Gate → Category)
+  - Apply to all new estimates and projects
+  
+- [ ] Day 3: Client and project-level overrides
+  - Client-specific terminology preferences
+  - Project-specific overrides (highest priority)
+  - Cascading logic: Project → Client → Organization
+  - Update all UI labels dynamically
+  
+**Timeline:** Days 2-3 (this week)
+
+---
+
+### Project Assignments & Resource Management (Days 4-5)
+**Status:** CRITICAL GAP - No way to manually assign people to projects without estimates
+
+**Why P0:** Essential foundation for resource management, time tracking, and billing. Without this, projects created without estimates have no staff assignments.
+
+**Prioritization Note:** Manual assignment entry takes priority over bulk Excel import (fewer projects remaining, faster to enter manually)
+
+**Scope:**
+- [ ] **Day 4: Backend & Data Model**
+  - API endpoints for assignment CRUD operations
+  - Assignment status workflow (open → in_progress → completed → cancelled)
+  - Validation for overlapping assignments
+  - Cost rate vs charge rate handling
+  
+- [ ] **Day 5: Manual Assignment UI**
   - Add person + role to project with allocation details
   - Assign to specific activities, milestones, or workstreams
   - Set allocation hours and billing rates
   - Define assignment dates (planned start/end)
   
-- [ ] **Unified Structure Tab**
-  - Consolidate epics, stages, workstreams, and milestones in single view
-  - Hierarchical tree structure with expand/collapse
-  - Inline editing capabilities
-  - Visual distinction between payment milestones and delivery milestones
-  
-- [ ] **Assignment Import**
-  - Excel/CSV bulk import for project assignments
-  - Template download with required fields
-  - Validation and error reporting
-  - Support for role-based and person-based assignments
-  
-- [ ] **My Assignments View (Employee)**
+- [ ] **Day 5: My Assignments View (Employee)**
   - Show all assignments across active projects
-  - Update assignment status (open, in_progress, completed, cancelled)
+  - Update assignment status inline
   - Track completion dates automatically
   - Filter by project, date range, status
-  
-- [ ] **Resource Management View (Leaders)**
-  - View ALL assignments across ALL projects
-  - Edit assignments inline or via bulk actions
-  - Reassign work between resources
-  - Identify over-allocation and gaps
-  - Export to Excel for offline planning
 
-**Timeline:** 2-3 weeks
+**Deferred to Later Sprint:**
+- Assignment bulk Excel import (only 16 projects remaining, manual faster)
+- Resource Management View for leaders (future sprint)
+- Unified Structure Tab consolidation (future sprint)
+
+**Timeline:** Days 4-5 (this week)
+
+---
+
+### Project Reporting & Analytics (Day 6)
+**Status:** ESSENTIAL - Data exists but no comprehensive reporting API
+
+**Why P0:** Leaders need visibility into project performance, resource allocation, and financial health.
+
+**Scope:**
+- [ ] **Day 6: Comprehensive Reporting API**
+  - Project list with filters (status, date range, PM, client)
+  - Cost vs revenue analysis (excluding cost rates for non-admins)
+  - Budget utilization metrics
+  - Resource allocation summaries
+  - Time entry aggregations by project/person/period
+  - Uses vocabulary labels dynamically
+  
+**Timeline:** Day 6 (this week)
 
 ---
 
@@ -116,40 +162,34 @@
   - Protect rack rates from client-facing reports
   - Audit trail for rate changes
 
-### Vocabulary Customization System
-*Note: Database fields (epicLabel/stageLabel/activityLabel) exist but UI is missing*
+### Advanced Vocabulary Features (Future)
+*Note: Core vocabulary system with org/client/project overrides completed in P0 Days 2-3*
 
-- [ ] **Global Vocabulary Settings**
-  - Admin UI for terminology management
-  - Default terminology configuration
-  - Industry-specific presets
+- [ ] **Advanced Export & Template Customization**
+  - PDF templates with custom terminology
+  - Email notification templates using client vocabulary
+  - Excel exports with client-specific column headers
   
-- [ ] **Client-Specific Vocabulary**
-  - Override terminology per client
-  - Custom field labels per client
-  - Client vocabulary in reports/exports
+- [ ] **Multi-Language Support**
+  - Translate vocabulary terms to multiple languages
+  - Language preference per user
+  - Locale-aware terminology
   
-- [ ] **Context-Sensitive Terms**
-  - Apply vocabulary throughout UI
-  - Update all labels dynamically
-  - Export with client terminology
-  - Email templates with custom terms
+- [ ] **Industry Preset Templates**
+  - Pre-configured vocabulary sets for different industries
+  - One-click vocabulary template application
+  - Industry-specific best practices
 
-### Project Assignments & Resource Balancing
-**Status:** MISSING - Critical for multi-project resource management
+### Advanced Resource Management & Balancing
+**Status:** FUTURE ENHANCEMENT - Builds on P0 assignment foundation
 
-**Why High Priority:** Essential for managing consultant workload across multiple projects, preventing over-allocation, and optimizing resource utilization.
+**Why P1:** Advanced multi-project resource optimization features that enhance the foundational assignment management completed in P0.
+
+**Prerequisites:** P0 project assignments (Days 4-5) must be complete
 
 **Scope:**
-- [ ] **Project Assignments Structure**
-  - Create project assignments table linking users to projects
-  - Assignment start/end dates
-  - Allocation percentage (e.g., 50% on Project A, 30% on Project B)
-  - Role on project
-  - Billable/non-billable designation
-  
 - [ ] **Cross-Project Workload View**
-  - Unified view of each person's assignments across all active projects
+  - Unified view of each person's assignments across ALL active projects
   - Visual timeline showing concurrent project assignments
   - Capacity utilization percentage (total allocation across all projects)
   - Over-allocation alerts (>100% capacity)
@@ -162,11 +202,11 @@
   - Impact analysis before making changes
   - Bulk assignment operations
   
-- [ ] **Create Project from Estimate Integration**
-  - Automatically convert estimate line item resource assignments to project assignments
-  - Preserve allocated hours and weekly distribution
-  - Map estimate epics/stages to project tasks
-  - Prompt for assignment start/end dates during project creation
+- [ ] **Assignment Bulk Import**
+  - Excel/CSV bulk import for project assignments
+  - Template download with required fields
+  - Validation and error reporting
+  - Support for role-based and person-based assignments
   
 - [ ] **Capacity Planning & Analytics**
   - Team capacity dashboard
