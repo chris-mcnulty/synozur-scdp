@@ -7,7 +7,7 @@ import {
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
-  type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem,
+  type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem, type EstimateLineItemWithJoins,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense,
@@ -245,7 +245,7 @@ export interface IStorage {
   mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
   // Estimate Line Items
-  getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]>;
+  getEstimateLineItems(estimateId: string): Promise<EstimateLineItemWithJoins[]>;
   createEstimateLineItem(lineItem: InsertEstimateLineItem): Promise<EstimateLineItem>;
   updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
   deleteEstimateLineItem(id: string): Promise<void>;
@@ -1506,7 +1506,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getEstimateLineItems(estimateId: string): Promise<EstimateLineItem[]> {
+  async getEstimateLineItems(estimateId: string): Promise<EstimateLineItemWithJoins[]> {
     const items = await db.select({
       lineItem: estimateLineItems,
       assignedUser: users,

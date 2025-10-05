@@ -1043,6 +1043,11 @@ export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
 export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
 export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
 
+export type EstimateLineItemWithJoins = EstimateLineItem & {
+  assignedUser: User | null;
+  role: Role | null;
+};
+
 export type EstimateMilestone = typeof estimateMilestones.$inferSelect;
 export type InsertEstimateMilestone = z.infer<typeof insertEstimateMilestoneSchema>;
 

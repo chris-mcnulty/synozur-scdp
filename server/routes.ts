@@ -7070,13 +7070,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Use asOfDate if available, otherwise use finalized date, fallback to end date
       let rawInvoiceDate: string | null = batchDetails.asOfDate;
       if (!rawInvoiceDate && batchDetails.finalizedAt) {
-        // Convert Date to string if needed
-        const finalizedDate = batchDetails.finalizedAt;
-        if (typeof finalizedDate === 'string') {
-          rawInvoiceDate = finalizedDate.split('T')[0];
-        } else if (finalizedDate instanceof Date) {
-          rawInvoiceDate = finalizedDate.toISOString().split('T')[0];
-        }
+        // Convert Date to string
+        rawInvoiceDate = batchDetails.finalizedAt.toISOString().split('T')[0];
       }
       if (!rawInvoiceDate) {
         rawInvoiceDate = batchDetails.endDate;
