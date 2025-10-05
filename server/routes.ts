@@ -7954,6 +7954,148 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // TEMPORARY: Production Time Entry Recovery Endpoint
+  // This endpoint can be removed after successful recovery
+  app.post("/api/admin/recover-time-entries", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      console.log("[RECOVERY] Starting time entries recovery process");
+      
+      // Import necessary dependencies
+      const xlsx = await import('xlsx');
+      const { sql } = await import('drizzle-orm');
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Path to the backup file
+      const backupFilePath = path.join(process.cwd(), 'attached_assets', 'time_entries (1)_1759678506686.xlsx');
+      
+      // Check if file exists
+      if (!fs.existsSync(backupFilePath)) {
+        return res.status(404).json({ 
+          message: "Backup file not found",
+          path: backupFilePath 
+        });
+      }
+      
+      // Read the Excel file
+      const workbook = xlsx.default.readFile(backupFilePath);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.default.utils.sheet_to_json(worksheet);
+      
+      console.log(`[RECOVERY] Found ${data.length} time entries in backup`);
+      
+      // Check for existing entries to avoid duplicates
+      const existingEntries = await db.select({ id: timeEntries.id }).from(timeEntries);
+      const existingIds = new Set(existingEntries.map(e => e.id));
+      
+      // Helper functions
+      const parseGMTDate = (dateStr: string): Date => {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid date: ${dateStr}`);
+        }
+        return date;
+      };
+      
+      const formatDateForDB = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      // Process entries
+      let successCount = 0;
+      let skipCount = 0;
+      let errorCount = 0;
+      const errors: any[] = [];
+      
+      for (const entry of data as any[]) {
+        // Skip if already exists
+        if (existingIds.has(entry.id)) {
+          skipCount++;
+          continue;
+        }
+        
+        try {
+          const dateObj = parseGMTDate(entry.date);
+          const createdAtObj = parseGMTDate(entry.created_at);
+          const lockedAtObj = entry.locked_at ? parseGMTDate(entry.locked_at) : null;
+          
+          // Insert using raw SQL to preserve all fields including IDs
+          await db.execute(sql`
+            INSERT INTO time_entries (
+              id, person_id, project_id, date, hours, phase, billable,
+              description, billed_flag, status_reported_flag, billing_rate,
+              cost_rate, milestone_id, workstream_id, invoice_batch_id,
+              locked, locked_at, project_stage_id, created_at
+            ) VALUES (
+              ${entry.id}, 
+              ${entry.person_id}, 
+              ${entry.project_id}, 
+              ${formatDateForDB(dateObj)},
+              ${entry.hours.toString()}, 
+              ${entry.phase || null}, 
+              ${entry.billable}, 
+              ${entry.description || null},
+              ${entry.billed_flag}, 
+              ${entry.status_reported_flag}, 
+              ${entry.billing_rate ? entry.billing_rate.toString() : null},
+              ${entry.cost_rate ? entry.cost_rate.toString() : null}, 
+              ${entry.milestone_id || null}, 
+              ${entry.workstream_id || null},
+              ${entry.invoice_batch_id || null}, 
+              ${entry.locked}, 
+              ${lockedAtObj},
+              ${entry.project_stage_id || null}, 
+              ${createdAtObj}
+            )
+          `);
+          successCount++;
+        } catch (error: any) {
+          errorCount++;
+          errors.push({
+            id: entry.id,
+            date: entry.date,
+            personId: entry.person_id,
+            error: error.message
+          });
+          console.error(`[RECOVERY] Failed to import entry ${entry.id}:`, error.message);
+        }
+      }
+      
+      // Calculate totals
+      const totalHours = (data as any[]).reduce((sum, e) => sum + (e.hours || 0), 0);
+      const totalValue = (data as any[])
+        .filter(e => e.billable && e.billing_rate)
+        .reduce((sum, e) => sum + (e.hours * e.billing_rate), 0);
+      
+      const result = {
+        message: "Recovery complete",
+        summary: {
+          totalInBackup: data.length,
+          imported: successCount,
+          skipped: skipCount,
+          failed: errorCount,
+          totalHours: totalHours.toFixed(2),
+          totalBillableValue: totalValue.toFixed(2)
+        },
+        errors: errors.slice(0, 10) // First 10 errors
+      };
+      
+      console.log("[RECOVERY] Recovery complete:", result.summary);
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("[RECOVERY] Recovery failed:", error);
+      res.status(500).json({ 
+        message: "Recovery failed",
+        error: error.message 
+      });
+    }
+  });
+
   // Authentication endpoints are handled by auth-routes.ts with shared session store
 
   // SSO status endpoint
