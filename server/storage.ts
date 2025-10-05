@@ -1214,13 +1214,9 @@ export class DatabaseStorage implements IStorage {
         targetClientId = newClient.id;
       }
 
-      // Generate new code for the estimate
-      const code = `EST-${Date.now().toString().slice(-8)}`;
-      
       // Copy the estimate with only the fields we want to copy (exclude id, createdAt, etc.)
       const [newEstimate] = await tx.insert(estimates).values({
         name: options.name || `${originalEstimate.name} (Copy)`,
-        code,
         clientId: targetClientId,
         projectId: options.projectId || null,
         status: "draft",
@@ -1360,8 +1356,10 @@ export class DatabaseStorage implements IStorage {
           estimateId: newEstimate.id,
           name: originalMilestone.name,
           description: originalMilestone.description,
+          amount: originalMilestone.amount,
           dueDate: originalMilestone.dueDate,
-          isComplete: false, // Reset completion status
+          percentage: originalMilestone.percentage,
+          sortOrder: originalMilestone.sortOrder,
         });
       }
 
@@ -2614,6 +2612,7 @@ export class DatabaseStorage implements IStorage {
         id: row.expenses.projectId,
         clientId: 'unknown',
         name: 'Unknown Project',
+        description: null,
         code: 'UNKNOWN',
         pm: null,
         startDate: null,
@@ -3735,7 +3734,7 @@ export class DatabaseStorage implements IStorage {
               name: stage.name,
               budgetHours: stageBudget?.totalHours?.toString() || '0',
               status: 'not-started',
-              order: stage.order,
+              sortOrder: stage.order,
             });
             
             // Create project stage for the structure
@@ -3947,23 +3946,23 @@ export class DatabaseStorage implements IStorage {
         allocation: projectAllocations,
         person: users,
         role: roles,
-        epic: projectEpics,
-        stage: estimateStages,
+        activity: projectActivities,
+        milestone: projectMilestones,
       })
       .from(projectAllocations)
       .where(eq(projectAllocations.projectId, projectId))
       .leftJoin(users, eq(projectAllocations.personId, users.id))
       .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-      .leftJoin(projectEpics, eq(projectAllocations.epicId, projectEpics.id))
-      .leftJoin(estimateStages, eq(projectAllocations.stageId, estimateStages.id))
-      .orderBy(projectAllocations.startDate, projectAllocations.resourceName);
+      .leftJoin(projectActivities, eq(projectAllocations.projectActivityId, projectActivities.id))
+      .leftJoin(projectMilestones, eq(projectAllocations.projectMilestoneId, projectMilestones.id))
+      .orderBy(projectAllocations.plannedStartDate, projectAllocations.resourceName);
     
     return allocations.map(row => ({
       ...row.allocation,
       person: row.person,
       role: row.role,
-      epic: row.epic,
-      stage: row.stage,
+      activity: row.activity,
+      milestone: row.milestone,
     }));
   }
   
@@ -4419,7 +4418,7 @@ export class DatabaseStorage implements IStorage {
         
         // Calculate total from lines belonging to milestone's project
         const billedDelta = batchLines.reduce((sum, line) => {
-          return sum + normalizeAmount(line.lineTotal);
+          return sum + normalizeAmount(line.amount);
         }, 0);
         
         const milestoneAmount = normalizeAmount(milestone.amount);
@@ -4455,12 +4454,12 @@ export class DatabaseStorage implements IStorage {
             fieldChanged: 'billedTotal',
             previousValue: previousBilled,
             newValue: newBilledTotal,
-            changeDescription: `Invoice batch ${batchId} finalized for payment milestone: ${milestone.name}`,
             changedBy: userId,
             metadata: JSON.stringify({ 
               batchId, 
               milestoneId: milestone.id,
-              billedDelta: billedDelta.toString()
+              billedDelta: billedDelta.toString(),
+              changeDescription: `Invoice batch ${batchId} finalized for payment milestone: ${milestone.name}`
             }),
           });
         }
@@ -4564,7 +4563,7 @@ export class DatabaseStorage implements IStorage {
           
           // Calculate the exact billed delta to reverse (same as finalize)
           const billedDelta = batchLines.reduce((sum, line) => {
-            return sum + normalizeAmount(line.lineTotal);
+            return sum + normalizeAmount(line.amount);
           }, 0);
           
           // Revert project billedTotal with exact delta
@@ -4588,13 +4587,13 @@ export class DatabaseStorage implements IStorage {
               fieldChanged: 'billedTotal',
               previousValue: previousBilled,
               newValue: newBilledTotal,
-              changeDescription: `Invoice batch ${batchId} unfinalized - reverting payment milestone: ${milestone.name}`,
               changedBy: batch.finalizedBy || 'system',
               metadata: JSON.stringify({ 
                 batchId, 
                 milestoneId: milestone.id,
                 billedDelta: (-billedDelta).toString(),
-                reversedEntryType: 'billing'
+                reversedEntryType: 'billing',
+                changeDescription: `Invoice batch ${batchId} unfinalized - reverting payment milestone: ${milestone.name}`
               }),
             });
           }
