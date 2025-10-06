@@ -735,7 +735,6 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {epicTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -768,7 +767,6 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {stageTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -801,7 +799,6 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {activityTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -834,7 +831,6 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
-                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {workstreamTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
