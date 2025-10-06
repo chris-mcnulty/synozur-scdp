@@ -33,7 +33,12 @@ export const clients = pgTable("clients", {
   billingContact: text("billing_contact"),
   contactName: text("contact_name"),
   contactAddress: text("contact_address"),
-  vocabularyOverrides: text("vocabulary_overrides"), // JSON string
+  vocabularyOverrides: text("vocabulary_overrides"), // JSON string (DEPRECATED - kept for migration)
+  // Vocabulary term selections (overrides organization defaults)
+  epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id),
+  stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id),
+  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
+  workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id),
   // MSA (Master Services Agreement) tracking
   msaDate: date("msa_date"), // Date MSA was signed
   msaDocument: text("msa_document"), // File path/name for uploaded MSA document
@@ -65,6 +70,31 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
+// Vocabulary Catalog - Predefined term options
+export const vocabularyCatalog = pgTable("vocabulary_catalog", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  termType: text("term_type").notNull(), // epic, stage, activity, workstream
+  termValue: text("term_value").notNull(), // The actual term (e.g., "Epic", "Program", "Release")
+  description: text("description"), // Optional description of the term
+  isSystemDefault: boolean("is_system_default").notNull().default(false), // True for default terms
+  isActive: boolean("is_active").notNull().default(true), // Can be deactivated but not deleted
+  sortOrder: integer("sort_order").notNull().default(0), // Display order in dropdowns
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueTermTypeValue: uniqueIndex("unique_term_type_value").on(table.termType, table.termValue),
+}));
+
+// Organization Vocabulary Settings - Organization-level vocabulary selections
+export const organizationVocabulary = pgTable("organization_vocabulary", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id), // Selected Epic term
+  stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id), // Selected Stage term
+  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id), // Selected Activity term
+  workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id), // Selected Workstream term
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
 // Projects
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -89,7 +119,12 @@ export const projects = pgTable("projects", {
   actualCost: decimal("actual_cost", { precision: 12, scale: 2 }), // Calculated from time/expenses
   billedTotal: decimal("billed_total", { precision: 12, scale: 2 }), // Total invoiced
   profitMargin: decimal("profit_margin", { precision: 12, scale: 2 }), // Calculated variance
-  vocabularyOverrides: text("vocabulary_overrides"), // JSON string for project-specific terminology
+  vocabularyOverrides: text("vocabulary_overrides"), // JSON string (DEPRECATED - kept for migration)
+  // Vocabulary term selections (overrides client and organization defaults)
+  epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id),
+  stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id),
+  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
+  workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -955,6 +990,17 @@ export const insertRoleSchema = createInsertSchema(roles).omit({
   createdAt: true,
 });
 
+export const insertVocabularyCatalogSchema = createInsertSchema(vocabularyCatalog).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertOrganizationVocabularySchema = createInsertSchema(organizationVocabulary).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertEstimateSchema = createInsertSchema(estimates).omit({
   id: true,
   createdAt: true,
@@ -1037,6 +1083,12 @@ export type InsertRole = z.infer<typeof insertRoleSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+export type VocabularyCatalog = typeof vocabularyCatalog.$inferSelect;
+export type InsertVocabularyCatalog = z.infer<typeof insertVocabularyCatalogSchema>;
+
+export type OrganizationVocabulary = typeof organizationVocabulary.$inferSelect;
+export type InsertOrganizationVocabulary = z.infer<typeof insertOrganizationVocabularySchema>;
 
 export type Estimate = typeof estimates.$inferSelect;
 export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
