@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -349,6 +349,10 @@ export default function SystemSettings() {
             <TabsTrigger value="rates" className="flex items-center space-x-2">
               <DollarSign className="w-4 h-4" />
               <span>Default Rates</span>
+            </TabsTrigger>
+            <TabsTrigger value="catalog" className="flex items-center space-x-2">
+              <BookOpen className="w-4 h-4" />
+              <span>Vocabulary Catalog</span>
             </TabsTrigger>
             <TabsTrigger value="vocabulary" className="flex items-center space-x-2">
               <Sparkles className="w-4 h-4" />
@@ -691,6 +695,256 @@ export default function SystemSettings() {
                     </div>
                   </form>
                 </Form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="catalog" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <BookOpen className="w-5 h-5" />
+                  <span>Vocabulary Catalog Management</span>
+                </CardTitle>
+                <CardDescription>
+                  Manage the master list of terminology options available throughout the system. These terms can be selected at the organization, client, or project level.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Terms marked as <Badge variant="outline" className="ml-1 mr-1">System Default</Badge> cannot be deleted and are used as fallback values.
+                  </AlertDescription>
+                </Alert>
+
+                {/* Seed Default Terms Button */}
+                {catalogTerms.length === 0 && (
+                  <Card className="border-2 border-dashed">
+                    <CardContent className="pt-6">
+                      <div className="text-center space-y-3">
+                        <div className="text-muted-foreground">No vocabulary terms found in the catalog</div>
+                        <Button
+                          onClick={async () => {
+                            try {
+                              await apiRequest('/api/vocabulary/catalog/seed', {
+                                method: 'POST',
+                              });
+                              queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                              toast({
+                                title: "Success",
+                                description: "Default vocabulary terms have been seeded",
+                              });
+                            } catch (error) {
+                              toast({
+                                title: "Error",
+                                description: "Failed to seed vocabulary terms",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
+                          data-testid="button-seed-vocabulary"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          Seed Default Vocabulary Terms
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Terms by Category */}
+                {catalogTerms.length > 0 && (
+                  <div className="space-y-6">
+                    {['epic', 'stage', 'activity', 'workstream', 'milestone'].map(termType => {
+                      const terms = catalogTerms.filter(t => t.termType === termType);
+                      return (
+                        <Card key={termType}>
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg capitalize">{termType} Terms</CardTitle>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  // Open add term dialog
+                                  const newTerm = prompt(`Enter new ${termType} term:`);
+                                  if (newTerm && newTerm.trim()) {
+                                    apiRequest('/api/vocabulary/catalog', {
+                                      method: 'POST',
+                                      body: JSON.stringify({
+                                        termType,
+                                        termValue: newTerm.trim(),
+                                        description: `Custom ${termType} term`,
+                                        sortOrder: terms.length * 10
+                                      }),
+                                    }).then(() => {
+                                      queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                                      toast({
+                                        title: "Success",
+                                        description: `Added new ${termType} term: ${newTerm}`,
+                                      });
+                                    }).catch(() => {
+                                      toast({
+                                        title: "Error",
+                                        description: `Failed to add ${termType} term`,
+                                        variant: "destructive"
+                                      });
+                                    });
+                                  }
+                                }}
+                                data-testid={`button-add-${termType}`}
+                              >
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add
+                              </Button>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2">
+                              {terms.length === 0 ? (
+                                <div className="text-sm text-muted-foreground py-3 text-center">
+                                  No {termType} terms defined
+                                </div>
+                              ) : (
+                                terms.sort((a, b) => a.displayOrder - b.displayOrder).map((term, index) => (
+                                  <div key={term.id} className="flex items-center justify-between p-3 rounded-lg border bg-background">
+                                    <div className="flex items-center space-x-3">
+                                      <div className="flex flex-col space-y-1">
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 p-0"
+                                          disabled={index === 0}
+                                          onClick={() => {
+                                            // Move up logic
+                                            const prevTerm = terms[index - 1];
+                                            if (prevTerm) {
+                                              Promise.all([
+                                                apiRequest(`/api/vocabulary/catalog/${term.id}`, {
+                                                  method: 'PATCH',
+                                                  body: JSON.stringify({ sortOrder: prevTerm.displayOrder }),
+                                                }),
+                                                apiRequest(`/api/vocabulary/catalog/${prevTerm.id}`, {
+                                                  method: 'PATCH',
+                                                  body: JSON.stringify({ sortOrder: term.displayOrder }),
+                                                })
+                                              ]).then(() => {
+                                                queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                                              });
+                                            }
+                                          }}
+                                          data-testid={`button-move-up-${term.id}`}
+                                        >
+                                          <ArrowUp className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 w-6 p-0"
+                                          disabled={index === terms.length - 1}
+                                          onClick={() => {
+                                            // Move down logic
+                                            const nextTerm = terms[index + 1];
+                                            if (nextTerm) {
+                                              Promise.all([
+                                                apiRequest(`/api/vocabulary/catalog/${term.id}`, {
+                                                  method: 'PATCH',
+                                                  body: JSON.stringify({ sortOrder: nextTerm.displayOrder }),
+                                                }),
+                                                apiRequest(`/api/vocabulary/catalog/${nextTerm.id}`, {
+                                                  method: 'PATCH',
+                                                  body: JSON.stringify({ sortOrder: term.displayOrder }),
+                                                })
+                                              ]).then(() => {
+                                                queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                                              });
+                                            }
+                                          }}
+                                          data-testid={`button-move-down-${term.id}`}
+                                        >
+                                          <ArrowDown className="w-3 h-3" />
+                                        </Button>
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center space-x-2">
+                                          <span className="font-medium">{term.termValue}</span>
+                                          {term.isSystemDefault && (
+                                            <Badge variant="outline" className="text-xs">System Default</Badge>
+                                          )}
+                                        </div>
+                                        {term.description && (
+                                          <div className="text-sm text-muted-foreground">{term.description}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => {
+                                          const newValue = prompt(`Edit term value:`, term.termValue);
+                                          if (newValue && newValue.trim() && newValue !== term.termValue) {
+                                            apiRequest(`/api/vocabulary/catalog/${term.id}`, {
+                                              method: 'PATCH',
+                                              body: JSON.stringify({ termValue: newValue.trim() }),
+                                            }).then(() => {
+                                              queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                                              toast({
+                                                title: "Success",
+                                                description: `Updated term to: ${newValue}`,
+                                              });
+                                            }).catch(() => {
+                                              toast({
+                                                title: "Error",
+                                                description: "Failed to update term",
+                                                variant: "destructive"
+                                              });
+                                            });
+                                          }
+                                        }}
+                                        data-testid={`button-edit-${term.id}`}
+                                      >
+                                        <Edit2 className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        disabled={term.isSystemDefault}
+                                        onClick={() => {
+                                          if (confirm(`Are you sure you want to delete "${term.termValue}"?`)) {
+                                            apiRequest(`/api/vocabulary/catalog/${term.id}`, {
+                                              method: 'DELETE',
+                                            }).then(() => {
+                                              queryClient.invalidateQueries({ queryKey: ['/api/vocabulary/catalog'] });
+                                              toast({
+                                                title: "Success",
+                                                description: `Deleted term: ${term.termValue}`,
+                                              });
+                                            }).catch((error: any) => {
+                                              toast({
+                                                title: "Error",
+                                                description: error?.message || "Failed to delete term",
+                                                variant: "destructive"
+                                              });
+                                            });
+                                          }
+                                        }}
+                                        data-testid={`button-delete-${term.id}`}
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
