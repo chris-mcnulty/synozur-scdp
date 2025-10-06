@@ -19,6 +19,7 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
   burnedAmount?: number;
   utilizationRate?: number;
   description?: string;
+  vocabularyOverrides?: string | null;
 }
 
 export default function Projects() {
@@ -662,6 +663,19 @@ export default function Projects() {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const endDateValue = formData.get('endDate') as string;
+                
+                // Build vocabulary overrides JSON from form fields
+                const vocabularyOverrides: any = {};
+                const vocabEpic = formData.get('vocabEpic') as string;
+                const vocabStage = formData.get('vocabStage') as string;
+                const vocabActivity = formData.get('vocabActivity') as string;
+                const vocabWorkstream = formData.get('vocabWorkstream') as string;
+                
+                if (vocabEpic && vocabEpic.trim()) vocabularyOverrides.epic = vocabEpic.trim();
+                if (vocabStage && vocabStage.trim()) vocabularyOverrides.stage = vocabStage.trim();
+                if (vocabActivity && vocabActivity.trim()) vocabularyOverrides.activity = vocabActivity.trim();
+                if (vocabWorkstream && vocabWorkstream.trim()) vocabularyOverrides.workstream = vocabWorkstream.trim();
+                
                 editProject.mutate({
                   id: projectToEdit.id,
                   data: {
@@ -676,6 +690,9 @@ export default function Projects() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
+                    vocabularyOverrides: Object.keys(vocabularyOverrides).length > 0 
+                      ? JSON.stringify(vocabularyOverrides) 
+                      : null,
                   }
                 });
               }}>
@@ -824,6 +841,83 @@ export default function Projects() {
                       data-testid="checkbox-edit-has-sow"
                     />
                     <Label htmlFor="edit-hasSow">SOW Signed</Label>
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <h4 className="text-sm font-medium mb-2">Vocabulary Customization (Optional)</h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Override terminology for this project. Leave blank to inherit from client or organization defaults.
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-vocabEpic">Epic Term</Label>
+                        <Input
+                          id="edit-vocabEpic"
+                          name="vocabEpic"
+                          defaultValue={(() => {
+                            try {
+                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
+                              return parsed.epic || "";
+                            } catch {
+                              return "";
+                            }
+                          })()}
+                          placeholder="e.g., Phase, Theme"
+                          data-testid="input-vocab-epic"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-vocabStage">Stage Term</Label>
+                        <Input
+                          id="edit-vocabStage"
+                          name="vocabStage"
+                          defaultValue={(() => {
+                            try {
+                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
+                              return parsed.stage || "";
+                            } catch {
+                              return "";
+                            }
+                          })()}
+                          placeholder="e.g., Sprint, Wave"
+                          data-testid="input-vocab-stage"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-vocabActivity">Activity Term</Label>
+                        <Input
+                          id="edit-vocabActivity"
+                          name="vocabActivity"
+                          defaultValue={(() => {
+                            try {
+                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
+                              return parsed.activity || "";
+                            } catch {
+                              return "";
+                            }
+                          })()}
+                          placeholder="e.g., Task, Milestone"
+                          data-testid="input-vocab-activity"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-vocabWorkstream">Workstream Term</Label>
+                        <Input
+                          id="edit-vocabWorkstream"
+                          name="vocabWorkstream"
+                          defaultValue={(() => {
+                            try {
+                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
+                              return parsed.workstream || "";
+                            } catch {
+                              return "";
+                            }
+                          })()}
+                          placeholder="e.g., Track, Stream"
+                          data-testid="input-vocab-workstream"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <DialogFooter>
