@@ -978,38 +978,6 @@ export default function SystemSettings() {
                               </FormItem>
                             )}
                           />
-
-                          <FormField
-                            control={vocabularyForm.control}
-                            name="activityTermId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Activity Term</FormLabel>
-                                <Select 
-                                  onValueChange={(value) => field.onChange(value || null)} 
-                                  value={field.value || undefined}
-                                  data-testid="select-vocab-activity"
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select activity term" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {activityTerms.map(term => (
-                                      <SelectItem key={term.id} value={term.id}>
-                                        {term.termValue}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormDescription>
-                                  Individual task level
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
                         </div>
 
                         <div className="flex justify-end">
