@@ -7,6 +7,7 @@ SCDP is a comprehensive consulting delivery platform designed to manage the enti
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Development workflow: Dev server requires manual restart - do not attempt automated restarts.
 
 ## Testing Credentials
 
