@@ -85,6 +85,18 @@ For development testing, use the following login credentials:
 - **Structure Tab Display**: Project Structure tab shows epics with their nested stages (blue background, Zap icon) and milestones (Target icon)
 - **API Endpoints**: `/api/projects/:projectId/epics` and `/api/projects/:projectId/stages` provide hierarchical structure data
 
+### Vocabulary Management
+- **Central Dashboard**: `/vocabulary-management` page provides unified management of all vocabulary settings
+- **Organization Defaults**: Set organization-wide default terms for Epic, Stage, Activity, and Workstream
+- **Client Overrides**: View and edit client-specific vocabulary that overrides organization defaults
+- **Project Overrides**: View and edit project-specific vocabulary that overrides client and organization defaults
+- **Cascading Hierarchy**: Project → Client → Organization → System defaults
+- **API Endpoints**: 
+  - `GET /api/vocabulary/all` - Fetch all vocabularies (org + client + project overrides)
+  - `PUT /api/vocabulary/organization` - Update organization defaults
+  - `PATCH /api/clients/:id` - Update client vocabulary (vocabularyOverrides field)
+  - `PATCH /api/projects/:id` - Update project vocabulary (vocabularyOverrides field)
+
 ## Backlog / Future Enhancements
 
 ### Multi-Tenant Support

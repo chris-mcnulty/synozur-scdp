@@ -701,6 +701,11 @@ export interface IStorage {
   getOrganizationVocabulary(): Promise<VocabularyTerms>;
   setOrganizationVocabulary(terms: VocabularyTerms): Promise<VocabularyTerms>;
   getVocabularyForContext(context: { projectId?: string; clientId?: string; estimateId?: string }): Promise<Required<VocabularyTerms>>;
+  getAllVocabularies(): Promise<{
+    organization: VocabularyTerms;
+    clients: Array<{ id: string; name: string; vocabulary: VocabularyTerms }>;
+    projects: Array<{ id: string; name: string; code: string; clientId: string; clientName: string; vocabulary: VocabularyTerms }>;
+  }>;
   
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
@@ -2636,6 +2641,7 @@ export class DatabaseStorage implements IStorage {
         actualCost: null,
         billedTotal: null,
         profitMargin: null,
+        vocabularyOverrides: null,
         createdAt: new Date()
       };
 
@@ -6480,6 +6486,63 @@ export class DatabaseStorage implements IStorage {
       stage: estimateVocab.stage || projectVocab.stage || clientVocab.stage || orgVocab.stage || DEFAULT_VOCABULARY.stage,
       activity: estimateVocab.activity || projectVocab.activity || clientVocab.activity || orgVocab.activity || DEFAULT_VOCABULARY.activity,
       workstream: projectVocab.workstream || clientVocab.workstream || orgVocab.workstream || DEFAULT_VOCABULARY.workstream,
+    };
+  }
+
+  async getAllVocabularies(): Promise<{
+    organization: VocabularyTerms;
+    clients: Array<{ id: string; name: string; vocabulary: VocabularyTerms }>;
+    projects: Array<{ id: string; name: string; code: string; clientId: string; clientName: string; vocabulary: VocabularyTerms }>;
+  }> {
+    const organization = await this.getOrganizationVocabulary();
+    
+    const allClients = await db.select()
+      .from(clients)
+      .where(isNotNull(clients.vocabularyOverrides));
+    
+    const clientVocabularies = allClients.map(client => {
+      let vocabulary: VocabularyTerms = {};
+      if (client.vocabularyOverrides) {
+        try {
+          vocabulary = JSON.parse(client.vocabularyOverrides);
+        } catch {}
+      }
+      return {
+        id: client.id,
+        name: client.name,
+        vocabulary
+      };
+    });
+    
+    const allProjects = await db.select({
+      project: projects,
+      client: clients
+    })
+      .from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .where(isNotNull(projects.vocabularyOverrides));
+    
+    const projectVocabularies = allProjects.map(row => {
+      let vocabulary: VocabularyTerms = {};
+      if (row.project.vocabularyOverrides) {
+        try {
+          vocabulary = JSON.parse(row.project.vocabularyOverrides);
+        } catch {}
+      }
+      return {
+        id: row.project.id,
+        name: row.project.name,
+        code: row.project.code,
+        clientId: row.project.clientId,
+        clientName: row.client?.name || 'Unknown',
+        vocabulary
+      };
+    });
+    
+    return {
+      organization,
+      clients: clientVocabularies,
+      projects: projectVocabularies
     };
   }
 

@@ -13,7 +13,8 @@ import {
   Settings,
   Building2,
   Info,
-  Briefcase
+  Briefcase,
+  Languages
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -165,6 +166,13 @@ export function Sidebar() {
             href="/system-settings"
             icon={<Settings />}
             label="System Settings"
+            requiredRoles={["admin"]}
+          />
+          
+          <SidebarItem
+            href="/vocabulary-management"
+            icon={<Languages />}
+            label="Vocabulary"
             requiredRoles={["admin"]}
           />
           

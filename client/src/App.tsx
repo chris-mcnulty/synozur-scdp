@@ -21,6 +21,7 @@ import Reports from "@/pages/reports";
 import { MyAssignments } from "@/pages/my-assignments";
 import ResourceManagement from "@/pages/resource-management";
 import SystemSettings from "@/pages/system-settings";
+import VocabularyManagement from "@/pages/vocabulary-management";
 import About from "@/pages/about";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
@@ -125,6 +126,9 @@ function Router() {
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/vocabulary-management">
+        {user ? <VocabularyManagement /> : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}

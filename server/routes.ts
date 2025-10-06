@@ -1354,6 +1354,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get all vocabularies (organization + all clients/projects with overrides)
+  app.get("/api/vocabulary/all", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const vocabularies = await storage.getAllVocabularies();
+      res.json(vocabularies);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch all vocabularies" });
+    }
+  });
+
   // Dashboard metrics
   app.get("/api/dashboard/metrics", requireAuth, async (req, res) => {
     try {
