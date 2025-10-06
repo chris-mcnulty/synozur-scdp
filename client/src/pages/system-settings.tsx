@@ -715,6 +715,89 @@ export default function SystemSettings() {
                       </AlertDescription>
                     </Alert>
 
+                    <Card className="border-2 border-dashed">
+                      <CardHeader>
+                        <CardTitle className="text-base">Industry Presets</CardTitle>
+                        <CardDescription>
+                          Quickly apply common terminology sets for your industry
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="flex flex-wrap gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const epic = epicTerms.find(t => t.termValue === 'Epic');
+                            const stage = stageTerms.find(t => t.termValue === 'Sprint');
+                            const activity = activityTerms.find(t => t.termValue === 'Task');
+                            const workstream = workstreamTerms.find(t => t.termValue === 'Feature');
+                            vocabularyForm.setValue('epicTermId', epic?.id || null);
+                            vocabularyForm.setValue('stageTermId', stage?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                          }}
+                          data-testid="button-preset-software"
+                        >
+                          Software Development
+                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Sprint / Task / Feature</Badge>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const epic = epicTerms.find(t => t.termValue === 'Program');
+                            const stage = stageTerms.find(t => t.termValue === 'Phase');
+                            const activity = activityTerms.find(t => t.termValue === 'Deliverable');
+                            const workstream = workstreamTerms.find(t => t.termValue === 'Category');
+                            vocabularyForm.setValue('epicTermId', epic?.id || null);
+                            vocabularyForm.setValue('stageTermId', stage?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                          }}
+                          data-testid="button-preset-consulting"
+                        >
+                          Consulting
+                          <Badge variant="secondary" className="ml-2 text-xs">Program / Phase / Deliverable / Category</Badge>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const epic = epicTerms.find(t => t.termValue === 'Phase');
+                            const stage = stageTerms.find(t => t.termValue === 'Milestone');
+                            const activity = activityTerms.find(t => t.termValue === 'Gate');
+                            const workstream = workstreamTerms.find(t => t.termValue === 'Trade');
+                            vocabularyForm.setValue('epicTermId', epic?.id || null);
+                            vocabularyForm.setValue('stageTermId', stage?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                          }}
+                          data-testid="button-preset-construction"
+                        >
+                          Construction
+                          <Badge variant="secondary" className="ml-2 text-xs">Phase / Milestone / Gate / Trade</Badge>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            const epic = epicTerms.find(t => t.termValue === 'Epic');
+                            const stage = stageTerms.find(t => t.termValue === 'Stage');
+                            const activity = activityTerms.find(t => t.termValue === 'Activity');
+                            const workstream = workstreamTerms.find(t => t.termValue === 'Workstream');
+                            vocabularyForm.setValue('epicTermId', epic?.id || null);
+                            vocabularyForm.setValue('stageTermId', stage?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                          }}
+                          data-testid="button-preset-default"
+                        >
+                          Default
+                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Stage / Activity / Workstream</Badge>
+                        </Button>
+                      </CardContent>
+                    </Card>
+
                     <Form {...vocabularyForm}>
                       <form onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
                         <div className="grid grid-cols-2 gap-6">

@@ -1062,6 +1062,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(insertProject: InsertProject): Promise<Project> {
+    // If vocabulary term IDs are not provided, inherit from organization defaults
+    if (!insertProject.epicTermId || !insertProject.stageTermId || !insertProject.activityTermId || !insertProject.workstreamTermId) {
+      const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
+      if (orgVocab) {
+        insertProject.epicTermId = insertProject.epicTermId || orgVocab.epicTermId;
+        insertProject.stageTermId = insertProject.stageTermId || orgVocab.stageTermId;
+        insertProject.activityTermId = insertProject.activityTermId || orgVocab.activityTermId;
+        insertProject.workstreamTermId = insertProject.workstreamTermId || orgVocab.workstreamTermId;
+      }
+    }
+    
     const [project] = await db.insert(projects).values(insertProject).returning();
     return project;
   }
