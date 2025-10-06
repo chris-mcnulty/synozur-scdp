@@ -170,13 +170,6 @@ export function Sidebar() {
           />
           
           <SidebarItem
-            href="/vocabulary-management"
-            icon={<Languages />}
-            label="Vocabulary"
-            requiredRoles={["admin"]}
-          />
-          
-          <SidebarItem
             href="/about"
             icon={<Info />}
             label="About"
