@@ -89,6 +89,7 @@ export const projects = pgTable("projects", {
   actualCost: decimal("actual_cost", { precision: 12, scale: 2 }), // Calculated from time/expenses
   billedTotal: decimal("billed_total", { precision: 12, scale: 2 }), // Total invoiced
   profitMargin: decimal("profit_margin", { precision: 12, scale: 2 }), // Calculated variance
+  vocabularyOverrides: text("vocabulary_overrides"), // JSON string for project-specific terminology
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -1472,3 +1473,56 @@ export interface ReceiptMetadataSchema {
     receiptFieldType: "tags";
   };
 }
+
+// ============================================
+// Vocabulary System Types
+// ============================================
+
+// Vocabulary terms that can be customized
+export interface VocabularyTerms {
+  epic?: string;      // Default: "Epic"
+  stage?: string;     // Default: "Stage"
+  activity?: string;  // Default: "Activity"
+  workstream?: string; // Default: "Workstream"
+}
+
+// Default vocabulary (fallback when no overrides exist)
+export const DEFAULT_VOCABULARY: Required<VocabularyTerms> = {
+  epic: "Epic",
+  stage: "Stage",
+  activity: "Activity",
+  workstream: "Workstream",
+};
+
+// Industry preset vocabularies
+export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
+  default: DEFAULT_VOCABULARY,
+  consulting: {
+    epic: "Program",
+    stage: "Phase",
+    activity: "Gate",
+    workstream: "Category",
+  },
+  software: {
+    epic: "Release",
+    stage: "Sprint",
+    activity: "Task",
+    workstream: "Feature",
+  },
+  construction: {
+    epic: "Phase",
+    stage: "Milestone",
+    activity: "Deliverable",
+    workstream: "Trade",
+  },
+};
+
+// Zod schema for vocabulary validation
+export const vocabularyTermsSchema = z.object({
+  epic: z.string().min(1).max(50).optional(),
+  stage: z.string().min(1).max(50).optional(),
+  activity: z.string().min(1).max(50).optional(),
+  workstream: z.string().min(1).max(50).optional(),
+}).strict();
+
+export type VocabularyTermsInput = z.infer<typeof vocabularyTermsSchema>;

@@ -32,7 +32,8 @@ import {
   type ContainerPermission, type InsertContainerPermission,
   type ContainerColumn, type InsertContainerColumn,
   type MetadataTemplate, type InsertMetadataTemplate,
-  type DocumentMetadata, type InsertDocumentMetadata
+  type DocumentMetadata, type InsertDocumentMetadata,
+  type VocabularyTerms, DEFAULT_VOCABULARY
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
@@ -695,6 +696,11 @@ export interface IStorage {
   setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
+  
+  // Vocabulary System Methods
+  getOrganizationVocabulary(): Promise<VocabularyTerms>;
+  setOrganizationVocabulary(terms: VocabularyTerms): Promise<VocabularyTerms>;
+  getVocabularyForContext(context: { projectId?: string; clientId?: string; estimateId?: string }): Promise<Required<VocabularyTerms>>;
   
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
@@ -6382,6 +6388,99 @@ export class DatabaseStorage implements IStorage {
   async deleteSystemSetting(id: string): Promise<void> {
     await db.delete(systemSettings)
       .where(eq(systemSettings.id, id));
+  }
+
+  // Vocabulary System Methods
+  async getOrganizationVocabulary(): Promise<VocabularyTerms> {
+    const value = await this.getSystemSettingValue('ORGANIZATION_VOCABULARY');
+    if (!value) {
+      return {};
+    }
+    try {
+      return JSON.parse(value) as VocabularyTerms;
+    } catch {
+      return {};
+    }
+  }
+
+  async setOrganizationVocabulary(terms: VocabularyTerms): Promise<VocabularyTerms> {
+    await this.setSystemSetting(
+      'ORGANIZATION_VOCABULARY',
+      JSON.stringify(terms),
+      'Organization-level vocabulary defaults',
+      'json'
+    );
+    return terms;
+  }
+
+  async getVocabularyForContext(context: { 
+    projectId?: string; 
+    clientId?: string; 
+    estimateId?: string 
+  }): Promise<Required<VocabularyTerms>> {
+    let projectVocab: VocabularyTerms = {};
+    let clientVocab: VocabularyTerms = {};
+    let estimateVocab: VocabularyTerms = {};
+    
+    // Get project vocabulary if projectId provided
+    if (context.projectId) {
+      const [project] = await db.select()
+        .from(projects)
+        .where(eq(projects.id, context.projectId));
+      if (project?.vocabularyOverrides) {
+        try {
+          projectVocab = JSON.parse(project.vocabularyOverrides);
+        } catch {}
+      }
+      // Also get client vocab from project's client
+      if (project?.clientId) {
+        const [client] = await db.select()
+          .from(clients)
+          .where(eq(clients.id, project.clientId));
+        if (client?.vocabularyOverrides) {
+          try {
+            clientVocab = JSON.parse(client.vocabularyOverrides);
+          } catch {}
+        }
+      }
+    }
+    
+    // Get client vocabulary if clientId provided (and not already loaded)
+    if (context.clientId && !clientVocab.epic) {
+      const [client] = await db.select()
+        .from(clients)
+        .where(eq(clients.id, context.clientId));
+      if (client?.vocabularyOverrides) {
+        try {
+          clientVocab = JSON.parse(client.vocabularyOverrides);
+        } catch {}
+      }
+    }
+    
+    // Get estimate vocabulary if estimateId provided
+    if (context.estimateId) {
+      const [estimate] = await db.select()
+        .from(estimates)
+        .where(eq(estimates.id, context.estimateId));
+      if (estimate) {
+        estimateVocab = {
+          epic: estimate.epicLabel || undefined,
+          stage: estimate.stageLabel || undefined,
+          activity: estimate.activityLabel || undefined,
+        };
+      }
+    }
+    
+    // Get organization defaults
+    const orgVocab = await this.getOrganizationVocabulary();
+    
+    // Cascade: Estimate -> Project -> Client -> Organization -> Default
+    return {
+      epic: estimateVocab.epic || projectVocab.epic || clientVocab.epic || orgVocab.epic || DEFAULT_VOCABULARY.epic,
+      stage: estimateVocab.stage || projectVocab.stage || clientVocab.stage || orgVocab.stage || DEFAULT_VOCABULARY.stage,
+      activity: estimateVocab.activity || projectVocab.activity || clientVocab.activity || orgVocab.activity || DEFAULT_VOCABULARY.activity,
+      workstream: projectVocab.workstream || clientVocab.workstream || orgVocab.workstream || DEFAULT_VOCABULARY.workstream,
+    };
   }
 
   async getDefaultBillingRate(): Promise<number> {

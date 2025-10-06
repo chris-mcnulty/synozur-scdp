@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -1313,6 +1313,44 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(400).json({ 
         message: error instanceof Error ? error.message : "Failed to delete system setting" 
       });
+    }
+  });
+
+  // Vocabulary System (admin only for org-level, auto-cascade for context)
+  app.get("/api/vocabulary/organization", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const vocabulary = await storage.getOrganizationVocabulary();
+      res.json(vocabulary);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization vocabulary" });
+    }
+  });
+
+  app.put("/api/vocabulary/organization", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = vocabularyTermsSchema.parse(req.body);
+      const vocabulary = await storage.setOrganizationVocabulary(validatedData);
+      res.json(vocabulary);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid vocabulary data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update organization vocabulary" });
+    }
+  });
+
+  // Get vocabulary for a specific context (with cascading: project -> client -> org)
+  app.get("/api/vocabulary/context", requireAuth, async (req, res) => {
+    try {
+      const { projectId, clientId, estimateId } = req.query;
+      const vocabulary = await storage.getVocabularyForContext({
+        projectId: projectId as string | undefined,
+        clientId: clientId as string | undefined,
+        estimateId: estimateId as string | undefined,
+      });
+      res.json(vocabulary);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch vocabulary for context" });
     }
   });
 
