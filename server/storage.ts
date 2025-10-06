@@ -4,6 +4,7 @@ import {
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
+  vocabularyCatalog, organizationVocabulary,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -27,6 +28,8 @@ import {
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
+  type VocabularyCatalog, type InsertVocabularyCatalog,
+  type OrganizationVocabulary, type InsertOrganizationVocabulary,
   type ContainerType, type InsertContainerType,
   type ClientContainer, type InsertClientContainer,
   type ContainerPermission, type InsertContainerPermission,
@@ -697,7 +700,7 @@ export interface IStorage {
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
   
-  // Vocabulary System Methods
+  // Vocabulary System Methods (Legacy - uses JSON text fields)
   getOrganizationVocabulary(): Promise<VocabularyTerms>;
   setOrganizationVocabulary(terms: VocabularyTerms): Promise<VocabularyTerms>;
   getVocabularyForContext(context: { projectId?: string; clientId?: string; estimateId?: string }): Promise<Required<VocabularyTerms>>;
@@ -706,6 +709,13 @@ export interface IStorage {
     clients: Array<{ id: string; name: string; vocabulary: VocabularyTerms }>;
     projects: Array<{ id: string; name: string; code: string; clientId: string; clientName: string; vocabulary: VocabularyTerms }>;
   }>;
+  
+  // New Vocabulary Catalog Methods (uses catalog table and FK references)
+  getVocabularyCatalog(): Promise<VocabularyCatalog[]>;
+  getVocabularyCatalogByType(termType: string): Promise<VocabularyCatalog[]>;
+  getOrganizationVocabularySelections(): Promise<OrganizationVocabulary | undefined>;
+  updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>): Promise<OrganizationVocabulary>;
+  getVocabularyTermById(termId: string): Promise<VocabularyCatalog | undefined>;
   
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
@@ -959,6 +969,10 @@ export class DatabaseStorage implements IStorage {
           contactName: null,
           contactAddress: null,
           vocabularyOverrides: null,
+          epicTermId: null,
+          stageTermId: null,
+          activityTermId: null,
+          workstreamTermId: null,
           msaDate: null,
           msaDocument: null,
           hasMsa: false,
@@ -1027,6 +1041,10 @@ export class DatabaseStorage implements IStorage {
       contactName: null,
       contactAddress: null,
       vocabularyOverrides: null,
+      epicTermId: null,
+      stageTermId: null,
+      activityTermId: null,
+      workstreamTermId: null,
       msaDate: null,
       msaDocument: null,
       hasMsa: false,
@@ -1139,6 +1157,10 @@ export class DatabaseStorage implements IStorage {
         contactName: null,
         contactAddress: null,
         vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        activityTermId: null,
+        workstreamTermId: null,
         msaDate: null,
         msaDocument: null,
         hasMsa: false,
@@ -2642,6 +2664,10 @@ export class DatabaseStorage implements IStorage {
         billedTotal: null,
         profitMargin: null,
         vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        activityTermId: null,
+        workstreamTermId: null,
         createdAt: new Date()
       };
 
@@ -2655,6 +2681,10 @@ export class DatabaseStorage implements IStorage {
         contactName: null,
         contactAddress: null,
         vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        activityTermId: null,
+        workstreamTermId: null,
         msaDate: null,
         msaDocument: null,
         hasMsa: false,
@@ -6546,6 +6576,78 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // New Vocabulary Catalog Methods
+  async getVocabularyCatalog(): Promise<VocabularyCatalog[]> {
+    return await db.select()
+      .from(vocabularyCatalog)
+      .where(eq(vocabularyCatalog.isActive, true))
+      .orderBy(vocabularyCatalog.termType, vocabularyCatalog.sortOrder);
+  }
+
+  async getVocabularyCatalogByType(termType: string): Promise<VocabularyCatalog[]> {
+    return await db.select()
+      .from(vocabularyCatalog)
+      .where(and(
+        eq(vocabularyCatalog.termType, termType),
+        eq(vocabularyCatalog.isActive, true)
+      ))
+      .orderBy(vocabularyCatalog.sortOrder);
+  }
+
+  async getOrganizationVocabularySelections(): Promise<OrganizationVocabulary | undefined> {
+    const [orgVocab] = await db.select()
+      .from(organizationVocabulary)
+      .limit(1);
+    return orgVocab || undefined;
+  }
+
+  async updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>): Promise<OrganizationVocabulary> {
+    // Validate term IDs exist in catalog and match correct types
+    const termValidations = [
+      { id: updates.epicTermId, expectedType: 'epic' },
+      { id: updates.stageTermId, expectedType: 'stage' },
+      { id: updates.activityTermId, expectedType: 'activity' },
+      { id: updates.workstreamTermId, expectedType: 'workstream' },
+    ];
+
+    for (const { id, expectedType } of termValidations) {
+      if (id) {
+        const term = await this.getVocabularyTermById(id);
+        if (!term) {
+          throw new Error(`Invalid term ID: ${id} does not exist in vocabulary catalog`);
+        }
+        if (term.termType !== expectedType) {
+          throw new Error(`Invalid term type: ${id} is a ${term.termType} term, expected ${expectedType}`);
+        }
+      }
+    }
+
+    // Ensure only one organization vocabulary record exists (enforce single-record invariant)
+    const existing = await this.getOrganizationVocabularySelections();
+    
+    if (existing) {
+      // Update existing record
+      const [updated] = await db.update(organizationVocabulary)
+        .set({ ...updates, updatedAt: sql`now()` })
+        .where(eq(organizationVocabulary.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      // Create new record (should only happen once on initial setup)
+      const [created] = await db.insert(organizationVocabulary)
+        .values(updates)
+        .returning();
+      return created;
+    }
+  }
+
+  async getVocabularyTermById(termId: string): Promise<VocabularyCatalog | undefined> {
+    const [term] = await db.select()
+      .from(vocabularyCatalog)
+      .where(eq(vocabularyCatalog.id, termId));
+    return term || undefined;
+  }
+
   async getDefaultBillingRate(): Promise<number> {
     const value = await this.getSystemSettingValue('DEFAULT_BILLING_RATE', '0');
     return parseFloat(value) || 0;
@@ -6982,6 +7084,10 @@ export class DatabaseStorage implements IStorage {
         contactName: null,
         contactAddress: null,
         vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        activityTermId: null,
+        workstreamTermId: null,
         msaDate: null,
         msaDocument: null,
         hasMsa: false,
@@ -7039,6 +7145,10 @@ export class DatabaseStorage implements IStorage {
         contactName: null,
         contactAddress: null,
         vocabularyOverrides: null,
+        epicTermId: null,
+        stageTermId: null,
+        activityTermId: null,
+        workstreamTermId: null,
         msaDate: null,
         msaDocument: null,
         hasMsa: false,

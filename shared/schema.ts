@@ -1001,6 +1001,14 @@ export const insertOrganizationVocabularySchema = createInsertSchema(organizatio
   updatedAt: true,
 });
 
+// Vocabulary selection update schema with validation
+export const updateOrganizationVocabularySchema = z.object({
+  epicTermId: z.string().uuid().optional().nullable(),
+  stageTermId: z.string().uuid().optional().nullable(),
+  activityTermId: z.string().uuid().optional().nullable(),
+  workstreamTermId: z.string().uuid().optional().nullable(),
+}).strict();
+
 export const insertEstimateSchema = createInsertSchema(estimates).omit({
   id: true,
   createdAt: true,

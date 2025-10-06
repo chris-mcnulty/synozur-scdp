@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -1361,6 +1361,67 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(vocabularies);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch all vocabularies" });
+    }
+  });
+
+  // New Vocabulary Catalog System (uses catalog table and FK references)
+  // Get all vocabulary catalog options (predefined terms)
+  app.get("/api/vocabulary/catalog", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const catalog = await storage.getVocabularyCatalog();
+      res.json(catalog);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch vocabulary catalog" });
+    }
+  });
+
+  // Get vocabulary catalog options by term type
+  app.get("/api/vocabulary/catalog/:termType", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const catalog = await storage.getVocabularyCatalogByType(req.params.termType);
+      res.json(catalog);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch vocabulary catalog for term type" });
+    }
+  });
+
+  // Get organization vocabulary selections (with term details)
+  app.get("/api/vocabulary/organization/selections", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const selections = await storage.getOrganizationVocabularySelections();
+      if (!selections) {
+        return res.status(404).json({ message: "Organization vocabulary not configured" });
+      }
+      
+      // Fetch the actual term details for each selection
+      const epicTerm = selections.epicTermId ? await storage.getVocabularyTermById(selections.epicTermId) : null;
+      const stageTerm = selections.stageTermId ? await storage.getVocabularyTermById(selections.stageTermId) : null;
+      const activityTerm = selections.activityTermId ? await storage.getVocabularyTermById(selections.activityTermId) : null;
+      const workstreamTerm = selections.workstreamTermId ? await storage.getVocabularyTermById(selections.workstreamTermId) : null;
+      
+      res.json({
+        ...selections,
+        epicTerm,
+        stageTerm,
+        activityTerm,
+        workstreamTerm
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch organization vocabulary selections" });
+    }
+  });
+
+  // Update organization vocabulary selections
+  app.put("/api/vocabulary/organization/selections", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const validatedData = updateOrganizationVocabularySchema.parse(req.body);
+      const updated = await storage.updateOrganizationVocabularySelections(validatedData);
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid vocabulary selection data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update organization vocabulary selections" });
     }
   });
 
