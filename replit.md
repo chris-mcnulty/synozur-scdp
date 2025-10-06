@@ -89,12 +89,19 @@ For development testing, use the following login credentials:
 ### Vocabulary Management
 - **Central Dashboard**: `/vocabulary-management` page provides unified management of all vocabulary settings
 - **Organization Defaults**: Set organization-wide default terms for Epic, Stage, Activity, and Workstream
+  - **Industry Presets**: Quick-apply buttons for common industry terminology (Software Development, Consulting, Construction, Default)
+  - **Auto-Inheritance**: New projects automatically inherit organization defaults unless explicitly overridden during creation
 - **Client Overrides**: View and edit client-specific vocabulary that overrides organization defaults
 - **Project Overrides**: View and edit project-specific vocabulary that overrides client and organization defaults
 - **Cascading Hierarchy**: Project → Client → Organization → System defaults
+- **Implementation Details**:
+  - `createProject()` in storage.ts uses explicit null/undefined checks (`== null`, `!= null`) to inherit organization defaults
+  - Only truly missing vocabulary terms are inherited; intentional falsy values are preserved
+  - Error handling ensures project creation proceeds even if organization vocabulary fetch fails
 - **API Endpoints**: 
   - `GET /api/vocabulary/all` - Fetch all vocabularies (org + client + project overrides)
-  - `PUT /api/vocabulary/organization` - Update organization defaults
+  - `PUT /api/vocabulary/organization/selections` - Update organization default term selections
+  - `GET /api/vocabulary/organization/selections` - Get current organization default selections
   - `PATCH /api/clients/:id` - Update client vocabulary (vocabularyOverrides field)
   - `PATCH /api/projects/:id` - Update project vocabulary (vocabularyOverrides field)
 
