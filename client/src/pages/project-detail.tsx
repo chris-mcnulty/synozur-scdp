@@ -295,6 +295,22 @@ export default function ProjectDetail() {
     queryKey: ['/api/clients'],
   });
   
+  // Vocabulary catalog queries
+  const { data: vocabularyCatalog = [] } = useQuery<any[]>({
+    queryKey: ['/api/vocabulary/catalog'],
+  });
+  
+  const { data: orgVocabulary } = useQuery<any>({
+    queryKey: ['/api/vocabulary/organization'],
+  });
+  
+  // Get client vocabulary overrides for current project's client
+  const currentClientId = analytics?.project?.clientId;
+  const { data: currentClient } = useQuery<any>({
+    queryKey: [`/api/clients/${currentClientId}`],
+    enabled: !!currentClientId,
+  });
+  
   // Budget history query
   const { data: budgetHistory = [], isLoading: budgetHistoryLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/budget-history`],
@@ -312,6 +328,33 @@ export default function ProjectDetail() {
     queryKey: [`/api/projects/${id}/allocations`],
     enabled: !!id,
   });
+  
+  // Group vocabulary catalog terms by type
+  const vocabularyTermsByType = useMemo(() => {
+    const epicTerms = vocabularyCatalog.filter((term: any) => term.termType === 'epic');
+    const stageTerms = vocabularyCatalog.filter((term: any) => term.termType === 'stage');
+    const activityTerms = vocabularyCatalog.filter((term: any) => term.termType === 'activity');
+    const workstreamTerms = vocabularyCatalog.filter((term: any) => term.termType === 'workstream');
+    return { epicTerms, stageTerms, activityTerms, workstreamTerms };
+  }, [vocabularyCatalog]);
+  
+  // Compute effective defaults for project vocabulary (client overrides or org defaults)
+  const effectiveClientDefaults = useMemo(() => {
+    if (!currentClient || !orgVocabulary) return {};
+    return {
+      epicTermId: currentClient.epicTermId || orgVocabulary.epicTermId,
+      stageTermId: currentClient.stageTermId || orgVocabulary.stageTermId,
+      activityTermId: currentClient.activityTermId || orgVocabulary.activityTermId,
+      workstreamTermId: currentClient.workstreamTermId || orgVocabulary.workstreamTermId,
+    };
+  }, [currentClient, orgVocabulary]);
+  
+  // Get term value by ID for display
+  const getTermValueById = (termId: string | null) => {
+    if (!termId) return null;
+    const term = vocabularyCatalog.find((t: any) => t.id === termId);
+    return term?.termValue || null;
+  };
   
   // Processed time entries with filtering and grouping
   const processedTimeEntries = useMemo(() => {
@@ -4198,6 +4241,10 @@ export default function ProjectDetail() {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const endDateValue = formData.get('endDate') as string;
+                const epicTermIdValue = formData.get('epicTermId') as string;
+                const stageTermIdValue = formData.get('stageTermId') as string;
+                const activityTermIdValue = formData.get('activityTermId') as string;
+                const workstreamTermIdValue = formData.get('workstreamTermId') as string;
                 editProject.mutate({
                   data: {
                     name: formData.get('name'),
@@ -4211,6 +4258,11 @@ export default function ProjectDetail() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
+                    // Convert empty strings to null for vocabulary term IDs
+                    epicTermId: epicTermIdValue || null,
+                    stageTermId: stageTermIdValue || null,
+                    activityTermId: activityTermIdValue || null,
+                    workstreamTermId: workstreamTermIdValue || null,
                   }
                 });
               }}>
@@ -4263,6 +4315,95 @@ export default function ProjectDetail() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
+                    <h4 className="font-medium text-sm">Vocabulary Customization</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Customize terminology for this project. If not set, client or organization defaults will be used.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-epicTermId">Epic Term</Label>
+                        <Select 
+                          name="epicTermId" 
+                          defaultValue={projectToEdit.epicTermId || effectiveClientDefaults.epicTermId || ""}
+                        >
+                          <SelectTrigger data-testid="select-edit-epic-term">
+                            <SelectValue placeholder="Select epic term" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None (use client/org default{effectiveClientDefaults.epicTermId ? ` - ${getTermValueById(effectiveClientDefaults.epicTermId)}` : ''})</SelectItem>
+                            {vocabularyTermsByType.epicTerms.map((term: any) => (
+                              <SelectItem key={term.id} value={term.id}>
+                                {term.termValue}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-stageTermId">Stage Term</Label>
+                        <Select 
+                          name="stageTermId" 
+                          defaultValue={projectToEdit.stageTermId || effectiveClientDefaults.stageTermId || ""}
+                        >
+                          <SelectTrigger data-testid="select-edit-stage-term">
+                            <SelectValue placeholder="Select stage term" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None (use client/org default{effectiveClientDefaults.stageTermId ? ` - ${getTermValueById(effectiveClientDefaults.stageTermId)}` : ''})</SelectItem>
+                            {vocabularyTermsByType.stageTerms.map((term: any) => (
+                              <SelectItem key={term.id} value={term.id}>
+                                {term.termValue}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-activityTermId">Activity Term</Label>
+                        <Select 
+                          name="activityTermId" 
+                          defaultValue={projectToEdit.activityTermId || effectiveClientDefaults.activityTermId || ""}
+                        >
+                          <SelectTrigger data-testid="select-edit-activity-term">
+                            <SelectValue placeholder="Select activity term" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None (use client/org default{effectiveClientDefaults.activityTermId ? ` - ${getTermValueById(effectiveClientDefaults.activityTermId)}` : ''})</SelectItem>
+                            {vocabularyTermsByType.activityTerms.map((term: any) => (
+                              <SelectItem key={term.id} value={term.id}>
+                                {term.termValue}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-workstreamTermId">Workstream Term</Label>
+                        <Select 
+                          name="workstreamTermId" 
+                          defaultValue={projectToEdit.workstreamTermId || effectiveClientDefaults.workstreamTermId || ""}
+                        >
+                          <SelectTrigger data-testid="select-edit-workstream-term">
+                            <SelectValue placeholder="Select workstream term" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None (use client/org default{effectiveClientDefaults.workstreamTermId ? ` - ${getTermValueById(effectiveClientDefaults.workstreamTermId)}` : ''})</SelectItem>
+                            {vocabularyTermsByType.workstreamTerms.map((term: any) => (
+                              <SelectItem key={term.id} value={term.id}>
+                                {term.termValue}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-2">
