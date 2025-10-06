@@ -37,9 +37,9 @@ export const clients = pgTable("clients", {
   // Vocabulary term selections (overrides organization defaults)
   epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id),
   stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id),
-  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
   workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id),
   milestoneTermId: varchar("milestone_term_id").references(() => vocabularyCatalog.id),
+  taskTermId: varchar("task_term_id").references(() => vocabularyCatalog.id),
   // MSA (Master Services Agreement) tracking
   msaDate: date("msa_date"), // Date MSA was signed
   msaDocument: text("msa_document"), // File path/name for uploaded MSA document
@@ -74,7 +74,7 @@ export const systemSettings = pgTable("system_settings", {
 // Vocabulary Catalog - Predefined term options
 export const vocabularyCatalog = pgTable("vocabulary_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  termType: text("term_type").notNull(), // epic, stage, activity, workstream, milestone
+  termType: text("term_type").notNull(), // epic, stage, workstream, milestone, task
   termValue: text("term_value").notNull(), // The actual term (e.g., "Epic", "Program", "Release")
   description: text("description"), // Optional description of the term
   isSystemDefault: boolean("is_system_default").notNull().default(false), // True for default terms
@@ -90,9 +90,9 @@ export const organizationVocabulary = pgTable("organization_vocabulary", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id), // Selected Epic term
   stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id), // Selected Stage term
-  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id), // Selected Activity term
   workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id), // Selected Workstream term
   milestoneTermId: varchar("milestone_term_id").references(() => vocabularyCatalog.id), // Selected Milestone term
+  taskTermId: varchar("task_term_id").references(() => vocabularyCatalog.id), // Selected Task term
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
@@ -125,9 +125,9 @@ export const projects = pgTable("projects", {
   // Vocabulary term selections (overrides client and organization defaults)
   epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id),
   stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id),
-  activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
   workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id),
   milestoneTermId: varchar("milestone_term_id").references(() => vocabularyCatalog.id),
+  taskTermId: varchar("task_term_id").references(() => vocabularyCatalog.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
