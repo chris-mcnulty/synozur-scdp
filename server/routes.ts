@@ -1385,6 +1385,101 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Create new vocabulary term
+  app.post("/api/vocabulary/catalog", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { termType, termValue, description, sortOrder } = req.body;
+      
+      // Validate required fields
+      if (!termType || !termValue) {
+        return res.status(400).json({ message: "Term type and value are required" });
+      }
+      
+      // Validate termType is one of the allowed types
+      const allowedTypes = ['epic', 'stage', 'activity', 'workstream', 'milestone'];
+      if (!allowedTypes.includes(termType)) {
+        return res.status(400).json({ message: `Invalid term type. Must be one of: ${allowedTypes.join(', ')}` });
+      }
+      
+      const newTerm = await storage.createVocabularyTerm({
+        termType,
+        termValue,
+        description: description || undefined,
+        sortOrder: sortOrder !== undefined ? sortOrder : 999,
+        isActive: true,
+        isSystemDefault: false
+      });
+      
+      res.status(201).json(newTerm);
+    } catch (error: any) {
+      if (error?.code === '23505') { // Unique constraint violation
+        return res.status(400).json({ message: "A term with this type and value already exists" });
+      }
+      console.error("Error creating vocabulary term:", error);
+      res.status(500).json({ message: "Failed to create vocabulary term" });
+    }
+  });
+
+  // Update vocabulary term
+  app.patch("/api/vocabulary/catalog/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      
+      // Don't allow changing termType for existing terms
+      delete updates.termType;
+      
+      const updated = await storage.updateVocabularyTerm(id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      if (error?.message?.includes('not found')) {
+        return res.status(404).json({ message: "Vocabulary term not found" });
+      }
+      console.error("Error updating vocabulary term:", error);
+      res.status(500).json({ message: "Failed to update vocabulary term" });
+    }
+  });
+
+  // Delete (soft delete) vocabulary term
+  app.delete("/api/vocabulary/catalog/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Check if term is being used in organization vocabulary
+      const orgVocab = await storage.getOrganizationVocabularySelections();
+      if (orgVocab) {
+        const usedTermIds = [
+          orgVocab.epicTermId,
+          orgVocab.stageTermId,
+          orgVocab.activityTermId,
+          orgVocab.workstreamTermId,
+          orgVocab.milestoneTermId
+        ].filter(Boolean);
+        
+        if (usedTermIds.includes(id)) {
+          return res.status(400).json({ message: "Cannot delete term that is currently selected as organization default" });
+        }
+      }
+      
+      await storage.deleteVocabularyTerm(id);
+      res.json({ message: "Vocabulary term deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting vocabulary term:", error);
+      res.status(500).json({ message: "Failed to delete vocabulary term" });
+    }
+  });
+
+  // Seed default vocabulary terms
+  app.post("/api/vocabulary/catalog/seed", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      await storage.seedDefaultVocabulary();
+      res.json({ message: "Default vocabulary terms seeded successfully" });
+    } catch (error) {
+      console.error("Error seeding vocabulary terms:", error);
+      res.status(500).json({ message: "Failed to seed vocabulary terms" });
+    }
+  });
+
   // Get organization vocabulary selections (with term details)
   app.get("/api/vocabulary/organization/selections", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

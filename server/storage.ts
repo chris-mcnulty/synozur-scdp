@@ -716,6 +716,10 @@ export interface IStorage {
   getOrganizationVocabularySelections(): Promise<OrganizationVocabulary | undefined>;
   updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>): Promise<OrganizationVocabulary>;
   getVocabularyTermById(termId: string): Promise<VocabularyCatalog | undefined>;
+  createVocabularyTerm(term: InsertVocabularyCatalog): Promise<VocabularyCatalog>;
+  updateVocabularyTerm(id: string, updates: Partial<InsertVocabularyCatalog>): Promise<VocabularyCatalog>;
+  deleteVocabularyTerm(id: string): Promise<void>;
+  seedDefaultVocabulary(): Promise<void>;
   
   // Container Management Methods
   getContainerTypes(): Promise<ContainerType[]>;
@@ -6690,6 +6694,90 @@ export class DatabaseStorage implements IStorage {
       .from(vocabularyCatalog)
       .where(eq(vocabularyCatalog.id, termId));
     return term || undefined;
+  }
+
+  async createVocabularyTerm(term: InsertVocabularyCatalog): Promise<VocabularyCatalog> {
+    const [created] = await db.insert(vocabularyCatalog)
+      .values({
+        ...term,
+        isActive: term.isActive !== undefined ? term.isActive : true,
+        isSystemDefault: term.isSystemDefault !== undefined ? term.isSystemDefault : false,
+        sortOrder: term.sortOrder !== undefined ? term.sortOrder : 0
+      })
+      .returning();
+    return created;
+  }
+
+  async updateVocabularyTerm(id: string, updates: Partial<InsertVocabularyCatalog>): Promise<VocabularyCatalog> {
+    const [updated] = await db.update(vocabularyCatalog)
+      .set(updates)
+      .where(eq(vocabularyCatalog.id, id))
+      .returning();
+    if (!updated) {
+      throw new Error(`Vocabulary term with id ${id} not found`);
+    }
+    return updated;
+  }
+
+  async deleteVocabularyTerm(id: string): Promise<void> {
+    // Soft delete by setting isActive to false
+    await db.update(vocabularyCatalog)
+      .set({ isActive: false })
+      .where(eq(vocabularyCatalog.id, id));
+  }
+
+  async seedDefaultVocabulary(): Promise<void> {
+    // Check if any vocabulary terms exist
+    const existingTerms = await db.select()
+      .from(vocabularyCatalog)
+      .limit(1);
+    
+    if (existingTerms.length > 0) {
+      console.log('Vocabulary catalog already has terms, skipping seed');
+      return;
+    }
+
+    console.log('Seeding default vocabulary catalog...');
+    
+    const defaultTerms: InsertVocabularyCatalog[] = [
+      // Epic terms
+      { termType: 'epic', termValue: 'Epic', description: 'Default epic term', isSystemDefault: true, sortOrder: 0 },
+      { termType: 'epic', termValue: 'Program', description: 'Consulting/corporate term', isSystemDefault: false, sortOrder: 1 },
+      { termType: 'epic', termValue: 'Initiative', description: 'Business term', isSystemDefault: false, sortOrder: 2 },
+      { termType: 'epic', termValue: 'Release', description: 'Software development term', isSystemDefault: false, sortOrder: 3 },
+      { termType: 'epic', termValue: 'Phase', description: 'Construction/project management term', isSystemDefault: false, sortOrder: 4 },
+      
+      // Stage terms
+      { termType: 'stage', termValue: 'Stage', description: 'Default stage term', isSystemDefault: true, sortOrder: 0 },
+      { termType: 'stage', termValue: 'Sprint', description: 'Agile/software term', isSystemDefault: false, sortOrder: 1 },
+      { termType: 'stage', termValue: 'Phase', description: 'Traditional project term', isSystemDefault: false, sortOrder: 2 },
+      { termType: 'stage', termValue: 'Iteration', description: 'Development term', isSystemDefault: false, sortOrder: 3 },
+      { termType: 'stage', termValue: 'Period', description: 'Time-based term', isSystemDefault: false, sortOrder: 4 },
+      
+      // Activity terms
+      { termType: 'activity', termValue: 'Activity', description: 'Default activity term', isSystemDefault: true, sortOrder: 0 },
+      { termType: 'activity', termValue: 'Task', description: 'Software/general term', isSystemDefault: false, sortOrder: 1 },
+      { termType: 'activity', termValue: 'Deliverable', description: 'Consulting term', isSystemDefault: false, sortOrder: 2 },
+      { termType: 'activity', termValue: 'Action', description: 'Business term', isSystemDefault: false, sortOrder: 3 },
+      { termType: 'activity', termValue: 'Gate', description: 'Process/construction term', isSystemDefault: false, sortOrder: 4 },
+      
+      // Workstream terms
+      { termType: 'workstream', termValue: 'Workstream', description: 'Default workstream term', isSystemDefault: true, sortOrder: 0 },
+      { termType: 'workstream', termValue: 'Feature', description: 'Software development term', isSystemDefault: false, sortOrder: 1 },
+      { termType: 'workstream', termValue: 'Category', description: 'General classification term', isSystemDefault: false, sortOrder: 2 },
+      { termType: 'workstream', termValue: 'Track', description: 'Project management term', isSystemDefault: false, sortOrder: 3 },
+      { termType: 'workstream', termValue: 'Trade', description: 'Construction term', isSystemDefault: false, sortOrder: 4 },
+      
+      // Milestone terms
+      { termType: 'milestone', termValue: 'Milestone', description: 'Default milestone term', isSystemDefault: true, sortOrder: 0 },
+      { termType: 'milestone', termValue: 'Target', description: 'Business goal term', isSystemDefault: false, sortOrder: 1 },
+      { termType: 'milestone', termValue: 'Checkpoint', description: 'Progress marker term', isSystemDefault: false, sortOrder: 2 },
+      { termType: 'milestone', termValue: 'Deadline', description: 'Time-based term', isSystemDefault: false, sortOrder: 3 },
+      { termType: 'milestone', termValue: 'Goal', description: 'Objective term', isSystemDefault: false, sortOrder: 4 },
+    ];
+
+    await db.insert(vocabularyCatalog).values(defaultTerms);
+    console.log(`Seeded ${defaultTerms.length} default vocabulary terms`);
   }
 
   async getDefaultBillingRate(): Promise<number> {
