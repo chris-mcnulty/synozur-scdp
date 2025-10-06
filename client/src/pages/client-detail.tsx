@@ -68,11 +68,18 @@ type InvoiceBatchWithDetails = InvoiceBatch & {
   projectCount: number;
 };
 
+type ClientEditForm = Partial<Client> & {
+  vocabularyEpic?: string;
+  vocabularyStage?: string;
+  vocabularyActivity?: string;
+  vocabularyWorkstream?: string;
+};
+
 export default function ClientDetail() {
   const { id: clientId } = useParams<{ id: string }>();
   const [location, setLocation] = useLocation();
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<Partial<Client>>({});
+  const [editForm, setEditForm] = useState<ClientEditForm>({});
 
   const { toast } = useToast();
 
@@ -86,6 +93,20 @@ export default function ClientDetail() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('edit') === 'true' && client) {
+      // Parse vocabulary overrides if they exist
+      let vocabOverrides = { epic: "", stage: "", activity: "", workstream: "" };
+      if (client.vocabularyOverrides) {
+        try {
+          const parsed = JSON.parse(client.vocabularyOverrides);
+          vocabOverrides = {
+            epic: parsed.epic || "",
+            stage: parsed.stage || "",
+            activity: parsed.activity || "",
+            workstream: parsed.workstream || "",
+          };
+        } catch {}
+      }
+      
       // Populate form with client data
       setEditForm({
         name: client.name,
@@ -100,7 +121,11 @@ export default function ClientDetail() {
         msaDocument: client.msaDocument || "",
         ndaDate: client.ndaDate || "",
         hasNda: client.hasNda || false,
-        ndaDocument: client.ndaDocument || ""
+        ndaDocument: client.ndaDocument || "",
+        vocabularyEpic: vocabOverrides.epic,
+        vocabularyStage: vocabOverrides.stage,
+        vocabularyActivity: vocabOverrides.activity,
+        vocabularyWorkstream: vocabOverrides.workstream,
       });
       setIsEditing(true);
       // Clean the URL by removing the edit parameter
@@ -164,6 +189,20 @@ export default function ClientDetail() {
       return;
     }
     
+    // Parse vocabulary overrides if they exist
+    let vocabOverrides = { epic: "", stage: "", activity: "", workstream: "" };
+    if (client.vocabularyOverrides) {
+      try {
+        const parsed = JSON.parse(client.vocabularyOverrides);
+        vocabOverrides = {
+          epic: parsed.epic || "",
+          stage: parsed.stage || "",
+          activity: parsed.activity || "",
+          workstream: parsed.workstream || "",
+        };
+      } catch {}
+    }
+    
     // Populate form with current client data
     setEditForm({
       name: client.name,
@@ -178,18 +217,37 @@ export default function ClientDetail() {
       msaDocument: client.msaDocument || "",
       ndaDate: client.ndaDate || "",
       hasNda: client.hasNda || false,
-      ndaDocument: client.ndaDocument || ""
+      ndaDocument: client.ndaDocument || "",
+      vocabularyEpic: vocabOverrides.epic,
+      vocabularyStage: vocabOverrides.stage,
+      vocabularyActivity: vocabOverrides.activity,
+      vocabularyWorkstream: vocabOverrides.workstream,
     });
     setIsEditing(true);
   };
 
   const handleSave = () => {
+    // Build vocabulary overrides JSON from form fields
+    const vocabularyOverrides: any = {};
+    if (editForm.vocabularyEpic) vocabularyOverrides.epic = editForm.vocabularyEpic;
+    if (editForm.vocabularyStage) vocabularyOverrides.stage = editForm.vocabularyStage;
+    if (editForm.vocabularyActivity) vocabularyOverrides.activity = editForm.vocabularyActivity;
+    if (editForm.vocabularyWorkstream) vocabularyOverrides.workstream = editForm.vocabularyWorkstream;
+    
     // Convert empty date strings to null before sending to API
     const cleanedForm = {
       ...editForm,
       msaDate: editForm.msaDate === "" ? null : editForm.msaDate,
       sinceDate: editForm.sinceDate === "" ? null : editForm.sinceDate,
       ndaDate: editForm.ndaDate === "" ? null : editForm.ndaDate,
+      vocabularyOverrides: Object.keys(vocabularyOverrides).length > 0 
+        ? JSON.stringify(vocabularyOverrides) 
+        : null,
+      // Remove the temporary vocabulary fields
+      vocabularyEpic: undefined,
+      vocabularyStage: undefined,
+      vocabularyActivity: undefined,
+      vocabularyWorkstream: undefined,
     };
     updateClientMutation.mutate(cleanedForm);
   };
@@ -446,6 +504,54 @@ export default function ClientDetail() {
                             })}
                             data-testid="input-edit-nda-date"
                           />
+                        </div>
+                        <div className="md:col-span-2 pt-4 border-t">
+                          <h4 className="text-sm font-medium mb-4">Vocabulary Customization (Optional)</h4>
+                          <p className="text-sm text-muted-foreground mb-4">
+                            Override default terminology for this client. Leave blank to use organization defaults.
+                          </p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="vocabularyEpic">Epic Term</Label>
+                              <Input
+                                id="vocabularyEpic"
+                                value={editForm.vocabularyEpic || ""}
+                                onChange={(e) => setEditForm({ ...editForm, vocabularyEpic: e.target.value })}
+                                placeholder="e.g., Phase, Theme"
+                                data-testid="input-vocab-epic"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="vocabularyStage">Stage Term</Label>
+                              <Input
+                                id="vocabularyStage"
+                                value={editForm.vocabularyStage || ""}
+                                onChange={(e) => setEditForm({ ...editForm, vocabularyStage: e.target.value })}
+                                placeholder="e.g., Sprint, Wave"
+                                data-testid="input-vocab-stage"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="vocabularyActivity">Activity Term</Label>
+                              <Input
+                                id="vocabularyActivity"
+                                value={editForm.vocabularyActivity || ""}
+                                onChange={(e) => setEditForm({ ...editForm, vocabularyActivity: e.target.value })}
+                                placeholder="e.g., Task, Milestone"
+                                data-testid="input-vocab-activity"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="vocabularyWorkstream">Workstream Term</Label>
+                              <Input
+                                id="vocabularyWorkstream"
+                                value={editForm.vocabularyWorkstream || ""}
+                                onChange={(e) => setEditForm({ ...editForm, vocabularyWorkstream: e.target.value })}
+                                placeholder="e.g., Track, Stream"
+                                data-testid="input-vocab-workstream"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ) : (
