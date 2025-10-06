@@ -1388,30 +1388,28 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Create new vocabulary term
   app.post("/api/vocabulary/catalog", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const { termType, termValue, description, sortOrder } = req.body;
+      // Use Zod schema for validation
+      const createVocabularyTermSchema = z.object({
+        termType: z.enum(['epic', 'stage', 'activity', 'workstream', 'milestone']),
+        termValue: z.string().min(1, "Term value is required"),
+        description: z.string().optional(),
+        sortOrder: z.number().int().optional()
+      });
       
-      // Validate required fields
-      if (!termType || !termValue) {
-        return res.status(400).json({ message: "Term type and value are required" });
-      }
-      
-      // Validate termType is one of the allowed types
-      const allowedTypes = ['epic', 'stage', 'activity', 'workstream', 'milestone'];
-      if (!allowedTypes.includes(termType)) {
-        return res.status(400).json({ message: `Invalid term type. Must be one of: ${allowedTypes.join(', ')}` });
-      }
+      const validatedData = createVocabularyTermSchema.parse(req.body);
       
       const newTerm = await storage.createVocabularyTerm({
-        termType,
-        termValue,
-        description: description || undefined,
-        sortOrder: sortOrder !== undefined ? sortOrder : 999,
+        ...validatedData,
+        sortOrder: validatedData.sortOrder !== undefined ? validatedData.sortOrder : 999,
         isActive: true,
         isSystemDefault: false
       });
       
       res.status(201).json(newTerm);
     } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid vocabulary term data", errors: error.errors });
+      }
       if (error?.code === '23505') { // Unique constraint violation
         return res.status(400).json({ message: "A term with this type and value already exists" });
       }
@@ -1424,14 +1422,23 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.patch("/api/vocabulary/catalog/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { id } = req.params;
-      const updates = req.body;
       
-      // Don't allow changing termType for existing terms
-      delete updates.termType;
+      // Use Zod schema for validation
+      const updateVocabularyTermSchema = z.object({
+        termValue: z.string().min(1).optional(),
+        description: z.string().optional(),
+        sortOrder: z.number().int().optional(),
+        isActive: z.boolean().optional()
+      });
       
-      const updated = await storage.updateVocabularyTerm(id, updates);
+      const validatedData = updateVocabularyTermSchema.parse(req.body);
+      
+      const updated = await storage.updateVocabularyTerm(id, validatedData);
       res.json(updated);
     } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid update data", errors: error.errors });
+      }
       if (error?.message?.includes('not found')) {
         return res.status(404).json({ message: "Vocabulary term not found" });
       }

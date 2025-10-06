@@ -784,10 +784,13 @@ export default function SystemSettings() {
                                         title: "Success",
                                         description: `Added new ${termType} term: ${newTerm}`,
                                       });
-                                    }).catch(() => {
+                                    }).catch((error: any) => {
+                                      const message = error?.message || error?.body?.message || `Failed to add ${termType} term`;
                                       toast({
                                         title: "Error",
-                                        description: `Failed to add ${termType} term`,
+                                        description: message.includes('403') || message.includes('Insufficient') 
+                                          ? "You don't have permission to manage vocabulary terms" 
+                                          : message,
                                         variant: "destructive"
                                       });
                                     });
@@ -894,10 +897,13 @@ export default function SystemSettings() {
                                                 title: "Success",
                                                 description: `Updated term to: ${newValue}`,
                                               });
-                                            }).catch(() => {
+                                            }).catch((error: any) => {
+                                              const message = error?.message || error?.body?.message || "Failed to update term";
                                               toast({
                                                 title: "Error",
-                                                description: "Failed to update term",
+                                                description: message.includes('403') || message.includes('Insufficient') 
+                                                  ? "You don't have permission to update vocabulary terms" 
+                                                  : message,
                                                 variant: "destructive"
                                               });
                                             });
