@@ -13,9 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // Types
 interface SystemSetting {
@@ -24,6 +25,25 @@ interface SystemSetting {
   settingValue: string;
   description: string | null;
   settingType: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface VocabularyCatalogTerm {
+  id: string;
+  termType: 'epic' | 'stage' | 'activity' | 'workstream';
+  termValue: string;
+  description: string | null;
+  displayOrder: number;
+  createdAt: string;
+}
+
+interface OrganizationVocabularySelection {
+  id: string;
+  epicTermId: string | null;
+  stageTermId: string | null;
+  activityTermId: string | null;
+  workstreamTermId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,16 +74,16 @@ const companySettingsSchema = z.object({
   paymentTerms: z.string().optional(),
 });
 
-const vocabularySettingsSchema = z.object({
-  epic: z.string().min(1, "Epic term is required"),
-  stage: z.string().min(1, "Stage term is required"),
-  activity: z.string().min(1, "Activity term is required"),
-  workstream: z.string().min(1, "Workstream term is required"),
+const vocabularySelectionsSchema = z.object({
+  epicTermId: z.string().uuid().nullable(),
+  stageTermId: z.string().uuid().nullable(),
+  activityTermId: z.string().uuid().nullable(),
+  workstreamTermId: z.string().uuid().nullable(),
 });
 
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
 type CompanySettingsData = z.infer<typeof companySettingsSchema>;
-type VocabularySettingsData = z.infer<typeof vocabularySettingsSchema>;
+type VocabularySelectionsData = z.infer<typeof vocabularySelectionsSchema>;
 
 export default function SystemSettings() {
   const { toast } = useToast();
@@ -119,32 +139,43 @@ export default function SystemSettings() {
     },
   });
 
-  // Fetch organization vocabulary
-  const { data: orgVocabulary, isLoading: isLoadingVocabulary } = useQuery<VocabularyTerms>({
-    queryKey: ["/api/vocabulary/organization"],
+  // Fetch vocabulary catalog (all available terms)
+  const { data: catalogTerms = [], isLoading: isLoadingCatalog } = useQuery<VocabularyCatalogTerm[]>({
+    queryKey: ["/api/vocabulary/catalog"],
   });
 
-  const vocabularyForm = useForm<VocabularySettingsData>({
-    resolver: zodResolver(vocabularySettingsSchema),
+  // Fetch organization vocabulary selections
+  const { data: orgSelections, isLoading: isLoadingSelections } = useQuery<OrganizationVocabularySelection>({
+    queryKey: ["/api/vocabulary/organization/selections"],
+  });
+
+  // Organize catalog terms by type
+  const epicTerms = catalogTerms.filter(t => t.termType === 'epic').sort((a, b) => a.displayOrder - b.displayOrder);
+  const stageTerms = catalogTerms.filter(t => t.termType === 'stage').sort((a, b) => a.displayOrder - b.displayOrder);
+  const activityTerms = catalogTerms.filter(t => t.termType === 'activity').sort((a, b) => a.displayOrder - b.displayOrder);
+  const workstreamTerms = catalogTerms.filter(t => t.termType === 'workstream').sort((a, b) => a.displayOrder - b.displayOrder);
+
+  const vocabularyForm = useForm<VocabularySelectionsData>({
+    resolver: zodResolver(vocabularySelectionsSchema),
     defaultValues: {
-      epic: "Epic",
-      stage: "Stage",
-      activity: "Activity",
-      workstream: "Workstream",
+      epicTermId: null,
+      stageTermId: null,
+      activityTermId: null,
+      workstreamTermId: null,
     },
   });
 
-  // Reset vocabulary form when data is loaded (only once, not on every render)
+  // Reset vocabulary form when selections are loaded
   useEffect(() => {
-    if (orgVocabulary && !vocabularyForm.formState.isDirty) {
+    if (orgSelections && !vocabularyForm.formState.isDirty) {
       vocabularyForm.reset({
-        epic: orgVocabulary.epic || "Epic",
-        stage: orgVocabulary.stage || "Stage",
-        activity: orgVocabulary.activity || "Activity",
-        workstream: orgVocabulary.workstream || "Workstream",
+        epicTermId: orgSelections.epicTermId,
+        stageTermId: orgSelections.stageTermId,
+        activityTermId: orgSelections.activityTermId,
+        workstreamTermId: orgSelections.workstreamTermId,
       });
     }
-  }, [orgVocabulary, vocabularyForm]);
+  }, [orgSelections, vocabularyForm]);
 
   // Mutations
   const updateRatesMutation = useMutation({
@@ -240,25 +271,26 @@ export default function SystemSettings() {
   });
 
   const updateVocabularyMutation = useMutation({
-    mutationFn: async (data: VocabularySettingsData) => {
-      await apiRequest("/api/vocabulary/organization", {
+    mutationFn: async (data: VocabularySelectionsData) => {
+      await apiRequest("/api/vocabulary/organization/selections", {
         method: "PUT",
         body: JSON.stringify(data),
       });
       return data;
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/organization/selections"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/organization"] });
       queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/context"] });
       vocabularyForm.reset(data);
       toast({
-        title: "Vocabulary settings saved",
-        description: "Organization vocabulary defaults have been updated successfully.",
+        title: "Terminology updated",
+        description: "Organization terminology defaults have been updated successfully.",
       });
     },
     onError: (error) => {
       toast({
-        title: "Failed to save vocabulary settings",
+        title: "Failed to update terminology",
         description: "Please try again.",
         variant: "destructive",
       });
@@ -273,7 +305,7 @@ export default function SystemSettings() {
     updateCompanyMutation.mutate(data);
   };
 
-  const handleVocabularySubmit = (data: VocabularySettingsData) => {
+  const handleVocabularySubmit = (data: VocabularySelectionsData) => {
     updateVocabularyMutation.mutate(data);
   };
 
@@ -314,8 +346,8 @@ export default function SystemSettings() {
               <span>Default Rates</span>
             </TabsTrigger>
             <TabsTrigger value="vocabulary" className="flex items-center space-x-2">
-              <Languages className="w-4 h-4" />
-              <span>Vocabulary</span>
+              <Sparkles className="w-4 h-4" />
+              <span>Customize</span>
             </TabsTrigger>
             <TabsTrigger value="general" className="flex items-center space-x-2">
               <Settings className="w-4 h-4" />
@@ -662,17 +694,17 @@ export default function SystemSettings() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
-                  <Languages className="w-5 h-5" />
-                  <span>Organization Vocabulary</span>
+                  <Sparkles className="w-5 h-5" />
+                  <span>Organization Terminology</span>
                 </CardTitle>
                 <CardDescription>
-                  Customize the terminology used throughout the system. These defaults apply organization-wide and can be overridden at the client or project level.
+                  Select preferred terminology from predefined options. These defaults apply organization-wide and can be overridden at the client or project level.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {isLoadingVocabulary ? (
+                {isLoadingCatalog || isLoadingSelections ? (
                   <div className="flex items-center justify-center py-8">
-                    <div className="text-lg">Loading vocabulary settings...</div>
+                    <div className="text-lg">Loading terminology options...</div>
                   </div>
                 ) : (
                   <>
@@ -685,104 +717,148 @@ export default function SystemSettings() {
 
                     <Form {...vocabularyForm}>
                       <form onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-6">
-                      <FormField
-                        control={vocabularyForm.control}
-                        name="epic"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Epic Term</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="Epic"
-                                data-testid="input-vocab-epic"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Top-level grouping (default: "Epic")
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                        <div className="grid grid-cols-2 gap-6">
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="epicTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Epic Term</FormLabel>
+                                <Select 
+                                  onValueChange={field.onChange} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-epic"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select epic term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {epicTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Top-level project grouping
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                      <FormField
-                        control={vocabularyForm.control}
-                        name="stage"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Stage Term</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="Stage"
-                                data-testid="input-vocab-stage"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Mid-level grouping (default: "Stage")
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="stageTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Stage Term</FormLabel>
+                                <Select 
+                                  onValueChange={field.onChange} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-stage"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select stage term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {stageTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Mid-level project phase
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                      <FormField
-                        control={vocabularyForm.control}
-                        name="activity"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Activity Term</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="Activity"
-                                data-testid="input-vocab-activity"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Individual task level (default: "Activity" or "Milestone")
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="activityTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Activity Term</FormLabel>
+                                <Select 
+                                  onValueChange={field.onChange} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-activity"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select activity term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {activityTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Individual task or milestone level
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-                      <FormField
-                        control={vocabularyForm.control}
-                        name="workstream"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Workstream Term</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder="Workstream"
-                                data-testid="input-vocab-workstream"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Parallel work track (default: "Workstream")
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="workstreamTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Workstream Term</FormLabel>
+                                <Select 
+                                  onValueChange={field.onChange} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-workstream"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select workstream term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {workstreamTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Parallel work track
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
 
-                    <div className="flex justify-end">
-                      <Button 
-                        type="submit" 
-                        disabled={updateVocabularyMutation.isPending}
-                        data-testid="button-save-vocabulary"
-                      >
-                        <Save className="w-4 h-4 mr-2" />
-                        {updateVocabularyMutation.isPending ? "Saving..." : "Save Vocabulary Settings"}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
+                        <div className="flex justify-end">
+                          <Button 
+                            type="submit" 
+                            disabled={updateVocabularyMutation.isPending}
+                            data-testid="button-save-vocabulary"
+                          >
+                            <Save className="w-4 h-4 mr-2" />
+                            {updateVocabularyMutation.isPending ? "Saving..." : "Save Terminology Settings"}
+                          </Button>
+                        </div>
+                      </form>
+                    </Form>
                   </>
                 )}
               </CardContent>
