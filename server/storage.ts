@@ -1062,14 +1062,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(insertProject: InsertProject): Promise<Project> {
-    // If vocabulary term IDs are not provided, inherit from organization defaults
-    if (!insertProject.epicTermId || !insertProject.stageTermId || !insertProject.activityTermId || !insertProject.workstreamTermId) {
-      const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
-      if (orgVocab) {
-        insertProject.epicTermId = insertProject.epicTermId || orgVocab.epicTermId;
-        insertProject.stageTermId = insertProject.stageTermId || orgVocab.stageTermId;
-        insertProject.activityTermId = insertProject.activityTermId || orgVocab.activityTermId;
-        insertProject.workstreamTermId = insertProject.workstreamTermId || orgVocab.workstreamTermId;
+    // Auto-inherit vocabulary from organization defaults if not explicitly provided
+    // This ensures new projects have proper terminology even when created programmatically
+    // Using explicit null/undefined checks to avoid overwriting intentional falsy values
+    const needsVocabInheritance = 
+      insertProject.epicTermId == null || 
+      insertProject.stageTermId == null || 
+      insertProject.activityTermId == null || 
+      insertProject.workstreamTermId == null;
+      
+    if (needsVocabInheritance) {
+      try {
+        const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
+        if (orgVocab) {
+          // Only inherit if the insert value is null/undefined AND org has a non-null value
+          if (insertProject.epicTermId == null && orgVocab.epicTermId != null) {
+            insertProject.epicTermId = orgVocab.epicTermId;
+          }
+          if (insertProject.stageTermId == null && orgVocab.stageTermId != null) {
+            insertProject.stageTermId = orgVocab.stageTermId;
+          }
+          if (insertProject.activityTermId == null && orgVocab.activityTermId != null) {
+            insertProject.activityTermId = orgVocab.activityTermId;
+          }
+          if (insertProject.workstreamTermId == null && orgVocab.workstreamTermId != null) {
+            insertProject.workstreamTermId = orgVocab.workstreamTermId;
+          }
+        }
+      } catch (error) {
+        // If we can't fetch org vocabulary, proceed without it
+        // Projects can still be created with null vocabulary terms
+        console.warn('Could not fetch organization vocabulary for new project:', error);
       }
     }
     

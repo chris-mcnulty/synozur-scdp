@@ -698,7 +698,7 @@ export default function SystemSettings() {
                   <span>Organization Terminology</span>
                 </CardTitle>
                 <CardDescription>
-                  Select preferred terminology from predefined options. These defaults apply organization-wide and can be overridden at the client or project level.
+                  Select preferred terminology from predefined options. These defaults apply organization-wide and can be overridden at the client or project level. New projects will automatically inherit these terms unless you specify otherwise.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -711,7 +711,12 @@ export default function SystemSettings() {
                     <Alert>
                       <Info className="h-4 w-4" />
                       <AlertDescription>
-                        <strong>Cascading Priority:</strong> Project Overrides → Client Overrides → Organization Defaults (these settings)
+                        <div className="space-y-2">
+                          <div><strong>Cascading Priority:</strong> Project Overrides → Client Overrides → Organization Defaults (these settings)</div>
+                          <div className="text-sm">
+                            These organization-level defaults are automatically applied when you create new projects. You can override them for specific clients or individual projects as needed.
+                          </div>
+                        </div>
                       </AlertDescription>
                     </Alert>
 
