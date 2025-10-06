@@ -1068,8 +1068,9 @@ export class DatabaseStorage implements IStorage {
     const needsVocabInheritance = 
       insertProject.epicTermId == null || 
       insertProject.stageTermId == null || 
-      insertProject.activityTermId == null || 
-      insertProject.workstreamTermId == null;
+      insertProject.workstreamTermId == null ||
+      insertProject.milestoneTermId == null ||
+      insertProject.activityTermId == null;
       
     if (needsVocabInheritance) {
       try {
@@ -1082,11 +1083,14 @@ export class DatabaseStorage implements IStorage {
           if (insertProject.stageTermId == null && orgVocab.stageTermId != null) {
             insertProject.stageTermId = orgVocab.stageTermId;
           }
-          if (insertProject.activityTermId == null && orgVocab.activityTermId != null) {
-            insertProject.activityTermId = orgVocab.activityTermId;
-          }
           if (insertProject.workstreamTermId == null && orgVocab.workstreamTermId != null) {
             insertProject.workstreamTermId = orgVocab.workstreamTermId;
+          }
+          if (insertProject.milestoneTermId == null && orgVocab.milestoneTermId != null) {
+            insertProject.milestoneTermId = orgVocab.milestoneTermId;
+          }
+          if (insertProject.activityTermId == null && orgVocab.activityTermId != null) {
+            insertProject.activityTermId = orgVocab.activityTermId;
           }
         }
       } catch (error) {
@@ -6640,8 +6644,9 @@ export class DatabaseStorage implements IStorage {
     const termValidations = [
       { id: updates.epicTermId, expectedType: 'epic' },
       { id: updates.stageTermId, expectedType: 'stage' },
-      { id: updates.activityTermId, expectedType: 'activity' },
       { id: updates.workstreamTermId, expectedType: 'workstream' },
+      { id: updates.milestoneTermId, expectedType: 'milestone' },
+      { id: updates.activityTermId, expectedType: 'activity' },
     ];
 
     for (const { id, expectedType } of termValidations) {
