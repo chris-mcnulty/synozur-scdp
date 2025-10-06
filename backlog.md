@@ -27,10 +27,65 @@
   - Apply to all new estimates and projects
   
 - [ ] Day 3: Client and project-level overrides
-  - Client-specific terminology preferences
+  - Client-specific terminology preferences  
   - Project-specific overrides (highest priority)
-  - Cascading logic: Project → Client → Organization
+  - **CORRECT Cascading Hierarchy:** Organization → Client → Project (inheritance flows downward)
   - Update all UI labels dynamically
+  
+**Master Vocabulary List:** Maintained in `vocabulary_catalog` table with termType, termValue, isActive, sortOrder
+
+**Day 3 Implementation Plan - Module-by-Module Application:**
+
+**Phase 1: Foundation & Data Layer (2 hours)**
+  - Create centralized VocabularyService class in server/services/vocabulary.ts
+  - Implement context-aware resolution methods for each module
+  - Add caching layer for frequently accessed vocabulary
+  - Add nullable vocabulary FKs to timeEntries, expenses, invoiceLines tables
+
+**Phase 2: Estimate Module (2 hours)**
+  - Update estimate creation to pull organization defaults via FK references
+  - Modify Excel import/export to use resolved vocabulary terms
+  - Update estimate detail page headers and line item dialogs
+
+**Phase 3: Project Module (2 hours)**
+  - Update project creation from estimates to inherit vocabulary FKs
+  - Modify project epic/stage/milestone APIs to return resolved terms
+  - Update Project Structure tab and milestone dialogs with dynamic labels
+
+**Phase 4: Time Entry Module (2 hours)**
+  - Add vocabulary resolution to time entry list endpoints
+  - Update time entry Excel export with resolved terms
+  - Update time entry form and sheet view headers dynamically
+
+**Phase 5: Expense Module (2 hours)**
+  - Add workstream vocabulary resolution to expense endpoints
+  - Update expense form workstream field label
+  - Modify expense list view column headers
+
+**Phase 6: Invoice Module (3 hours - MOST CRITICAL)**
+  - Update invoice generation to use resolved vocabulary in line descriptions
+  - Modify invoice batch creation to group by vocabulary-aware categories
+  - Update invoice review dialog and PDF templates with dynamic terminology
+
+**Phase 7: Integration & Safety (1 hour)**
+  - Create forward/rollback migration scripts for vocabulary FKs
+  - Add VOCABULARY_ENABLED feature flags per module
+  - Set up monitoring for vocabulary resolution failures
+
+**Deployment Strategy:**
+  - Day 3 Morning: Deploy Phases 1-2 (Foundation + Estimates)
+  - Day 3 Afternoon: Deploy Phase 3 (Projects) after validation
+  - Day 3 Evening: Deploy Phase 4 (Time) if stable
+  - Day 4 Morning: Deploy Phase 5 (Expenses) after overnight monitoring
+  - Day 4 Afternoon: Deploy Phase 6 (Invoices) with careful testing
+  - Day 4 Evening: Complete Phase 7 integration testing
+
+**Risk Mitigations:**
+  - Use nullable FKs initially - convert to NOT NULL after data migration
+  - Test each module in isolation before integration
+  - Maintain backward compatibility with existing data
+  - Keep vocabulary resolution service separate from core business logic
+  - Use database transactions for all vocabulary updates
   
 **Timeline:** Days 2-3 (this week)
 

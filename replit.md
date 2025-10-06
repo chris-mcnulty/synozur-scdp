@@ -105,6 +105,10 @@ For development testing, use the following login credentials:
   - `PATCH /api/clients/:id` - Update client vocabulary (vocabularyOverrides field)
   - `PATCH /api/projects/:id` - Update project vocabulary (vocabularyOverrides field)
 
+## Project Management
+
+- **Master Backlog File**: `backlog.md` - Contains all project planning, current sprint work, and future enhancements
+
 ## Backlog / Future Enhancements
 
 ### Multi-Tenant Support
