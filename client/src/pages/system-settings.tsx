@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { VocabularyTerms } from "@shared/schema";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
@@ -53,8 +54,16 @@ const companySettingsSchema = z.object({
   paymentTerms: z.string().optional(),
 });
 
+const vocabularySettingsSchema = z.object({
+  epic: z.string().min(1, "Epic term is required"),
+  stage: z.string().min(1, "Stage term is required"),
+  activity: z.string().min(1, "Activity term is required"),
+  workstream: z.string().min(1, "Workstream term is required"),
+});
+
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
 type CompanySettingsData = z.infer<typeof companySettingsSchema>;
+type VocabularySettingsData = z.infer<typeof vocabularySettingsSchema>;
 
 export default function SystemSettings() {
   const { toast } = useToast();
@@ -109,6 +118,33 @@ export default function SystemSettings() {
       paymentTerms: settingsMap.PAYMENT_TERMS || "Payment due within 30 days",
     },
   });
+
+  // Fetch organization vocabulary
+  const { data: orgVocabulary, isLoading: isLoadingVocabulary } = useQuery<VocabularyTerms>({
+    queryKey: ["/api/vocabulary/organization"],
+  });
+
+  const vocabularyForm = useForm<VocabularySettingsData>({
+    resolver: zodResolver(vocabularySettingsSchema),
+    defaultValues: {
+      epic: "Epic",
+      stage: "Stage",
+      activity: "Activity",
+      workstream: "Workstream",
+    },
+  });
+
+  // Reset vocabulary form when data is loaded (only once, not on every render)
+  useEffect(() => {
+    if (orgVocabulary && !vocabularyForm.formState.isDirty) {
+      vocabularyForm.reset({
+        epic: orgVocabulary.epic || "Epic",
+        stage: orgVocabulary.stage || "Stage",
+        activity: orgVocabulary.activity || "Activity",
+        workstream: orgVocabulary.workstream || "Workstream",
+      });
+    }
+  }, [orgVocabulary, vocabularyForm]);
 
   // Mutations
   const updateRatesMutation = useMutation({
@@ -203,12 +239,42 @@ export default function SystemSettings() {
     },
   });
 
+  const updateVocabularyMutation = useMutation({
+    mutationFn: async (data: VocabularySettingsData) => {
+      await apiRequest("/api/vocabulary/organization", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/organization"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/context"] });
+      vocabularyForm.reset(data);
+      toast({
+        title: "Vocabulary settings saved",
+        description: "Organization vocabulary defaults have been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to save vocabulary settings",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleRateSubmit = (data: RateSettingsData) => {
     updateRatesMutation.mutate(data);
   };
 
   const handleCompanySubmit = (data: CompanySettingsData) => {
     updateCompanyMutation.mutate(data);
+  };
+
+  const handleVocabularySubmit = (data: VocabularySettingsData) => {
+    updateVocabularyMutation.mutate(data);
   };
 
   if (isLoading) {
@@ -246,6 +312,10 @@ export default function SystemSettings() {
             <TabsTrigger value="rates" className="flex items-center space-x-2">
               <DollarSign className="w-4 h-4" />
               <span>Default Rates</span>
+            </TabsTrigger>
+            <TabsTrigger value="vocabulary" className="flex items-center space-x-2">
+              <Languages className="w-4 h-4" />
+              <span>Vocabulary</span>
             </TabsTrigger>
             <TabsTrigger value="general" className="flex items-center space-x-2">
               <Settings className="w-4 h-4" />
@@ -584,6 +654,137 @@ export default function SystemSettings() {
                     </div>
                   </form>
                 </Form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="vocabulary" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Languages className="w-5 h-5" />
+                  <span>Organization Vocabulary</span>
+                </CardTitle>
+                <CardDescription>
+                  Customize the terminology used throughout the system. These defaults apply organization-wide and can be overridden at the client or project level.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {isLoadingVocabulary ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-lg">Loading vocabulary settings...</div>
+                  </div>
+                ) : (
+                  <>
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        <strong>Cascading Priority:</strong> Project Overrides → Client Overrides → Organization Defaults (these settings)
+                      </AlertDescription>
+                    </Alert>
+
+                    <Form {...vocabularyForm}>
+                      <form onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <FormField
+                        control={vocabularyForm.control}
+                        name="epic"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Epic Term</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="Epic"
+                                data-testid="input-vocab-epic"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Top-level grouping (default: "Epic")
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={vocabularyForm.control}
+                        name="stage"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Stage Term</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="Stage"
+                                data-testid="input-vocab-stage"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Mid-level grouping (default: "Stage")
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={vocabularyForm.control}
+                        name="activity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Activity Term</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="Activity"
+                                data-testid="input-vocab-activity"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Individual task level (default: "Activity" or "Milestone")
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={vocabularyForm.control}
+                        name="workstream"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Workstream Term</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="Workstream"
+                                data-testid="input-vocab-workstream"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Parallel work track (default: "Workstream")
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button 
+                        type="submit" 
+                        disabled={updateVocabularyMutation.isPending}
+                        data-testid="button-save-vocabulary"
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        {updateVocabularyMutation.isPending ? "Saving..." : "Save Vocabulary Settings"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
