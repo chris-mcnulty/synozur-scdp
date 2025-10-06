@@ -68,6 +68,25 @@ type InvoiceBatchWithDetails = InvoiceBatch & {
   projectCount: number;
 };
 
+interface VocabularyCatalogTerm {
+  id: string;
+  termType: 'epic' | 'stage' | 'activity' | 'workstream';
+  termValue: string;
+  description: string | null;
+  displayOrder: number;
+  createdAt: string;
+}
+
+interface OrganizationVocabularySelection {
+  id: string;
+  epicTermId: string | null;
+  stageTermId: string | null;
+  activityTermId: string | null;
+  workstreamTermId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 type ClientEditForm = Partial<Client> & {
   vocabularyEpic?: string;
   vocabularyStage?: string;
@@ -89,24 +108,33 @@ export default function ClientDetail() {
     enabled: !!clientId
   });
 
+  // Fetch vocabulary catalog (all available terms)
+  const { data: catalogTerms = [] } = useQuery<VocabularyCatalogTerm[]>({
+    queryKey: ["/api/vocabulary/catalog"],
+  });
+
+  // Fetch organization vocabulary selections (to show defaults)
+  const { data: orgSelections } = useQuery<OrganizationVocabularySelection>({
+    queryKey: ["/api/vocabulary/organization/selections"],
+  });
+
+  // Organize catalog terms by type
+  const epicTerms = catalogTerms.filter(t => t.termType === 'epic').sort((a, b) => a.displayOrder - b.displayOrder);
+  const stageTerms = catalogTerms.filter(t => t.termType === 'stage').sort((a, b) => a.displayOrder - b.displayOrder);
+  const activityTerms = catalogTerms.filter(t => t.termType === 'activity').sort((a, b) => a.displayOrder - b.displayOrder);
+  const workstreamTerms = catalogTerms.filter(t => t.termType === 'workstream').sort((a, b) => a.displayOrder - b.displayOrder);
+
+  // Get term value by ID for display purposes
+  const getTermValue = (termId: string | null | undefined): string => {
+    if (!termId) return '';
+    const term = catalogTerms.find(t => t.id === termId);
+    return term ? term.termValue : '';
+  };
+
   // Auto-enter edit mode if ?edit=true is in URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('edit') === 'true' && client) {
-      // Parse vocabulary overrides if they exist
-      let vocabOverrides = { epic: "", stage: "", activity: "", workstream: "" };
-      if (client.vocabularyOverrides) {
-        try {
-          const parsed = JSON.parse(client.vocabularyOverrides);
-          vocabOverrides = {
-            epic: parsed.epic || "",
-            stage: parsed.stage || "",
-            activity: parsed.activity || "",
-            workstream: parsed.workstream || "",
-          };
-        } catch {}
-      }
-      
       // Populate form with client data
       setEditForm({
         name: client.name,
@@ -122,10 +150,10 @@ export default function ClientDetail() {
         ndaDate: client.ndaDate || "",
         hasNda: client.hasNda || false,
         ndaDocument: client.ndaDocument || "",
-        vocabularyEpic: vocabOverrides.epic,
-        vocabularyStage: vocabOverrides.stage,
-        vocabularyActivity: vocabOverrides.activity,
-        vocabularyWorkstream: vocabOverrides.workstream,
+        epicTermId: client.epicTermId || null,
+        stageTermId: client.stageTermId || null,
+        activityTermId: client.activityTermId || null,
+        workstreamTermId: client.workstreamTermId || null,
       });
       setIsEditing(true);
       // Clean the URL by removing the edit parameter
@@ -189,20 +217,6 @@ export default function ClientDetail() {
       return;
     }
     
-    // Parse vocabulary overrides if they exist
-    let vocabOverrides = { epic: "", stage: "", activity: "", workstream: "" };
-    if (client.vocabularyOverrides) {
-      try {
-        const parsed = JSON.parse(client.vocabularyOverrides);
-        vocabOverrides = {
-          epic: parsed.epic || "",
-          stage: parsed.stage || "",
-          activity: parsed.activity || "",
-          workstream: parsed.workstream || "",
-        };
-      } catch {}
-    }
-    
     // Populate form with current client data
     setEditForm({
       name: client.name,
@@ -218,32 +232,27 @@ export default function ClientDetail() {
       ndaDate: client.ndaDate || "",
       hasNda: client.hasNda || false,
       ndaDocument: client.ndaDocument || "",
-      vocabularyEpic: vocabOverrides.epic,
-      vocabularyStage: vocabOverrides.stage,
-      vocabularyActivity: vocabOverrides.activity,
-      vocabularyWorkstream: vocabOverrides.workstream,
+      epicTermId: client.epicTermId || null,
+      stageTermId: client.stageTermId || null,
+      activityTermId: client.activityTermId || null,
+      workstreamTermId: client.workstreamTermId || null,
     });
     setIsEditing(true);
   };
 
   const handleSave = () => {
-    // Build vocabulary overrides JSON from form fields
-    const vocabularyOverrides: any = {};
-    if (editForm.vocabularyEpic) vocabularyOverrides.epic = editForm.vocabularyEpic;
-    if (editForm.vocabularyStage) vocabularyOverrides.stage = editForm.vocabularyStage;
-    if (editForm.vocabularyActivity) vocabularyOverrides.activity = editForm.vocabularyActivity;
-    if (editForm.vocabularyWorkstream) vocabularyOverrides.workstream = editForm.vocabularyWorkstream;
-    
-    // Convert empty date strings to null before sending to API
+    // Convert empty date strings and vocabulary overrides to null before sending to API
     const cleanedForm = {
       ...editForm,
       msaDate: editForm.msaDate === "" ? null : editForm.msaDate,
       sinceDate: editForm.sinceDate === "" ? null : editForm.sinceDate,
       ndaDate: editForm.ndaDate === "" ? null : editForm.ndaDate,
-      vocabularyOverrides: Object.keys(vocabularyOverrides).length > 0 
-        ? JSON.stringify(vocabularyOverrides) 
-        : null,
-      // Remove the temporary vocabulary fields
+      // Ensure vocabulary term IDs are null if empty
+      epicTermId: editForm.epicTermId || null,
+      stageTermId: editForm.stageTermId || null,
+      activityTermId: editForm.activityTermId || null,
+      workstreamTermId: editForm.workstreamTermId || null,
+      // Remove the legacy vocabulary fields if present
       vocabularyEpic: undefined,
       vocabularyStage: undefined,
       vocabularyActivity: undefined,
@@ -506,50 +515,94 @@ export default function ClientDetail() {
                           />
                         </div>
                         <div className="md:col-span-2 pt-4 border-t">
-                          <h4 className="text-sm font-medium mb-4">Vocabulary Customization (Optional)</h4>
+                          <h4 className="text-sm font-medium mb-4">Terminology Customization (Optional)</h4>
                           <p className="text-sm text-muted-foreground mb-4">
-                            Override default terminology for this client. Leave blank to use organization defaults.
+                            Override default terminology for this client. Select from predefined options. Leave unset to use organization defaults (shown in parentheses).
                           </p>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <Label htmlFor="vocabularyEpic">Epic Term</Label>
-                              <Input
-                                id="vocabularyEpic"
-                                value={editForm.vocabularyEpic || ""}
-                                onChange={(e) => setEditForm({ ...editForm, vocabularyEpic: e.target.value })}
-                                placeholder="e.g., Phase, Theme"
-                                data-testid="input-vocab-epic"
-                              />
+                              <Label htmlFor="epicTermId">Epic Term</Label>
+                              <Select
+                                value={editForm.epicTermId || ""}
+                                onValueChange={(value) => setEditForm({ ...editForm, epicTermId: value || null })}
+                              >
+                                <SelectTrigger data-testid="select-vocab-epic">
+                                  <SelectValue placeholder="Select epic term" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">
+                                    Use organization default{orgSelections?.epicTermId && ` (${getTermValue(orgSelections.epicTermId)})`}
+                                  </SelectItem>
+                                  {epicTerms.map(term => (
+                                    <SelectItem key={term.id} value={term.id}>
+                                      {term.termValue}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="vocabularyStage">Stage Term</Label>
-                              <Input
-                                id="vocabularyStage"
-                                value={editForm.vocabularyStage || ""}
-                                onChange={(e) => setEditForm({ ...editForm, vocabularyStage: e.target.value })}
-                                placeholder="e.g., Sprint, Wave"
-                                data-testid="input-vocab-stage"
-                              />
+                              <Label htmlFor="stageTermId">Stage Term</Label>
+                              <Select
+                                value={editForm.stageTermId || ""}
+                                onValueChange={(value) => setEditForm({ ...editForm, stageTermId: value || null })}
+                              >
+                                <SelectTrigger data-testid="select-vocab-stage">
+                                  <SelectValue placeholder="Select stage term" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">
+                                    Use organization default{orgSelections?.stageTermId && ` (${getTermValue(orgSelections.stageTermId)})`}
+                                  </SelectItem>
+                                  {stageTerms.map(term => (
+                                    <SelectItem key={term.id} value={term.id}>
+                                      {term.termValue}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="vocabularyActivity">Activity Term</Label>
-                              <Input
-                                id="vocabularyActivity"
-                                value={editForm.vocabularyActivity || ""}
-                                onChange={(e) => setEditForm({ ...editForm, vocabularyActivity: e.target.value })}
-                                placeholder="e.g., Task, Milestone"
-                                data-testid="input-vocab-activity"
-                              />
+                              <Label htmlFor="activityTermId">Activity Term</Label>
+                              <Select
+                                value={editForm.activityTermId || ""}
+                                onValueChange={(value) => setEditForm({ ...editForm, activityTermId: value || null })}
+                              >
+                                <SelectTrigger data-testid="select-vocab-activity">
+                                  <SelectValue placeholder="Select activity term" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">
+                                    Use organization default{orgSelections?.activityTermId && ` (${getTermValue(orgSelections.activityTermId)})`}
+                                  </SelectItem>
+                                  {activityTerms.map(term => (
+                                    <SelectItem key={term.id} value={term.id}>
+                                      {term.termValue}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="vocabularyWorkstream">Workstream Term</Label>
-                              <Input
-                                id="vocabularyWorkstream"
-                                value={editForm.vocabularyWorkstream || ""}
-                                onChange={(e) => setEditForm({ ...editForm, vocabularyWorkstream: e.target.value })}
-                                placeholder="e.g., Track, Stream"
-                                data-testid="input-vocab-workstream"
-                              />
+                              <Label htmlFor="workstreamTermId">Workstream Term</Label>
+                              <Select
+                                value={editForm.workstreamTermId || ""}
+                                onValueChange={(value) => setEditForm({ ...editForm, workstreamTermId: value || null })}
+                              >
+                                <SelectTrigger data-testid="select-vocab-workstream">
+                                  <SelectValue placeholder="Select workstream term" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="">
+                                    Use organization default{orgSelections?.workstreamTermId && ` (${getTermValue(orgSelections.workstreamTermId)})`}
+                                  </SelectItem>
+                                  {workstreamTerms.map(term => (
+                                    <SelectItem key={term.id} value={term.id}>
+                                      {term.termValue}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
                         </div>

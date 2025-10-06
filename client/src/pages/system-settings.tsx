@@ -725,7 +725,7 @@ export default function SystemSettings() {
                               <FormItem>
                                 <FormLabel>Epic Term</FormLabel>
                                 <Select 
-                                  onValueChange={field.onChange} 
+                                  onValueChange={(value) => field.onChange(value || null)} 
                                   value={field.value || undefined}
                                   data-testid="select-vocab-epic"
                                 >
@@ -735,6 +735,7 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
+                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {epicTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -757,7 +758,7 @@ export default function SystemSettings() {
                               <FormItem>
                                 <FormLabel>Stage Term</FormLabel>
                                 <Select 
-                                  onValueChange={field.onChange} 
+                                  onValueChange={(value) => field.onChange(value || null)} 
                                   value={field.value || undefined}
                                   data-testid="select-vocab-stage"
                                 >
@@ -767,6 +768,7 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
+                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {stageTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -789,7 +791,7 @@ export default function SystemSettings() {
                               <FormItem>
                                 <FormLabel>Activity Term</FormLabel>
                                 <Select 
-                                  onValueChange={field.onChange} 
+                                  onValueChange={(value) => field.onChange(value || null)} 
                                   value={field.value || undefined}
                                   data-testid="select-vocab-activity"
                                 >
@@ -799,6 +801,7 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
+                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {activityTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
@@ -821,7 +824,7 @@ export default function SystemSettings() {
                               <FormItem>
                                 <FormLabel>Workstream Term</FormLabel>
                                 <Select 
-                                  onValueChange={field.onChange} 
+                                  onValueChange={(value) => field.onChange(value || null)} 
                                   value={field.value || undefined}
                                   data-testid="select-vocab-workstream"
                                 >
@@ -831,6 +834,7 @@ export default function SystemSettings() {
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent>
+                                    <SelectItem value="">None (clear selection)</SelectItem>
                                     {workstreamTerms.map(term => (
                                       <SelectItem key={term.id} value={term.id}>
                                         {term.termValue}
