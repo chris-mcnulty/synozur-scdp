@@ -31,7 +31,7 @@ interface SystemSetting {
 
 interface VocabularyCatalogTerm {
   id: string;
-  termType: 'epic' | 'stage' | 'activity' | 'workstream';
+  termType: 'epic' | 'stage' | 'workstream' | 'milestone' | 'activity';
   termValue: string;
   description: string | null;
   displayOrder: number;
@@ -42,8 +42,9 @@ interface OrganizationVocabularySelection {
   id: string;
   epicTermId: string | null;
   stageTermId: string | null;
-  activityTermId: string | null;
   workstreamTermId: string | null;
+  milestoneTermId: string | null;
+  activityTermId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,8 +78,9 @@ const companySettingsSchema = z.object({
 const vocabularySelectionsSchema = z.object({
   epicTermId: z.string().uuid().nullable(),
   stageTermId: z.string().uuid().nullable(),
-  activityTermId: z.string().uuid().nullable(),
   workstreamTermId: z.string().uuid().nullable(),
+  milestoneTermId: z.string().uuid().nullable(),
+  activityTermId: z.string().uuid().nullable(),
 });
 
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
@@ -152,16 +154,18 @@ export default function SystemSettings() {
   // Organize catalog terms by type
   const epicTerms = catalogTerms.filter(t => t.termType === 'epic').sort((a, b) => a.displayOrder - b.displayOrder);
   const stageTerms = catalogTerms.filter(t => t.termType === 'stage').sort((a, b) => a.displayOrder - b.displayOrder);
-  const activityTerms = catalogTerms.filter(t => t.termType === 'activity').sort((a, b) => a.displayOrder - b.displayOrder);
   const workstreamTerms = catalogTerms.filter(t => t.termType === 'workstream').sort((a, b) => a.displayOrder - b.displayOrder);
+  const milestoneTerms = catalogTerms.filter(t => t.termType === 'milestone').sort((a, b) => a.displayOrder - b.displayOrder);
+  const activityTerms = catalogTerms.filter(t => t.termType === 'activity').sort((a, b) => a.displayOrder - b.displayOrder);
 
   const vocabularyForm = useForm<VocabularySelectionsData>({
     resolver: zodResolver(vocabularySelectionsSchema),
     defaultValues: {
       epicTermId: null,
       stageTermId: null,
-      activityTermId: null,
       workstreamTermId: null,
+      milestoneTermId: null,
+      activityTermId: null,
     },
   });
 
@@ -171,8 +175,9 @@ export default function SystemSettings() {
       vocabularyForm.reset({
         epicTermId: orgSelections.epicTermId,
         stageTermId: orgSelections.stageTermId,
-        activityTermId: orgSelections.activityTermId,
         workstreamTermId: orgSelections.workstreamTermId,
+        milestoneTermId: orgSelections.milestoneTermId,
+        activityTermId: orgSelections.activityTermId,
       });
     }
   }, [orgSelections, vocabularyForm]);
@@ -734,17 +739,19 @@ export default function SystemSettings() {
                           onClick={() => {
                             const epic = epicTerms.find(t => t.termValue === 'Epic');
                             const stage = stageTerms.find(t => t.termValue === 'Sprint');
-                            const activity = activityTerms.find(t => t.termValue === 'Task');
                             const workstream = workstreamTerms.find(t => t.termValue === 'Feature');
+                            const milestone = milestoneTerms.find(t => t.termValue === 'Milestone');
+                            const activity = activityTerms.find(t => t.termValue === 'Task');
                             vocabularyForm.setValue('epicTermId', epic?.id || null);
                             vocabularyForm.setValue('stageTermId', stage?.id || null);
-                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                             vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                            vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                           }}
                           data-testid="button-preset-software"
                         >
                           Software Development
-                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Sprint / Task / Feature</Badge>
+                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Sprint / Feature / Milestone / Task</Badge>
                         </Button>
                         <Button
                           type="button"
@@ -752,35 +759,39 @@ export default function SystemSettings() {
                           onClick={() => {
                             const epic = epicTerms.find(t => t.termValue === 'Program');
                             const stage = stageTerms.find(t => t.termValue === 'Phase');
-                            const activity = activityTerms.find(t => t.termValue === 'Deliverable');
                             const workstream = workstreamTerms.find(t => t.termValue === 'Category');
+                            const milestone = milestoneTerms.find(t => t.termValue === 'Target');
+                            const activity = activityTerms.find(t => t.termValue === 'Deliverable');
                             vocabularyForm.setValue('epicTermId', epic?.id || null);
                             vocabularyForm.setValue('stageTermId', stage?.id || null);
-                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                             vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                            vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                           }}
                           data-testid="button-preset-consulting"
                         >
                           Consulting
-                          <Badge variant="secondary" className="ml-2 text-xs">Program / Phase / Deliverable / Category</Badge>
+                          <Badge variant="secondary" className="ml-2 text-xs">Program / Phase / Category / Target / Deliverable</Badge>
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
                           onClick={() => {
                             const epic = epicTerms.find(t => t.termValue === 'Phase');
-                            const stage = stageTerms.find(t => t.termValue === 'Milestone');
-                            const activity = activityTerms.find(t => t.termValue === 'Gate');
+                            const stage = stageTerms.find(t => t.termValue === 'Phase');
                             const workstream = workstreamTerms.find(t => t.termValue === 'Trade');
+                            const milestone = milestoneTerms.find(t => t.termValue === 'Checkpoint');
+                            const activity = activityTerms.find(t => t.termValue === 'Gate');
                             vocabularyForm.setValue('epicTermId', epic?.id || null);
                             vocabularyForm.setValue('stageTermId', stage?.id || null);
-                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                             vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                            vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                           }}
                           data-testid="button-preset-construction"
                         >
                           Construction
-                          <Badge variant="secondary" className="ml-2 text-xs">Phase / Milestone / Gate / Trade</Badge>
+                          <Badge variant="secondary" className="ml-2 text-xs">Phase / Phase / Trade / Checkpoint / Gate</Badge>
                         </Button>
                         <Button
                           type="button"
@@ -788,17 +799,19 @@ export default function SystemSettings() {
                           onClick={() => {
                             const epic = epicTerms.find(t => t.termValue === 'Epic');
                             const stage = stageTerms.find(t => t.termValue === 'Stage');
-                            const activity = activityTerms.find(t => t.termValue === 'Activity');
                             const workstream = workstreamTerms.find(t => t.termValue === 'Workstream');
+                            const milestone = milestoneTerms.find(t => t.termValue === 'Milestone');
+                            const activity = activityTerms.find(t => t.termValue === 'Activity');
                             vocabularyForm.setValue('epicTermId', epic?.id || null);
                             vocabularyForm.setValue('stageTermId', stage?.id || null);
-                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                             vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                            vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                            vocabularyForm.setValue('activityTermId', activity?.id || null);
                           }}
                           data-testid="button-preset-default"
                         >
                           Default
-                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Stage / Activity / Workstream</Badge>
+                          <Badge variant="secondary" className="ml-2 text-xs">Epic / Stage / Workstream / Milestone / Activity</Badge>
                         </Button>
                       </CardContent>
                     </Card>
@@ -927,7 +940,71 @@ export default function SystemSettings() {
                                   </SelectContent>
                                 </Select>
                                 <FormDescription>
-                                  Parallel work track
+                                  Parallel work track (optional)
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="milestoneTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Milestone Term</FormLabel>
+                                <Select 
+                                  onValueChange={(value) => field.onChange(value || null)} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-milestone"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select milestone term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {milestoneTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Checkpoint or target (optional)
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={vocabularyForm.control}
+                            name="activityTermId"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Activity Term</FormLabel>
+                                <Select 
+                                  onValueChange={(value) => field.onChange(value || null)} 
+                                  value={field.value || undefined}
+                                  data-testid="select-vocab-activity"
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select activity term" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {activityTerms.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Individual task level
                                 </FormDescription>
                                 <FormMessage />
                               </FormItem>
