@@ -3918,6 +3918,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Excel import
   app.post("/api/estimates/:id/import-excel", requireAuth, async (req, res) => {
     try {
+      console.log("Import Excel endpoint hit for estimate:", req.params.id);
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
@@ -4150,7 +4151,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(response);
     } catch (error) {
       console.error("Excel import error:", error);
-      res.status(500).json({ message: "Failed to import Excel file" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      res.status(500).json({ 
+        message: errorMessage,
+        error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      });
     }
   });
 
