@@ -952,8 +952,14 @@ export default function EstimateDetail() {
       
       setShowImportConfirmDialog(false);
       setPendingImportFile(null);
-    } catch (error) {
-      toast({ title: "Failed to import Excel file", variant: "destructive" });
+    } catch (error: any) {
+      console.error("Import failed:", error);
+      const errorMessage = error.message || "Unknown error occurred";
+      toast({ 
+        title: "Failed to import Excel file", 
+        description: errorMessage,
+        variant: "destructive" 
+      });
     }
   };
 
