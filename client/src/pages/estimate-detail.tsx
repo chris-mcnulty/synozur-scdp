@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -3038,18 +3038,71 @@ export default function EstimateDetail() {
                                 >
                                   <div className="flex items-center gap-2">
                                     <div className="w-4 h-0.5 bg-gray-300"></div>
-                                    <span className="font-medium">{stage.name}</span>
-                                    <Badge variant={lineItemCount > 0 ? "default" : "outline"}>
-                                      {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''}
-                                    </Badge>
-                                    {isDuplicate && (
-                                      <Badge variant="destructive" className="text-xs">
-                                        DUPLICATE
-                                      </Badge>
+                                    {editingStageId === stage.id ? (
+                                      <div className="flex items-center gap-2">
+                                        <Input
+                                          value={editingStageName}
+                                          onChange={(e) => setEditingStageName(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
+                                              setEditingStageId(null);
+                                            } else if (e.key === 'Escape') {
+                                              setEditingStageId(null);
+                                            }
+                                          }}
+                                          className="h-8 w-64"
+                                          autoFocus
+                                          data-testid={`input-stage-name-${stage.id}`}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          onClick={() => {
+                                            updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
+                                            setEditingStageId(null);
+                                          }}
+                                          data-testid={`button-save-stage-${stage.id}`}
+                                        >
+                                          <Check className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => setEditingStageId(null)}
+                                          data-testid={`button-cancel-stage-${stage.id}`}
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <span className="font-medium">{stage.name}</span>
+                                        <Badge variant={lineItemCount > 0 ? "default" : "outline"}>
+                                          {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''}
+                                        </Badge>
+                                        {isDuplicate && (
+                                          <Badge variant="destructive" className="text-xs">
+                                            DUPLICATE
+                                          </Badge>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                   <div className="flex gap-1">
-                                    {isDuplicate && (
+                                    {!editingStageId && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => {
+                                          setEditingStageId(stage.id);
+                                          setEditingStageName(stage.name);
+                                        }}
+                                        data-testid={`button-edit-stage-${stage.id}`}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                    {isDuplicate && !editingStageId && (
                                       <Button
                                         size="sm"
                                         variant="outline"
@@ -3075,32 +3128,36 @@ export default function EstimateDetail() {
                                             });
                                           }
                                         }}
+                                        data-testid={`button-merge-stage-${stage.id}`}
                                       >
                                         {mergeStagesMutation.isPending ? "Merging..." : "Merge"}
                                       </Button>
                                     )}
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
-                                      onClick={() => {
-                                        if (lineItemCount > 0) {
-                                          toast({
-                                            title: "Cannot delete stage",
-                                            description: `This stage has ${lineItemCount} line items. Reassign them first.`,
-                                            variant: "destructive"
-                                          });
-                                        } else {
-                                          deleteEstimateStageMutation.mutate(stage.id);
-                                        }
-                                      }}
-                                    >
-                                      {deleteEstimateStageMutation.isPending ? (
-                                        <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                                      ) : (
-                                        <Trash2 className="h-3 w-3" />
-                                      )}
-                                    </Button>
+                                    {!editingStageId && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
+                                        onClick={() => {
+                                          if (lineItemCount > 0) {
+                                            toast({
+                                              title: "Cannot delete stage",
+                                              description: `This stage has ${lineItemCount} line items. Reassign them first.`,
+                                              variant: "destructive"
+                                            });
+                                          } else {
+                                            deleteEstimateStageMutation.mutate(stage.id);
+                                          }
+                                        }}
+                                        data-testid={`button-delete-stage-${stage.id}`}
+                                      >
+                                        {deleteEstimateStageMutation.isPending ? (
+                                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                                        ) : (
+                                          <Trash2 className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    )}
                                   </div>
                                 </div>
                               );
