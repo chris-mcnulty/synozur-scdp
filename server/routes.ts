@@ -3925,11 +3925,21 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Parse base64 file data and import mode
       const fileData = req.body.file;
       const removeExisting = req.body.removeExisting !== false; // Default to true for backwards compatibility
+      
+      if (!fileData) {
+        throw new Error("No file data received");
+      }
+      
       const buffer = Buffer.from(fileData, "base64");
+      console.log("Excel file size:", buffer.length, "bytes");
 
       const workbook = xlsx.read(buffer, { type: "buffer" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      console.log("Excel data rows:", data.length);
+      console.log("First 3 rows:", data.slice(0, 3));
+      console.log("Row 4 (first data row):", data[3]);
 
       // Get estimate to calculate multipliers
       const estimate = await storage.getEstimate(req.params.id);
@@ -3995,6 +4005,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Check required fields and track skipped rows
         if (!row[4] || !row[7] || !row[9]) {
           if (row.some(cell => cell !== undefined && cell !== '')) { // Only log non-empty rows
+            const skipReason = `Missing required fields - Description: ${!!row[4]} (val: "${row[4]}"), Hours: ${!!row[7]} (val: "${row[7]}"), Rate: ${!!row[9]} (val: "${row[9]}")`;
+            console.log(`Skipping row ${i + 1}:`, skipReason);
+            console.log(`Row columns 0-10:`, row.slice(0, 11));
             skippedRows.push({ 
               row: i + 1, 
               reason: `Missing required fields - Description: ${!!row[4]}, Hours: ${!!row[7]}, Rate: ${!!row[9]}` 
@@ -4117,7 +4130,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
-      const createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
+      // Only insert if we have line items
+      let createdItems = [];
+      if (lineItems.length > 0) {
+        createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
+      } else {
+        console.log("No valid line items found to import. Check if your Excel file has:");
+        console.log("- Description in column E (index 4)");
+        console.log("- Base Hours in column H (index 7)"); 
+        console.log("- Rate in column J (index 9)");
+      }
       
       // Build detailed response
       const response: any = { 
