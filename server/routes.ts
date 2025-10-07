@@ -3935,11 +3935,24 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const workbook = xlsx.read(buffer, { type: "buffer" });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      const data = xlsx.utils.sheet_to_json(worksheet, { 
+        header: 1,
+        raw: false,  // Convert all values to strings to avoid parsing issues
+        defval: null // Use null for empty cells
+      });
       
       console.log("Excel data rows:", data.length);
       console.log("First 3 rows:", data.slice(0, 3));
       console.log("Row 4 (first data row):", data[3]);
+      console.log("Row 4 length:", data[3]?.length);
+      
+      // Debug: Check if xlsx is reading all columns
+      if (data[3]) {
+        console.log("Row 4 column values:");
+        for (let i = 0; i < Math.min(16, data[3].length); i++) {
+          console.log(`  Col ${i}: "${data[3][i]}"`);
+        }
+      }
 
       // Get estimate to calculate multipliers
       const estimate = await storage.getEstimate(req.params.id);
