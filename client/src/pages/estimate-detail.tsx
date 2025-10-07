@@ -864,12 +864,15 @@ export default function EstimateDetail() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Clear any old pending file first
+    setPendingImportFile(null);
+    
     const reader = new FileReader();
     reader.onload = async (e) => {
       const base64 = e.target?.result?.toString().split(",")[1];
       if (!base64) return;
       
-      // Store the file data and show confirmation dialog
+      // Store the new file data with a timestamp to prevent caching
       setPendingImportFile(base64);
       setShowImportConfirmDialog(true);
     };
@@ -883,11 +886,13 @@ export default function EstimateDetail() {
     if (!pendingImportFile) return;
     
     try {
+      // Add timestamp to prevent caching issues
       const response = await apiRequest(`/api/estimates/${id}/import-excel`, {
         method: "POST",
         body: JSON.stringify({ 
           file: pendingImportFile,
-          removeExisting 
+          removeExisting,
+          timestamp: Date.now() // Prevent caching
         })
       });
       
@@ -3774,7 +3779,13 @@ export default function EstimateDetail() {
     </Dialog>
 
     {/* Excel Import Confirmation Dialog */}
-    <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
+    <Dialog open={showImportConfirmDialog} onOpenChange={(open) => {
+      setShowImportConfirmDialog(open);
+      // Clear pending file if dialog is closed without import
+      if (!open) {
+        setPendingImportFile(null);
+      }
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Import Excel File</DialogTitle>

@@ -3944,14 +3944,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log("Excel data rows:", data.length);
       console.log("First 3 rows:", data.slice(0, 3));
       console.log("Row 4 (first data row):", data[3]);
-      console.log("Row 4 length:", data[3]?.length);
       
       // Debug: Check if xlsx is reading all columns
-      if (data[3]) {
+      if (data[3] && Array.isArray(data[3])) {
+        console.log("Row 4 length:", data[3].length);
         console.log("Row 4 column values:");
         for (let i = 0; i < Math.min(16, data[3].length); i++) {
           console.log(`  Col ${i}: "${data[3][i]}"`);
         }
+      } else {
+        console.log("Row 4 is not an array, it is:", typeof data[3]);
       }
 
       // Get estimate to calculate multipliers
