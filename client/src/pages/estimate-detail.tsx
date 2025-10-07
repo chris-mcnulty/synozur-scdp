@@ -870,37 +870,57 @@ export default function EstimateDetail() {
         })
       });
       
-      // Check if there were warnings
+      // Build comprehensive message with all details
+      let message = '';
+      let hasIssues = false;
+      
+      // Start with items imported
+      message = `${response.itemsCreated} line items imported\n`;
+      
+      // Add info about new epics/stages created
+      if (response.newEpicsCreated?.length > 0) {
+        message += `✓ Created ${response.newEpicsCreated.length} new Epic(s): ${response.newEpicsCreated.join(', ')}\n`;
+      }
+      
+      if (response.newStagesCreated?.length > 0) {
+        message += `✓ Created ${response.newStagesCreated.length} new Stage(s): ${response.newStagesCreated.join(', ')}\n`;
+      }
+      
+      // Always check for warnings, even if new items were created
       if (response.warnings) {
-        const { unmatchedEpics, unmatchedStages, totalSkipped, itemsCreated } = response.warnings;
-        
-        // Build warning message
-        let warningMessage = `Import completed with issues:\n`;
-        warningMessage += `✓ ${response.itemsCreated} items imported\n`;
+        const { unmatchedEpics, unmatchedStages, totalSkipped } = response.warnings;
+        hasIssues = true;
         
         if (unmatchedEpics && unmatchedEpics.length > 0) {
-          warningMessage += `✗ Unknown Epics: ${unmatchedEpics.join(', ')}\n`;
+          message += `✗ Failed to create Epic(s): ${unmatchedEpics.join(', ')}\n`;
         }
         
         if (unmatchedStages && unmatchedStages.length > 0) {
-          warningMessage += `✗ Unknown Stages: ${unmatchedStages.join(', ')}\n`;
+          message += `✗ Failed to create Stage(s): ${unmatchedStages.join(', ')}\n`;
         }
         
         if (totalSkipped > 0) {
-          warningMessage += `✗ ${totalSkipped} rows skipped\n`;
+          message += `✗ ${totalSkipped} rows skipped (missing data)\n`;
         }
-        
-        warningMessage += `\nTip: Epic and Stage names must match exactly with those defined in this estimate.`;
-        
-        // Show warning toast with longer duration
+      }
+      
+      // Show appropriate toast based on whether there were issues
+      if (hasIssues) {
         toast({ 
-          title: "Import Partially Successful",
-          description: warningMessage,
+          title: "Import Completed with Issues",
+          description: message,
           variant: "default",
           duration: 10000 // Show for 10 seconds
         });
+      } else if (response.newEpicsCreated?.length > 0 || response.newStagesCreated?.length > 0) {
+        // Success with new items created
+        toast({ 
+          title: "Import Successful",
+          description: message,
+          duration: 7000
+        });
       } else {
-        // Full success
+        // Simple success
         const action = response.mode === 'replaced' ? 'replaced with' : 'added';
         toast({ title: `Successfully ${action} ${response.itemsCreated} line items` });
       }

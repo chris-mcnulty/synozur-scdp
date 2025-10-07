@@ -3945,6 +3945,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
       const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
       
+      // Track newly created epics and stages
+      const newEpics = [];
+      const newStages = [];
+      
       // Create user lookup by name (case-insensitive)
       const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
 
@@ -4001,12 +4005,57 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Lookup epic and stage IDs from names
         const epicName = row[0] ? String(row[0]).trim() : "";
         const stageName = row[1] ? String(row[1]).trim() : "";
-        const epicId = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
-        const stageId = stageName ? (stageNameToId.get(stageName.toLowerCase()) || null) : null;
+        let epicId = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
+        let stageId = stageName ? (stageNameToId.get(stageName.toLowerCase()) || null) : null;
         
-        // Track unmatched epics and stages
-        if (epicName && !epicId) unmatchedEpics.add(epicName);
-        if (stageName && !stageId) unmatchedStages.add(stageName);
+        // Auto-create missing epic if needed
+        if (epicName && !epicId) {
+          // Check if we already created this epic in this import
+          if (!epicNameToId.has(epicName.toLowerCase())) {
+            try {
+              const newEpic = await storage.createEstimateEpic(req.params.id, {
+                name: epicName
+              });
+              epicNameToId.set(epicName.toLowerCase(), newEpic.id);
+              epicId = newEpic.id;
+              newEpics.push(epicName);
+            } catch (error) {
+              console.error(`Failed to create epic "${epicName}":`, error);
+              unmatchedEpics.add(epicName);
+            }
+          } else {
+            epicId = epicNameToId.get(epicName.toLowerCase()) || null;
+          }
+        }
+        
+        // Auto-create missing stage if needed
+        if (stageName && !stageId) {
+          // Check if we already created this stage in this import
+          if (!stageNameToId.has(stageName.toLowerCase())) {
+            try {
+              // For stages, we need an epic ID. If we have an epic for this row, use it.
+              // Otherwise, create a default epic or skip stage creation
+              if (epicId) {
+                const newStage = await storage.createEstimateStage(req.params.id, {
+                  epicId: epicId,
+                  name: stageName
+                });
+                stageNameToId.set(stageName.toLowerCase(), newStage.id);
+                stageId = newStage.id;
+                newStages.push(stageName);
+              } else {
+                // Can't create stage without an epic, track as unmatched
+                console.log(`Cannot create stage "${stageName}" without an epic`);
+                unmatchedStages.add(stageName);
+              }
+            } catch (error) {
+              console.error(`Failed to create stage "${stageName}":`, error);
+              unmatchedStages.add(stageName);
+            }
+          } else {
+            stageId = stageNameToId.get(stageName.toLowerCase()) || null;
+          }
+        }
 
         // Lookup user by resource name
         const resourceName = row[6] ? String(row[6]).trim() : "";
@@ -4073,7 +4122,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const response: any = { 
         success: true, 
         itemsCreated: createdItems.length,
-        mode: removeExisting ? 'replaced' : 'appended'
+        mode: removeExisting ? 'replaced' : 'appended',
+        newEpicsCreated: newEpics,
+        newStagesCreated: newStages
       };
       
       // Add warnings if there were issues
@@ -4091,8 +4142,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           unmatchedEpics: Array.from(unmatchedEpics),
           unmatchedStages: Array.from(unmatchedStages),
           totalSkipped: skippedRows.length,
-          availableEpics: epics.map(e => e.name),
-          availableStages: stages.map(s => s.name)
+          newEpicsCreated: newEpics,
+          newStagesCreated: newStages
         });
       }
       
