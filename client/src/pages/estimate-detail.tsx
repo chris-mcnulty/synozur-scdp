@@ -250,6 +250,27 @@ export default function EstimateDetail() {
     }
   });
 
+  const deleteEstimateEpicMutation = useMutation({
+    mutationFn: async (epicId: string) => {
+      return apiRequest(`/api/estimates/${id}/epics/${epicId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      toast({ title: "Epic deleted successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to delete epic", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
   const updateStageMutation = useMutation({
     mutationFn: async ({ stageId, name }: { stageId: string; name: string }) => {
       return apiRequest(`/api/estimates/${id}/stages/${stageId}`, {
@@ -1801,221 +1822,6 @@ export default function EstimateDetail() {
 
         <TabsContent value="inputs" className="space-y-6">
 
-          {/* Epic and Stage Management */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Epics
-                  <Button onClick={() => setShowEpicDialog(true)} size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Epic
-                  </Button>
-                </CardTitle>
-                <CardDescription>
-                  Manage estimate epics to organize your work structure
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {epics.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">No epics created yet</p>
-                ) : (
-                  <div className="space-y-2">
-                    {epics.map((epic, index) => (
-                      <div key={epic.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
-                        {editingEpicId === epic.id ? (
-                          <div className="flex items-center gap-2 flex-1">
-                            <Input
-                              value={editingEpicName}
-                              onChange={(e) => setEditingEpicName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
-                                  setEditingEpicId(null);
-                                } else if (e.key === 'Escape') {
-                                  setEditingEpicId(null);
-                                }
-                              }}
-                              className="h-7 text-sm"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
-                                setEditingEpicId(null);
-                              }}
-                            >
-                              <Check className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditingEpicId(null)}
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-between w-full">
-                            <span 
-                              className="font-medium cursor-pointer hover:underline" 
-                              onClick={() => {
-                                setEditingEpicId(epic.id);
-                                setEditingEpicName(epic.name);
-                              }}
-                              title="Click to edit"
-                            >
-                              {epic.name}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingEpicId(epic.id);
-                                  setEditingEpicName(epic.name);
-                                }}
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                              <span className="text-xs text-muted-foreground">#{index + 1}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  Stages
-                  <Button onClick={() => setShowStageDialog(true)} size="sm" disabled={epics.length === 0}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Stage
-                  </Button>
-                </CardTitle>
-                <CardDescription>
-                  Manage stages within epics for detailed project phases
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {stages.length === 0 ? (
-                  <p className="text-muted-foreground text-sm">
-                    {epics.length === 0 ? "Create an epic first to add stages" : "No stages created yet"}
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage, index) => {
-                      const epic = epics.find(e => e.id === stage.epicId);
-                      const lineItemCount = lineItems.filter(item => item.stageId === stage.id).length;
-                      return (
-                        <div key={stage.id} className="flex items-center justify-between p-2 border rounded hover:bg-gray-50">
-                          {editingStageId === stage.id ? (
-                            <div className="flex items-center gap-2 flex-1">
-                              <Input
-                                value={editingStageName}
-                                onChange={(e) => setEditingStageName(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
-                                    setEditingStageId(null);
-                                  } else if (e.key === 'Escape') {
-                                    setEditingStageId(null);
-                                  }
-                                }}
-                                className="h-7 text-sm flex-1"
-                                autoFocus
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                (Epic: {epic?.name || 'Unknown'})
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  updateStageMutation.mutate({ stageId: stage.id, name: editingStageName });
-                                  setEditingStageId(null);
-                                }}
-                              >
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => setEditingStageId(null)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between w-full">
-                              <div>
-                                <span 
-                                  className="font-medium cursor-pointer hover:underline" 
-                                  onClick={() => {
-                                    setEditingStageId(stage.id);
-                                    setEditingStageName(stage.name);
-                                  }}
-                                  title="Click to edit"
-                                >
-                                  {stage.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  (Epic: {epic?.name || 'Unknown'})
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setEditingStageId(stage.id);
-                                    setEditingStageName(stage.name);
-                                  }}
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
-                                  onClick={() => {
-                                    if (lineItemCount > 0) {
-                                      toast({
-                                        title: "Cannot delete stage",
-                                        description: `This stage has ${lineItemCount} line items. Reassign them first.`,
-                                        variant: "destructive"
-                                      });
-                                    } else {
-                                      deleteEstimateStageMutation.mutate(stage.id);
-                                    }
-                                  }}
-                                  data-testid={`button-delete-stage-${stage.id}`}
-                                >
-                                  {deleteEstimateStageMutation.isPending ? (
-                                    <div className="h-3 w-3 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                                  ) : (
-                                    <Trash2 className="h-3 w-3" />
-                                  )}
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
           <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -2061,60 +1867,37 @@ export default function EstimateDetail() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-sm font-medium mb-1.5 block">Epic</Label>
-                    <div className="flex gap-1">
-                      <Select
-                        value={newItem.epicId}
-                        onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
-                      >
-                        <SelectTrigger data-testid="select-epic">
-                          <SelectValue placeholder="Select Epic" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
-                            <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowEpicDialog(true)}
-                        title="Add new Epic"
-                        data-testid="button-add-epic"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Select
+                      value={newItem.epicId}
+                      onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
+                    >
+                      <SelectTrigger data-testid="select-epic">
+                        <SelectValue placeholder="Select Epic" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {epics.filter(epic => epic.id && epic.id !== "").map((epic) => (
+                          <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <Label className="text-sm font-medium mb-1.5 block">Stage</Label>
-                    <div className="flex gap-1">
-                      <Select
-                        value={newItem.stageId}
-                        onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
-                      >
-                        <SelectTrigger data-testid="select-stage">
-                          <SelectValue placeholder="Select Stage" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
-                            <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setShowStageDialog(true)}
-                        title="Add new Stage"
-                        disabled={epics.length === 0}
-                        data-testid="button-add-stage"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Select
+                      value={newItem.stageId}
+                      onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
+                    >
+                      <SelectTrigger data-testid="select-stage">
+                        <SelectValue placeholder="Select Stage" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {stages.filter(stage => stage.id && stage.id !== "").map((stage) => (
+                          <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -2971,23 +2754,25 @@ export default function EstimateDetail() {
         <TabsContent value="management" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Epic & Stage Structure Management</CardTitle>
-              <CardDescription>
-                Manage your estimate structure, identify and merge duplicate stages
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Epic & Stage Structure Management</CardTitle>
+                  <CardDescription>
+                    Organize your estimate structure and manage epics and stages
+                  </CardDescription>
+                </div>
+                <Button onClick={() => setShowEpicDialog(true)} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Epic
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Structure Overview */}
               <div className="space-y-4">
                 {epics.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No epics created yet. Add your first epic to get started.
-                    <div className="mt-2">
-                      <Button onClick={() => setShowEpicDialog(true)} size="sm">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add First Epic
-                      </Button>
-                    </div>
+                    No epics created yet. Click "Add Epic" to get started.
                   </div>
                 ) : (
                   epics.map((epic) => {
@@ -3004,14 +2789,61 @@ export default function EstimateDetail() {
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
                             <Briefcase className="h-5 w-5 text-primary" />
-                            <h3 className="font-semibold text-lg">{epic.name}</h3>
-                            <Badge variant="secondary">
-                              {epicStages.length} stage{epicStages.length !== 1 ? 's' : ''}
-                            </Badge>
-                            {duplicateNames.length > 0 && (
-                              <Badge variant="destructive">
-                                {duplicateNames.length} duplicate{duplicateNames.length !== 1 ? 's' : ''}
-                              </Badge>
+                            {editingEpicId === epic.id ? (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  value={editingEpicName}
+                                  onChange={(e) => setEditingEpicName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
+                                      setEditingEpicId(null);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingEpicId(null);
+                                    }
+                                  }}
+                                  className="h-8 w-48"
+                                  autoFocus
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
+                                    setEditingEpicId(null);
+                                  }}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setEditingEpicId(null)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <h3 
+                                  className="font-semibold text-lg cursor-pointer hover:underline" 
+                                  onClick={() => {
+                                    setEditingEpicId(epic.id);
+                                    setEditingEpicName(epic.name);
+                                  }}
+                                  title="Click to edit"
+                                >
+                                  {epic.name}
+                                </h3>
+                                <Badge variant="secondary">
+                                  {epicStages.length} stage{epicStages.length !== 1 ? 's' : ''}
+                                </Badge>
+                                {duplicateNames.length > 0 && (
+                                  <Badge variant="destructive">
+                                    {duplicateNames.length} duplicate{duplicateNames.length !== 1 ? 's' : ''}
+                                  </Badge>
+                                )}
+                              </>
                             )}
                           </div>
                           <div className="flex gap-2">
@@ -3025,6 +2857,49 @@ export default function EstimateDetail() {
                             >
                               <Plus className="h-4 w-4 mr-1" />
                               Add Stage
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                setEditingEpicId(epic.id);
+                                setEditingEpicName(epic.name);
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              title="Edit epic name"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                // Check if epic has stages or line items
+                                const epicLineItems = lineItems.filter(item => item.epicId === epic.id);
+                                if (epicStages.length > 0) {
+                                  toast({
+                                    title: "Cannot delete epic",
+                                    description: `This epic has ${epicStages.length} stage(s). Delete or reassign them first.`,
+                                    variant: "destructive"
+                                  });
+                                } else if (epicLineItems.length > 0) {
+                                  toast({
+                                    title: "Cannot delete epic",
+                                    description: `This epic has ${epicLineItems.length} line item(s). Reassign them first.`,
+                                    variant: "destructive"
+                                  });
+                                } else {
+                                  deleteEstimateEpicMutation.mutate(epic.id);
+                                }
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              disabled={deleteEstimateEpicMutation.isPending}
+                              title="Delete epic"
+                            >
+                              {deleteEstimateEpicMutation.isPending ? (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </div>
