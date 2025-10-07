@@ -870,8 +870,40 @@ export default function EstimateDetail() {
         })
       });
       
-      const action = response.mode === 'replaced' ? 'replaced with' : 'added';
-      toast({ title: `Successfully ${action} ${response.itemsCreated} line items` });
+      // Check if there were warnings
+      if (response.warnings) {
+        const { unmatchedEpics, unmatchedStages, totalSkipped, itemsCreated } = response.warnings;
+        
+        // Build warning message
+        let warningMessage = `Import completed with issues:\n`;
+        warningMessage += `✓ ${response.itemsCreated} items imported\n`;
+        
+        if (unmatchedEpics && unmatchedEpics.length > 0) {
+          warningMessage += `✗ Unknown Epics: ${unmatchedEpics.join(', ')}\n`;
+        }
+        
+        if (unmatchedStages && unmatchedStages.length > 0) {
+          warningMessage += `✗ Unknown Stages: ${unmatchedStages.join(', ')}\n`;
+        }
+        
+        if (totalSkipped > 0) {
+          warningMessage += `✗ ${totalSkipped} rows skipped\n`;
+        }
+        
+        warningMessage += `\nTip: Epic and Stage names must match exactly with those defined in this estimate.`;
+        
+        // Show warning toast with longer duration
+        toast({ 
+          title: "Import Partially Successful",
+          description: warningMessage,
+          variant: "default",
+          duration: 10000 // Show for 10 seconds
+        });
+      } else {
+        // Full success
+        const action = response.mode === 'replaced' ? 'replaced with' : 'added';
+        toast({ title: `Successfully ${action} ${response.itemsCreated} line items` });
+      }
       
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });

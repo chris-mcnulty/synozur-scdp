@@ -3950,6 +3950,10 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Skip header rows and process data
       const lineItems = [];
+      const skippedRows = [];
+      const unmatchedEpics = new Set();
+      const unmatchedStages = new Set();
+      
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
         // Updated column indices with Resource column:
@@ -3983,13 +3987,26 @@ export async function registerRoutes(app: Express): Promise<void> {
           commentsCol = 13;
         }
         
-        if (!row[4] || !row[7] || !row[9]) continue; // Skip if no description, hours, or rate
+        // Check required fields and track skipped rows
+        if (!row[4] || !row[7] || !row[9]) {
+          if (row.some(cell => cell !== undefined && cell !== '')) { // Only log non-empty rows
+            skippedRows.push({ 
+              row: i + 1, 
+              reason: `Missing required fields - Description: ${!!row[4]}, Hours: ${!!row[7]}, Rate: ${!!row[9]}` 
+            });
+          }
+          continue;
+        }
 
         // Lookup epic and stage IDs from names
-        const epicName = row[0] ? String(row[0]).toLowerCase() : "";
-        const stageName = row[1] ? String(row[1]).toLowerCase() : "";
-        const epicId = epicName ? (epicNameToId.get(epicName) || null) : null;
-        const stageId = stageName ? (stageNameToId.get(stageName) || null) : null;
+        const epicName = row[0] ? String(row[0]).trim() : "";
+        const stageName = row[1] ? String(row[1]).trim() : "";
+        const epicId = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
+        const stageId = stageName ? (stageNameToId.get(stageName.toLowerCase()) || null) : null;
+        
+        // Track unmatched epics and stages
+        if (epicName && !epicId) unmatchedEpics.add(epicName);
+        if (stageName && !stageId) unmatchedStages.add(stageName);
 
         // Lookup user by resource name
         const resourceName = row[6] ? String(row[6]).trim() : "";
@@ -4051,11 +4068,35 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
-      res.json({ 
+      
+      // Build detailed response
+      const response: any = { 
         success: true, 
         itemsCreated: createdItems.length,
         mode: removeExisting ? 'replaced' : 'appended'
-      });
+      };
+      
+      // Add warnings if there were issues
+      if (unmatchedEpics.size > 0 || unmatchedStages.size > 0 || skippedRows.length > 0) {
+        response.warnings = {
+          unmatchedEpics: Array.from(unmatchedEpics),
+          unmatchedStages: Array.from(unmatchedStages),
+          skippedRows: skippedRows.slice(0, 10), // Limit to first 10 skipped rows
+          totalSkipped: skippedRows.length,
+          message: `Import completed with issues: ${createdItems.length} items created, ${skippedRows.length} rows skipped`
+        };
+        
+        console.log("Import warnings:", {
+          file: req.params.id,
+          unmatchedEpics: Array.from(unmatchedEpics),
+          unmatchedStages: Array.from(unmatchedStages),
+          totalSkipped: skippedRows.length,
+          availableEpics: epics.map(e => e.name),
+          availableStages: stages.map(s => s.name)
+        });
+      }
+      
+      res.json(response);
     } catch (error) {
       console.error("Excel import error:", error);
       res.status(500).json({ message: "Failed to import Excel file" });
