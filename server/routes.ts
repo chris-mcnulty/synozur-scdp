@@ -3969,8 +3969,21 @@ export async function registerRoutes(app: Express): Promise<void> {
       const unmatchedEpics = new Set();
       const unmatchedStages = new Set();
       
+      console.log(`Total rows in Excel: ${data.length}`);
+      console.log(`Processing data rows starting from row 4 (index 3)`);
+      let processedCount = 0;
+      let emptyRowCount = 0;
+      
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
+        
+        // Check if row is empty
+        if (!row || row.length === 0 || !row.some(cell => cell !== undefined && cell !== '')) {
+          emptyRowCount++;
+          continue;
+        }
+        
+        processedCount++;
         // Updated column indices with Resource column:
         // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 
         // 6: Resource, 7: Base Hours, 8: Factor, 9: Rate, 10: Size, 11: Complexity, 12: Confidence, 13: Comments
@@ -4140,6 +4153,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         console.log("- Base Hours in column H (index 7)"); 
         console.log("- Rate in column J (index 9)");
       }
+      
+      // Log summary
+      console.log(`Import summary:`);
+      console.log(`- Total rows in Excel: ${data.length}`);
+      console.log(`- Empty rows skipped: ${emptyRowCount}`);
+      console.log(`- Non-empty rows processed: ${processedCount}`);
+      console.log(`- Valid line items created: ${lineItems.length}`);
+      console.log(`- Rows skipped due to missing fields: ${skippedRows.length}`);
       
       // Build detailed response
       const response: any = { 
