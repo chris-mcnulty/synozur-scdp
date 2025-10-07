@@ -3725,17 +3725,17 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const worksheetData = [
         ["Estimate Line Items Template"],
-        ["Instructions: Fill in the rows below with your line item details. Keep the header row intact. Epic and Stage names must match existing values in the estimate."],
-        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
-        ["Phase 1", "Design", "UX", 1, "Example: Design Mockups", "Design", 20, 1, 150, "small", "small", "high", "Initial mockups", "", ""],
-        ["Phase 1", "Development", "Frontend", 2, "Example: Frontend Development", "Development", 20, 4, 175, "medium", "medium", "medium", "4 React components", "", ""],
-        ["Phase 1", "Testing", "QA", 3, "Example: Testing & QA", "QA", 40, 1, 125, "small", "large", "low", "End-to-end tests", "", ""],
-        ["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""],
+        ["Instructions: Fill in the rows below with your line item details. Keep the header row intact. Epic and Stage names must match existing values in the estimate. Resource can be a person's name (will be matched to users) or any text for unassigned resources."],
+        ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"],
+        ["Phase 1", "Design", "UX", 1, "Example: Design Mockups", "Design", "John Doe", 20, 1, 150, "small", "small", "high", "Initial mockups", "", ""],
+        ["Phase 1", "Development", "Frontend", 2, "Example: Frontend Development", "Development", "Jane Smith", 20, 4, 175, "medium", "medium", "medium", "4 React components", "", ""],
+        ["Phase 1", "Testing", "QA", 3, "Example: Testing & QA", "QA", "QA Team", 40, 1, 125, "small", "large", "low", "End-to-end tests", "", ""],
+        ["", "", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""],
       ];
 
       // Add more empty rows for user input
       for (let i = 0; i < 30; i++) {
-        worksheetData.push(["", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""]);
+        worksheetData.push(["", "", "", "", "", "", "", "", 1, 0, "small", "small", "high", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
@@ -3748,6 +3748,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         { wch: 8 },  // Week #
         { wch: 35 }, // Description
         { wch: 15 }, // Category
+        { wch: 20 }, // Resource
         { wch: 12 }, // Base Hours
         { wch: 10 }, // Factor
         { wch: 10 }, // Rate
@@ -3951,23 +3952,36 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lineItems = [];
       for (let i = 3; i < data.length; i++) {
         const row = data[i] as any[];
-        // Column indices matching export format:
+        // Updated column indices with Resource column:
         // 0: Epic Name, 1: Stage Name, 2: Workstream, 3: Week #, 4: Description, 5: Category, 
-        // 6: Resource, 7: Base Hours, 8: Factor, 9: Rate, (10: Cost Rate - admin only)
-        // Then: Size, Complexity, Confidence, Comments
+        // 6: Resource, 7: Base Hours, 8: Factor, 9: Rate, 10: Size, 11: Complexity, 12: Confidence, 13: Comments
+        // 14: Adjusted Hours (calculated), 15: Total Amount (calculated)
         
-        // Determine column indices based on whether cost rate is present
-        // For non-admin exports, columns after Rate are: Size, Complexity, Confidence, Comments
-        // For admin exports, columns after Rate are: Cost Rate, Size, Complexity, Confidence, Comments
+        // Admin exports may have additional Cost Rate column after Rate
+        // Check if column 10 looks like a cost rate (number) or size value (text)
+        const hasCostRate = row[10] !== undefined && 
+                           !isNaN(Number(row[10])) && 
+                           row[10] !== 'small' && 
+                           row[10] !== 'medium' && 
+                           row[10] !== 'large';
         
-        // We need to be flexible - check if there's a Cost Rate column or not
-        const hasCostRate = row[10] !== undefined && (row[10] === '' || !isNaN(Number(row[10])));
-        const costRateOffset = hasCostRate ? 1 : 0;
+        let sizeCol, complexityCol, confidenceCol, commentsCol, costRate;
         
-        const sizeCol = 10 + costRateOffset;
-        const complexityCol = 11 + costRateOffset;
-        const confidenceCol = 12 + costRateOffset;
-        const commentsCol = 13 + costRateOffset;
+        if (hasCostRate) {
+          // Admin format with cost rate: ..., Rate, Cost Rate, Size, Complexity, ...
+          costRate = Number(row[10]);
+          sizeCol = 11;
+          complexityCol = 12;
+          confidenceCol = 13;
+          commentsCol = 14;
+        } else {
+          // Standard format without cost rate: ..., Rate, Size, Complexity, ...
+          costRate = null;
+          sizeCol = 10;
+          complexityCol = 11;
+          confidenceCol = 12;
+          commentsCol = 13;
+        }
         
         if (!row[4] || !row[7] || !row[9]) continue; // Skip if no description, hours, or rate
 
@@ -4001,7 +4015,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         const baseHours = Number(row[7]);
         const factor = Number(row[8]) || 1;
         const rate = Number(row[9]);
-        const costRate = hasCostRate ? Number(row[10]) : null;
         const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
 
