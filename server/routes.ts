@@ -3774,6 +3774,82 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // CSV export
+  app.get("/api/estimates/:id/export-csv", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      
+      // Create lookup maps for epic and stage names
+      const epicMap = new Map(epics.map(e => [e.id, e.name]));
+      const stageMap = new Map(stages.map(s => [s.id, s.name]));
+
+      // Filter line items based on user role for export
+      const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
+      const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
+
+      // Create CSV header row based on permissions
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
+      if (canViewCostMargins) {
+        headers.push("Cost Rate");
+      }
+      headers.push("Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount");
+
+      // Build CSV rows
+      const csvRows = [headers];
+      
+      filteredLineItems.forEach((item: any) => {
+        const row = [
+          item.epicId ? (epicMap.get(item.epicId) || "") : "",
+          item.stageId ? (stageMap.get(item.stageId) || "") : "",
+          item.workstream || "",
+          item.week || "0",
+          item.description,
+          item.category || "",
+          item.resourceName || "",
+          item.baseHours,
+          item.factor || "1",
+          item.rate
+        ];
+
+        if (canViewCostMargins) {
+          row.push(item.costRate || "");
+        }
+
+        row.push(
+          item.size || "small",
+          item.complexity || "simple",
+          item.confidence || "high",
+          item.comments || "",
+          item.adjustedHours,
+          item.totalAmount
+        );
+
+        csvRows.push(row);
+      });
+
+      // Convert to CSV string (properly escape fields with quotes/commas)
+      const escapeCSV = (field: any) => {
+        const str = String(field || "");
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const csvContent = csvRows.map(row => row.map(escapeCSV).join(",")).join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${estimate?.name || 'estimate'}-export.csv"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("CSV export error:", error);
+      res.status(500).json({ message: "Failed to export CSV" });
+    }
+  });
+
   // Excel export template
   app.get("/api/estimates/:id/export-excel", requireAuth, async (req, res) => {
     try {
@@ -3912,6 +3988,266 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.send(buffer);
     } catch (error) {
       res.status(500).json({ message: "Failed to export Excel file" });
+    }
+  });
+
+  // CSV import
+  app.post("/api/estimates/:id/import-csv", requireAuth, async (req, res) => {
+    try {
+      console.log("Import CSV endpoint hit for estimate:", req.params.id);
+      const { insertEstimateLineItemSchema } = await import("@shared/schema");
+
+      // Parse base64 file data and import mode
+      const fileData = req.body.file;
+      const removeExisting = req.body.removeExisting !== false;
+      
+      if (!fileData) {
+        throw new Error("No file data received");
+      }
+      
+      const buffer = Buffer.from(fileData, "base64");
+      const csvText = buffer.toString("utf-8");
+      console.log("CSV file size:", buffer.length, "bytes");
+      
+      // Parse CSV
+      const lines = csvText.split(/\r?\n/);
+      const rows = lines.map(line => {
+        const result = [];
+        let current = "";
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+          
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              current += '"';
+              i++; // Skip next quote
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = "";
+          } else {
+            current += char;
+          }
+        }
+        result.push(current); // Add last field
+        return result;
+      }).filter(row => row.length > 1 || row[0]); // Filter empty rows
+
+      console.log("CSV total rows:", rows.length);
+      console.log("First row (headers):", rows[0]);
+      
+      if (rows.length < 2) {
+        return res.json({ 
+          success: false, 
+          itemsCreated: 0,
+          warnings: { message: "CSV file must have headers and at least one data row" }
+        });
+      }
+
+      // Identify columns from headers
+      const headers = rows[0];
+      const colIndex = {};
+      headers.forEach((header, idx) => {
+        const normalized = header.toLowerCase().trim();
+        if (normalized.includes("epic")) colIndex.epic = idx;
+        else if (normalized.includes("stage")) colIndex.stage = idx;
+        else if (normalized.includes("workstream")) colIndex.workstream = idx;
+        else if (normalized.includes("week")) colIndex.week = idx;
+        else if (normalized.includes("description")) colIndex.description = idx;
+        else if (normalized.includes("category")) colIndex.category = idx;
+        else if (normalized.includes("resource")) colIndex.resource = idx;
+        else if (normalized.includes("base hours")) colIndex.baseHours = idx;
+        else if (normalized.includes("factor")) colIndex.factor = idx;
+        else if (normalized === "rate") colIndex.rate = idx;
+        else if (normalized.includes("cost rate")) colIndex.costRate = idx;
+        else if (normalized === "size") colIndex.size = idx;
+        else if (normalized === "complexity") colIndex.complexity = idx;
+        else if (normalized === "confidence") colIndex.confidence = idx;
+        else if (normalized.includes("comment")) colIndex.comments = idx;
+      });
+      
+      console.log("Column mappings:", colIndex);
+
+      // Get estimate and lookup data
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      const users = await storage.getUsers();
+
+      const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
+      const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
+      const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
+
+      const newEpics = [];
+      const newStages = [];
+      const lineItems = [];
+      const skippedRows = [];
+      const unmatchedEpics = new Set();
+      const unmatchedStages = new Set();
+      
+      // Process data rows (skip header)
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        
+        // Check required fields
+        const description = row[colIndex.description];
+        const baseHours = row[colIndex.baseHours];
+        const rate = row[colIndex.rate];
+        
+        if (!description || !baseHours || !rate) {
+          if (row.some(cell => cell)) { // Only log non-empty rows
+            skippedRows.push({ 
+              row: i + 1,
+              reason: `Missing required fields - Description: ${!!description}, Hours: ${!!baseHours}, Rate: ${!!rate}`
+            });
+            console.log(`Skipping row ${i + 1}: missing required fields`);
+          }
+          continue;
+        }
+
+        // Lookup/create epic
+        const epicName = row[colIndex.epic]?.trim();
+        let epicId = null;
+        if (epicName) {
+          epicId = epicNameToId.get(epicName.toLowerCase());
+          if (!epicId) {
+            try {
+              const newEpic = await storage.createEstimateEpic(req.params.id, { name: epicName });
+              epicNameToId.set(epicName.toLowerCase(), newEpic.id);
+              epicId = newEpic.id;
+              newEpics.push(epicName);
+            } catch (error) {
+              console.error(`Failed to create epic "${epicName}":`, error);
+              unmatchedEpics.add(epicName);
+            }
+          }
+        }
+
+        // Lookup/create stage
+        const stageName = row[colIndex.stage]?.trim();
+        let stageId = null;
+        if (stageName) {
+          stageId = stageNameToId.get(stageName.toLowerCase());
+          if (!stageId) {
+            try {
+              const newStage = await storage.createEstimateStage(req.params.id, { 
+                name: stageName,
+                epicId: epicId || null
+              });
+              stageNameToId.set(stageName.toLowerCase(), newStage.id);
+              stageId = newStage.id;
+              newStages.push(stageName);
+            } catch (error) {
+              console.error(`Failed to create stage "${stageName}":`, error);
+              unmatchedStages.add(stageName);
+            }
+          }
+        }
+
+        // Lookup user
+        const resourceName = row[colIndex.resource]?.trim();
+        const assignedUserId = resourceName ? (userNameToId.get(resourceName.toLowerCase()) || null) : null;
+
+        // Get values and calculate
+        const size = row[colIndex.size] || "small";
+        const complexity = row[colIndex.complexity] || "simple";
+        const confidence = row[colIndex.confidence] || "high";
+        
+        let sizeMultiplier = 1.0;
+        if (size === "medium") sizeMultiplier = Number(estimate.sizeMediumMultiplier || 1.05);
+        else if (size === "large") sizeMultiplier = Number(estimate.sizeLargeMultiplier || 1.10);
+        
+        let complexityMultiplier = 1.0;
+        if (complexity === "medium") complexityMultiplier = Number(estimate.complexityMediumMultiplier || 1.05);
+        else if (complexity === "large") complexityMultiplier = Number(estimate.complexityLargeMultiplier || 1.10);
+        
+        let confidenceMultiplier = 1.0;
+        if (confidence === "medium") confidenceMultiplier = Number(estimate.confidenceMediumMultiplier || 1.10);
+        else if (confidence === "low") confidenceMultiplier = Number(estimate.confidenceLowMultiplier || 1.20);
+
+        const baseHoursNum = Number(baseHours);
+        const factor = Number(row[colIndex.factor] || 1);
+        const rateNum = Number(rate);
+        const costRate = colIndex.costRate ? Number(row[colIndex.costRate] || 0) : null;
+        const adjustedHours = baseHoursNum * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+        const totalAmount = adjustedHours * rateNum;
+
+        lineItems.push({
+          estimateId: req.params.id,
+          epicId,
+          stageId,
+          workstream: row[colIndex.workstream] || null,
+          week: row[colIndex.week] ? Number(row[colIndex.week]) : null,
+          description,
+          category: row[colIndex.category] || null,
+          assignedUserId,
+          resourceName: resourceName || null,
+          baseHours: baseHoursNum.toString(),
+          factor: factor.toString(),
+          rate: rateNum.toString(),
+          costRate: costRate !== null ? costRate.toString() : null,
+          size,
+          complexity,
+          confidence,
+          comments: row[colIndex.comments] || null,
+          adjustedHours: adjustedHours.toFixed(2),
+          totalAmount: totalAmount.toFixed(2),
+          sortOrder: i
+        });
+      }
+
+      // Delete existing or append
+      if (removeExisting) {
+        const existingItems = await storage.getEstimateLineItems(req.params.id);
+        for (const item of existingItems) {
+          await storage.deleteEstimateLineItem(item.id);
+        }
+      }
+
+      // Insert new items
+      let createdItems = [];
+      if (lineItems.length > 0) {
+        createdItems = await storage.bulkCreateEstimateLineItems(lineItems);
+      }
+      
+      console.log(`CSV Import summary: ${createdItems.length} items created`);
+
+      // Build response
+      const response = { 
+        success: true, 
+        itemsCreated: createdItems.length,
+        mode: removeExisting ? 'replaced' : 'appended',
+        newEpicsCreated: newEpics,
+        newStagesCreated: newStages
+      };
+      
+      if (unmatchedEpics.size > 0 || unmatchedStages.size > 0 || skippedRows.length > 0) {
+        response.warnings = {
+          unmatchedEpics: Array.from(unmatchedEpics),
+          unmatchedStages: Array.from(unmatchedStages),
+          skippedRows: skippedRows.slice(0, 10),
+          totalSkipped: skippedRows.length,
+          message: `Import completed with issues: ${createdItems.length} items created, ${skippedRows.length} rows skipped`
+        };
+      }
+      
+      res.json(response);
+    } catch (error) {
+      console.error("CSV import error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      res.status(500).json({ 
+        message: errorMessage,
+        error: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      });
     }
   });
 
