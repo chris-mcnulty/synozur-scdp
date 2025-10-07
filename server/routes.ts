@@ -3774,6 +3774,48 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // CSV template download
+  app.get("/api/estimates/template-csv", requireAuth, async (req, res) => {
+    try {
+      const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
+      
+      // Create CSV header row based on permissions
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
+      if (canViewCostMargins) {
+        headers.push("Cost Rate");
+      }
+      headers.push("Size", "Complexity", "Confidence", "Comments");
+      
+      // Add a few example rows to guide users
+      const exampleRows = [
+        ["Phase 1", "Planning", "PM", "1", "Project kickoff meeting", "Meeting", "John Doe", "4", "1", "200", ...(canViewCostMargins ? ["150"] : []), "small", "simple", "high", "Initial team alignment"],
+        ["Phase 1", "Planning", "Dev", "1", "Setup development environment", "Setup", "", "8", "1", "175", ...(canViewCostMargins ? ["125"] : []), "medium", "medium", "high", "Include CI/CD pipeline"],
+        ["Phase 1", "Design", "Design", "2", "Create wireframes", "Design", "", "16", "1", "150", ...(canViewCostMargins ? ["100"] : []), "large", "complex", "medium", "Mobile and desktop versions"]
+      ];
+      
+      // Build CSV content
+      const csvRows = [headers, ...exampleRows];
+      
+      // Convert to CSV string (properly escape fields with quotes/commas)
+      const escapeCSV = (field: any) => {
+        const str = String(field || "");
+        if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+      
+      const csvContent = csvRows.map(row => row.map(escapeCSV).join(",")).join("\n");
+      
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=estimate-template.csv");
+      res.send(csvContent);
+    } catch (error) {
+      console.error("CSV template error:", error);
+      res.status(500).json({ message: "Failed to generate CSV template" });
+    }
+  });
+  
   // CSV export
   app.get("/api/estimates/:id/export-csv", requireAuth, async (req, res) => {
     try {
@@ -4051,7 +4093,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Identify columns from headers
       const headers = rows[0];
-      const colIndex = {};
+      const colIndex: any = {};
       headers.forEach((header, idx) => {
         const normalized = header.toLowerCase().trim();
         if (normalized.includes("epic")) colIndex.epic = idx;
@@ -4140,8 +4182,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           if (!stageId) {
             try {
               const newStage = await storage.createEstimateStage(req.params.id, { 
-                name: stageName,
-                epicId: epicId || null
+                name: stageName
               });
               stageNameToId.set(stageName.toLowerCase(), newStage.id);
               stageId = newStage.id;
@@ -4222,7 +4263,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log(`CSV Import summary: ${createdItems.length} items created`);
 
       // Build response
-      const response = { 
+      const response: any = { 
         success: true, 
         itemsCreated: createdItems.length,
         mode: removeExisting ? 'replaced' : 'appended',

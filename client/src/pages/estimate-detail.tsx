@@ -23,6 +23,7 @@ export default function EstimateDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
   const [editingField, setEditingField] = useState<string | null>(null); // format: "itemId-fieldName"
   const [editingDraft, setEditingDraft] = useState<Record<string, any>>({});
   const [showEpicDialog, setShowEpicDialog] = useState(false);
@@ -85,6 +86,7 @@ export default function EstimateDetail() {
   const [editingEpicName, setEditingEpicName] = useState<string>("");
   const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<string | null>(null);
+  const [importType, setImportType] = useState<'excel' | 'csv'>('excel');
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [editingStageName, setEditingStageName] = useState<string>("");
   const [newItem, setNewItem] = useState({
@@ -840,6 +842,26 @@ export default function EstimateDetail() {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const response = await fetch(`/api/estimates/${id}/export-csv`, {
+        headers: {
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        }
+      });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `estimate-${id}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "CSV exported successfully" });
+    } catch (error) {
+      toast({ title: "Failed to export CSV file", variant: "destructive" });
+    }
+  };
+
   const handleDownloadTemplate = async () => {
     try {
       const response = await fetch("/api/estimates/template-excel", {
@@ -860,12 +882,33 @@ export default function EstimateDetail() {
     }
   };
 
+  const handleDownloadCSVTemplate = async () => {
+    try {
+      const response = await fetch("/api/estimates/template-csv", {
+        headers: {
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        }
+      });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "estimate-template.csv";
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "CSV template downloaded successfully" });
+    } catch (error) {
+      toast({ title: "Failed to download CSV template", variant: "destructive" });
+    }
+  };
+
   const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     // Clear any old pending file first
     setPendingImportFile(null);
+    setImportType('excel');
     
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -882,12 +925,39 @@ export default function EstimateDetail() {
     event.target.value = '';
   };
 
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Clear any old pending file first
+    setPendingImportFile(null);
+    setImportType('csv');
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const base64 = e.target?.result?.toString().split(",")[1];
+      if (!base64) return;
+      
+      setPendingImportFile(base64);
+      setShowImportConfirmDialog(true);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset file input so the same file can be selected again
+    event.target.value = '';
+  };
+
   const executeImport = async (removeExisting: boolean) => {
     if (!pendingImportFile) return;
     
     try {
+      // Use appropriate endpoint based on import type
+      const endpoint = importType === 'csv' 
+        ? `/api/estimates/${id}/import-csv`
+        : `/api/estimates/${id}/import-excel`;
+      
       // Add timestamp to prevent caching issues
-      const response = await apiRequest(`/api/estimates/${id}/import-excel`, {
+      const response = await apiRequest(endpoint, {
         method: "POST",
         body: JSON.stringify({ 
           file: pendingImportFile,
@@ -1171,26 +1241,58 @@ export default function EstimateDetail() {
             </>
           )}
           
-          <Button onClick={handleDownloadTemplate} variant="outline">
-            <FileDown className="h-4 w-4 mr-2" />
-            Download Template
-          </Button>
-          <Button onClick={handleExportExcel} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export Excel
-          </Button>
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            variant="outline"
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            Import Excel
-          </Button>
+          {/* Excel operations */}
+          <div className="flex gap-2">
+            <Button onClick={handleDownloadTemplate} variant="outline" size="sm">
+              <FileDown className="h-4 w-4 mr-2" />
+              Excel Template
+            </Button>
+            <Button onClick={handleExportExcel} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Export Excel
+            </Button>
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="outline"
+              size="sm"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Import Excel
+            </Button>
+          </div>
+          
+          {/* CSV operations */}
+          <div className="flex gap-2">
+            <Button onClick={handleDownloadCSVTemplate} variant="outline" size="sm">
+              <FileDown className="h-4 w-4 mr-2" />
+              CSV Template
+            </Button>
+            <Button onClick={handleExportCSV} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+            <Button
+              onClick={() => csvFileInputRef.current?.click()}
+              variant="outline"
+              size="sm"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Import CSV
+            </Button>
+          </div>
+          
           <input
             ref={fileInputRef}
             type="file"
             accept=".xlsx,.xls"
             onChange={handleImportExcel}
+            className="hidden"
+          />
+          <input
+            ref={csvFileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleImportCSV}
             className="hidden"
           />
         </div>
