@@ -4180,15 +4180,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (stageName) {
           stageId = stageNameToId.get(stageName.toLowerCase());
           if (!stageId) {
-            try {
-              const newStage = await storage.createEstimateStage(req.params.id, { 
-                name: stageName
-              });
-              stageNameToId.set(stageName.toLowerCase(), newStage.id);
-              stageId = newStage.id;
-              newStages.push(stageName);
-            } catch (error) {
-              console.error(`Failed to create stage "${stageName}":`, error);
+            // Stages require an epicId to be created
+            if (epicId) {
+              try {
+                const newStage = await storage.createEstimateStage(req.params.id, { 
+                  epicId: epicId,
+                  name: stageName
+                });
+                stageNameToId.set(stageName.toLowerCase(), newStage.id);
+                stageId = newStage.id;
+                newStages.push(stageName);
+              } catch (error) {
+                console.error(`Failed to create stage "${stageName}":`, error);
+                unmatchedStages.add(stageName);
+              }
+            } else {
+              console.log(`Cannot create stage "${stageName}" without an epic`);
               unmatchedStages.add(stageName);
             }
           }
