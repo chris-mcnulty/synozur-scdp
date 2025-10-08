@@ -4046,40 +4046,63 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      const activities = await storage.getEstimateActivities(req.params.id);
       const milestones = await storage.getEstimateMilestones(req.params.id);
       const client = estimate.clientId ? await storage.getClient(estimate.clientId) : null;
 
       // Build hierarchical structure
-      const epicMap = new Map(epics.map(e => [e.id, { ...e, stages: [] as any[] }]));
-      const stageMap = new Map(stages.map(s => [s.id, { ...s, activities: [] as any[] }]));
-      const activityMap = new Map(activities.map(a => [a.id, { ...a, lineItems: [] as any[] }]));
+      interface StageWithItems {
+        id: string;
+        name: string;
+        order: number;
+        epicId: string;
+        lineItems: any[];
+      }
 
-      // Link line items to activities
+      interface EpicWithStages {
+        id: string;
+        name: string;
+        order: number;
+        stages: StageWithItems[];
+        unassignedLineItems: any[];
+      }
+
+      const epicMap = new Map<string, EpicWithStages>(
+        epics.map(e => [e.id, { ...e, stages: [], unassignedLineItems: [] }])
+      );
+      
+      const stageMap = new Map<string, StageWithItems>(
+        stages.map(s => [s.id, { ...s, lineItems: [] }])
+      );
+
+      const unassignedLineItems: any[] = [];
+
+      // Link line items to stages or epics
       lineItems.forEach(item => {
-        if (item.activityId && activityMap.has(item.activityId)) {
-          activityMap.get(item.activityId)!.lineItems.push(item);
-        }
-      });
-
-      // Link activities to stages
-      activities.forEach(activity => {
-        if (activity.stageId && stageMap.has(activity.stageId)) {
-          stageMap.get(activity.stageId)!.activities.push(activityMap.get(activity.id));
+        if (item.stageId && stageMap.has(item.stageId)) {
+          // Line item has a stage assignment
+          stageMap.get(item.stageId)!.lineItems.push(item);
+        } else if (item.epicId && epicMap.has(item.epicId)) {
+          // Line item has an epic but no stage
+          epicMap.get(item.epicId)!.unassignedLineItems.push(item);
+        } else {
+          // Line item has no epic or stage assignment
+          unassignedLineItems.push(item);
         }
       });
 
       // Link stages to epics
       stages.forEach(stage => {
         if (stage.epicId && epicMap.has(stage.epicId)) {
-          epicMap.get(stage.epicId)!.stages.push(stageMap.get(stage.id));
+          const stageWithItems = stageMap.get(stage.id);
+          if (stageWithItems) {
+            epicMap.get(stage.epicId)!.stages.push(stageWithItems);
+          }
         }
       });
 
       // Get vocabulary terms for custom labels
       const epicLabel = estimate.epicLabel || "Epic";
       const stageLabel = estimate.stageLabel || "Stage";
-      const activityLabel = estimate.activityLabel || "Activity";
 
       // Generate text output
       let textOutput = "";
@@ -4103,33 +4126,59 @@ export async function registerRoutes(app: Express): Promise<void> {
           textOutput += `${"-".repeat(80)}\n`;
 
           epic.stages
-            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-            .forEach((stage: any, stageIndex: number) => {
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .forEach((stage, stageIndex) => {
               textOutput += `\n  ${stageLabel} ${stageIndex + 1}: ${stage.name}\n`;
 
-              stage.activities
-                .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-                .forEach((activity: any, activityIndex: number) => {
-                  textOutput += `\n    ${activityLabel} ${activityIndex + 1}: ${activity.name}\n`;
-
-                  // Add line items under each activity
-                  if (activity.lineItems && activity.lineItems.length > 0) {
-                    activity.lineItems
-                      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0))
-                      .forEach((item: any) => {
-                        if (item.description) {
-                          textOutput += `      - ${item.description}\n`;
-                          if (item.comments) {
-                            textOutput += `        Note: ${item.comments}\n`;
-                          }
-                        }
-                      });
-                  }
-                });
+              // Add line items under each stage
+              if (stage.lineItems && stage.lineItems.length > 0) {
+                stage.lineItems
+                  .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                  .forEach((item) => {
+                    if (item.description) {
+                      textOutput += `    - ${item.description}\n`;
+                      if (item.comments) {
+                        textOutput += `      Note: ${item.comments}\n`;
+                      }
+                    }
+                  });
+              }
             });
+
+          // Add unassigned line items at the epic level
+          if (epic.unassignedLineItems && epic.unassignedLineItems.length > 0) {
+            textOutput += `\n  Unassigned Items\n`;
+            epic.unassignedLineItems
+              .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+              .forEach((item) => {
+                if (item.description) {
+                  textOutput += `    - ${item.description}\n`;
+                  if (item.comments) {
+                    textOutput += `      Note: ${item.comments}\n`;
+                  }
+                }
+              });
+          }
 
           textOutput += `\n`;
         });
+
+      // Add completely unassigned line items
+      if (unassignedLineItems.length > 0) {
+        textOutput += `\nUNASSIGNED ITEMS\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        unassignedLineItems
+          .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+          .forEach((item) => {
+            if (item.description) {
+              textOutput += `  - ${item.description}\n`;
+              if (item.comments) {
+                textOutput += `    Note: ${item.comments}\n`;
+              }
+            }
+          });
+        textOutput += `\n`;
+      }
 
       // Milestones section
       if (milestones && milestones.length > 0) {
