@@ -5115,12 +5115,21 @@ export async function registerRoutes(app: Express): Promise<void> {
       const timeEntries = await storage.getTimeEntries(filters);
       const xlsx = await import("xlsx");
 
+      // Get organization vocabulary for column headers
+      const orgVocabulary = await storage.getOrganizationVocabulary();
+      const vocabularyForExport = {
+        stage: orgVocabulary?.stage || 'Stage',
+        workstream: orgVocabulary?.workstream || 'Workstream'
+      };
+
       const worksheetData = [
         ["Time Entries Export"],
-        ["Date", "Person", "Project", "Description", "Hours", "Billable", "Phase"],
+        ["Date", "Person", "Project", "Description", "Hours", "Billable", vocabularyForExport.stage, vocabularyForExport.workstream, "Milestone"],
       ];
 
       for (const entry of timeEntries) {
+        // For now, we don't have the related data preloaded
+        // In the future, we should update getTimeEntries to include these relations
         worksheetData.push([
           entry.date,
           entry.person?.name || "Unknown",
@@ -5128,7 +5137,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           entry.description || "",
           entry.hours,
           entry.billable ? "Yes" : "No",
-          entry.phase || "N/A"
+          "N/A", // Stage - would need to be loaded with the query
+          "N/A", // Workstream - would need to be loaded with the query
+          "N/A"  // Milestone - would need to be loaded with the query
         ]);
       }
 
@@ -5140,7 +5151,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         { wch: 40 }, // Description
         { wch: 8 },  // Hours
         { wch: 10 }, // Billable
-        { wch: 15 }, // Phase
+        { wch: 15 }, // Stage
+        { wch: 15 }, // Workstream
+        { wch: 20 }, // Milestone
       ];
 
       const wb = xlsx.utils.book_new();
@@ -5162,18 +5175,25 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const xlsx = await import("xlsx");
 
+      // Get organization vocabulary for column headers
+      const orgVocabulary = await storage.getOrganizationVocabulary();
+      const vocabularyForTemplate = {
+        stage: orgVocabulary?.stage || 'Stage',
+        workstream: orgVocabulary?.workstream || 'Workstream'
+      };
+
       const worksheetData = [
         ["Time Entries Import Template"],
         ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact."],
-        ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", "Phase"],
-        ["2024-01-15", "Example Project", "John Smith", "Example: Frontend development work", "8", "TRUE", "Development"],
-        ["2024-01-16", "Example Project", "Jane Doe", "Example: Code review and testing", "4", "TRUE", "QA"],
-        ["", "", "", "", "", "TRUE", ""],
+        ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", vocabularyForTemplate.stage, vocabularyForTemplate.workstream, "Milestone"],
+        ["2024-01-15", "Example Project", "John Smith", "Example: Frontend development work", "8", "TRUE", "Development", "Frontend", "Sprint 1"],
+        ["2024-01-16", "Example Project", "Jane Doe", "Example: Code review and testing", "4", "TRUE", "QA", "Testing", "Sprint 1"],
+        ["", "", "", "", "", "TRUE", "", "", ""],
       ];
 
       // Add more empty rows for user input
       for (let i = 0; i < 50; i++) {
-        worksheetData.push(["", "", "", "", "", "TRUE", ""]);
+        worksheetData.push(["", "", "", "", "", "TRUE", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
@@ -5184,7 +5204,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         { wch: 40 }, // Description
         { wch: 8 },  // Hours
         { wch: 10 }, // Billable
-        { wch: 15 }, // Phase
+        { wch: 15 }, // Stage
+        { wch: 15 }, // Workstream
+        { wch: 20 }, // Milestone
       ];
 
       const wb = xlsx.utils.book_new();
