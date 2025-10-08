@@ -1232,6 +1232,7 @@ export class DatabaseStorage implements IStorage {
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
     // Auto-inherit vocabulary from organization defaults if not explicitly provided
+    // Organization vocabulary is a singleton table, so we fetch it directly
     const needsVocabInheritance = 
       insertEstimate.epicTermId == null || 
       insertEstimate.stageTermId == null || 
@@ -1241,7 +1242,7 @@ export class DatabaseStorage implements IStorage {
       
     if (needsVocabInheritance) {
       try {
-        const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
+        const orgVocab = await this.getOrganizationVocabularySelections();
         if (orgVocab) {
           // Only inherit if the insert value is null/undefined AND org has a non-null value
           if (insertEstimate.epicTermId == null && orgVocab.epicTermId != null) {
