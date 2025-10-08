@@ -4826,6 +4826,30 @@ export class DatabaseStorage implements IStorage {
       return { invoicesCreated: 0, timeEntriesBilled: 0, expensesBilled: 0, totalAmount: 0 };
     }
 
+    // Get vocabulary for this project (cascade from project -> client -> organization)
+    let vocabulary = DEFAULT_VOCABULARY;
+    try {
+      // Get organization vocabulary
+      const [orgVocab] = await tx.select()
+        .from(organizationVocabulary);
+      
+      if (orgVocab) {
+        vocabulary = { ...vocabulary, ...orgVocab };
+      }
+      
+      // Apply client overrides
+      if (client.vocabularyOverrides) {
+        vocabulary = { ...vocabulary, ...client.vocabularyOverrides };
+      }
+      
+      // Apply project overrides
+      if (project.projects.vocabularyOverrides) {
+        vocabulary = { ...vocabulary, ...project.projects.vocabularyOverrides };
+      }
+    } catch (error) {
+      console.warn('[STORAGE] Failed to fetch vocabulary for invoice generation, using defaults:', error);
+    }
+
     // Get unbilled time entries for this project
     const unbilledTimeEntries = await tx.select({
       timeEntry: timeEntries,
