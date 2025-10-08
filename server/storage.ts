@@ -1231,6 +1231,41 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createEstimate(insertEstimate: InsertEstimate): Promise<Estimate> {
+    // Auto-inherit vocabulary from organization defaults if not explicitly provided
+    const needsVocabInheritance = 
+      insertEstimate.epicTermId == null || 
+      insertEstimate.stageTermId == null || 
+      insertEstimate.workstreamTermId == null ||
+      insertEstimate.milestoneTermId == null ||
+      insertEstimate.activityTermId == null;
+      
+    if (needsVocabInheritance) {
+      try {
+        const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
+        if (orgVocab) {
+          // Only inherit if the insert value is null/undefined AND org has a non-null value
+          if (insertEstimate.epicTermId == null && orgVocab.epicTermId != null) {
+            insertEstimate.epicTermId = orgVocab.epicTermId;
+          }
+          if (insertEstimate.stageTermId == null && orgVocab.stageTermId != null) {
+            insertEstimate.stageTermId = orgVocab.stageTermId;
+          }
+          if (insertEstimate.workstreamTermId == null && orgVocab.workstreamTermId != null) {
+            insertEstimate.workstreamTermId = orgVocab.workstreamTermId;
+          }
+          if (insertEstimate.milestoneTermId == null && orgVocab.milestoneTermId != null) {
+            insertEstimate.milestoneTermId = orgVocab.milestoneTermId;
+          }
+          if (insertEstimate.activityTermId == null && orgVocab.activityTermId != null) {
+            insertEstimate.activityTermId = orgVocab.activityTermId;
+          }
+        }
+      } catch (error) {
+        // If we can't fetch org vocabulary, proceed without it
+        console.warn('Could not fetch organization vocabulary for new estimate:', error);
+      }
+    }
+    
     const [estimate] = await db.insert(estimates).values(insertEstimate).returning();
     return estimate;
   }
