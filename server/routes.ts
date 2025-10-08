@@ -3776,23 +3776,17 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // CSV template download
+  // CSV template download (excluding cost-sensitive fields)
   app.get("/api/estimates/template-csv", requireAuth, async (req, res) => {
     try {
-      const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
-      
-      // Create CSV header row based on permissions
-      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
-      if (canViewCostMargins) {
-        headers.push("Cost Rate");
-      }
-      headers.push("Size", "Complexity", "Confidence", "Comments");
+      // Create CSV header row (no cost-sensitive fields: cost rate, margin, profit, total amount)
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments"];
       
       // Add a few example rows to guide users
       const exampleRows = [
-        ["Phase 1", "Planning", "PM", "1", "Project kickoff meeting", "Meeting", "John Doe", "4", "1", "200", ...(canViewCostMargins ? ["150"] : []), "small", "simple", "high", "Initial team alignment"],
-        ["Phase 1", "Planning", "Dev", "1", "Setup development environment", "Setup", "", "8", "1", "175", ...(canViewCostMargins ? ["125"] : []), "medium", "medium", "high", "Include CI/CD pipeline"],
-        ["Phase 1", "Design", "Design", "2", "Create wireframes", "Design", "", "16", "1", "150", ...(canViewCostMargins ? ["100"] : []), "large", "complex", "medium", "Mobile and desktop versions"]
+        ["Phase 1", "Planning", "PM", "1", "Project kickoff meeting", "Meeting", "John Doe", "4", "1", "200", "small", "simple", "high", "Initial team alignment"],
+        ["Phase 1", "Planning", "Dev", "1", "Setup development environment", "Setup", "", "8", "1", "175", "medium", "medium", "high", "Include CI/CD pipeline"],
+        ["Phase 1", "Design", "Design", "2", "Create wireframes", "Design", "", "16", "1", "150", "large", "complex", "medium", "Mobile and desktop versions"]
       ];
       
       // Build CSV content
@@ -3830,21 +3824,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
       const stageMap = new Map(stages.map(s => [s.id, s.name]));
 
-      // Filter line items based on user role for export
-      const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
-      const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
-
-      // Create CSV header row based on permissions
-      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
-      if (canViewCostMargins) {
-        headers.push("Cost Rate");
-      }
-      headers.push("Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount");
+      // Create CSV header row (excluding cost-sensitive fields: cost rate, margin, profit, total amount)
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours"];
 
       // Build CSV rows
       const csvRows = [headers];
       
-      filteredLineItems.forEach((item: any) => {
+      lineItems.forEach((item: any) => {
         const row = [
           item.epicId ? (epicMap.get(item.epicId) || "") : "",
           item.stageId ? (stageMap.get(item.stageId) || "") : "",
@@ -3855,21 +3841,13 @@ export async function registerRoutes(app: Express): Promise<void> {
           item.resourceName || "",
           item.baseHours,
           item.factor || "1",
-          item.rate
-        ];
-
-        if (canViewCostMargins) {
-          row.push(item.costRate || "");
-        }
-
-        row.push(
+          item.rate,
           item.size || "small",
           item.complexity || "simple",
           item.confidence || "high",
           item.comments || "",
-          item.adjustedHours,
-          item.totalAmount
-        );
+          item.adjustedHours
+        ];
 
         csvRows.push(row);
       });
@@ -4271,7 +4249,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      // Identify columns from headers
+      // Identify columns from headers (excluding cost-sensitive fields)
       const headers = rows[0];
       const colIndex: any = {};
       headers.forEach((header, idx) => {
@@ -4286,7 +4264,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         else if (normalized.includes("base hours")) colIndex.baseHours = idx;
         else if (normalized.includes("factor")) colIndex.factor = idx;
         else if (normalized === "rate") colIndex.rate = idx;
-        else if (normalized.includes("cost rate")) colIndex.costRate = idx;
+        // Intentionally skip "cost rate" and "total amount" - cost-sensitive fields not supported in CSV import
         else if (normalized === "size") colIndex.size = idx;
         else if (normalized === "complexity") colIndex.complexity = idx;
         else if (normalized === "confidence") colIndex.confidence = idx;
@@ -4405,7 +4383,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         const baseHoursNum = Number(baseHours);
         const factor = Number(row[colIndex.factor] || 1);
         const rateNum = Number(rate);
-        const costRate = colIndex.costRate ? Number(row[colIndex.costRate] || 0) : null;
         const adjustedHours = baseHoursNum * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rateNum;
 
@@ -4422,7 +4399,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           baseHours: baseHoursNum.toString(),
           factor: factor.toString(),
           rate: rateNum.toString(),
-          costRate: costRate !== null ? costRate.toString() : null,
+          costRate: null, // Cost rate not supported in CSV import
           size,
           complexity,
           confidence,

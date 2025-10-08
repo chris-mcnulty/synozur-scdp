@@ -1261,8 +1261,8 @@ export default function EstimateDetail() {
             </>
           )}
           
-          {/* Excel operations */}
-          <div className="flex gap-2">
+          {/* Excel operations - HIDDEN: See backlog for redevelopment/removal */}
+          {/* <div className="flex gap-2">
             <Button onClick={handleDownloadTemplate} variant="outline" size="sm">
               <FileDown className="h-4 w-4 mr-2" />
               Excel Template
@@ -1279,7 +1279,7 @@ export default function EstimateDetail() {
               <Upload className="h-4 w-4 mr-2" />
               Import Excel
             </Button>
-          </div>
+          </div> */}
           
           {/* CSV operations */}
           <div className="flex gap-2">

@@ -379,6 +379,33 @@
 - [ ] Lessons learned repository
 - [ ] Predictive accuracy modeling
 
+### Excel Import/Export Redevelopment
+**Status:** HIDDEN FROM UI - Security review required
+**Date Hidden:** October 8, 2025
+
+**Why Hidden:** Excel export/import previously exposed cost-sensitive fields (cost rates, margins, profit) that should not be shared externally. Feature hidden pending redevelopment with proper field filtering.
+
+**Decision Options:**
+1. **Redevelop with Security Controls**
+   - Implement role-based field filtering for Excel exports
+   - Remove cost-sensitive columns for non-admin/non-executive users
+   - Add clear warnings about data sensitivity
+   - Match CSV export security model (cost fields completely hidden)
+   
+2. **Deprecate Feature**
+   - Remove Excel functionality entirely
+   - Standardize on CSV for bulk operations (simpler, more secure)
+   - Clean up Excel-related code and dependencies
+   - Update documentation to reflect CSV-only approach
+
+**Current Status:**
+- Excel buttons commented out in estimate detail UI
+- Excel backend endpoints still exist but inaccessible from UI
+- CSV import/export fully functional with cost-sensitive fields removed
+- Users can use CSV for bulk operations without exposing sensitive data
+
+**Recommendation:** Evaluate usage patterns and user feedback before deciding. If Excel offers no significant advantages over CSV, deprecation may be simpler and more maintainable.
+
 ### Document Management Enhancements
 - [ ] MSA document upload with metadata
 - [ ] NDA tracking with expiration alerts
