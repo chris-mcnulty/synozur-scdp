@@ -1010,6 +1010,7 @@ export const updateOrganizationVocabularySchema = z.object({
   stageTermId: z.string().uuid().optional().nullable(),
   activityTermId: z.string().uuid().optional().nullable(),
   workstreamTermId: z.string().uuid().optional().nullable(),
+  milestoneTermId: z.string().uuid().optional().nullable(),
 }).strict();
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({

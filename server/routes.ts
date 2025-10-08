@@ -1500,13 +1500,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       const stageTerm = selections.stageTermId ? await storage.getVocabularyTermById(selections.stageTermId) : null;
       const activityTerm = selections.activityTermId ? await storage.getVocabularyTermById(selections.activityTermId) : null;
       const workstreamTerm = selections.workstreamTermId ? await storage.getVocabularyTermById(selections.workstreamTermId) : null;
+      const milestoneTerm = selections.milestoneTermId ? await storage.getVocabularyTermById(selections.milestoneTermId) : null;
       
       res.json({
         ...selections,
         epicTerm,
         stageTerm,
         activityTerm,
-        workstreamTerm
+        workstreamTerm,
+        milestoneTerm
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organization vocabulary selections" });
