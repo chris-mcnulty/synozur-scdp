@@ -120,6 +120,22 @@ For development testing, use the following login credentials:
   - `PATCH /api/clients/:id` - Update client vocabulary (vocabularyOverrides field)
   - `PATCH /api/projects/:id` - Update project vocabulary (vocabularyOverrides field)
 
+### Estimate Status Locking
+- **Purpose**: Prevents unauthorized modifications to estimates that have been finalized, sent to clients, or approved
+- **Status Flow**: draft → final → sent → approved/rejected
+- **Edit Protection**: Only estimates with 'draft' status can be modified
+- **Backend Validation**: 
+  - `ensureEstimateIsEditable()` helper checks estimate status before all mutations
+  - Returns 403 error with message: "This estimate is not in draft status. Please revert it to draft to make changes."
+  - Protects 18+ mutation routes: epics, stages, line items, milestones, imports, recalculations
+  - Status change routes (approve/reject/finalize/revert) intentionally bypass the lock
+- **Frontend Controls**:
+  - `isEditable` computed variable (`estimate?.status === 'draft'`) controls all editing UI
+  - Disabled when not editable: add/edit/delete buttons, bulk operations, PM wizard, recalculate
+  - Always enabled: export buttons, status change buttons
+- **Security**: All server-side routes validate status; frontend controls provide immediate feedback
+- **User Experience**: Clear messaging directs users to revert to draft status before making changes
+
 ## Project Management
 
 - **Master Backlog File**: `backlog.md` - Contains all project planning, current sprint work, and future enhancements
