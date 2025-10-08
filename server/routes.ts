@@ -186,6 +186,24 @@ function filterSensitiveData(data: any, userRole: string): any {
   return data;
 }
 
+// Security helper: Check if an estimate is editable (only draft estimates can be modified)
+async function ensureEstimateIsEditable(estimateId: string, res: Response): Promise<boolean> {
+  const estimate = await storage.getEstimate(estimateId);
+  if (!estimate) {
+    res.status(404).json({ message: "Estimate not found" });
+    return false;
+  }
+  if (estimate.status !== 'draft') {
+    res.status(403).json({ 
+      message: "Cannot modify estimate", 
+      detail: `Estimate is ${estimate.status}. Only draft estimates can be edited. Please revert to draft first.`,
+      currentStatus: estimate.status
+    });
+    return false;
+  }
+  return true;
+}
+
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
 import { requireAuth, requireRole, getAllSessions } from "./session-store";
@@ -3085,6 +3103,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/estimates/:id/epics", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      
       const { name } = req.body;
       if (!name) {
         return res.status(400).json({ message: "Epic name is required" });
@@ -3099,6 +3120,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:estimateId/epics/:epicId", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
       const { name } = req.body;
       if (!name) {
         return res.status(400).json({ message: "Epic name is required" });
@@ -3123,6 +3147,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/estimates/:id/stages", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      
       const { epicId, name } = req.body;
       if (!epicId || !name) {
         return res.status(400).json({ message: "Epic ID and stage name are required" });
@@ -3137,6 +3164,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:estimateId/stages/:stageId", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
       const { name } = req.body;
       if (!name) {
         return res.status(400).json({ message: "Stage name is required" });
@@ -3151,6 +3181,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/estimates/:estimateId/stages/:stageId", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
       await storage.deleteEstimateStage(req.params.estimateId, req.params.stageId);
       res.json({ message: "Stage deleted successfully" });
     } catch (error: any) {
@@ -3165,6 +3198,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/estimates/:estimateId/stages/merge", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
       const { keepStageId, deleteStageId } = req.body;
       if (!keepStageId || !deleteStageId) {
         return res.status(400).json({ message: "Both keepStageId and deleteStageId are required" });
@@ -3199,6 +3235,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Creating line item for estimate:", req.params.id);
       console.log("Request body:", JSON.stringify(req.body, null, 2));
 
@@ -3242,6 +3280,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       console.log("Updating line item:", req.params.id);
       console.log("Request body:", JSON.stringify(req.body, null, 2));
 
@@ -3285,6 +3325,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/estimates/:estimateId/line-items/:id", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       await storage.deleteEstimateLineItem(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -3357,6 +3399,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Recalculate all line items for an estimate
   app.post("/api/estimates/:id/recalculate", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       const estimateId = req.params.id;
       
       // Get the estimate to access multipliers
@@ -3470,6 +3514,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/estimates/:id/milestones", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Creating milestone with data:", req.body);
       const { insertEstimateMilestoneSchema } = await import("@shared/schema");
       const validatedData = insertEstimateMilestoneSchema.parse({
@@ -3492,6 +3538,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:estimateId/milestones/:id", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       const milestone = await storage.updateEstimateMilestone(req.params.id, req.body);
       res.json(milestone);
     } catch (error) {
@@ -3501,6 +3549,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/estimates/:estimateId/milestones/:id", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       await storage.deleteEstimateMilestone(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -3585,6 +3635,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Split line item
   app.post("/api/estimates/:estimateId/line-items/:id/split", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       const { firstHours, secondHours } = req.body;
 
       if (!firstHours || !secondHours || firstHours <= 0 || secondHours <= 0) {
@@ -3601,6 +3653,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // PM Wizard - Check for existing PM hours and create new ones
   app.post("/api/estimates/:estimateId/pm-hours", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       const { estimateId } = req.params;
       const { action, hoursPerWeekPerEpic, maxWeeks, removeExisting } = req.body;
 
@@ -4194,6 +4248,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // CSV import
   app.post("/api/estimates/:id/import-csv", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import CSV endpoint hit for estimate:", req.params.id);
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
@@ -4459,6 +4515,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Excel import
   app.post("/api/estimates/:id/import-excel", requireAuth, async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import Excel endpoint hit for estimate:", req.params.id);
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
@@ -6895,6 +6953,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       const estimate = await storage.updateEstimate(req.params.id, req.body);
       res.json(estimate);
     } catch (error) {

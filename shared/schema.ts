@@ -4,6 +4,10 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Estimate status enum
+export const estimateStatusEnum = z.enum(['draft', 'final', 'sent', 'approved', 'rejected']);
+export type EstimateStatus = z.infer<typeof estimateStatusEnum>;
+
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1016,6 +1020,8 @@ export const updateOrganizationVocabularySchema = z.object({
 export const insertEstimateSchema = createInsertSchema(estimates).omit({
   id: true,
   createdAt: true,
+}).extend({
+  status: estimateStatusEnum.optional(), // Validate status using enum
 });
 
 export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({

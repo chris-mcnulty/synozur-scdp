@@ -113,6 +113,9 @@ export default function EstimateDetail() {
     retry: 1,
   });
 
+  // Check if estimate is editable (only draft estimates can be modified)
+  const isEditable = estimate?.status === 'draft';
+
   const { data: lineItems = [], isLoading, error: lineItemsError } = useQuery<EstimateLineItem[]>({
     queryKey: ['/api/estimates', id, 'line-items'],
     enabled: !!id && !!estimate,
@@ -1138,6 +1141,7 @@ export default function EstimateDetail() {
           <div>
             <h1 className="text-3xl font-bold">Estimate Details</h1>
             <p className="text-muted-foreground cursor-pointer" onClick={() => {
+              if (!isEditable) return;
               setEditingField('estimate-name');
               setEditingEstimateName(estimate?.name || "");
             }}>
@@ -1351,6 +1355,7 @@ export default function EstimateDetail() {
                       pricingType: value as 'hourly' | 'fixed'
                     });
                   }}
+                  disabled={!isEditable}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -1384,6 +1389,7 @@ export default function EstimateDetail() {
                       }
                     }}
                     className="mt-1"
+                    disabled={!isEditable}
                   />
                 </div>
               )}
@@ -1398,6 +1404,7 @@ export default function EstimateDetail() {
                       estimateType: value as 'detailed' | 'block'
                     });
                   }}
+                  disabled={!isEditable}
                 >
                   <SelectTrigger className="mt-1">
                     <SelectValue />
@@ -1562,6 +1569,7 @@ export default function EstimateDetail() {
                   }}
                   className="mt-1"
                   data-testid="input-block-hours"
+                  disabled={!isEditable}
                 />
               </div>
               <div>
@@ -1585,6 +1593,7 @@ export default function EstimateDetail() {
                   }}
                   className="mt-1"
                   data-testid="input-block-dollars"
+                  disabled={!isEditable}
                 />
               </div>
             </div>
@@ -1604,6 +1613,7 @@ export default function EstimateDetail() {
                 }}
                 className="mt-1 w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 data-testid="textarea-block-description"
+                disabled={!isEditable}
               />
             </div>
             {/* Cost Analysis for Block Estimates */}
@@ -1833,7 +1843,7 @@ export default function EstimateDetail() {
                   <CardTitle>Milestone Payments</CardTitle>
                   <CardDescription>Customer payment schedule</CardDescription>
                 </div>
-                <Button onClick={() => setShowMilestoneDialog(true)} size="sm">
+                <Button onClick={() => setShowMilestoneDialog(true)} size="sm" disabled={!isEditable}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Milestone
                 </Button>
@@ -1906,6 +1916,7 @@ export default function EstimateDetail() {
                           }}
                           size="sm"
                           variant="ghost"
+                          disabled={!isEditable}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -1914,6 +1925,7 @@ export default function EstimateDetail() {
                           size="sm"
                           variant="ghost"
                           className="text-destructive"
+                          disabled={!isEditable}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1978,8 +1990,8 @@ export default function EstimateDetail() {
               </CardDescription>
             </div>
             <div className="flex gap-2">
-              {estimate?.estimateType === 'detailed' && estimate?.status === 'draft' && (
-                <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard">
+              {estimate?.estimateType === 'detailed' && isEditable && (
+                <Button onClick={() => setShowPMWizard(true)} variant="outline" data-testid="button-pm-wizard" disabled={!isEditable}>
                   <Wand2 className="h-4 w-4 mr-2" />
                   PM Wizard
                 </Button>
@@ -1988,6 +2000,7 @@ export default function EstimateDetail() {
                 onClick={() => setShowRecalcDialog(true)} 
                 variant="outline" 
                 data-testid="button-recalculate"
+                disabled={!isEditable}
               >
                 <Calculator className="h-4 w-4 mr-2" />
                 Recalculate All
@@ -2200,7 +2213,7 @@ export default function EstimateDetail() {
           </div>
           <Button
             onClick={handleAddItem}
-            disabled={!newItem.description || !newItem.baseHours || !newItem.rate || createLineItemMutation.isPending}
+            disabled={!isEditable || !newItem.description || !newItem.baseHours || !newItem.rate || createLineItemMutation.isPending}
             className="mb-4"
             variant="default"
             size="default"
@@ -2413,10 +2426,10 @@ export default function EstimateDetail() {
               <div className="flex items-center justify-between">
                 <span className="font-medium">{selectedItems.size} items selected</span>
                 <div className="flex gap-2">
-                  <Button onClick={() => setBulkEditDialog(true)} size="sm">
+                  <Button onClick={() => setBulkEditDialog(true)} size="sm" disabled={!isEditable}>
                     Bulk Edit
                   </Button>
-                  <Button onClick={() => setApplyUserRatesDialog(true)} size="sm" variant="outline">
+                  <Button onClick={() => setApplyUserRatesDialog(true)} size="sm" variant="outline" disabled={!isEditable}>
                     Assign Roles/Users
                   </Button>
                   <Button 
@@ -2806,6 +2819,7 @@ export default function EstimateDetail() {
                               setShowSplitDialog(true);
                             }}
                             title="Split this line item"
+                            disabled={!isEditable}
                           >
                             <Split className="h-4 w-4" />
                           </Button>
@@ -2813,6 +2827,7 @@ export default function EstimateDetail() {
                             variant="ghost"
                             size="icon"
                             onClick={() => deleteLineItemMutation.mutate(item.id)}
+                            disabled={!isEditable}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -2907,7 +2922,7 @@ export default function EstimateDetail() {
                     Organize your estimate structure and manage epics and stages
                   </CardDescription>
                 </div>
-                <Button onClick={() => setShowEpicDialog(true)} size="sm">
+                <Button onClick={() => setShowEpicDialog(true)} size="sm" disabled={!isEditable}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add Epic
                 </Button>
@@ -2958,6 +2973,7 @@ export default function EstimateDetail() {
                                     updateEpicMutation.mutate({ epicId: epic.id, name: editingEpicName });
                                     setEditingEpicId(null);
                                   }}
+                                  disabled={!isEditable}
                                 >
                                   <Check className="h-3 w-3" />
                                 </Button>
@@ -2965,6 +2981,7 @@ export default function EstimateDetail() {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => setEditingEpicId(null)}
+                                  disabled={!isEditable}
                                 >
                                   <X className="h-3 w-3" />
                                 </Button>
@@ -3000,6 +3017,7 @@ export default function EstimateDetail() {
                               }}
                               size="sm"
                               variant="outline"
+                              disabled={!isEditable}
                             >
                               <Plus className="h-4 w-4 mr-1" />
                               Add Stage
@@ -3012,6 +3030,7 @@ export default function EstimateDetail() {
                               size="sm"
                               variant="ghost"
                               title="Edit epic name"
+                              disabled={!isEditable}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -3038,7 +3057,7 @@ export default function EstimateDetail() {
                               size="sm"
                               variant="ghost"
                               className="text-destructive"
-                              disabled={deleteEstimateEpicMutation.isPending}
+                              disabled={!isEditable || deleteEstimateEpicMutation.isPending}
                               title="Delete epic"
                             >
                               {deleteEstimateEpicMutation.isPending ? (
@@ -3095,6 +3114,7 @@ export default function EstimateDetail() {
                                             setEditingStageId(null);
                                           }}
                                           data-testid={`button-save-stage-${stage.id}`}
+                                          disabled={!isEditable}
                                         >
                                           <Check className="h-4 w-4" />
                                         </Button>
@@ -3103,6 +3123,7 @@ export default function EstimateDetail() {
                                           variant="ghost"
                                           onClick={() => setEditingStageId(null)}
                                           data-testid={`button-cancel-stage-${stage.id}`}
+                                          disabled={!isEditable}
                                         >
                                           <X className="h-4 w-4" />
                                         </Button>
@@ -3131,6 +3152,7 @@ export default function EstimateDetail() {
                                           setEditingStageName(stage.name);
                                         }}
                                         data-testid={`button-edit-stage-${stage.id}`}
+                                        disabled={!isEditable}
                                       >
                                         <Pencil className="h-3 w-3" />
                                       </Button>
@@ -3140,7 +3162,7 @@ export default function EstimateDetail() {
                                         size="sm"
                                         variant="outline"
                                         className="text-xs"
-                                        disabled={mergeStagesMutation.isPending}
+                                        disabled={!isEditable || mergeStagesMutation.isPending}
                                         onClick={() => {
                                           // Find the first non-duplicate stage with the same name to merge with
                                           const keepStage = epicStages.find(s => 
@@ -3170,7 +3192,7 @@ export default function EstimateDetail() {
                                       <Button
                                         size="sm"
                                         variant="ghost"
-                                        disabled={lineItemCount > 0 || deleteEstimateStageMutation.isPending}
+                                        disabled={!isEditable || lineItemCount > 0 || deleteEstimateStageMutation.isPending}
                                         onClick={() => {
                                           if (lineItemCount > 0) {
                                             toast({
@@ -3270,7 +3292,7 @@ export default function EstimateDetail() {
                 createEpicMutation.mutate({ name: newEpicName.trim() });
               }
             }}
-            disabled={!newEpicName.trim() || createEpicMutation.isPending}
+            disabled={!isEditable || !newEpicName.trim() || createEpicMutation.isPending}
           >
             {createEpicMutation.isPending ? "Creating..." : "Create Epic"}
           </Button>
@@ -3324,7 +3346,7 @@ export default function EstimateDetail() {
                 });
               }
             }}
-            disabled={!selectedEpicForStage || !newStageName.trim() || createStageMutation.isPending}
+            disabled={!isEditable || !selectedEpicForStage || !newStageName.trim() || createStageMutation.isPending}
           >
             {createStageMutation.isPending ? "Creating..." : "Create Stage"}
           </Button>
@@ -3417,6 +3439,7 @@ export default function EstimateDetail() {
               });
             }}
             disabled={
+              !isEditable ||
               !newMilestone.name?.trim() || 
               ((!newMilestone.amount?.trim()) && (!newMilestone.percentage?.trim())) || 
               (!!newMilestone.amount?.trim() && !!newMilestone.percentage?.trim()) || 
@@ -3514,7 +3537,7 @@ export default function EstimateDetail() {
               setShowMilestoneEditDialog(false);
               setEditingMilestone(null);
             }}
-            disabled={!editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || !!(editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
+            disabled={!isEditable || !editingMilestone?.name || (!editingMilestone?.amount && !editingMilestone?.percentage) || !!(editingMilestone?.amount && editingMilestone?.percentage) || updateMilestoneMutation.isPending}
           >
             {updateMilestoneMutation.isPending ? "Updating..." : "Update Milestone"}
           </Button>
@@ -3675,7 +3698,7 @@ export default function EstimateDetail() {
                 });
               }
             }}
-            disabled={bulkUpdateMutation.isPending || Object.values(bulkEditData).every(v => !v)}
+            disabled={!isEditable || bulkUpdateMutation.isPending || Object.values(bulkEditData).every(v => !v)}
           >
             {bulkUpdateMutation.isPending ? "Updating..." : "Update Selected"}
           </Button>
@@ -3769,7 +3792,7 @@ export default function EstimateDetail() {
                 }
               }
             }}
-            disabled={!selectedUserId || bulkUpdateMutation.isPending}
+            disabled={!isEditable || !selectedUserId || bulkUpdateMutation.isPending}
           >
             {bulkUpdateMutation.isPending ? "Assigning..." : "Assign"}
           </Button>
@@ -3850,7 +3873,7 @@ export default function EstimateDetail() {
                 });
               }
             }}
-            disabled={!splitHours.first || !splitHours.second || splitLineItemMutation.isPending}
+            disabled={!isEditable || !splitHours.first || !splitHours.second || splitLineItemMutation.isPending}
           >
             {splitLineItemMutation.isPending ? "Splitting..." : "Split Item"}
           </Button>
@@ -4061,7 +4084,7 @@ export default function EstimateDetail() {
           </Button>
           <Button
             onClick={() => recalculateEstimateMutation.mutate()}
-            disabled={recalculateEstimateMutation.isPending}
+            disabled={!isEditable || recalculateEstimateMutation.isPending}
             data-testid="button-confirm-recalc"
           >
             {recalculateEstimateMutation.isPending ? "Recalculating..." : "Recalculate All"}
