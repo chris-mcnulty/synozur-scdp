@@ -174,6 +174,23 @@ export default function TimeTracking() {
     }
   });
 
+  // Fetch vocabulary context for selected project to get custom terms
+  const { data: vocabularyContext } = useQuery({
+    queryKey: ["/api/vocabulary/context", selectedProjectId],
+    enabled: !!selectedProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const params = new URLSearchParams();
+      params.set('projectId', selectedProjectId);
+      const response = await fetch(`/api/vocabulary/context?${params.toString()}`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch vocabulary context');
+      return response.json();
+    }
+  });
+
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
     queryKey: ["/api/projects", editProjectId, "milestones"],
@@ -213,6 +230,23 @@ export default function TimeTracking() {
         headers: sessionId ? { 'X-Session-Id': sessionId } : {},
       });
       if (!response.ok) throw new Error('Failed to fetch project stages');
+      return response.json();
+    }
+  });
+
+  // Fetch vocabulary context for edit form project to get custom terms
+  const { data: editVocabularyContext } = useQuery({
+    queryKey: ["/api/vocabulary/context", editProjectId],
+    enabled: !!editProjectId,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const params = new URLSearchParams();
+      params.set('projectId', editProjectId);
+      const response = await fetch(`/api/vocabulary/context?${params.toString()}`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch vocabulary context');
       return response.json();
     }
   });
@@ -818,7 +852,7 @@ export default function TimeTracking() {
                     name="workstreamId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Workstream (Optional)</FormLabel>
+                        <FormLabel>{vocabularyContext?.workstream || 'Workstream'} (Optional)</FormLabel>
                         <Select 
                           onValueChange={field.onChange} 
                           value={field.value || undefined}
@@ -826,7 +860,7 @@ export default function TimeTracking() {
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-workstream">
-                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select workstream"} />
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : `Select ${vocabularyContext?.workstream?.toLowerCase() || 'workstream'}`} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -847,7 +881,7 @@ export default function TimeTracking() {
                     name="projectStageId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Stage (Optional)</FormLabel>
+                        <FormLabel>{vocabularyContext?.stage || 'Stage'} (Optional)</FormLabel>
                         <Select 
                           onValueChange={field.onChange} 
                           value={field.value || undefined}
@@ -855,7 +889,7 @@ export default function TimeTracking() {
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-stage">
-                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select stage"} />
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : `Select ${vocabularyContext?.stage?.toLowerCase() || 'stage'}`} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -1221,7 +1255,7 @@ export default function TimeTracking() {
                   name="workstreamId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Workstream (Optional)</FormLabel>
+                      <FormLabel>{editVocabularyContext?.workstream || 'Workstream'} (Optional)</FormLabel>
                       <Select 
                         onValueChange={field.onChange} 
                         value={field.value || undefined}
@@ -1229,7 +1263,7 @@ export default function TimeTracking() {
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-workstream">
-                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select workstream"} />
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : `Select ${editVocabularyContext?.workstream?.toLowerCase() || 'workstream'}`} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -1250,7 +1284,7 @@ export default function TimeTracking() {
                   name="projectStageId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Stage (Optional)</FormLabel>
+                      <FormLabel>{editVocabularyContext?.stage || 'Stage'} (Optional)</FormLabel>
                       <Select 
                         onValueChange={field.onChange} 
                         value={field.value || undefined}
@@ -1258,7 +1292,7 @@ export default function TimeTracking() {
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-stage">
-                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select stage"} />
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : `Select ${editVocabularyContext?.stage?.toLowerCase() || 'stage'}`} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
