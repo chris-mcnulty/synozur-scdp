@@ -4035,6 +4035,135 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Text export for AI (presentations, SOWs) - no hours, resources, or costs
+  app.get("/api/estimates/:id/export-text", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      const activities = await storage.getEstimateActivities(req.params.id);
+      const milestones = await storage.getEstimateMilestones(req.params.id);
+      const client = estimate.clientId ? await storage.getClient(estimate.clientId) : null;
+
+      // Build hierarchical structure
+      const epicMap = new Map(epics.map(e => [e.id, { ...e, stages: [] as any[] }]));
+      const stageMap = new Map(stages.map(s => [s.id, { ...s, activities: [] as any[] }]));
+      const activityMap = new Map(activities.map(a => [a.id, { ...a, lineItems: [] as any[] }]));
+
+      // Link line items to activities
+      lineItems.forEach(item => {
+        if (item.activityId && activityMap.has(item.activityId)) {
+          activityMap.get(item.activityId)!.lineItems.push(item);
+        }
+      });
+
+      // Link activities to stages
+      activities.forEach(activity => {
+        if (activity.stageId && stageMap.has(activity.stageId)) {
+          stageMap.get(activity.stageId)!.activities.push(activityMap.get(activity.id));
+        }
+      });
+
+      // Link stages to epics
+      stages.forEach(stage => {
+        if (stage.epicId && epicMap.has(stage.epicId)) {
+          epicMap.get(stage.epicId)!.stages.push(stageMap.get(stage.id));
+        }
+      });
+
+      // Get vocabulary terms for custom labels
+      const epicLabel = estimate.epicLabel || "Epic";
+      const stageLabel = estimate.stageLabel || "Stage";
+      const activityLabel = estimate.activityLabel || "Activity";
+
+      // Generate text output
+      let textOutput = "";
+      
+      // Header
+      textOutput += `ESTIMATE: ${estimate.name}\n`;
+      textOutput += `CLIENT: ${client?.name || 'Unknown'}\n`;
+      textOutput += `DATE: ${estimate.estimateDate || new Date().toISOString().split('T')[0]}\n`;
+      if (estimate.validUntil) {
+        textOutput += `VALID UNTIL: ${estimate.validUntil}\n`;
+      }
+      textOutput += `\n${"=".repeat(80)}\n\n`;
+
+      // Project Structure
+      textOutput += `PROJECT STRUCTURE\n\n`;
+
+      Array.from(epicMap.values())
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .forEach((epic, epicIndex) => {
+          textOutput += `${epicLabel.toUpperCase()} ${epicIndex + 1}: ${epic.name}\n`;
+          textOutput += `${"-".repeat(80)}\n`;
+
+          epic.stages
+            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+            .forEach((stage: any, stageIndex: number) => {
+              textOutput += `\n  ${stageLabel} ${stageIndex + 1}: ${stage.name}\n`;
+
+              stage.activities
+                .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                .forEach((activity: any, activityIndex: number) => {
+                  textOutput += `\n    ${activityLabel} ${activityIndex + 1}: ${activity.name}\n`;
+
+                  // Add line items under each activity
+                  if (activity.lineItems && activity.lineItems.length > 0) {
+                    activity.lineItems
+                      .sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                      .forEach((item: any) => {
+                        if (item.description) {
+                          textOutput += `      - ${item.description}\n`;
+                          if (item.comments) {
+                            textOutput += `        Note: ${item.comments}\n`;
+                          }
+                        }
+                      });
+                  }
+                });
+            });
+
+          textOutput += `\n`;
+        });
+
+      // Milestones section
+      if (milestones && milestones.length > 0) {
+        textOutput += `\n${"=".repeat(80)}\n\n`;
+        textOutput += `MILESTONES\n\n`;
+        
+        milestones
+          .sort((a, b) => {
+            if (a.dueDate && b.dueDate) {
+              return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+            }
+            return 0;
+          })
+          .forEach((milestone, index) => {
+            textOutput += `${index + 1}. ${milestone.name}\n`;
+            if (milestone.description) {
+              textOutput += `   ${milestone.description}\n`;
+            }
+            if (milestone.dueDate) {
+              textOutput += `   Due: ${milestone.dueDate}\n`;
+            }
+            textOutput += `\n`;
+          });
+      }
+
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${estimate.name.replace(/[^a-z0-9]/gi, '_')}-ai-export.txt"`);
+      res.send(textOutput);
+    } catch (error) {
+      console.error("Text export error:", error);
+      res.status(500).json({ message: "Failed to export text" });
+    }
+  });
+
   // CSV import
   app.post("/api/estimates/:id/import-csv", requireAuth, async (req, res) => {
     try {
