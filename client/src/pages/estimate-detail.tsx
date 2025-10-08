@@ -862,6 +862,26 @@ export default function EstimateDetail() {
     }
   };
 
+  const handleExportText = async () => {
+    try {
+      const response = await fetch(`/api/estimates/${id}/export-text`, {
+        headers: {
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        }
+      });
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `estimate-${id}-ai-export.txt`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "Text export downloaded successfully" });
+    } catch (error) {
+      toast({ title: "Failed to export text file", variant: "destructive" });
+    }
+  };
+
   const handleDownloadTemplate = async () => {
     try {
       const response = await fetch("/api/estimates/template-excel", {
@@ -1278,6 +1298,19 @@ export default function EstimateDetail() {
             >
               <Upload className="h-4 w-4 mr-2" />
               Import CSV
+            </Button>
+          </div>
+          
+          {/* AI-ready text export */}
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleExportText} 
+              variant="outline" 
+              size="sm"
+              data-testid="button-export-text"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Export for AI
             </Button>
           </div>
           
