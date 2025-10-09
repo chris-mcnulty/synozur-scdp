@@ -52,12 +52,17 @@ export default function Login() {
   }, [navigate, toast]);
 
   const loginMutation = useMutation({
-    mutationFn: (credentials: { email: string; password: string }) => 
-      apiRequest("/api/auth/login", {
+    mutationFn: async (credentials: { email: string; password: string }) => {
+      console.log("[LOGIN] Attempting login with:", credentials.email);
+      const response = await apiRequest("/api/auth/login", {
         method: "POST",
         body: JSON.stringify(credentials),
-      }),
+      });
+      console.log("[LOGIN] Login response:", response);
+      return response;
+    },
     onSuccess: (data) => {
+      console.log("[LOGIN] Login successful, user data:", data);
       queryClient.setQueryData(["/api/auth/user"], data);
       toast({
         title: "Welcome back!",
@@ -66,6 +71,7 @@ export default function Login() {
       navigate("/");
     },
     onError: (error: any) => {
+      console.error("[LOGIN] Login error:", error);
       toast({
         title: "Login failed",
         description: error.message || "Invalid email or password",

@@ -99,7 +99,23 @@ export default function Estimates() {
 
   const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
     queryKey: ["/api/estimates", showArchived],
-    queryFn: () => fetch(`/api/estimates?includeArchived=${showArchived}`).then(res => res.json()),
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const headers: Record<string, string> = {};
+      if (sessionId) {
+        headers['X-Session-Id'] = sessionId;
+      }
+      
+      const res = await fetch(`/api/estimates?includeArchived=${showArchived}`, {
+        headers,
+        credentials: 'include'
+      });
+      if (!res.ok) {
+        throw new Error('Failed to fetch estimates');
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
   });
 
   const { data: clients = [] } = useQuery<any[]>({
