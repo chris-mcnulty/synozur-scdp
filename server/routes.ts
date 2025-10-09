@@ -6815,8 +6815,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/estimates", requireAuth, async (req, res) => {
     try {
       console.log("[DEBUG] Fetching estimates...");
-      const estimates = await storage.getEstimates();
-      console.log('[DEBUG] Found ' + estimates.length + ' estimates');
+      const includeArchived = req.query.includeArchived === 'true';
+      const estimates = await storage.getEstimates(includeArchived);
+      console.log('[DEBUG] Found ' + estimates.length + ' estimates (includeArchived: ' + includeArchived + ')');
 
       // Calculate totals from line items for each estimate
       const estimatesWithTotals = await Promise.all(estimates.map(async (est, index) => {
@@ -6870,6 +6871,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             totalHours: totalHours,
             totalCost: totalCost,
             validUntil: est.validUntil || null,
+            archived: est.archived || false,
             createdAt: est.createdAt,
           };
         } catch (estError) {
@@ -6888,6 +6890,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             totalHours: 0,
             totalCost: 0,
             validUntil: null,
+            archived: est.archived || false,
             createdAt: est.createdAt || new Date().toISOString(),
           };
         }
@@ -6981,6 +6984,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(estimate);
     } catch (error) {
       res.status(500).json({ message: "Failed to update estimate" });
+    }
+  });
+
+  // Archive/unarchive estimate
+  app.patch("/api/estimates/:id/archive", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { archived } = req.body;
+      const estimate = await storage.updateEstimate(req.params.id, { archived });
+      res.json(estimate);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to archive estimate" });
     }
   });
 

@@ -1183,11 +1183,17 @@ export class DatabaseStorage implements IStorage {
     await db.delete(roles).where(eq(roles.id, id));
   }
 
-  async getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]> {
-    const rows = await db.select().from(estimates)
+  async getEstimates(includeArchived: boolean = false): Promise<(Estimate & { client: Client; project?: Project })[]> {
+    let query = db.select().from(estimates)
       .leftJoin(clients, eq(estimates.clientId, clients.id))
-      .leftJoin(projects, eq(estimates.projectId, projects.id))
-      .orderBy(desc(estimates.createdAt));
+      .leftJoin(projects, eq(estimates.projectId, projects.id));
+    
+    // Filter out archived estimates unless explicitly requested
+    if (!includeArchived) {
+      query = query.where(eq(estimates.archived, false)) as any;
+    }
+    
+    const rows = await query.orderBy(clients.name, estimates.name);
     
     // Only filter out rows where estimates is null (not clients)
     return rows.filter(row => row.estimates !== null).map(row => ({
