@@ -174,6 +174,7 @@ export const estimates = pgTable("estimates", {
   confidenceHighMultiplier: decimal("confidence_high_multiplier", { precision: 4, scale: 2 }).default('1.00'),
   confidenceMediumMultiplier: decimal("confidence_medium_multiplier", { precision: 4, scale: 2 }).default('1.10'),
   confidenceLowMultiplier: decimal("confidence_low_multiplier", { precision: 4, scale: 2 }).default('1.20'),
+  archived: boolean("archived").notNull().default(false), // Archive estimates to hide from default view
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
