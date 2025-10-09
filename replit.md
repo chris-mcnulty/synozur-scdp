@@ -136,6 +136,24 @@ For development testing, use the following login credentials:
 - **Security**: All server-side routes validate status; frontend controls provide immediate feedback
 - **User Experience**: Clear messaging directs users to revert to draft status before making changes
 
+### Estimate Archival
+- **Purpose**: Allows users to hide inactive or completed estimates from the main list view while preserving all data
+- **Database Schema**: `archived` boolean field on estimates table with default value of `false`
+- **UI Controls**:
+  - "Show Archived" checkbox in estimates list header (unchecked by default)
+  - Archive/Unarchive buttons in the actions column for each estimate
+  - Archive icon (📦) for non-archived estimates, ArchiveRestore icon (📤) for archived estimates
+- **Filtering Behavior**:
+  - By default, only non-archived estimates are shown in the list
+  - Checking "Show Archived" reveals both archived and non-archived estimates
+  - Estimates list is sorted by client name, then estimate name
+- **Backend API**:
+  - `GET /api/estimates?includeArchived=true/false` - Fetch estimates with optional archive filter
+  - `PATCH /api/estimates/:id/archive` - Toggle archive status with body `{ archived: true/false }`
+  - Both endpoints require authentication via X-Session-Id header
+- **Data Integrity**: Archiving does not delete data; all estimate content, structure, and relationships are preserved
+- **Use Cases**: Archive old estimates, won estimates that became projects, or rejected estimates to keep the active list focused
+
 ## Project Management
 
 - **Master Backlog File**: `backlog.md` - Contains all project planning, current sprint work, and future enhancements
