@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy } from "lucide-react";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +50,7 @@ interface Estimate {
   estimateType?: 'detailed' | 'block';
   totalHours: number;
   totalCost: number;
+  archived: boolean;
   createdAt: string;
   validUntil: string;
 }
@@ -63,6 +65,7 @@ export default function Estimates() {
   const [estimateToCopy, setEstimateToCopy] = useState<Estimate | null>(null);
   const [copyMode, setCopyMode] = useState<'same' | 'different' | 'new'>('same');
   const [estimateType, setEstimateType] = useState<string>('detailed');
+  const [showArchived, setShowArchived] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -95,7 +98,8 @@ export default function Estimates() {
   });
 
   const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates"],
+    queryKey: ["/api/estimates", showArchived],
+    queryFn: () => fetch(`/api/estimates?includeArchived=${showArchived}`).then(res => res.json()),
   });
 
   const { data: clients = [] } = useQuery<any[]>({
@@ -174,6 +178,28 @@ export default function Estimates() {
       toast({
         title: "Error",
         description: error.message || "Failed to copy estimate. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleArchive = useMutation({
+    mutationFn: ({ id, archived }: { id: string, archived: boolean }) => apiRequest(`/api/estimates/${id}/archive`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived }),
+    }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
+      toast({
+        title: "Success",
+        description: variables.archived ? "Estimate archived successfully" : "Estimate unarchived successfully",
+      });
+    },
+    onError: (error: any) => {
+      console.error("Archive toggle error:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update estimate. Please try again.",
         variant: "destructive",
       });
     },
@@ -286,7 +312,23 @@ export default function Estimates() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Estimate List</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Estimate List</CardTitle>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="show-archived" 
+                  checked={showArchived}
+                  onCheckedChange={(checked) => setShowArchived(checked as boolean)}
+                  data-testid="checkbox-show-archived"
+                />
+                <label 
+                  htmlFor="show-archived" 
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                  Show Archived
+                </label>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -381,6 +423,15 @@ export default function Estimates() {
                             }}
                           >
                             <Copy className="w-4 h-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost"
+                            data-testid={`${estimate.archived ? 'unarchive' : 'archive'}-estimate-${estimate.id}`}
+                            onClick={() => toggleArchive.mutate({ id: estimate.id, archived: !estimate.archived })}
+                            title={estimate.archived ? 'Unarchive' : 'Archive'}
+                          >
+                            {estimate.archived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
                           </Button>
                           <Button 
                             size="sm" 
