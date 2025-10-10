@@ -92,7 +92,7 @@ export function MyAssignments() {
 
   // Update assignment status
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+    mutationFn: async ({ id, status, projectId }: { id: string; status: string; projectId: string }) => {
       const updates: any = { status };
       
       // Auto-set dates based on status
@@ -103,7 +103,7 @@ export function MyAssignments() {
         updates.completedDate = today;
       }
       
-      return apiRequest(`/api/projects/0/allocations/${id}`, {
+      return apiRequest(`/api/projects/${projectId}/allocations/${id}`, {
         method: "PUT",
         body: JSON.stringify(updates)
       });
@@ -178,7 +178,7 @@ export function MyAssignments() {
           
           <Select
             value={assignment.status}
-            onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value })}
+            onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value, projectId: assignment.project?.id || assignment.projectId })}
           >
             <SelectTrigger className="h-7 text-xs" data-testid={`select-status-${assignment.id}`}>
               <SelectValue />
@@ -325,7 +325,7 @@ export function MyAssignments() {
                         <TableCell>
                           <Select
                             value={assignment.status}
-                            onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value })}
+                            onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value, projectId: assignment.project?.id || assignment.projectId })}
                           >
                             <SelectTrigger className="w-32" data-testid={`select-update-status-${assignment.id}`}>
                               <SelectValue />
