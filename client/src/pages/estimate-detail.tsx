@@ -1198,6 +1198,7 @@ function EstimateDetailContent() {
                     }
                   }}
                   variant="default"
+                  data-testid="button-mark-as-final"
                 >
                   <FileCheck className="h-4 w-4 mr-2" />
                   Mark as Final
@@ -1210,6 +1211,7 @@ function EstimateDetailContent() {
                     onClick={() => setShowApprovalDialog(true)}
                     variant="default"
                     className="bg-green-600 hover:bg-green-700"
+                    data-testid="button-approve-estimate"
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Approve
@@ -1221,6 +1223,7 @@ function EstimateDetailContent() {
                       }
                     }}
                     variant="destructive"
+                    data-testid="button-reject-estimate"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Reject
@@ -1232,6 +1235,7 @@ function EstimateDetailContent() {
                       }
                     }}
                     variant="outline"
+                    data-testid="button-back-to-draft-final"
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Back to Draft
@@ -1239,29 +1243,78 @@ function EstimateDetailContent() {
                 </>
               )}
               
-              {estimate?.status === 'approved' && !estimate?.projectId && (
+              {estimate?.status === 'approved' && (
+                <>
+                  {!estimate?.projectId && (
+                    <Button 
+                      onClick={() => {
+                        setShouldCreateProject(true);
+                        setShowApprovalDialog(true);
+                      }}
+                      variant="default"
+                      className="bg-blue-600 hover:bg-blue-700"
+                      data-testid="button-create-project"
+                    >
+                      <Briefcase className="h-4 w-4 mr-2" />
+                      Create Project
+                    </Button>
+                  )}
+                  
+                  {estimate?.projectId && (
+                    <Button 
+                      onClick={() => {
+                        setLocation(`/projects/${estimate.projectId}`);
+                      }}
+                      variant="outline"
+                      data-testid="button-view-project"
+                    >
+                      <Briefcase className="h-4 w-4 mr-2" />
+                      View Project
+                    </Button>
+                  )}
+                  
+                  <Button 
+                    onClick={() => {
+                      if (window.confirm('Return this estimate to draft status for more changes?')) {
+                        updateEstimateMutation.mutate({ status: 'draft' });
+                      }
+                    }}
+                    variant="outline"
+                    data-testid="button-back-to-draft-approved"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Back to Draft
+                  </Button>
+                </>
+              )}
+              
+              {estimate?.status === 'rejected' && (
                 <Button 
                   onClick={() => {
-                    setShouldCreateProject(true);
-                    setShowApprovalDialog(true);
+                    if (window.confirm('Return this estimate to draft status for revisions?')) {
+                      updateEstimateMutation.mutate({ status: 'draft' });
+                    }
                   }}
-                  variant="default"
-                  className="bg-blue-600 hover:bg-blue-700"
+                  variant="outline"
+                  data-testid="button-back-to-draft-rejected"
                 >
-                  <Briefcase className="h-4 w-4 mr-2" />
-                  Create Project
+                  <Edit className="h-4 w-4 mr-2" />
+                  Back to Draft
                 </Button>
               )}
               
-              {estimate?.status === 'approved' && estimate?.projectId && (
+              {estimate?.status === 'sent' && (
                 <Button 
                   onClick={() => {
-                    setLocation(`/projects/${estimate.projectId}`);
+                    if (window.confirm('Return this estimate to draft status for modifications?')) {
+                      updateEstimateMutation.mutate({ status: 'draft' });
+                    }
                   }}
                   variant="outline"
+                  data-testid="button-back-to-draft-sent"
                 >
-                  <Briefcase className="h-4 w-4 mr-2" />
-                  View Project
+                  <Edit className="h-4 w-4 mr-2" />
+                  Back to Draft
                 </Button>
               )}
             </>
