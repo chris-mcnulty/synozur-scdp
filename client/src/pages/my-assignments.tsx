@@ -265,7 +265,7 @@ export function MyAssignments() {
                 </div>
               </div>
               
-              <Tabs value={view} onValueChange={(v: "list" | "kanban") => setView(v)}>
+              <Tabs value={view} onValueChange={(v) => setView(v as "list" | "kanban")}>
                 <TabsList>
                   <TabsTrigger value="list">List</TabsTrigger>
                   <TabsTrigger value="kanban">Kanban</TabsTrigger>
