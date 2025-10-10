@@ -2518,6 +2518,299 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Text export for project reporting - summary of project data for copy/paste
+  app.get("/api/projects/:id/export-text", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Parse date range parameters
+      const { startDate, endDate } = req.query;
+      
+      // Get project structure and data
+      const [epics, milestones, workstreams, allocations, vocabulary] = await Promise.all([
+        storage.getProjectEpics(req.params.id),
+        storage.getProjectMilestones(req.params.id),
+        storage.getProjectWorkStreams(req.params.id),
+        storage.getProjectAllocations(req.params.id),
+        storage.getVocabularyContext({
+          projectId: req.params.id,
+          clientId: project.clientId,
+          estimateId: undefined
+        })
+      ]);
+
+      // Get all stages for all epics
+      const allStages = [];
+      for (const epic of epics) {
+        const stages = await storage.getProjectStages(epic.id);
+        allStages.push(...stages.map(s => ({ ...s, epicId: epic.id })));
+      }
+
+      // Get time entries with date filtering
+      const timeFilters: any = { projectId: req.params.id };
+      if (startDate) timeFilters.startDate = startDate as string;
+      if (endDate) timeFilters.endDate = endDate as string;
+      const timeEntries = await storage.getTimeEntries(timeFilters);
+
+      // Get expenses with date filtering
+      const expenseFilters: any = { projectId: req.params.id };
+      if (startDate) expenseFilters.startDate = startDate as string;
+      if (endDate) expenseFilters.endDate = endDate as string;
+      const expenses = await storage.getExpenses(expenseFilters);
+
+      // Get invoice batches for the project's client
+      const invoiceBatches = await storage.getInvoiceBatchesForClient(project.clientId);
+      
+      // Filter invoice batches by date if specified
+      let filteredInvoices = invoiceBatches;
+      if (startDate || endDate) {
+        filteredInvoices = invoiceBatches.filter(batch => {
+          if (!batch.periodEnd) return false;
+          const batchDate = new Date(batch.periodEnd);
+          if (startDate && batchDate < new Date(startDate as string)) return false;
+          if (endDate && batchDate > new Date(endDate as string)) return false;
+          return true;
+        });
+      }
+
+      // Get vocabulary labels
+      const epicLabel = vocabulary.epic || "Epic";
+      const stageLabel = vocabulary.stage || "Stage";
+      const workstreamLabel = vocabulary.workstream || "Workstream";
+      const milestoneLabel = vocabulary.milestone || "Milestone";
+
+      // Generate text output
+      let textOutput = "";
+      
+      // Header
+      textOutput += `PROJECT SUMMARY: ${project.name}\n`;
+      textOutput += `CLIENT: ${project.client?.name || 'Unknown'}\n`;
+      textOutput += `STATUS: ${project.status}\n`;
+      if (project.description) {
+        textOutput += `DESCRIPTION: ${project.description}\n`;
+      }
+      if (project.startDate) {
+        textOutput += `START DATE: ${project.startDate}\n`;
+      }
+      if (project.endDate) {
+        textOutput += `END DATE: ${project.endDate}\n`;
+      }
+      if (startDate || endDate) {
+        textOutput += `\nREPORT DATE RANGE: ${startDate || 'Start'} to ${endDate || 'End'}\n`;
+      }
+      textOutput += `\n${"=".repeat(80)}\n\n`;
+
+      // Team & Resources
+      if (allocations && allocations.length > 0) {
+        textOutput += `TEAM & RESOURCES\n\n`;
+        
+        const activeAllocations = allocations.filter(a => a.status !== 'cancelled');
+        activeAllocations.forEach((allocation, index) => {
+          textOutput += `${index + 1}. ${allocation.personName || 'Unknown'}\n`;
+          if (allocation.roleName) {
+            textOutput += `   Role: ${allocation.roleName}\n`;
+          }
+          if (allocation.workstreamName) {
+            textOutput += `   ${workstreamLabel}: ${allocation.workstreamName}\n`;
+          }
+          if (allocation.hours) {
+            textOutput += `   Allocated Hours: ${allocation.hours}\n`;
+          }
+          if (allocation.status) {
+            textOutput += `   Status: ${allocation.status}\n`;
+          }
+          if (allocation.startDate || allocation.endDate) {
+            textOutput += `   Period: ${allocation.startDate || 'Start'} to ${allocation.endDate || 'End'}\n`;
+          }
+          if (allocation.notes) {
+            textOutput += `   Notes: ${allocation.notes}\n`;
+          }
+          textOutput += `\n`;
+        });
+        
+        textOutput += `${"=".repeat(80)}\n\n`;
+      }
+
+      // Project Structure
+      if (epics.length > 0 || workstreams.length > 0) {
+        textOutput += `PROJECT STRUCTURE\n\n`;
+
+        // Epics and Stages
+        if (epics.length > 0) {
+          epics
+            .sort((a, b) => (a.order || 0) - (b.order || 0))
+            .forEach((epic, epicIndex) => {
+              textOutput += `${epicLabel.toUpperCase()} ${epicIndex + 1}: ${epic.name}\n`;
+              if (epic.description) {
+                textOutput += `  ${epic.description}\n`;
+              }
+              textOutput += `${"-".repeat(80)}\n`;
+
+              const epicStages = allStages.filter(s => s.epicId === epic.id);
+              if (epicStages.length > 0) {
+                epicStages
+                  .sort((a, b) => (a.order || 0) - (b.order || 0))
+                  .forEach((stage, stageIndex) => {
+                    textOutput += `\n  ${stageLabel} ${stageIndex + 1}: ${stage.name}\n`;
+                    if (stage.description) {
+                      textOutput += `    ${stage.description}\n`;
+                    }
+                  });
+              }
+              textOutput += `\n`;
+            });
+        }
+
+        // Workstreams
+        if (workstreams.length > 0) {
+          textOutput += `\n${workstreamLabel.toUpperCase()}S\n`;
+          textOutput += `${"-".repeat(80)}\n`;
+          workstreams.forEach((ws, index) => {
+            textOutput += `${index + 1}. ${ws.name}\n`;
+            if (ws.description) {
+              textOutput += `   ${ws.description}\n`;
+            }
+            if (ws.budgetHours) {
+              textOutput += `   Budget Hours: ${ws.budgetHours}\n`;
+            }
+            textOutput += `\n`;
+          });
+        }
+
+        textOutput += `${"=".repeat(80)}\n\n`;
+      }
+
+      // Milestones
+      if (milestones && milestones.length > 0) {
+        textOutput += `${milestoneLabel.toUpperCase()}S\n\n`;
+        
+        milestones
+          .sort((a, b) => {
+            if (a.targetDate && b.targetDate) {
+              return new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime();
+            }
+            return 0;
+          })
+          .forEach((milestone, index) => {
+            textOutput += `${index + 1}. ${milestone.name}\n`;
+            if (milestone.description) {
+              textOutput += `   ${milestone.description}\n`;
+            }
+            if (milestone.targetDate) {
+              textOutput += `   Target Date: ${milestone.targetDate}\n`;
+            }
+            if (milestone.actualDate) {
+              textOutput += `   Actual Date: ${milestone.actualDate}\n`;
+            }
+            if (milestone.status) {
+              textOutput += `   Status: ${milestone.status}\n`;
+            }
+            textOutput += `\n`;
+          });
+        
+        textOutput += `${"=".repeat(80)}\n\n`;
+      }
+
+      // Time Entry Summary
+      if (timeEntries && timeEntries.length > 0) {
+        textOutput += `TIME ENTRIES SUMMARY\n\n`;
+        
+        const totalHours = timeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours || '0'), 0);
+        const billableHours = timeEntries.filter(e => e.billable).reduce((sum, entry) => sum + parseFloat(entry.hours || '0'), 0);
+        
+        textOutput += `Total Hours: ${totalHours.toFixed(2)}\n`;
+        textOutput += `Billable Hours: ${billableHours.toFixed(2)}\n`;
+        textOutput += `Non-Billable Hours: ${(totalHours - billableHours).toFixed(2)}\n`;
+        textOutput += `Number of Entries: ${timeEntries.length}\n\n`;
+        
+        // Group by person
+        const byPerson = new Map<string, { hours: number; billable: number; entries: number }>();
+        timeEntries.forEach(entry => {
+          const personName = entry.person?.name || 'Unknown';
+          const existing = byPerson.get(personName) || { hours: 0, billable: 0, entries: 0 };
+          existing.hours += parseFloat(entry.hours || '0');
+          if (entry.billable) existing.billable += parseFloat(entry.hours || '0');
+          existing.entries += 1;
+          byPerson.set(personName, existing);
+        });
+
+        textOutput += `By Person:\n`;
+        Array.from(byPerson.entries())
+          .sort((a, b) => b[1].hours - a[1].hours)
+          .forEach(([person, data]) => {
+            textOutput += `  ${person}: ${data.hours.toFixed(2)} hours (${data.billable.toFixed(2)} billable) - ${data.entries} entries\n`;
+          });
+        
+        textOutput += `\n${"=".repeat(80)}\n\n`;
+      }
+
+      // Expenses Summary
+      if (expenses && expenses.length > 0) {
+        textOutput += `EXPENSES SUMMARY\n\n`;
+        
+        const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
+        const billableExpenses = expenses.filter(e => e.billable).reduce((sum, exp) => sum + parseFloat(exp.amount || '0'), 0);
+        
+        textOutput += `Total Expenses: $${totalExpenses.toFixed(2)}\n`;
+        textOutput += `Billable Expenses: $${billableExpenses.toFixed(2)}\n`;
+        textOutput += `Non-Billable Expenses: $${(totalExpenses - billableExpenses).toFixed(2)}\n`;
+        textOutput += `Number of Expenses: ${expenses.length}\n\n`;
+        
+        // Group by category
+        const byCategory = new Map<string, { amount: number; count: number }>();
+        expenses.forEach(exp => {
+          const category = exp.category || 'Uncategorized';
+          const existing = byCategory.get(category) || { amount: 0, count: 0 };
+          existing.amount += parseFloat(exp.amount || '0');
+          existing.count += 1;
+          byCategory.set(category, existing);
+        });
+
+        textOutput += `By Category:\n`;
+        Array.from(byCategory.entries())
+          .sort((a, b) => b[1].amount - a[1].amount)
+          .forEach(([category, data]) => {
+            textOutput += `  ${category}: $${data.amount.toFixed(2)} (${data.count} expenses)\n`;
+          });
+        
+        textOutput += `\n${"=".repeat(80)}\n\n`;
+      }
+
+      // Invoices
+      if (filteredInvoices && filteredInvoices.length > 0) {
+        textOutput += `INVOICES\n\n`;
+        
+        filteredInvoices.forEach((batch, index) => {
+          textOutput += `${index + 1}. Batch #${batch.batchNumber || batch.id}\n`;
+          if (batch.periodStart && batch.periodEnd) {
+            textOutput += `   Period: ${batch.periodStart} to ${batch.periodEnd}\n`;
+          }
+          if (batch.status) {
+            textOutput += `   Status: ${batch.status}\n`;
+          }
+          if (batch.subtotal) {
+            textOutput += `   Subtotal: $${parseFloat(batch.subtotal).toFixed(2)}\n`;
+          }
+          if (batch.total) {
+            textOutput += `   Total: $${parseFloat(batch.total).toFixed(2)}\n`;
+          }
+          textOutput += `\n`;
+        });
+      }
+
+      const filename = `${project.name.replace(/[^a-z0-9]/gi, '_')}-report${startDate ? `-${startDate}` : ''}${endDate ? `-${endDate}` : ''}.txt`;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(textOutput);
+    } catch (error) {
+      console.error("Project text export error:", error);
+      res.status(500).json({ message: "Failed to export project summary" });
+    }
+  });
+
   app.delete("/api/projects/:id", requireAuth, async (req, res) => {
     try {
       // Get the project first to check permissions
