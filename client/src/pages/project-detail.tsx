@@ -225,6 +225,12 @@ export default function ProjectDetail() {
   const [milestoneInvoiceDates, setMilestoneInvoiceDates] = useState({ startDate: '', endDate: '' });
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   
+  // Export report state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportDateRange, setExportDateRange] = useState<'all' | 'month' | 'custom'>('all');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  
   const { toast } = useToast();
   
   // Check if user can view Time tab
@@ -1146,6 +1152,39 @@ export default function ProjectDetail() {
     }
   });
 
+  const handleExportText = async (startDate?: string, endDate?: string) => {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      
+      const queryString = params.toString();
+      const url = `/api/projects/${id}/export-text${queryString ? `?${queryString}` : ''}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          'X-Session-Id': document.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1] || ''
+        }
+      });
+      
+      if (!response.ok) throw new Error('Export failed');
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'project-report.txt';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+      
+      toast({ title: "Report exported successfully" });
+    } catch (error) {
+      toast({ title: "Failed to export report", variant: "destructive" });
+    }
+  };
+
   const handleOpenSowDialog = (sow?: Sow) => {
     if (sow) {
       setEditingSow(sow);
@@ -1396,6 +1435,10 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)} data-testid="button-export-report">
+              <FileText className="w-4 h-4 mr-2" />
+              Export Report
+            </Button>
             <Button variant="outline" size="sm" onClick={() => {
               setProjectToEdit(analytics.project);
               setEditDialogOpen(true);
@@ -4612,6 +4655,86 @@ export default function ProjectDetail() {
                 </DialogFooter>
               </form>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Export Report Dialog */}
+        <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Export Project Report</DialogTitle>
+              <DialogDescription>
+                Generate a text summary of project data for copy/paste into other systems
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Date Range</Label>
+                <RadioGroup value={exportDateRange} onValueChange={(value: any) => setExportDateRange(value)}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="all" id="range-all" data-testid="radio-range-all" />
+                    <Label htmlFor="range-all" className="font-normal cursor-pointer">Entire Project</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="month" id="range-month" data-testid="radio-range-month" />
+                    <Label htmlFor="range-month" className="font-normal cursor-pointer">Current Month</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="custom" id="range-custom" data-testid="radio-range-custom" />
+                    <Label htmlFor="range-custom" className="font-normal cursor-pointer">Custom Date Range</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {exportDateRange === 'custom' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="export-start-date">Start Date</Label>
+                    <Input
+                      id="export-start-date"
+                      type="date"
+                      value={exportStartDate}
+                      onChange={(e) => setExportStartDate(e.target.value)}
+                      data-testid="input-export-start-date"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="export-end-date">End Date</Label>
+                    <Input
+                      id="export-end-date"
+                      type="date"
+                      value={exportEndDate}
+                      onChange={(e) => setExportEndDate(e.target.value)}
+                      data-testid="input-export-end-date"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowExportDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => {
+                let startDate: string | undefined;
+                let endDate: string | undefined;
+
+                if (exportDateRange === 'month') {
+                  const now = new Date();
+                  startDate = startOfMonth(now).toISOString().split('T')[0];
+                  endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                } else if (exportDateRange === 'custom') {
+                  startDate = exportStartDate || undefined;
+                  endDate = exportEndDate || undefined;
+                }
+
+                handleExportText(startDate, endDate);
+                setShowExportDialog(false);
+              }} data-testid="button-confirm-export">
+                <Download className="w-4 h-4 mr-2" />
+                Export Report
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

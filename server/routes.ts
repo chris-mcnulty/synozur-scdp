@@ -2535,7 +2535,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         storage.getProjectMilestones(req.params.id),
         storage.getProjectWorkStreams(req.params.id),
         storage.getProjectAllocations(req.params.id),
-        storage.getVocabularyContext({
+        storage.getVocabularyForContext({
           projectId: req.params.id,
           clientId: project.clientId,
           estimateId: undefined
@@ -2543,10 +2543,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       ]);
 
       // Get all stages for all epics
-      const allStages = [];
+      const allStages: any[] = [];
       for (const epic of epics) {
         const stages = await storage.getProjectStages(epic.id);
-        allStages.push(...stages.map(s => ({ ...s, epicId: epic.id })));
+        allStages.push(...stages.map((s: any) => ({ ...s, epicId: epic.id })));
       }
 
       // Get time entries with date filtering
@@ -2567,9 +2567,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Filter invoice batches by date if specified
       let filteredInvoices = invoiceBatches;
       if (startDate || endDate) {
-        filteredInvoices = invoiceBatches.filter(batch => {
-          if (!batch.periodEnd) return false;
-          const batchDate = new Date(batch.periodEnd);
+        filteredInvoices = invoiceBatches.filter((batch: any) => {
+          if (!batch.endDate) return false;
+          const batchDate = new Date(batch.endDate);
           if (startDate && batchDate < new Date(startDate as string)) return false;
           if (endDate && batchDate > new Date(endDate as string)) return false;
           return true;
@@ -2607,8 +2607,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (allocations && allocations.length > 0) {
         textOutput += `TEAM & RESOURCES\n\n`;
         
-        const activeAllocations = allocations.filter(a => a.status !== 'cancelled');
-        activeAllocations.forEach((allocation, index) => {
+        const activeAllocations = allocations.filter((a: any) => a.status !== 'cancelled');
+        activeAllocations.forEach((allocation: any, index: number) => {
           textOutput += `${index + 1}. ${allocation.personName || 'Unknown'}\n`;
           if (allocation.roleName) {
             textOutput += `   Role: ${allocation.roleName}\n`;
@@ -2641,19 +2641,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Epics and Stages
         if (epics.length > 0) {
           epics
-            .sort((a, b) => (a.order || 0) - (b.order || 0))
-            .forEach((epic, epicIndex) => {
+            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+            .forEach((epic: any, epicIndex: number) => {
               textOutput += `${epicLabel.toUpperCase()} ${epicIndex + 1}: ${epic.name}\n`;
               if (epic.description) {
                 textOutput += `  ${epic.description}\n`;
               }
               textOutput += `${"-".repeat(80)}\n`;
 
-              const epicStages = allStages.filter(s => s.epicId === epic.id);
+              const epicStages = allStages.filter((s: any) => s.epicId === epic.id);
               if (epicStages.length > 0) {
                 epicStages
-                  .sort((a, b) => (a.order || 0) - (b.order || 0))
-                  .forEach((stage, stageIndex) => {
+                  .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+                  .forEach((stage: any, stageIndex: number) => {
                     textOutput += `\n  ${stageLabel} ${stageIndex + 1}: ${stage.name}\n`;
                     if (stage.description) {
                       textOutput += `    ${stage.description}\n`;
@@ -2668,7 +2668,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (workstreams.length > 0) {
           textOutput += `\n${workstreamLabel.toUpperCase()}S\n`;
           textOutput += `${"-".repeat(80)}\n`;
-          workstreams.forEach((ws, index) => {
+          workstreams.forEach((ws: any, index: number) => {
             textOutput += `${index + 1}. ${ws.name}\n`;
             if (ws.description) {
               textOutput += `   ${ws.description}\n`;
@@ -2688,13 +2688,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         textOutput += `${milestoneLabel.toUpperCase()}S\n\n`;
         
         milestones
-          .sort((a, b) => {
+          .sort((a: any, b: any) => {
             if (a.targetDate && b.targetDate) {
               return new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime();
             }
             return 0;
           })
-          .forEach((milestone, index) => {
+          .forEach((milestone: any, index: number) => {
             textOutput += `${index + 1}. ${milestone.name}\n`;
             if (milestone.description) {
               textOutput += `   ${milestone.description}\n`;
@@ -2783,19 +2783,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (filteredInvoices && filteredInvoices.length > 0) {
         textOutput += `INVOICES\n\n`;
         
-        filteredInvoices.forEach((batch, index) => {
-          textOutput += `${index + 1}. Batch #${batch.batchNumber || batch.id}\n`;
-          if (batch.periodStart && batch.periodEnd) {
-            textOutput += `   Period: ${batch.periodStart} to ${batch.periodEnd}\n`;
+        filteredInvoices.forEach((batch: any, index: number) => {
+          textOutput += `${index + 1}. Invoice Batch ${index + 1}\n`;
+          if (batch.startDate && batch.endDate) {
+            textOutput += `   Period: ${batch.startDate} to ${batch.endDate}\n`;
           }
           if (batch.status) {
             textOutput += `   Status: ${batch.status}\n`;
           }
-          if (batch.subtotal) {
-            textOutput += `   Subtotal: $${parseFloat(batch.subtotal).toFixed(2)}\n`;
-          }
-          if (batch.total) {
-            textOutput += `   Total: $${parseFloat(batch.total).toFixed(2)}\n`;
+          if (batch.totalAmount) {
+            textOutput += `   Total: $${parseFloat(batch.totalAmount).toFixed(2)}\n`;
           }
           textOutput += `\n`;
         });
