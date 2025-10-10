@@ -136,6 +136,33 @@ For development testing, use the following login credentials:
 - **Security**: All server-side routes validate status; frontend controls provide immediate feedback
 - **User Experience**: Clear messaging directs users to revert to draft status before making changes
 
+### Project Assignments
+- **Purpose**: Allows project managers to assign team members to projects with specific roles, hours, and workstreams
+- **Database Schema**: `projectAllocations` table stores assignments with person/role assignment, hours allocation, and status tracking
+- **UI Controls**:
+  - Project Detail page: "Team & Assignments" tab displays all project allocations in a table
+  - "Add Assignment" button opens dialog for creating new assignments
+  - Edit (pencil icon) and Delete (trash icon) buttons for each assignment row
+  - Assignment dialog handles both create and edit modes with proper form population
+- **Assignment Fields**:
+  - Person (required): Team member to assign
+  - Role: Optional role assignment
+  - Workstream/Epic/Stage: Optional project structure assignments
+  - Hours: Required allocation hours
+  - Pricing Mode: role/person/resource_name based pricing
+  - Start/End Dates: Optional date ranges
+  - Notes: Optional assignment notes
+- **My Assignments Page**: 
+  - Employees can view their personal assignments across all projects
+  - Status updates (open → in_progress → completed → cancelled)
+  - List and Kanban views with filtering by project and status
+- **API Endpoints**:
+  - `GET /api/projects/:projectId/allocations` - Fetch project allocations
+  - `POST /api/projects/:projectId/allocations` - Create new allocation
+  - `PUT /api/projects/:projectId/allocations/:id` - Update allocation
+  - `DELETE /api/projects/:projectId/allocations/:id` - Delete allocation
+  - `GET /api/my-assignments` - Get current user's assignments
+
 ### Estimate Archival
 - **Purpose**: Allows users to hide inactive or completed estimates from the main list view while preserving all data
 - **Database Schema**: `archived` boolean field on estimates table with default value of `false`
