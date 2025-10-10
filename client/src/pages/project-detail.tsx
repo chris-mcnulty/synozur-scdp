@@ -40,7 +40,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
@@ -961,7 +961,7 @@ export default function ProjectDetail() {
         notes: data.notes || null,
         status: 'open'
       };
-      return apiRequest('/api/project-allocations', {
+      return apiRequest(`/api/projects/${id}/allocations`, {
         method: "POST",
         body: JSON.stringify(processedData)
       });
@@ -1015,6 +1015,61 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to import assignments",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateAssignmentMutation = useMutation({
+    mutationFn: async ({ allocationId, data }: { allocationId: string; data: any }) => {
+      const processedData = {
+        ...data,
+        hours: data.hours ? parseFloat(data.hours) : undefined,
+        roleId: data.roleId === 'none' ? null : data.roleId,
+        workstreamId: data.workstreamId === 'none' ? null : data.workstreamId,
+        epicId: data.epicId === 'none' ? null : data.epicId,
+        stageId: data.stageId === 'none' ? null : data.stageId,
+      };
+      return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
+        method: "PUT",
+        body: JSON.stringify(processedData)
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      setShowAssignmentDialog(false);
+      setEditingAssignment(null);
+      toast({
+        title: "Success",
+        description: "Assignment updated successfully"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update assignment",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: async (allocationId: string) => {
+      return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/allocations`] });
+      toast({
+        title: "Success",
+        description: "Assignment deleted successfully"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete assignment",
         variant: "destructive"
       });
     }
@@ -2068,6 +2123,7 @@ export default function ProjectDetail() {
                         <TableHead>Start Date</TableHead>
                         <TableHead>End Date</TableHead>
                         <TableHead>Week</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -2122,6 +2178,29 @@ export default function ProjectDetail() {
                               `Week ${allocation.weekNumber}` : 
                               '—'
                             }
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingAssignment(allocation);
+                                  setShowAssignmentDialog(true);
+                                }}
+                                data-testid={`button-edit-allocation-${allocation.id}`}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => deleteAssignmentMutation.mutate(allocation.id)}
+                                data-testid={`button-delete-allocation-${allocation.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -3982,12 +4061,15 @@ export default function ProjectDetail() {
         </AlertDialog>
 
         {/* Assignment Dialog */}
-        <Dialog open={showAssignmentDialog} onOpenChange={setShowAssignmentDialog}>
+        <Dialog open={showAssignmentDialog} onOpenChange={(open) => {
+          setShowAssignmentDialog(open);
+          if (!open) setEditingAssignment(null);
+        }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Add Team Assignment</DialogTitle>
+              <DialogTitle>{editingAssignment ? 'Edit' : 'Add'} Team Assignment</DialogTitle>
               <DialogDescription>
-                Assign a team member to this project with specific role and hours
+                {editingAssignment ? 'Update' : 'Assign'} a team member to this project with specific role and hours
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={(e) => {
@@ -4010,12 +4092,17 @@ export default function ProjectDetail() {
                 endDate: formData.get('endDate') as string || undefined,
                 notes: formData.get('notes') as string || undefined
               };
-              createAssignmentMutation.mutate(data);
+              
+              if (editingAssignment) {
+                updateAssignmentMutation.mutate({ allocationId: editingAssignment.id, data });
+              } else {
+                createAssignmentMutation.mutate(data);
+              }
             }} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="personId">Person *</Label>
-                  <Select name="personId" required>
+                  <Select name="personId" defaultValue={editingAssignment?.personId} required>
                     <SelectTrigger data-testid="select-person">
                       <SelectValue placeholder="Select a person" />
                     </SelectTrigger>
@@ -4031,7 +4118,7 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="roleId">Role</Label>
-                  <Select name="roleId" defaultValue="none">
+                  <Select name="roleId" defaultValue={editingAssignment?.roleId || "none"}>
                     <SelectTrigger data-testid="select-role">
                       <SelectValue placeholder="Select a role" />
                     </SelectTrigger>
@@ -4048,7 +4135,7 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="workstreamId">Workstream</Label>
-                  <Select name="workstreamId" defaultValue="none">
+                  <Select name="workstreamId" defaultValue={editingAssignment?.projectWorkstreamId || "none"}>
                     <SelectTrigger data-testid="select-workstream">
                       <SelectValue placeholder="Select a workstream" />
                     </SelectTrigger>
@@ -4065,7 +4152,7 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="epicId">Epic</Label>
-                  <Select name="epicId" defaultValue="none">
+                  <Select name="epicId" defaultValue={editingAssignment?.projectEpicId || "none"}>
                     <SelectTrigger data-testid="select-epic">
                       <SelectValue placeholder="Select an epic" />
                     </SelectTrigger>
@@ -4087,6 +4174,7 @@ export default function ProjectDetail() {
                     type="number" 
                     step="0.5"
                     placeholder="e.g., 40" 
+                    defaultValue={editingAssignment?.hours}
                     required
                     data-testid="input-hours"
                   />
@@ -4094,7 +4182,7 @@ export default function ProjectDetail() {
 
                 <div className="space-y-2">
                   <Label htmlFor="pricingMode">Pricing Mode *</Label>
-                  <Select name="pricingMode" defaultValue="role">
+                  <Select name="pricingMode" defaultValue={editingAssignment?.pricingMode || "role"}>
                     <SelectTrigger data-testid="select-pricing-mode">
                       <SelectValue placeholder="Select pricing mode" />
                     </SelectTrigger>
@@ -4111,6 +4199,7 @@ export default function ProjectDetail() {
                   <Input 
                     name="startDate" 
                     type="date"
+                    defaultValue={editingAssignment?.plannedStartDate}
                     data-testid="input-start-date"
                   />
                 </div>
@@ -4120,6 +4209,7 @@ export default function ProjectDetail() {
                   <Input 
                     name="endDate" 
                     type="date"
+                    defaultValue={editingAssignment?.plannedEndDate}
                     data-testid="input-end-date"
                   />
                 </div>
@@ -4130,16 +4220,22 @@ export default function ProjectDetail() {
                 <Textarea 
                   name="notes"
                   placeholder="Additional notes about this assignment..."
+                  defaultValue={editingAssignment?.notes}
                   data-testid="input-notes"
                 />
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowAssignmentDialog(false)}>
+                <Button type="button" variant="outline" onClick={() => {
+                  setShowAssignmentDialog(false);
+                  setEditingAssignment(null);
+                }}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createAssignmentMutation.isPending}>
-                  {createAssignmentMutation.isPending ? "Creating..." : "Create Assignment"}
+                <Button type="submit" disabled={createAssignmentMutation.isPending || updateAssignmentMutation.isPending}>
+                  {editingAssignment 
+                    ? (updateAssignmentMutation.isPending ? "Updating..." : "Update Assignment")
+                    : (createAssignmentMutation.isPending ? "Creating..." : "Create Assignment")}
                 </Button>
               </DialogFooter>
             </form>
