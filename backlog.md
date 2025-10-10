@@ -11,83 +11,69 @@
 
 ## 🚨 P0 - CRITICAL GAPS (Immediate Priority)
 
-### Vocabulary Customization System (Days 2-3) 🔥 IN PROGRESS
-**Status:** FOUNDATION REQUIREMENT - Must be implemented before continuing feature development
+### Vocabulary Customization System (Days 2-3) ✅ MOSTLY COMPLETE
+**Status:** FOUNDATION REQUIREMENT - Core system complete, final estimate module integration in progress
 
 **Why P0:** Currently hard-coding terminology (Epic/Stage/Milestone/Workstream) throughout the UI. Implementing vocabulary system now prevents massive future refactoring when clients need custom terminology.
 
-**Database:** Fields exist (epicLabel/stageLabel/activityLabel/workstreamLabel) but no UI or cascading logic
-
-**Scope:**
-- [x] Day 1: Foundation cleanup complete
-- [ ] Day 2: Organization-level vocabulary defaults
-  - Admin settings UI for global terminology
-  - Default: Epic → Stage → Milestone → Workstream
-  - Industry presets (Program → Phase → Gate → Category)
-  - Apply to all new estimates and projects
+**Completed Components (Oct 8-9):**
+- ✅ Day 1: Foundation cleanup complete
+- ✅ Day 2: Organization-level vocabulary defaults
+  - ✅ Admin settings UI for global terminology (/system-settings → Vocabulary Management)
+  - ✅ Default: Epic → Stage → Activity → Workstream (milestone handled separately)
+  - ✅ Organization vocabulary stored and retrievable
   
-- [ ] Day 3: Client and project-level overrides
-  - Client-specific terminology preferences  
-  - Project-specific overrides (highest priority)
-  - **CORRECT Cascading Hierarchy:** Organization → Client → Project (inheritance flows downward)
-  - Update all UI labels dynamically
+- ✅ Day 3: Client and project-level overrides
+  - ✅ Client-specific terminology preferences (Edit client → Vocabulary Customization)
+  - ✅ Project-specific overrides (Edit project → Vocabulary Customization)  
+  - ✅ **CORRECT Cascading Hierarchy:** Project → Client → Organization → System defaults
+  - ✅ Vocabulary context API (`/api/vocabulary/context`)
+  - ✅ VocabularyProvider and useVocabulary hook implemented
   
 **Master Vocabulary List:** Maintained in `vocabulary_catalog` table with termType, termValue, isActive, sortOrder
 
-**Day 3 Implementation Plan - Module-by-Module Application:**
+**Module Integration Status (Oct 10, 2025):**
 
-**Phase 1: Foundation & Data Layer (2 hours)**
-  - Create centralized VocabularyService class in server/services/vocabulary.ts
-  - Implement context-aware resolution methods for each module
-  - Add caching layer for frequently accessed vocabulary
-  - Add nullable vocabulary FKs to timeEntries, expenses, invoiceLines tables
+**✅ Completed Modules:**
+- **Phase 1: Foundation & Data Layer** - Complete
+  - ✅ Vocabulary context API implemented in storage layer
+  - ✅ VocabularyProvider and useVocabulary hook created
+  - ✅ Cascading resolution working (Project → Client → Org → Defaults)
 
-**Phase 2: Estimate Module (2 hours)**
-  - Update estimate creation to pull organization defaults via FK references
-  - Modify Excel import/export to use resolved vocabulary terms
-  - Update estimate detail page headers and line item dialogs
+- **Phase 3: Project Module** - Complete  
+  - ✅ Projects inherit vocabulary from organization on creation
+  - ✅ Project edit UI includes vocabulary customization
+  - ✅ Project detail uses VocabularyProvider
 
-**Phase 3: Project Module (2 hours)**
-  - Update project creation from estimates to inherit vocabulary FKs
-  - Modify project epic/stage/milestone APIs to return resolved terms
-  - Update Project Structure tab and milestone dialogs with dynamic labels
+- **Phase 4: Time Entry Module** - Partially Complete
+  - ✅ Some vocabulary support visible in time tracking
+  - ⚠️ May need verification of full implementation
 
-**Phase 4: Time Entry Module (2 hours)**
-  - Add vocabulary resolution to time entry list endpoints
-  - Update time entry Excel export with resolved terms
-  - Update time entry form and sheet view headers dynamically
+**🔥 In Progress (Oct 10):**
+- **Phase 2: Estimate Module** - CRITICAL GAP
+  - ❌ Estimate detail page still hard-codes Epic/Stage/Activity labels
+  - ❌ Not using VocabularyProvider or useVocabulary hook
+  - ❌ Excel import/export not using resolved vocabulary
+  - 📋 Action: Wrap estimate-detail in VocabularyProvider and replace hard-coded labels
 
-**Phase 5: Expense Module (2 hours)**
-  - Add workstream vocabulary resolution to expense endpoints
-  - Update expense form workstream field label
-  - Modify expense list view column headers
-
-**Phase 6: Invoice Module (3 hours - MOST CRITICAL)**
-  - Update invoice generation to use resolved vocabulary in line descriptions
-  - Modify invoice batch creation to group by vocabulary-aware categories
-  - Update invoice review dialog and PDF templates with dynamic terminology
-
-**Phase 7: Integration & Safety (1 hour)**
-  - Create forward/rollback migration scripts for vocabulary FKs
-  - Add VOCABULARY_ENABLED feature flags per module
-  - Set up monitoring for vocabulary resolution failures
-
-**Deployment Strategy:**
-  - Day 3 Morning: Deploy Phases 1-2 (Foundation + Estimates)
-  - Day 3 Afternoon: Deploy Phase 3 (Projects) after validation
-  - Day 3 Evening: Deploy Phase 4 (Time) if stable
-  - Day 4 Morning: Deploy Phase 5 (Expenses) after overnight monitoring
-  - Day 4 Afternoon: Deploy Phase 6 (Invoices) with careful testing
-  - Day 4 Evening: Complete Phase 7 integration testing
-
-**Risk Mitigations:**
-  - Use nullable FKs initially - convert to NOT NULL after data migration
-  - Test each module in isolation before integration
-  - Maintain backward compatibility with existing data
-  - Keep vocabulary resolution service separate from core business logic
-  - Use database transactions for all vocabulary updates
+**📅 Remaining for Later:**
+- **Phase 5: Expense Module** - Not started
+  - Need workstream vocabulary in expense forms
   
-**Timeline:** Days 2-3 (this week)
+- **Phase 6: Invoice Module** - Not started (MOST CRITICAL)
+  - Invoice line descriptions need vocabulary resolution
+  - Batch creation needs vocabulary-aware grouping
+
+- **Phase 7: Integration & Safety** - Not needed
+  - System is working without FK migrations
+  - Using JSON text fields for flexibility
+
+**Implementation Plan (Oct 10):**
+  - Complete Estimate Module vocabulary integration (2 hours)
+  - Test vocabulary cascade in estimates
+  - Begin Project Assignments implementation (remaining time)
+
+**Timeline:** Vocabulary completion today, Project Assignments start today
 
 ---
 
