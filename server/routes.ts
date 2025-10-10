@@ -2593,7 +2593,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicLabel = vocabulary.epic || "Epic";
       const stageLabel = vocabulary.stage || "Stage";
       const workstreamLabel = vocabulary.workstream || "Workstream";
-      const milestoneLabel = vocabulary.milestone || "Milestone";
+      const milestoneLabel = "Milestone"; // Milestone is not part of vocabulary terms yet
 
       // Generate text output
       let textOutput = "";
