@@ -17,10 +17,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
 import { PMWizardDialog } from "@/components/pm-wizard-dialog";
+import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 
-export default function EstimateDetail() {
+function EstimateDetailContent() {
   const { id } = useParams();
   const [, setLocation] = useLocation();
+  const vocabulary = useVocabulary();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const csvFileInputRef = useRef<HTMLInputElement>(null);
@@ -199,11 +201,11 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
       setNewEpicName("");
       setShowEpicDialog(false);
-      toast({ title: "Epic created successfully" });
+      toast({ title: `${vocabulary.epic} created successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to create epic", 
+        title: `Failed to create ${vocabulary.epic.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -222,11 +224,11 @@ export default function EstimateDetail() {
       setNewStageName("");
       setSelectedEpicForStage("");
       setShowStageDialog(false);
-      toast({ title: "Stage created successfully" });
+      toast({ title: `${vocabulary.stage} created successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to create stage", 
+        title: `Failed to create ${vocabulary.stage.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -244,11 +246,11 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
       // Also refresh line items since they may display epic names
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      toast({ title: "Epic updated successfully" });
+      toast({ title: `${vocabulary.epic} updated successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to update epic", 
+        title: `Failed to update ${vocabulary.epic.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -265,11 +267,11 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'epics'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      toast({ title: "Epic deleted successfully" });
+      toast({ title: `${vocabulary.epic} deleted successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to delete epic", 
+        title: `Failed to delete ${vocabulary.epic.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -287,11 +289,11 @@ export default function EstimateDetail() {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
       // Also refresh line items since they may display stage names
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      toast({ title: "Stage updated successfully" });
+      toast({ title: `${vocabulary.stage} updated successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to update stage", 
+        title: `Failed to update ${vocabulary.stage.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -307,11 +309,11 @@ export default function EstimateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      toast({ title: "Stage deleted successfully" });
+      toast({ title: `${vocabulary.stage} deleted successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to delete stage", 
+        title: `Failed to delete ${vocabulary.stage.toLowerCase()}`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -328,11 +330,11 @@ export default function EstimateDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'stages'] });
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
-      toast({ title: "Stages merged successfully" });
+      toast({ title: `${vocabulary.stage}s merged successfully` });
     },
     onError: (error: any) => {
       toast({ 
-        title: "Failed to merge stages", 
+        title: `Failed to merge ${vocabulary.stage.toLowerCase()}s`, 
         description: error.message || "Please try again",
         variant: "destructive" 
       });
@@ -2025,13 +2027,13 @@ export default function EstimateDetail() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-sm font-medium mb-1.5 block">Epic</Label>
+                    <Label className="text-sm font-medium mb-1.5 block">{vocabulary.epic}</Label>
                     <Select
                       value={newItem.epicId}
                       onValueChange={(value) => setNewItem({ ...newItem, epicId: value })}
                     >
                       <SelectTrigger data-testid="select-epic">
-                        <SelectValue placeholder="Select Epic" />
+                        <SelectValue placeholder={`Select ${vocabulary.epic}`} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
@@ -2042,13 +2044,13 @@ export default function EstimateDetail() {
                     </Select>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium mb-1.5 block">Stage</Label>
+                    <Label className="text-sm font-medium mb-1.5 block">{vocabulary.stage}</Label>
                     <Select
                       value={newItem.stageId}
                       onValueChange={(value) => setNewItem({ ...newItem, stageId: value })}
                     >
                       <SelectTrigger data-testid="select-stage">
-                        <SelectValue placeholder="Select Stage" />
+                        <SelectValue placeholder={`Select ${vocabulary.stage}`} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
@@ -2061,9 +2063,9 @@ export default function EstimateDetail() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-sm font-medium mb-1.5 block">Workstream</Label>
+                    <Label className="text-sm font-medium mb-1.5 block">{vocabulary.workstream}</Label>
                     <Input
-                      placeholder="Workstream"
+                      placeholder={vocabulary.workstream}
                       value={newItem.workstream}
                       onChange={(e) => setNewItem({ ...newItem, workstream: e.target.value })}
                       data-testid="input-workstream"
@@ -2242,14 +2244,14 @@ export default function EstimateDetail() {
                 />
               </div>
               <div>
-                <Label htmlFor="filter-epic">Epic</Label>
+                <Label htmlFor="filter-epic">{vocabulary.epic}</Label>
                 <Select value={filterEpic} onValueChange={setFilterEpic}>
                   <SelectTrigger>
-                    <SelectValue placeholder="All Epics" />
+                    <SelectValue placeholder={`All ${vocabulary.epic}s`} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Epics</SelectItem>
-                    <SelectItem value="none">No Epic</SelectItem>
+                    <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
+                    <SelectItem value="none">No {vocabulary.epic}</SelectItem>
                     {epics.map((epic) => (
                       <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
                     ))}
@@ -2257,14 +2259,14 @@ export default function EstimateDetail() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="filter-stage">Stage</Label>
+                <Label htmlFor="filter-stage">{vocabulary.stage}</Label>
                 <Select value={filterStage} onValueChange={setFilterStage}>
                   <SelectTrigger>
-                    <SelectValue placeholder="All Stages" />
+                    <SelectValue placeholder={`All ${vocabulary.stage}s`} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Stages</SelectItem>
-                    <SelectItem value="none">No Stage</SelectItem>
+                    <SelectItem value="all">All {vocabulary.stage}s</SelectItem>
+                    <SelectItem value="none">No {vocabulary.stage}</SelectItem>
                     {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
                       <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
                     ))}
@@ -2272,10 +2274,10 @@ export default function EstimateDetail() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="filter-workstream">Workstream</Label>
+                <Label htmlFor="filter-workstream">{vocabulary.workstream}</Label>
                 <Input
                   id="filter-workstream"
-                  placeholder="Filter by workstream..."
+                  placeholder={`Filter by ${vocabulary.workstream.toLowerCase()}...`}
                   value={filterWorkstream}
                   onChange={(e) => setFilterWorkstream(e.target.value)}
                 />
@@ -2917,14 +2919,14 @@ export default function EstimateDetail() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Epic & Stage Structure Management</CardTitle>
+                  <CardTitle>{vocabulary.epic} & {vocabulary.stage} Structure Management</CardTitle>
                   <CardDescription>
-                    Organize your estimate structure and manage epics and stages
+                    Organize your estimate structure and manage {vocabulary.epic.toLowerCase()}s and {vocabulary.stage.toLowerCase()}s
                   </CardDescription>
                 </div>
                 <Button onClick={() => setShowEpicDialog(true)} size="sm" disabled={!isEditable}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Epic
+                  Add {vocabulary.epic}
                 </Button>
               </div>
             </CardHeader>
@@ -2933,7 +2935,7 @@ export default function EstimateDetail() {
               <div className="space-y-4">
                 {epics.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No epics created yet. Click "Add Epic" to get started.
+                    No {vocabulary.epic.toLowerCase()}s created yet. Click "Add {vocabulary.epic}" to get started.
                   </div>
                 ) : (
                   epics.map((epic) => {
@@ -3020,7 +3022,7 @@ export default function EstimateDetail() {
                               disabled={!isEditable}
                             >
                               <Plus className="h-4 w-4 mr-1" />
-                              Add Stage
+                              Add {vocabulary.stage}
                             </Button>
                             <Button
                               onClick={() => {
@@ -3266,9 +3268,9 @@ export default function EstimateDetail() {
     <Dialog open={showEpicDialog} onOpenChange={setShowEpicDialog}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Epic</DialogTitle>
+          <DialogTitle>Create New {vocabulary.epic}</DialogTitle>
           <DialogDescription>
-            Add a new epic to organize your estimate line items
+            Add a new {vocabulary.epic.toLowerCase()} to organize your estimate line items
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -3294,7 +3296,7 @@ export default function EstimateDetail() {
             }}
             disabled={!isEditable || !newEpicName.trim() || createEpicMutation.isPending}
           >
-            {createEpicMutation.isPending ? "Creating..." : "Create Epic"}
+            {createEpicMutation.isPending ? "Creating..." : `Create ${vocabulary.epic}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3304,9 +3306,9 @@ export default function EstimateDetail() {
     <Dialog open={showStageDialog} onOpenChange={setShowStageDialog}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Stage</DialogTitle>
+          <DialogTitle>Create New {vocabulary.stage}</DialogTitle>
           <DialogDescription>
-            Add a new stage to an epic
+            Add a new {vocabulary.stage.toLowerCase()} to a {vocabulary.epic.toLowerCase()}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -3348,7 +3350,7 @@ export default function EstimateDetail() {
             }}
             disabled={!isEditable || !selectedEpicForStage || !newStageName.trim() || createStageMutation.isPending}
           >
-            {createStageMutation.isPending ? "Creating..." : "Create Stage"}
+            {createStageMutation.isPending ? "Creating..." : `Create ${vocabulary.stage}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -3557,7 +3559,7 @@ export default function EstimateDetail() {
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="bulk-epic">Epic</Label>
+              <Label htmlFor="bulk-epic">{vocabulary.epic}</Label>
               <Select value={bulkEditData.epicId} onValueChange={(value) => setBulkEditData({...bulkEditData, epicId: value})}>
                 <SelectTrigger>
                   <SelectValue placeholder="Keep current values" />
@@ -3571,7 +3573,7 @@ export default function EstimateDetail() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="bulk-stage">Stage</Label>
+              <Label htmlFor="bulk-stage">{vocabulary.stage}</Label>
               <Select value={bulkEditData.stageId} onValueChange={(value) => setBulkEditData({...bulkEditData, stageId: value})}>
                 <SelectTrigger>
                   <SelectValue placeholder="Keep current values" />
@@ -3587,7 +3589,7 @@ export default function EstimateDetail() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label htmlFor="bulk-workstream">Workstream</Label>
+              <Label htmlFor="bulk-workstream">{vocabulary.workstream}</Label>
               <Input
                 id="bulk-workstream"
                 placeholder="Keep current values"
@@ -3660,7 +3662,7 @@ export default function EstimateDetail() {
             </div>
             <div className="grid gap-2">
               {/* Category field hidden per requirements */}
-              <Label htmlFor="bulk-workstream">Workstream</Label>
+              <Label htmlFor="bulk-workstream">{vocabulary.workstream}</Label>
               <Input
                 id="bulk-workstream"
                 placeholder="Keep current values"
@@ -4116,6 +4118,7 @@ interface ResourcesViewProps {
 }
 
 function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
+  const vocabulary = useVocabulary();
   const [filterEpic, setFilterEpic] = useState('all');
   const [filterStage, setFilterStage] = useState('all');
 
@@ -4223,13 +4226,13 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
           </div>
           <div className="flex gap-4">
             <div className="w-48">
-              <Label htmlFor="epic-filter" className="text-sm">Filter by Epic</Label>
+              <Label htmlFor="epic-filter" className="text-sm">Filter by {vocabulary.epic}</Label>
               <Select value={filterEpic} onValueChange={setFilterEpic}>
                 <SelectTrigger id="epic-filter" data-testid="select-epic-filter">
-                  <SelectValue placeholder="All Epics" />
+                  <SelectValue placeholder={`All ${vocabulary.epic}s`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Epics</SelectItem>
+                  <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
                   {epics.map(epic => (
                     <SelectItem key={epic.id} value={String(epic.id)}>{epic.name}</SelectItem>
                   ))}
@@ -4237,13 +4240,13 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
               </Select>
             </div>
             <div className="w-48">
-              <Label htmlFor="stage-filter" className="text-sm">Filter by Stage</Label>
+              <Label htmlFor="stage-filter" className="text-sm">Filter by {vocabulary.stage}</Label>
               <Select value={filterStage} onValueChange={setFilterStage} disabled={filterEpic === 'all'}>
                 <SelectTrigger id="stage-filter" data-testid="select-stage-filter">
-                  <SelectValue placeholder="All Stages" />
+                  <SelectValue placeholder={`All ${vocabulary.stage}s`} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Stages</SelectItem>
+                  <SelectItem value="all">All {vocabulary.stage}s</SelectItem>
                   {filteredStages.map(stage => (
                     <SelectItem key={stage.id} value={String(stage.id)}>{stage.name}</SelectItem>
                   ))}
@@ -4333,5 +4336,22 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Main component with VocabularyProvider wrapper
+export default function EstimateDetail() {
+  const { id } = useParams();
+  
+  // Fetch estimate to get clientId for vocabulary context
+  const { data: estimate } = useQuery<Estimate>({
+    queryKey: ['/api/estimates', id],
+    enabled: !!id,
+  });
+  
+  return (
+    <VocabularyProvider estimateId={id} clientId={estimate?.clientId}>
+      <EstimateDetailContent />
+    </VocabularyProvider>
   );
 }
