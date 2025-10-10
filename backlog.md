@@ -1,118 +1,44 @@
 # SCDP Product Backlog - Corrected Comprehensive Version
 
-## ✅ Recently Completed (Week of Oct 5, 2025)
+## ✅ Recently Completed (Week of Oct 7-11, 2025)
 
-### Day 1 Foundation & Cleanup
+### Days 1-3: Foundation & Vocabulary System
 - [x] Fixed 11 TypeScript errors in server/storage.ts (schema alignment)
 - [x] Created test.md for test backlog tracking and sprint management
 - [x] Archived 29 legacy files (PowerShell scripts, one-time recovery scripts, corrupted files)
 - [x] Merged dev commands to replit.md
 - [x] Established organized archive structure
 
-## 🚨 P0 - CRITICAL GAPS (Immediate Priority)
+### Days 2-3: Vocabulary Customization System ✅ COMPLETE
+- [x] Organization-level vocabulary defaults with admin UI
+- [x] Client and project-level vocabulary overrides
+- [x] Vocabulary context API and VocabularyProvider/useVocabulary hook
+- [x] Cascading hierarchy (Project → Client → Organization → System defaults)
+- [x] Complete integration across all modules:
+  - [x] Estimates module (55 dynamic vocabulary references)
+  - [x] Projects module with inheritance on creation
+  - [x] Time entry module
+  - [x] Invoice module
+  - [x] Expense module
 
-### Vocabulary Customization System (Days 2-3) ✅ MOSTLY COMPLETE
-**Status:** FOUNDATION REQUIREMENT - Core system complete, final estimate module integration in progress
+### Days 4-5: Project Assignments & Resource Management ✅ COMPLETE
+- [x] Backend API endpoints for assignment CRUD operations
+- [x] Assignment status workflow (open → in_progress → completed → cancelled)
+- [x] Manual assignment UI in Project Detail page
+  - [x] Add/Edit/Delete assignments with dialog
+  - [x] Assign people with role, workstream, epic, hours allocation
+  - [x] Set pricing mode and billing rates
+  - [x] Define assignment dates and notes
+- [x] My Assignments page for employees
+  - [x] View all assignments across active projects
+  - [x] Update assignment status inline
+  - [x] List and Kanban views with filtering
+- [x] Fixed API endpoints and validation for manual assignments
+- [x] Documentation updated in replit.md
 
-**Why P0:** Currently hard-coding terminology (Epic/Stage/Milestone/Workstream) throughout the UI. Implementing vocabulary system now prevents massive future refactoring when clients need custom terminology.
+## 🚨 P0 - CRITICAL GAPS (This Week - Oct 11, 2025)
 
-**Completed Components (Oct 8-9):**
-- ✅ Day 1: Foundation cleanup complete
-- ✅ Day 2: Organization-level vocabulary defaults
-  - ✅ Admin settings UI for global terminology (/system-settings → Vocabulary Management)
-  - ✅ Default: Epic → Stage → Activity → Workstream (milestone handled separately)
-  - ✅ Organization vocabulary stored and retrievable
-  
-- ✅ Day 3: Client and project-level overrides
-  - ✅ Client-specific terminology preferences (Edit client → Vocabulary Customization)
-  - ✅ Project-specific overrides (Edit project → Vocabulary Customization)  
-  - ✅ **CORRECT Cascading Hierarchy:** Project → Client → Organization → System defaults
-  - ✅ Vocabulary context API (`/api/vocabulary/context`)
-  - ✅ VocabularyProvider and useVocabulary hook implemented
-  
-**Master Vocabulary List:** Maintained in `vocabulary_catalog` table with termType, termValue, isActive, sortOrder
-
-**Module Integration Status (Oct 10, 2025):**
-
-**✅ Completed Modules:**
-- **Phase 1: Foundation & Data Layer** - Complete
-  - ✅ Vocabulary context API implemented in storage layer
-  - ✅ VocabularyProvider and useVocabulary hook created
-  - ✅ Cascading resolution working (Project → Client → Org → Defaults)
-
-- **Phase 3: Project Module** - Complete  
-  - ✅ Projects inherit vocabulary from organization on creation
-  - ✅ Project edit UI includes vocabulary customization
-  - ✅ Project detail uses VocabularyProvider
-
-- **Phase 4: Time Entry Module** - Partially Complete
-  - ✅ Some vocabulary support visible in time tracking
-  - ⚠️ May need verification of full implementation
-
-**🔥 In Progress (Oct 10):**
-- **Phase 2: Estimate Module** - CRITICAL GAP
-  - ❌ Estimate detail page still hard-codes Epic/Stage/Activity labels
-  - ❌ Not using VocabularyProvider or useVocabulary hook
-  - ❌ Excel import/export not using resolved vocabulary
-  - 📋 Action: Wrap estimate-detail in VocabularyProvider and replace hard-coded labels
-
-**📅 Remaining for Later:**
-- **Phase 5: Expense Module** - Not started
-  - Need workstream vocabulary in expense forms
-  
-- **Phase 6: Invoice Module** - Not started (MOST CRITICAL)
-  - Invoice line descriptions need vocabulary resolution
-  - Batch creation needs vocabulary-aware grouping
-
-- **Phase 7: Integration & Safety** - Not needed
-  - System is working without FK migrations
-  - Using JSON text fields for flexibility
-
-**Implementation Plan (Oct 10):**
-  - Complete Estimate Module vocabulary integration (2 hours)
-  - Test vocabulary cascade in estimates
-  - Begin Project Assignments implementation (remaining time)
-
-**Timeline:** Vocabulary completion today, Project Assignments start today
-
----
-
-### Project Assignments & Resource Management (Days 4-5)
-**Status:** CRITICAL GAP - No way to manually assign people to projects without estimates
-
-**Why P0:** Essential foundation for resource management, time tracking, and billing. Without this, projects created without estimates have no staff assignments.
-
-**Prioritization Note:** Manual assignment entry takes priority over bulk Excel import (fewer projects remaining, faster to enter manually)
-
-**Scope:**
-- [ ] **Day 4: Backend & Data Model**
-  - API endpoints for assignment CRUD operations
-  - Assignment status workflow (open → in_progress → completed → cancelled)
-  - Validation for overlapping assignments
-  - Cost rate vs charge rate handling
-  
-- [ ] **Day 5: Manual Assignment UI**
-  - Add person + role to project with allocation details
-  - Assign to specific activities, milestones, or workstreams
-  - Set allocation hours and billing rates
-  - Define assignment dates (planned start/end)
-  
-- [ ] **Day 5: My Assignments View (Employee)**
-  - Show all assignments across active projects
-  - Update assignment status inline
-  - Track completion dates automatically
-  - Filter by project, date range, status
-
-**Deferred to Later Sprint:**
-- Assignment bulk Excel import (only 16 projects remaining, manual faster)
-- Resource Management View for leaders (future sprint)
-- Unified Structure Tab consolidation (future sprint)
-
-**Timeline:** Days 4-5 (this week)
-
----
-
-### Project Reporting & Analytics (Day 6)
+### Project Reporting & Analytics (Day 6) - REMAINING THIS WEEK
 **Status:** ESSENTIAL - Data exists but no comprehensive reporting API
 
 **Why P0:** Leaders need visibility into project performance, resource allocation, and financial health.
