@@ -254,11 +254,6 @@ export default function ProjectDetail() {
     queryKey: [`/api/projects/${id}/sows`],
     enabled: !!id,
   });
-
-  const { data: estimates = [] } = useQuery<any[]>({
-    queryKey: [`/api/projects/${id}/estimates`],
-    enabled: !!id,
-  });
   
   // Project structure queries
   const { data: milestones = [], refetch: refetchMilestones } = useQuery<any[]>({
@@ -1642,36 +1637,6 @@ export default function ProjectDetail() {
               </Card>
             </div>
 
-            {/* Estimates Section */}
-            {estimates.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Related Estimates</CardTitle>
-                  <CardDescription>View estimates associated with this project</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    {estimates.map((estimate) => (
-                      <div key={estimate.id} className="flex items-center justify-between p-3 rounded-lg border">
-                        <div>
-                          <p className="font-medium">{estimate.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Version {estimate.version} • {estimate.status} • ${Number(estimate.totalFees || 0).toLocaleString()}
-                          </p>
-                        </div>
-                        <Link href={`/estimates/${estimate.id}`}>
-                          <Button variant="outline" size="sm" data-testid={`button-view-estimate-${estimate.id}`}>
-                            <ExternalLink className="w-4 h-4 mr-1" />
-                            View Estimate
-                          </Button>
-                        </Link>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-            
             {/* Quick Stats */}
             <Card>
               <CardHeader>
