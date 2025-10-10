@@ -1781,7 +1781,11 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const allocationData = {
         ...req.body,
-        projectId: req.params.projectId
+        projectId: req.params.projectId,
+        // Default weekNumber to 0 for manually created assignments (not from estimate import)
+        weekNumber: req.body.weekNumber ?? 0,
+        // Ensure hours is a number
+        hours: typeof req.body.hours === 'string' ? parseFloat(req.body.hours) : req.body.hours
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
       const created = await storage.createProjectAllocation(validatedData);
