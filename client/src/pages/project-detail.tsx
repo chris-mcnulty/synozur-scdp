@@ -1162,9 +1162,7 @@ export default function ProjectDetail() {
       const url = `/api/projects/${id}/export-text${queryString ? `?${queryString}` : ''}`;
       
       const response = await fetch(url, {
-        headers: {
-          'X-Session-Id': document.cookie.split('; ').find(row => row.startsWith('sessionId='))?.split('=')[1] || ''
-        }
+        credentials: 'include'
       });
       
       if (!response.ok) throw new Error('Export failed');
