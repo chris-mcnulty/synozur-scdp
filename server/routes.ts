@@ -2616,32 +2616,71 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       textOutput += `\n${"=".repeat(80)}\n\n`;
 
-      // Team & Resources
+      // Team & Resources - Grouped by Month
       if (allocations && allocations.length > 0) {
-        textOutput += `TEAM & RESOURCES\n\n`;
+        textOutput += `TEAM ASSIGNMENTS BY MONTH\n\n`;
         
         const activeAllocations = allocations.filter((a: any) => a.status !== 'cancelled');
-        activeAllocations.forEach((allocation: any, index: number) => {
-          textOutput += `${index + 1}. ${allocation.personName || 'Unknown'}\n`;
-          if (allocation.roleName) {
-            textOutput += `   Role: ${allocation.roleName}\n`;
+        
+        // Group allocations by month based on their date ranges
+        const allocationsByMonth = new Map<string, any[]>();
+        
+        activeAllocations.forEach((allocation: any) => {
+          const startDate = allocation.startDate ? new Date(allocation.startDate) : new Date(project.startDate || new Date());
+          const endDate = allocation.endDate ? new Date(allocation.endDate) : new Date(project.endDate || new Date());
+          
+          // Generate all months in the allocation period
+          const currentMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+          const lastMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+          
+          while (currentMonth <= lastMonth) {
+            const monthKey = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
+            const monthLabel = currentMonth.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+            
+            if (!allocationsByMonth.has(monthKey)) {
+              allocationsByMonth.set(monthKey, []);
+            }
+            allocationsByMonth.get(monthKey)!.push({ ...allocation, monthLabel });
+            
+            currentMonth.setMonth(currentMonth.getMonth() + 1);
           }
-          if (allocation.workstreamName) {
-            textOutput += `   ${workstreamLabel}: ${allocation.workstreamName}\n`;
-          }
-          if (allocation.hours) {
-            textOutput += `   Allocated Hours: ${allocation.hours}\n`;
-          }
-          if (allocation.status) {
-            textOutput += `   Status: ${allocation.status}\n`;
-          }
-          if (allocation.startDate || allocation.endDate) {
-            textOutput += `   Period: ${allocation.startDate || 'Start'} to ${allocation.endDate || 'End'}\n`;
-          }
-          if (allocation.notes) {
-            textOutput += `   Notes: ${allocation.notes}\n`;
-          }
-          textOutput += `\n`;
+        });
+
+        // Sort months chronologically
+        const sortedMonths = Array.from(allocationsByMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+        
+        sortedMonths.forEach(([monthKey, monthAllocations]) => {
+          const monthLabel = monthAllocations[0].monthLabel;
+          // Use allocation ID for deduplication to preserve all distinct assignments
+          const uniqueAllocations = Array.from(new Map(monthAllocations.map(a => [a.id, a])).values());
+          
+          textOutput += `${monthLabel.toUpperCase()}\n`;
+          textOutput += `${"-".repeat(80)}\n`;
+          
+          uniqueAllocations.forEach((allocation: any, index: number) => {
+            textOutput += `${index + 1}. ${allocation.personName || 'Unknown'}`;
+            if (allocation.roleName) {
+              textOutput += ` - ${allocation.roleName}`;
+            }
+            textOutput += `\n`;
+            
+            if (allocation.workstreamName) {
+              textOutput += `   ${workstreamLabel}: ${allocation.workstreamName}\n`;
+            }
+            if (allocation.hours) {
+              textOutput += `   Allocated Hours: ${allocation.hours}\n`;
+            }
+            if (allocation.status) {
+              textOutput += `   Status: ${allocation.status}\n`;
+            }
+            if (allocation.startDate || allocation.endDate) {
+              textOutput += `   Period: ${allocation.startDate || 'Start'} to ${allocation.endDate || 'End'}\n`;
+            }
+            if (allocation.notes) {
+              textOutput += `   Notes: ${allocation.notes}\n`;
+            }
+            textOutput += `\n`;
+          });
         });
         
         textOutput += `${"=".repeat(80)}\n\n`;
@@ -2727,37 +2766,86 @@ export async function registerRoutes(app: Express): Promise<void> {
         textOutput += `${"=".repeat(80)}\n\n`;
       }
 
-      // Time Entry Summary
+      // Time Entries - Grouped by Month
       if (timeEntries && timeEntries.length > 0) {
-        textOutput += `TIME ENTRIES SUMMARY\n\n`;
+        textOutput += `TIME ENTRIES BY MONTH\n\n`;
         
         const totalHours = timeEntries.reduce((sum, entry) => sum + parseFloat(entry.hours || '0'), 0);
         const billableHours = timeEntries.filter(e => e.billable).reduce((sum, entry) => sum + parseFloat(entry.hours || '0'), 0);
         
+        textOutput += `OVERALL SUMMARY\n`;
         textOutput += `Total Hours: ${totalHours.toFixed(2)}\n`;
         textOutput += `Billable Hours: ${billableHours.toFixed(2)}\n`;
         textOutput += `Non-Billable Hours: ${(totalHours - billableHours).toFixed(2)}\n`;
         textOutput += `Number of Entries: ${timeEntries.length}\n\n`;
         
-        // Group by person
-        const byPerson = new Map<string, { hours: number; billable: number; entries: number }>();
+        // Group by month
+        const byMonth = new Map<string, any[]>();
         timeEntries.forEach(entry => {
-          const personName = entry.person?.name || 'Unknown';
-          const existing = byPerson.get(personName) || { hours: 0, billable: 0, entries: 0 };
-          existing.hours += parseFloat(entry.hours || '0');
-          if (entry.billable) existing.billable += parseFloat(entry.hours || '0');
-          existing.entries += 1;
-          byPerson.set(personName, existing);
+          const date = new Date(entry.date);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthLabel = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+          
+          if (!byMonth.has(monthKey)) {
+            byMonth.set(monthKey, []);
+          }
+          byMonth.get(monthKey)!.push({ ...entry, monthLabel });
         });
 
-        textOutput += `By Person:\n`;
-        Array.from(byPerson.entries())
-          .sort((a, b) => b[1].hours - a[1].hours)
-          .forEach(([person, data]) => {
-            textOutput += `  ${person}: ${data.hours.toFixed(2)} hours (${data.billable.toFixed(2)} billable) - ${data.entries} entries\n`;
-          });
+        // Sort months chronologically
+        const sortedMonths = Array.from(byMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
         
-        textOutput += `\n${"=".repeat(80)}\n\n`;
+        textOutput += `MONTHLY BREAKDOWN\n`;
+        textOutput += `${"-".repeat(80)}\n\n`;
+        
+        sortedMonths.forEach(([monthKey, entries]) => {
+          const monthLabel = entries[0].monthLabel;
+          const monthHours = entries.reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+          const monthBillable = entries.filter(e => e.billable).reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+          
+          textOutput += `${monthLabel.toUpperCase()}\n`;
+          textOutput += `Total: ${monthHours.toFixed(2)} hours (${monthBillable.toFixed(2)} billable)\n`;
+          textOutput += `Entries: ${entries.length}\n\n`;
+          
+          // Group by person within month
+          const byPerson = new Map<string, any[]>();
+          entries.forEach(entry => {
+            const personName = entry.person?.name || 'Unknown';
+            if (!byPerson.has(personName)) {
+              byPerson.set(personName, []);
+            }
+            byPerson.get(personName)!.push(entry);
+          });
+          
+          // Show each person's entries
+          Array.from(byPerson.entries())
+            .sort((a, b) => {
+              const aHours = a[1].reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+              const bHours = b[1].reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+              return bHours - aHours;
+            })
+            .forEach(([person, personEntries]) => {
+              const personHours = personEntries.reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+              const personBillable = personEntries.filter(e => e.billable).reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+              
+              textOutput += `  ${person}: ${personHours.toFixed(2)} hours (${personBillable.toFixed(2)} billable)\n`;
+              
+              // Show individual entries
+              personEntries
+                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                .forEach(entry => {
+                  const billableTag = entry.billable ? '[B]' : '[NB]';
+                  textOutput += `    ${entry.date} ${billableTag} ${entry.hours}h`;
+                  if (entry.description) {
+                    textOutput += ` - ${entry.description}`;
+                  }
+                  textOutput += `\n`;
+                });
+              textOutput += `\n`;
+            });
+        });
+        
+        textOutput += `${"=".repeat(80)}\n\n`;
       }
 
       // Expenses Summary
