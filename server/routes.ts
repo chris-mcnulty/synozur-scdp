@@ -2526,6 +2526,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
+      // Check user permissions: admin, billing-admin, executives, or PM for this project
+      const canViewProject = 
+        req.user.role === 'admin' ||
+        req.user.role === 'billing-admin' ||
+        req.user.role === 'executive' ||
+        (req.user.role === 'pm' && project.pm === req.user.id);
+
+      if (!canViewProject) {
+        return res.status(403).json({ 
+          message: "You can only export projects you manage" 
+        });
+      }
+
       // Parse date range parameters
       const { startDate, endDate } = req.query;
       
