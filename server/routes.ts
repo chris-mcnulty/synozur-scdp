@@ -2528,10 +2528,10 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Check user permissions: admin, billing-admin, executives, or PM for this project
       const canViewProject = 
-        req.user.role === 'admin' ||
-        req.user.role === 'billing-admin' ||
-        req.user.role === 'executive' ||
-        (req.user.role === 'pm' && project.pm === req.user.id);
+        req.user!.role === 'admin' ||
+        req.user!.role === 'billing-admin' ||
+        req.user!.role === 'executive' ||
+        (req.user!.role === 'pm' && project.pm === req.user!.id);
 
       if (!canViewProject) {
         return res.status(403).json({ 
