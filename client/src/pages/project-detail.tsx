@@ -1161,8 +1161,12 @@ export default function ProjectDetail() {
       const queryString = params.toString();
       const url = `/api/projects/${id}/export-text${queryString ? `?${queryString}` : ''}`;
       
+      const sessionId = localStorage.getItem('sessionId');
       const response = await fetch(url, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'X-Session-Id': sessionId || ''
+        }
       });
       
       if (!response.ok) throw new Error('Export failed');
