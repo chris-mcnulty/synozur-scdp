@@ -62,14 +62,14 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 - **Format**: Plain text (.txt) file with structured sections and formatted data
 - **Content Included**:
   - **Project Header**: Name, client, status, description, start/end dates, report date range
-  - **Team & Resources**: Active allocations (non-cancelled) with person name, role, workstream, allocated hours, status, period, and notes
+  - **Team Assignments by Month**: Active allocations grouped by month showing person, role, workstream, hours, status, period, and notes
   - **Project Structure**: 
     - Epics and stages (with descriptions)
     - Workstreams (with descriptions and budget hours)
     - Milestones (with descriptions, target/actual dates, and status)
-  - **Time Entries Summary**: Total/billable/non-billable hours, entry count, breakdown by person
+  - **Time Entries by Month**: Overall summary plus monthly breakdown with person-level details and individual entry lines (date, billable status, hours, description)
   - **Expenses Summary**: Total/billable amounts, expense count, breakdown by category
-  - **Invoices**: Batch number, period (start/end dates), status, and total amount
+  - **Invoices**: All invoice batches for the client with batch ID, period (start/end dates), status, and total amount
 - **Date Range Filtering**:
   - "Entire Project" - exports all project data
   - "Current Month" - filters time entries, expenses, and invoices to current month boundaries
@@ -84,3 +84,17 @@ Development workflow: Dev server requires manual restart - do not attempt automa
   - Returns 403 "You can only export projects you manage" for unauthorized users
   - Prevents unauthorized access to sensitive project data (hours, rates, expenses, invoices)
 - **Use Cases**: Generate status reports, create project summaries for stakeholders, extract data for external reporting systems
+
+### Invoice Batches Management
+- **Client Grouping on Main Screen**: Invoice batches on the billing page (`/billing`) are now grouped by client for better organization
+  - Single-client batches appear under their respective client headers
+  - Multi-client batches appear under "Multiple Clients" section
+  - Each group shows batch count
+  - Groups sorted alphabetically with "Multiple Clients" at the end
+  - Handles both `clientName` (string) and `clientNames` (array) data formats
+- **Invoices Tab on Project Detail**: New "Invoices" tab in project analytics shows all invoice batches for the project's client
+  - Displays batch ID, projects, status, payment status, dates, and amounts
+  - Links to batch detail page for full information
+  - Respects pricing visibility permissions (amounts masked with `***` for users without pricing access)
+  - Shows loading and empty states
+  - Consistent UI/UX with billing page patterns
