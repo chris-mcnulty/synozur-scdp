@@ -594,13 +594,49 @@ export default function Billing() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {(invoiceBatches as any[]).map((batch: any) => (
-                    <div
-                      key={batch.id}
-                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
-                      data-testid={`batch-${batch.id}`}
-                    >
+                <div className="space-y-6">
+                  {(() => {
+                    // Group batches by client
+                    const batchesByClient = new Map<string, any[]>();
+                    (invoiceBatches as any[]).forEach((batch: any) => {
+                      let clientKey = 'Multiple Clients';
+                      
+                      // Handle single client - check both clientNames array and clientName string
+                      if (batch.clientNames && batch.clientNames.length === 1) {
+                        clientKey = batch.clientNames[0];
+                      } else if (batch.clientName) {
+                        clientKey = batch.clientName;
+                      } else if (batch.clientNames && batch.clientNames.length > 1) {
+                        clientKey = 'Multiple Clients';
+                      }
+                      
+                      if (!batchesByClient.has(clientKey)) {
+                        batchesByClient.set(clientKey, []);
+                      }
+                      batchesByClient.get(clientKey)!.push(batch);
+                    });
+
+                    // Sort clients alphabetically, with "Multiple Clients" last
+                    const sortedClients = Array.from(batchesByClient.entries()).sort(([a], [b]) => {
+                      if (a === 'Multiple Clients') return 1;
+                      if (b === 'Multiple Clients') return -1;
+                      return a.localeCompare(b);
+                    });
+
+                    return sortedClients.map(([clientName, batches]) => (
+                      <div key={clientName} className="space-y-3">
+                        <div className="flex items-center space-x-2 pb-2 border-b">
+                          <Building className="w-4 h-4 text-muted-foreground" />
+                          <h3 className="font-semibold text-sm" data-testid={`client-group-${clientName}`}>{clientName}</h3>
+                          <span className="text-xs text-muted-foreground">({batches.length} batch{batches.length !== 1 ? 'es' : ''})</span>
+                        </div>
+                        <div className="space-y-3 pl-6">
+                          {batches.map((batch: any) => (
+                            <div
+                              key={batch.id}
+                              className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
+                              data-testid={`batch-${batch.id}`}
+                            >
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
                           <Link href={`/billing/batches/${batch.batchId}`}>
@@ -674,7 +710,11 @@ export default function Billing() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                          ))}
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </CardContent>
             </Card>

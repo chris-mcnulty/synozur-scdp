@@ -40,7 +40,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
@@ -168,7 +168,7 @@ type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
 
 export default function ProjectDetail() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, canViewPricing } = useAuth();
   const [, navigate] = useLocation();
   const [selectedTab, setSelectedTab] = useState("overview");
   const [showSowDialog, setShowSowDialog] = useState(false);
@@ -328,6 +328,12 @@ export default function ProjectDetail() {
   const { data: allocations = [], isLoading: allocationsLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/allocations`],
     enabled: !!id,
+  });
+
+  // Invoice batches query - fetch invoice batches for the project's client
+  const { data: invoiceBatches = [], isLoading: invoiceBatchesLoading } = useQuery<any[]>({
+    queryKey: [`/api/invoice-batches/client/${currentClientId}`],
+    enabled: !!currentClientId,
   });
   
   // Group vocabulary catalog terms by type
@@ -1566,6 +1572,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
             <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
+            <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
             )}
@@ -2878,6 +2885,103 @@ export default function ProjectDetail() {
                       )}
                     </TableBody>
                   </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Invoices Tab */}
+          <TabsContent value="invoices" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoices</CardTitle>
+                <CardDescription>
+                  Invoice batches for {analytics?.project?.client?.name || 'this client'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {invoiceBatchesLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                ) : invoiceBatches.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No invoices found</h3>
+                    <p className="text-muted-foreground">No invoice batches have been created for this client yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {invoiceBatches.map((batch: any) => (
+                      <div
+                        key={batch.id}
+                        className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
+                        data-testid={`invoice-batch-${batch.id}`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <Link href={`/billing/batches/${batch.batchId}`}>
+                              <div className="font-medium text-primary hover:underline cursor-pointer" data-testid={`invoice-batch-id-${batch.id}`}>
+                                {batch.batchId}
+                              </div>
+                            </Link>
+                            <div className="text-sm text-muted-foreground">
+                              {batch.projectNames && batch.projectNames.length > 0 && batch.projectNames.length <= 3 ? (
+                                <span>
+                                  <FolderOpen className="w-3 h-3 mr-1 inline" />
+                                  {batch.projectNames.join(", ")}
+                                </span>
+                              ) : (
+                                <span>
+                                  <FolderOpen className="w-3 h-3 mr-1 inline" />
+                                  {batch.projectCount || 0} project{batch.projectCount !== 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {batch.invoicingMode === 'client' ? (
+                                <><Building className="w-3 h-3 mr-1" />Client</>  
+                              ) : (
+                                <><FolderOpen className="w-3 h-3 mr-1" />Project</>
+                              )}
+                            </Badge>
+                            <Badge variant={
+                              batch.status === 'finalized' ? 'default' : 
+                              batch.status === 'draft' ? 'secondary' : 
+                              'outline'
+                            }>
+                              {batch.status}
+                            </Badge>
+                            {batch.status === 'finalized' && (
+                              <Badge variant={
+                                batch.paymentStatus === 'paid' ? 'default' : 
+                                batch.paymentStatus === 'partial' ? 'secondary' : 
+                                'destructive'
+                              }>
+                                {batch.paymentStatus || 'unpaid'}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
+                            {batch.discountAmount && ` Discount: $${Number(batch.discountAmount).toLocaleString()} • `}
+                            Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
+                            {batch.paymentDate && ` • Payment: ${format(new Date(batch.paymentDate), 'MMM d, yyyy')}`}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium text-lg" data-testid={`invoice-batch-amount-${batch.id}`}>
+                            {canViewPricing ? `$${Number(batch.totalAmount || 0).toLocaleString()}` : '***'}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {batch.invoicingMode === 'client' ? 'Client billing' : 'Project billing'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
