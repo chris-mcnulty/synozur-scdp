@@ -206,7 +206,7 @@ export interface IStorage {
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
   copyEstimateStructureToProject(estimateId: string, projectId: string): Promise<void>;
-  createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string): Promise<Project>;
+  createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string, copyAssignments?: boolean): Promise<Project>;
   
   // Project Allocations
   getProjectAllocations(projectId: string): Promise<any[]>;
@@ -3772,7 +3772,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string): Promise<Project> {
+  async createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string, copyAssignments: boolean = true): Promise<Project> {
     try {
       return await db.transaction(async (tx) => {
         // 1. Get the estimate details first
@@ -3961,70 +3961,72 @@ export class DatabaseStorage implements IStorage {
           })
           .where(eq(estimates.id, estimateId));
         
-        // 10. Create project allocations from estimate line items
-        const allLineItems = await tx.select()
-          .from(estimateLineItems)
-          .where(eq(estimateLineItems.estimateId, estimateId));
-        
-        // Import the week-date calculator helper
-        const { calculateWeekDates, dateToString } = await import('./utils/week-date-calculator.js');
-        
-        for (const lineItem of allLineItems) {
-          // Determine assignment mode based on what's set in the line item
-          let assignmentMode: 'person' | 'role' | 'resource' = 'resource';
-          let personId: string | null = null;
-          let roleId: string | null = null;
+        // 10. Create project allocations from estimate line items (if enabled)
+        if (copyAssignments) {
+          const allLineItems = await tx.select()
+            .from(estimateLineItems)
+            .where(eq(estimateLineItems.estimateId, estimateId));
           
-          if (lineItem.assignedUserId) {
-            assignmentMode = 'person';
-            personId = lineItem.assignedUserId;
-            roleId = lineItem.roleId; // Keep role for reference
-          } else if (lineItem.roleId) {
-            assignmentMode = 'role';
-            roleId = lineItem.roleId;
-          }
+          // Import the week-date calculator helper
+          const { calculateWeekDates, dateToString } = await import('./utils/week-date-calculator.js');
           
-          // Calculate dates if kickoff date provided
-          let startDate: string | null = null;
-          let endDate: string | null = null;
-          
-          if (kickoffDate && lineItem.week !== null) {
-            // Parse week as a number (e.g., "1" -> 1, "1-2" -> take first week)
-            let weekNumber = 0;
-            const weekStr = String(lineItem.week);
-            if (weekStr.includes('-')) {
-              // For ranges, use the starting week
-              weekNumber = parseInt(weekStr.split('-')[0]);
-            } else {
-              weekNumber = parseInt(weekStr);
+          for (const lineItem of allLineItems) {
+            // Determine assignment mode based on what's set in the line item
+            let assignmentMode: 'person' | 'role' | 'resource' = 'resource';
+            let personId: string | null = null;
+            let roleId: string | null = null;
+            
+            if (lineItem.assignedUserId) {
+              assignmentMode = 'person';
+              personId = lineItem.assignedUserId;
+              roleId = lineItem.roleId; // Keep role for reference
+            } else if (lineItem.roleId) {
+              assignmentMode = 'role';
+              roleId = lineItem.roleId;
             }
             
-            if (!isNaN(weekNumber)) {
-              const weekDates = calculateWeekDates(kickoffDate, weekNumber);
-              startDate = dateToString(weekDates.startDate);
-              endDate = dateToString(weekDates.endDate);
+            // Calculate dates if kickoff date provided
+            let startDate: string | null = null;
+            let endDate: string | null = null;
+            
+            if (kickoffDate && lineItem.week !== null) {
+              // Parse week as a number (e.g., "1" -> 1, "1-2" -> take first week)
+              let weekNumber = 0;
+              const weekStr = String(lineItem.week);
+              if (weekStr.includes('-')) {
+                // For ranges, use the starting week
+                weekNumber = parseInt(weekStr.split('-')[0]);
+              } else {
+                weekNumber = parseInt(weekStr);
+              }
+              
+              if (!isNaN(weekNumber)) {
+                const weekDates = calculateWeekDates(kickoffDate, weekNumber);
+                startDate = dateToString(weekDates.startDate);
+                endDate = dateToString(weekDates.endDate);
+              }
             }
+            
+            // Create project allocation
+            await tx.insert(projectAllocations).values({
+              projectId: project.id,
+              estimateLineItemId: lineItem.id,
+              pricingMode: assignmentMode || 'resource_name', // Map to correct field name
+              personId,
+              roleId,
+              resourceName: lineItem.resourceName || lineItem.workstream || 'Unassigned',
+              hours: lineItem.adjustedHours || '0', // Changed from allocatedHours to hours
+              billingRate: lineItem.rate, // Changed from rate to billingRate
+              costRate: lineItem.costRate,
+              plannedStartDate: startDate, // Changed from startDate to plannedStartDate
+              plannedEndDate: endDate, // Changed from endDate to plannedEndDate
+              weekNumber: lineItem.week || 0, // Ensure weekNumber is not null
+              notes: null, // Add notes field
+              projectActivityId: null, // Will be linked later when activities are assigned
+              projectMilestoneId: null,
+              projectWorkstreamId: null,
+            });
           }
-          
-          // Create project allocation
-          await tx.insert(projectAllocations).values({
-            projectId: project.id,
-            estimateLineItemId: lineItem.id,
-            pricingMode: assignmentMode || 'resource_name', // Map to correct field name
-            personId,
-            roleId,
-            resourceName: lineItem.resourceName || lineItem.workstream || 'Unassigned',
-            hours: lineItem.adjustedHours || '0', // Changed from allocatedHours to hours
-            billingRate: lineItem.rate, // Changed from rate to billingRate
-            costRate: lineItem.costRate,
-            plannedStartDate: startDate, // Changed from startDate to plannedStartDate
-            plannedEndDate: endDate, // Changed from endDate to plannedEndDate
-            weekNumber: lineItem.week || 0, // Ensure weekNumber is not null
-            notes: null, // Add notes field
-            projectActivityId: null, // Will be linked later when activities are assigned
-            projectMilestoneId: null,
-            projectWorkstreamId: null,
-          });
         }
         
         return project;

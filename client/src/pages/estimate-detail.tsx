@@ -77,6 +77,7 @@ function EstimateDetailContent() {
   const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [blockHourDescription, setBlockHourDescription] = useState("");
   const [shouldCreateProject, setShouldCreateProject] = useState(true);
+  const [shouldCopyAssignments, setShouldCopyAssignments] = useState(true);
   const [kickoffDate, setKickoffDate] = useState<string>("");
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [showPMWizard, setShowPMWizard] = useState(false);
@@ -477,10 +478,10 @@ function EstimateDetailContent() {
   }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars, estimate?.blockDescription]);
 
   const approveEstimateMutation = useMutation({
-    mutationFn: async ({ createProject, blockHourDescription, kickoffDate }: { createProject: boolean; blockHourDescription?: string; kickoffDate?: string }) => {
+    mutationFn: async ({ createProject, copyAssignments, blockHourDescription, kickoffDate }: { createProject: boolean; copyAssignments?: boolean; blockHourDescription?: string; kickoffDate?: string }) => {
       return apiRequest(`/api/estimates/${id}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ createProject, blockHourDescription, kickoffDate }),
+        body: JSON.stringify({ createProject, copyAssignments, blockHourDescription, kickoffDate }),
       });
     },
     onSuccess: (data) => {
@@ -488,6 +489,7 @@ function EstimateDetailContent() {
       setShowApprovalDialog(false);
       setBlockHourDescription("");
       setKickoffDate("");
+      setShouldCopyAssignments(true);
       if (data.project) {
         toast({ 
           title: estimate?.status === 'approved' ? "Project created" : "Estimate approved", 
@@ -3959,6 +3961,20 @@ function EstimateDetailContent() {
             <Label htmlFor="create-project">Create project from this estimate</Label>
           </div>
           
+          {shouldCreateProject && (
+            <div className="flex items-center space-x-2 ml-6">
+              <input
+                type="checkbox"
+                id="copy-assignments"
+                checked={shouldCopyAssignments}
+                onChange={(e) => setShouldCopyAssignments(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                data-testid="checkbox-copy-assignments"
+              />
+              <Label htmlFor="copy-assignments">Copy resource assignments from estimate</Label>
+            </div>
+          )}
+          
           {shouldCreateProject && estimate?.blockDollars && (
             <div>
               <Label htmlFor="block-description">
@@ -4033,6 +4049,7 @@ function EstimateDetailContent() {
             onClick={() => {
               approveEstimateMutation.mutate({ 
                 createProject: shouldCreateProject,
+                copyAssignments: shouldCopyAssignments,
                 blockHourDescription: blockHourDescription || undefined,
                 kickoffDate: kickoffDate || undefined
               });

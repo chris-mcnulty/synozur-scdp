@@ -157,7 +157,7 @@ const assignmentFormSchema = z.object({
   workstreamId: z.string().optional(),
   epicId: z.string().optional(),
   stageId: z.string().optional(),
-  hours: z.string().min(1, "Hours is required"),
+  hours: z.string().optional(),
   pricingMode: z.enum(["role", "person", "resource_name"]),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -958,7 +958,7 @@ export default function ProjectDetail() {
       const processedData = {
         ...data,
         projectId: id,
-        hours: parseFloat(data.hours),
+        hours: data.hours ? parseFloat(data.hours) : null,
         roleId: data.roleId || null,
         workstreamId: data.workstreamId || null,
         epicId: data.epicId || null,
