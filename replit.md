@@ -45,10 +45,18 @@ Development workflow: Dev server requires manual restart - do not attempt automa
     - "Activity" or "Description" for activity descriptions
     - "Hours" or "Base Hours" for hour values
     - Maintains backward compatibility with legacy formats
+  - **Assignment Copy on Approval**: Optional checkbox during estimate approval to copy resource assignments from estimate line items to project allocations
+    - Defaults to enabled (checked) for streamlined workflow
+    - Only visible when "Create project from this estimate" is selected
+    - Week-to-date conversion: Week numbers from estimates are converted to actual start/end dates based on project kickoff date
+    - Week 1 starts on kickoff date, each week spans 7 days
+    - Preserves hours, rates, roles, workstreams, and all assignment details
+    - When unchecked, only project structure (epics/stages) is copied without assignments
 - **Invoice Finalization**: Comprehensive review dialog with inline editing before finalization.
 - **Project Structure Transfer**: Automatic transfer of epics and stages from estimates to projects.
 - **Vocabulary Management**: Centralized management of terminology with organization defaults, client overrides, and project overrides, following a cascading hierarchy.
 - **Project Assignments**: Allows project managers to assign team members to projects with specific roles, hours, and workstreams; employees can view personal assignments.
+  - **Flexible Hours**: Hours field is optional in assignment forms (can be left blank if not yet determined)
 - **Estimate Archival**: Option to hide inactive estimates from the main list while preserving all data.
 - **Project Text Export**: Generates a comprehensive text summary of project data for reporting, with date range filtering and role-based authorization.
 
