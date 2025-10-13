@@ -41,6 +41,10 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 
 ### Core Features
 - **Estimate Management**: Includes Excel import/export (with resource assignment, various import modes), AI-driven text export for presentation generation (excluding financial data), and status-based locking to prevent unauthorized modifications.
+  - **CSV Import Flexibility**: Supports multiple column header formats for better compatibility:
+    - "Activity" or "Description" for activity descriptions
+    - "Hours" or "Base Hours" for hour values
+    - Maintains backward compatibility with legacy formats
 - **Invoice Finalization**: Comprehensive review dialog with inline editing before finalization.
 - **Project Structure Transfer**: Automatic transfer of epics and stages from estimates to projects.
 - **Vocabulary Management**: Centralized management of terminology with organization defaults, client overrides, and project overrides, following a cascading hierarchy.
