@@ -4709,10 +4709,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         else if (normalized.includes("stage")) colIndex.stage = idx;
         else if (normalized.includes("workstream")) colIndex.workstream = idx;
         else if (normalized.includes("week")) colIndex.week = idx;
-        else if (normalized.includes("description")) colIndex.description = idx;
+        else if (normalized.includes("description") || normalized === "activity") colIndex.description = idx;
         else if (normalized.includes("category")) colIndex.category = idx;
         else if (normalized.includes("resource")) colIndex.resource = idx;
-        else if (normalized.includes("base hours")) colIndex.baseHours = idx;
+        else if (normalized.includes("base hours") || normalized === "hours") colIndex.baseHours = idx;
         else if (normalized.includes("factor")) colIndex.factor = idx;
         else if (normalized === "rate") colIndex.rate = idx;
         // Intentionally skip "cost rate" and "total amount" - cost-sensitive fields not supported in CSV import
