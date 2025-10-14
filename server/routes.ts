@@ -2283,14 +2283,13 @@ export async function registerRoutes(app: Express): Promise<void> {
           status: projectAllocations.status,
           workstream: projectWorkstreams.name,
           weekNumber: projectAllocations.weekNumber,
-          taskDescription: estimateLineItems.description
+          taskDescription: projectAllocations.taskDescription
         })
         .from(projectAllocations)
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
-        .leftJoin(estimateLineItems, eq(projectAllocations.estimateLineItemId, estimateLineItems.id));
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
       
       const conditions: any[] = [];
       
@@ -2353,7 +2352,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             plannedEndDate: a.plannedEndDate,
             status: a.status,
             workstream: a.workstream,
-            weekNumber: a.weekNumber
+            weekNumber: a.weekNumber,
+            taskDescription: a.taskDescription
           })),
           summary: {
             totalAllocated,

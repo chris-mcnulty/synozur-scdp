@@ -4046,7 +4046,6 @@ export class DatabaseStorage implements IStorage {
         role: roles,
         activity: projectActivities,
         milestone: projectMilestones,
-        estimateLineItem: estimateLineItems,
       })
       .from(projectAllocations)
       .where(eq(projectAllocations.projectId, projectId))
@@ -4054,7 +4053,6 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
       .leftJoin(projectActivities, eq(projectAllocations.projectActivityId, projectActivities.id))
       .leftJoin(projectMilestones, eq(projectAllocations.projectMilestoneId, projectMilestones.id))
-      .leftJoin(estimateLineItems, eq(projectAllocations.estimateLineItemId, estimateLineItems.id))
       .orderBy(projectAllocations.plannedStartDate, projectAllocations.resourceName);
     
     return allocations.map(row => ({
@@ -4063,7 +4061,6 @@ export class DatabaseStorage implements IStorage {
       role: row.role,
       activity: row.activity,
       milestone: row.milestone,
-      taskDescription: row.estimateLineItem?.description || null,
     }));
   }
   
