@@ -2070,6 +2070,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           weekNumber: 1, // Default week number, could be parsed from file
           hours: String(row[5]),
           pricingMode,
+          rackRate: "0", // Default rack rate, will be calculated based on role/person
           plannedStartDate: parseDate(row[7]),
           plannedEndDate: parseDate(row[8]),
           resourceName: null, // Could be added if person not found
@@ -7652,7 +7653,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Revert estimate from approved to final
+  // Revert estimate from approved to draft (so it can be reapproved)
   app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       // Get the estimate to verify it's approved
@@ -7668,9 +7669,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
       
-      // Revert status to final
+      // Revert status to draft (so it can be edited and reapproved)
       const updatedEstimate = await storage.updateEstimate(req.params.id, { 
-        status: "final"
+        status: "draft"
       });
       res.json(updatedEstimate);
     } catch (error) {

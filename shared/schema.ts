@@ -344,6 +344,7 @@ export const projectAllocations = pgTable("project_allocations", {
   taskDescription: text("task_description"), // Description of the task/activity (copied from estimate or manually entered)
   hours: decimal("hours", { precision: 10, scale: 2 }).notNull(),
   pricingMode: text("pricing_mode").notNull(), // "role", "person", or "resource_name"
+  rackRate: decimal("rack_rate", { precision: 10, scale: 2 }).notNull(), // Snapshot of rate at time of assignment
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
   notes: text("notes"),

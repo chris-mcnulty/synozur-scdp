@@ -4031,6 +4031,7 @@ export class DatabaseStorage implements IStorage {
               roleId,
               resourceName: lineItem.resourceName || lineItem.workstream || 'Unassigned',
               hours: lineItem.adjustedHours || '0', // Changed from allocatedHours to hours
+              rackRate: lineItem.rate || '0', // Required field - use line item rate
               billingRate: lineItem.rate, // Changed from rate to billingRate
               costRate: lineItem.costRate,
               plannedStartDate: startDate, // Changed from startDate to plannedStartDate
