@@ -87,6 +87,18 @@ export default function ResourceManagementPage() {
     },
   });
 
+  // Fetch capacity data for summary metrics
+  const { data: capacityData } = useQuery({
+    queryKey: ["/api/capacity/timeline"],
+    queryFn: async () => {
+      const response = await fetch("/api/capacity/timeline", {
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Failed to fetch capacity data");
+      return response.json();
+    },
+  });
+
   // Fetch projects for filter
   const { data: projects = [] } = useQuery<Array<{ id: string; name: string }>>({
     queryKey: ["/api/projects"],
@@ -216,46 +228,52 @@ export default function ResourceManagementPage() {
           </div>
         </Card>
 
-        {/* Summary Cards */}
+        {/* Capacity Summary Cards */}
         <div className="grid grid-cols-4 gap-4">
           <Card className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Total Resources</span>
+              <Clock className="w-4 h-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">Total Capacity</span>
             </div>
-            <div className="text-2xl font-bold" data-testid="text-total-resources">
-              {groupedAssignments.length}
+            <div className="text-2xl font-bold" data-testid="text-total-capacity">
+              {capacityData?.summary?.totalCapacity?.toLocaleString() || '-'} hrs
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Weekly team capacity</p>
           </Card>
 
           <Card className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Total Hours Allocated</span>
+              <Users className="w-4 h-4 text-green-500" />
+              <span className="text-sm text-muted-foreground">Allocated Hours</span>
             </div>
-            <div className="text-2xl font-bold" data-testid="text-total-hours">
-              {groupedAssignments.reduce((sum, g) => sum + g.totalHours, 0).toLocaleString()}
+            <div className="text-2xl font-bold" data-testid="text-allocated-hours">
+              {capacityData?.summary?.totalAllocated?.toLocaleString() || '-'} hrs
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {capacityData?.summary?.averageUtilization ? `${capacityData.summary.averageUtilization}% utilization` : '-'}
+            </p>
           </Card>
 
           <Card className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
-              <span className="text-sm text-muted-foreground">Open Assignments</span>
+              <Calendar className="w-4 h-4 text-yellow-500" />
+              <span className="text-sm text-muted-foreground">Available Hours</span>
             </div>
-            <div className="text-2xl font-bold" data-testid="text-open-assignments">
-              {assignments.filter(a => a.status === "open").length}
+            <div className="text-2xl font-bold" data-testid="text-available-hours">
+              {capacityData?.summary?.totalAvailable?.toLocaleString() || '-'} hrs
             </div>
+            <p className="text-xs text-muted-foreground mt-1">Remaining capacity</p>
           </Card>
 
           <Card className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-4 h-4 text-green-500" />
-              <span className="text-sm text-muted-foreground">In Progress</span>
+              <AlertCircle className="w-4 h-4 text-red-500" />
+              <span className="text-sm text-muted-foreground">Over-Allocated</span>
             </div>
-            <div className="text-2xl font-bold" data-testid="text-in-progress">
-              {assignments.filter(a => a.status === "in_progress").length}
+            <div className="text-2xl font-bold" data-testid="text-over-allocated">
+              {capacityData?.summary?.overAllocatedCount || 0}
             </div>
+            <p className="text-xs text-muted-foreground mt-1">People over capacity</p>
           </Card>
         </div>
 
