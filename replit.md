@@ -39,6 +39,10 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 ### Document Storage
 - **Current**: Local file storage for expense receipts and metadata.
 
+### Data Integrity Rules
+- **Estimate Preservation**: Deleting a project NEVER deletes linked estimates. Estimates are preserved and unlinked (projectId set to NULL) so they can be revised and used to create new projects.
+- **Estimate-Project Workflow**: Users can create a project from an estimate, delete the project if needed, revise the estimate, and recreate a new project from the updated estimate without data loss.
+
 ### Core Features
 - **Estimate Management**: Includes Excel import/export (with resource assignment, various import modes), AI-driven text export for presentation generation (excluding financial data), and status-based locking to prevent unauthorized modifications.
   - **CSV Import Flexibility**: Supports multiple column header formats for better compatibility:

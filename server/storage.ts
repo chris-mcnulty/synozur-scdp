@@ -1131,25 +1131,11 @@ export class DatabaseStorage implements IStorage {
         // Delete invoice lines for this project
         await tx.delete(invoiceLines).where(eq(invoiceLines.projectId, id));
         
-        // Delete estimates for this project
-        const projectEstimates = await tx.select().from(estimates).where(eq(estimates.projectId, id));
-        for (const estimate of projectEstimates) {
-          // Delete estimate milestones
-          await tx.delete(estimateMilestones).where(eq(estimateMilestones.estimateId, estimate.id));
-          
-          // Delete estimate line items
-          await tx.delete(estimateLineItems).where(eq(estimateLineItems.estimateId, estimate.id));
-          
-          // Delete estimate stages and epics
-          const epics = await tx.select().from(estimateEpics).where(eq(estimateEpics.estimateId, estimate.id));
-          for (const epic of epics) {
-            await tx.delete(estimateStages).where(eq(estimateStages.epicId, epic.id));
-          }
-          await tx.delete(estimateEpics).where(eq(estimateEpics.estimateId, estimate.id));
-          
-          // Delete the estimate itself
-          await tx.delete(estimates).where(eq(estimates.id, estimate.id));
-        }
+        // Unlink estimates from this project (DO NOT DELETE - estimates should be preserved)
+        // Set projectId to NULL so the estimate can be reused or linked to a new project
+        await tx.update(estimates)
+          .set({ projectId: null })
+          .where(eq(estimates.projectId, id));
         
         // Finally delete the project itself
         await tx.delete(projects).where(eq(projects.id, id));
