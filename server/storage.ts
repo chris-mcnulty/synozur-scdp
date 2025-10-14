@@ -1128,6 +1128,9 @@ export class DatabaseStorage implements IStorage {
         // Delete change orders
         await tx.delete(changeOrders).where(eq(changeOrders.projectId, id));
         
+        // Delete SOWs for this project
+        await tx.delete(sows).where(eq(sows.projectId, id));
+        
         // Delete invoice lines for this project
         await tx.delete(invoiceLines).where(eq(invoiceLines.projectId, id));
         
@@ -3774,8 +3777,10 @@ export class DatabaseStorage implements IStorage {
         // Get all epics from the estimate
         const epics = await tx.select().from(estimateEpics).where(eq(estimateEpics.estimateId, estimateId)).orderBy(estimateEpics.order);
         
-        // Map to store epic ID mapping (estimate epic -> project epic)
+        // Map to store ID mappings (estimate -> project)
         const epicMapping = new Map<string, string>();
+        const stageMapping = new Map<string, string>();
+        const workstreamMapping = new Map<string, string>();
         
         for (const epic of epics) {
           // Calculate budget hours for epic from line items
@@ -3785,10 +3790,9 @@ export class DatabaseStorage implements IStorage {
           .from(estimateLineItems)
           .where(eq(estimateLineItems.epicId, epic.id));
           
-          // Create project epic
+          // Create project epic (independent copy, no link to estimate)
           const [projectEpic] = await tx.insert(projectEpics).values({
             projectId: project.id,
-            estimateEpicId: epic.id, // Link to original estimate epic
             name: epic.name,
             budgetHours: epicBudget?.totalHours?.toString() || '0',
             order: epic.order,
@@ -3807,11 +3811,10 @@ export class DatabaseStorage implements IStorage {
             .from(estimateLineItems)
             .where(eq(estimateLineItems.stageId, stage.id));
             
-            // Create project milestone from estimate stage
+            // Create project milestone from estimate stage (independent copy)
             await tx.insert(projectMilestones).values({
               projectId: project.id,
               projectEpicId: projectEpic.id,
-              estimateStageId: stage.id, // Link to original estimate stage
               name: stage.name,
               budgetHours: stageBudget?.totalHours?.toString() || '0',
               status: 'not-started',
@@ -3824,6 +3827,8 @@ export class DatabaseStorage implements IStorage {
               name: stage.name,
               order: stage.order,
             }).returning();
+            
+            stageMapping.set(stage.id, projectStage.id);
             
             // Get all activities for this stage
             const activities = await tx.select().from(estimateActivities).where(eq(estimateActivities.stageId, stage.id)).orderBy(estimateActivities.order);
@@ -3851,12 +3856,14 @@ export class DatabaseStorage implements IStorage {
         let workstreamOrder = 1;
         for (const { workstream, totalHours } of workstreams) {
           if (workstream) {
-            await tx.insert(projectWorkstreams).values({
+            const [projectWorkstream] = await tx.insert(projectWorkstreams).values({
               projectId: project.id,
               name: workstream,
               budgetHours: totalHours?.toString() || '0',
               order: workstreamOrder++,
-            });
+            }).returning();
+            
+            workstreamMapping.set(workstream, projectWorkstream.id);
           }
         }
         
@@ -3869,7 +3876,6 @@ export class DatabaseStorage implements IStorage {
         for (const estMilestone of estMilestones) {
           await tx.insert(projectMilestones).values({
             projectId: project.id,
-            estimateMilestoneId: estMilestone.id,
             name: estMilestone.name,
             description: estMilestone.description,
             isPaymentMilestone: true, // Mark as payment milestone
@@ -3993,6 +3999,11 @@ export class DatabaseStorage implements IStorage {
               }
             }
             
+            // Map epic, stage, and workstream from estimate to project
+            const projectEpicId = lineItem.epicId ? epicMapping.get(lineItem.epicId) || null : null;
+            const projectStageId = lineItem.stageId ? stageMapping.get(lineItem.stageId) || null : null;
+            const projectWorkstreamId = lineItem.workstream ? workstreamMapping.get(lineItem.workstream) || null : null;
+            
             // Create project allocation
             await tx.insert(projectAllocations).values({
               projectId: project.id,
@@ -4011,7 +4022,9 @@ export class DatabaseStorage implements IStorage {
               notes: null, // Add notes field
               projectActivityId: null, // Will be linked later when activities are assigned
               projectMilestoneId: null,
-              projectWorkstreamId: null,
+              projectWorkstreamId,
+              projectEpicId,
+              projectStageId,
             });
           }
         }
@@ -4032,6 +4045,9 @@ export class DatabaseStorage implements IStorage {
         role: roles,
         activity: projectActivities,
         milestone: projectMilestones,
+        workstream: projectWorkstreams,
+        epic: projectEpics,
+        stage: projectStages,
       })
       .from(projectAllocations)
       .where(eq(projectAllocations.projectId, projectId))
@@ -4039,6 +4055,9 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
       .leftJoin(projectActivities, eq(projectAllocations.projectActivityId, projectActivities.id))
       .leftJoin(projectMilestones, eq(projectAllocations.projectMilestoneId, projectMilestones.id))
+      .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+      .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+      .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
       .orderBy(projectAllocations.plannedStartDate, projectAllocations.resourceName);
     
     return allocations.map(row => ({
@@ -4047,6 +4066,9 @@ export class DatabaseStorage implements IStorage {
       role: row.role,
       activity: row.activity,
       milestone: row.milestone,
+      workstream: row.workstream,
+      epic: row.epic,
+      stage: row.stage,
     }));
   }
   

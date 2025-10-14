@@ -42,6 +42,7 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 ### Data Integrity Rules
 - **Estimate Preservation**: Deleting a project NEVER deletes linked estimates. Estimates are preserved and unlinked (projectId set to NULL) so they can be revised and used to create new projects.
 - **Estimate-Project Workflow**: Users can create a project from an estimate, delete the project if needed, revise the estimate, and recreate a new project from the updated estimate without data loss.
+- **Project Structure Independence**: When a project is created from an estimate, the structure (epics, stages, workstreams, milestones) is COPIED, not linked. This allows independent modification of project structure without affecting the original estimate. Projects and estimates maintain separate, independent structures after creation.
 
 ### Core Features
 - **Estimate Management**: Includes Excel import/export (with resource assignment, various import modes), AI-driven text export for presentation generation (excluding financial data), and status-based locking to prevent unauthorized modifications.

@@ -333,6 +333,8 @@ export const projectAllocations = pgTable("project_allocations", {
   projectActivityId: varchar("project_activity_id").references(() => projectActivities.id),
   projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id),
   projectWorkstreamId: varchar("project_workstream_id").references(() => projectWorkstreams.id),
+  projectEpicId: varchar("project_epic_id").references(() => projectEpics.id, { onDelete: 'set null' }),
+  projectStageId: varchar("project_stage_id").references(() => projectStages.id, { onDelete: 'set null' }),
   weekNumber: integer("week_number").notNull(), // Original week number from estimate
   plannedStartDate: date("planned_start_date"), // Calculated from kickoff date
   plannedEndDate: date("planned_end_date"), // End of week date

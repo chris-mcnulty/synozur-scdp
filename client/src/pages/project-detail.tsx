@@ -154,9 +154,9 @@ type EpicFormData = z.infer<typeof epicFormSchema>;
 const assignmentFormSchema = z.object({
   personId: z.string().min(1, "Person is required"),
   roleId: z.string().optional(),
-  workstreamId: z.string().optional(),
-  epicId: z.string().optional(),
-  stageId: z.string().optional(),
+  projectWorkstreamId: z.string().optional(),
+  projectEpicId: z.string().optional(),
+  projectStageId: z.string().optional(),
   hours: z.string().optional(),
   pricingMode: z.enum(["role", "person", "resource_name"]),
   startDate: z.string().optional(),
@@ -960,11 +960,11 @@ export default function ProjectDetail() {
         projectId: id,
         hours: data.hours ? parseFloat(data.hours) : null,
         roleId: data.roleId || null,
-        workstreamId: data.workstreamId || null,
-        epicId: data.epicId || null,
-        stageId: data.stageId || null,
-        startDate: data.startDate || null,
-        endDate: data.endDate || null,
+        projectWorkstreamId: data.projectWorkstreamId || null,
+        projectEpicId: data.projectEpicId || null,
+        projectStageId: data.projectStageId || null,
+        plannedStartDate: data.startDate || null,
+        plannedEndDate: data.endDate || null,
         taskDescription: data.taskDescription || null,
         notes: data.notes || null,
         status: 'open'
@@ -2177,26 +2177,26 @@ export default function ProjectDetail() {
                             </div>
                           </TableCell>
                           <TableCell>{allocation.role?.name || '—'}</TableCell>
-                          <TableCell>{allocation.workstream || '—'}</TableCell>
+                          <TableCell>{allocation.workstream?.name || '—'}</TableCell>
                           <TableCell>
-                            {allocation.epic && allocation.stage ? (
+                            {allocation.epic || allocation.stage ? (
                               <span className="text-sm">
-                                {allocation.epic.name} / {allocation.stage.name}
+                                {allocation.epic?.name || '—'} / {allocation.stage?.name || '—'}
                               </span>
                             ) : '—'}
                           </TableCell>
                           <TableCell className="text-right">
-                            {parseFloat(allocation.allocatedHours || '0').toFixed(1)}
+                            {parseFloat(allocation.hours || '0').toFixed(1)}
                           </TableCell>
                           <TableCell>
-                            {allocation.startDate ? 
-                              format(new Date(allocation.startDate), "MMM d, yyyy") : 
+                            {allocation.plannedStartDate ? 
+                              format(new Date(allocation.plannedStartDate), "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
                           <TableCell>
-                            {allocation.endDate ? 
-                              format(new Date(allocation.endDate), "MMM d, yyyy") : 
+                            {allocation.plannedEndDate ? 
+                              format(new Date(allocation.plannedEndDate), "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
@@ -4207,9 +4207,9 @@ export default function ProjectDetail() {
               const data: AssignmentFormData = {
                 personId: formData.get('personId') as string,
                 roleId: roleIdValue === 'none' ? undefined : roleIdValue || undefined,
-                workstreamId: workstreamIdValue === 'none' ? undefined : workstreamIdValue || undefined,
-                epicId: epicIdValue === 'none' ? undefined : epicIdValue || undefined,
-                stageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
+                projectWorkstreamId: workstreamIdValue === 'none' ? undefined : workstreamIdValue || undefined,
+                projectEpicId: epicIdValue === 'none' ? undefined : epicIdValue || undefined,
+                projectStageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
                 hours: formData.get('hours') as string,
                 pricingMode: formData.get('pricingMode') as "role" | "person" | "resource_name",
                 startDate: formData.get('startDate') as string || undefined,
@@ -4286,6 +4286,23 @@ export default function ProjectDetail() {
                       {epics.map((epic: any) => (
                         <SelectItem key={epic.id} value={epic.id}>
                           {epic.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="stageId">Stage</Label>
+                  <Select name="stageId" defaultValue={editingAssignment?.projectStageId || "none"}>
+                    <SelectTrigger data-testid="select-stage">
+                      <SelectValue placeholder="Select a stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {stages.map((stage: any) => (
+                        <SelectItem key={stage.id} value={stage.id}>
+                          {stage.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
