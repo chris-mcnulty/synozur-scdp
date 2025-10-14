@@ -278,6 +278,7 @@ export default function ResourceManagementPage() {
       
       projectsInWeek.push({
         name: alloc.projectName,
+        taskDescription: alloc.taskDescription || null,
         hours: Math.round(proratedHours * 10) / 10, // Round to 1 decimal
         totalHours: alloc.hours ?? 0,
         status: alloc.status,
@@ -621,6 +622,11 @@ export default function ResourceManagementPage() {
                                         {weekUtil.projects.map((proj: any, pIdx: number) => (
                                           <div key={pIdx} className="text-xs">
                                             <div className="font-medium">{proj.name}</div>
+                                            {proj.taskDescription && (
+                                              <div className="text-xs italic text-muted-foreground/80">
+                                                Task: {proj.taskDescription}
+                                              </div>
+                                            )}
                                             <div className="text-muted-foreground">
                                               {proj.hours}h this week
                                               {proj.totalHours > 0 && ` (${proj.totalHours}h total)`} - {proj.status}
