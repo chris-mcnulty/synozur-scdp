@@ -2804,14 +2804,18 @@ export async function registerRoutes(app: Express): Promise<void> {
           textOutput += `${"-".repeat(80)}\n`;
           
           uniqueAllocations.forEach((allocation: any, index: number) => {
-            textOutput += `${index + 1}. ${allocation.personName || 'Unknown'}`;
-            if (allocation.roleName) {
-              textOutput += ` - ${allocation.roleName}`;
+            const personName = allocation.person?.name || allocation.resourceName || 'Unassigned';
+            textOutput += `${index + 1}. ${personName}`;
+            if (allocation.role?.name) {
+              textOutput += ` - ${allocation.role.name}`;
             }
             textOutput += `\n`;
             
-            if (allocation.workstreamName) {
-              textOutput += `   ${workstreamLabel}: ${allocation.workstreamName}\n`;
+            if (allocation.workstream?.name) {
+              textOutput += `   ${workstreamLabel}: ${allocation.workstream.name}\n`;
+            }
+            if (allocation.taskDescription) {
+              textOutput += `   Task: ${allocation.taskDescription}\n`;
             }
             if (allocation.hours) {
               textOutput += `   Allocated Hours: ${allocation.hours}\n`;
@@ -2819,8 +2823,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             if (allocation.status) {
               textOutput += `   Status: ${allocation.status}\n`;
             }
-            if (allocation.startDate || allocation.endDate) {
-              textOutput += `   Period: ${allocation.startDate || 'Start'} to ${allocation.endDate || 'End'}\n`;
+            if (allocation.plannedStartDate || allocation.plannedEndDate) {
+              textOutput += `   Period: ${allocation.plannedStartDate || 'Start'} to ${allocation.plannedEndDate || 'End'}\n`;
             }
             if (allocation.notes) {
               textOutput += `   Notes: ${allocation.notes}\n`;

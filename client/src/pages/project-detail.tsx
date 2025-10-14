@@ -1856,9 +1856,13 @@ export default function ProjectDetail() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {epics.map((epic: any) => {
-                          const epicMilestones = milestones.filter((m: any) => m.projectEpicId === epic.id);
-                          const epicStages = stages.filter((s: any) => s.epicId === epic.id);
+                        {[...epics].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((epic: any) => {
+                          const epicMilestones = [...milestones]
+                            .filter((m: any) => m.projectEpicId === epic.id)
+                            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+                          const epicStages = [...stages]
+                            .filter((s: any) => s.epicId === epic.id)
+                            .sort((a: any, b: any) => a.name.localeCompare(b.name));
                           return (
                             <div key={epic.id} className="border rounded-lg p-4" data-testid={`epic-card-${epic.id}`}>
                               <div className="flex items-start justify-between mb-3">
@@ -1959,7 +1963,7 @@ export default function ProjectDetail() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {workstreams.map((workstream: any) => {
+                        {[...workstreams].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((workstream: any) => {
                           const variance = (workstream.budgetHours || 0) - (workstream.actualHours || 0);
                           return (
                             <div key={workstream.id} className="border rounded-lg p-4" data-testid={`workstream-card-${workstream.id}`}>
@@ -2104,9 +2108,33 @@ export default function ProjectDetail() {
                   </Button>
                   <Button 
                     variant="outline"
-                    onClick={() => {
-                      // Download CSV file
-                      window.location.href = `/api/projects/${id}/allocations/export`;
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`/api/projects/${id}/allocations/export`, {
+                          credentials: 'include',
+                          headers: {
+                            'X-Session-Id': localStorage.getItem('sessionId') || ''
+                          }
+                        });
+                        
+                        if (!response.ok) throw new Error('Export failed');
+                        
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `project-${id}-allocations.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      } catch (error) {
+                        toast({
+                          title: "Export failed",
+                          description: "Failed to export allocations",
+                          variant: "destructive"
+                        });
+                      }
                     }}
                     data-testid="button-export-allocations"
                   >
