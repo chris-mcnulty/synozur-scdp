@@ -110,3 +110,32 @@ Development workflow: Dev server requires manual restart - do not attempt automa
   - Respects pricing visibility permissions (amounts masked with `***` for users without pricing access)
   - Shows loading and empty states
   - Consistent UI/UX with billing page patterns
+
+### Resource Management & Capacity Planning
+- **Dual View System**: Toggle between List and Timeline views for team capacity visualization
+- **Capacity Summary Dashboard**: Four KPI cards showing:
+  - Total Capacity: Aggregate weekly team hours (40hrs/person default)
+  - Allocated Hours: Total hours assigned across all projects with utilization percentage
+  - Available Hours: Remaining capacity for new work
+  - Over-Allocated Count: Number of people exceeding 100% utilization
+- **Timeline Grid View** (`/resource-management`):
+  - **Visual Layout**: 12-week scrollable grid with people on Y-axis, weeks on X-axis (Monday start)
+  - **Color-Coded Cells**: Utilization-based colors (gray=none, yellow=under 70%, green=70-100%, red=over 100%)
+  - **Prorated Hours**: Multi-week allocations correctly distributed across weeks using calendar day proration
+  - **Interactive Tooltips**: Hover to see project breakdown, hours per project, and total utilization for each week
+  - **Current Week Indicator**: Visual ring highlight on current week column
+- **Conflict Detection**:
+  - Automatically detects when a person has multiple overlapping project assignments in the same week
+  - Visual indicators: Diagonal stripe pattern, orange warning icon, conflict badge in tooltip
+  - Shows count of overlapping projects in hover tooltip
+- **Enhanced Filters** (Timeline View):
+  - **Date Navigation**: Previous/Next buttons to scroll through time periods (4-week jumps), "Today" button to reset
+  - **Utilization Threshold**: Filter people by minimum utilization percentage (0%, 50%, 70%, 85%, 100%+)
+  - **Conflicts Only**: Checkbox to show only people with schedule conflicts
+  - **Person Filter**: Available in both List and Timeline views
+- **Capacity API** (`GET /api/capacity/timeline`):
+  - Fetches all employees with their project allocations
+  - Calculates per-person utilization metrics and over-allocation status
+  - Supports optional query parameters: `startDate`, `endDate`, `personId`, `utilizationThreshold`
+  - Returns aggregated summary metrics for dashboard cards
+- **List View**: Collapsible person-grouped assignment list with project details, hours, dates, and status badges

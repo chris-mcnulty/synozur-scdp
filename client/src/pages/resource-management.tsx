@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Calendar, Clock, Users, Filter, ChevronDown, ChevronRight, Edit2, AlertCircle } from "lucide-react";
+import { Calendar, Clock, Users, Filter, ChevronDown, ChevronRight, ChevronLeft, Edit2, AlertCircle } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -75,6 +75,9 @@ export default function ResourceManagementPage() {
   const [filterProject, setFilterProject] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPerson, setFilterPerson] = useState<string>("all");
+  const [utilizationThreshold, setUtilizationThreshold] = useState<number>(0);
+  const [showConflictsOnly, setShowConflictsOnly] = useState<boolean>(false);
+  const [timelineWeeksOffset, setTimelineWeeksOffset] = useState<number>(0); // For timeline date range
 
   // Fetch all assignments
   const { data: assignments = [], isLoading } = useQuery<Assignment[]>({
@@ -143,6 +146,60 @@ export default function ResourceManagementPage() {
     setExpandedPeople(newExpanded);
   };
 
+  const exportTimelineData = () => {
+    if (!capacityData?.capacityByPerson || timelineWeeks.length === 0) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    // Build CSV header
+    const weekHeaders = timelineWeeks.map(week => format(week.start, "MMM d")).join(',');
+    const csvRows = ['Person,Email,Avg Utilization,' + weekHeaders];
+
+    // Build CSV rows with weekly data
+    capacityData.capacityByPerson.forEach((person: any) => {
+      // Apply same filters as timeline view
+      if (filterPerson !== "all" && person.person.id !== filterPerson) return;
+      if (utilizationThreshold > 0 && person.summary.utilizationRate < utilizationThreshold) return;
+      if (showConflictsOnly) {
+        const hasAnyConflict = timelineWeeks.some(week => {
+          const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+          return weekUtil.hasConflict;
+        });
+        if (!hasAnyConflict) return;
+      }
+
+      const weekValues = timelineWeeks.map(week => {
+        const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+        return `${weekUtil.hours}h (${weekUtil.rate}%)${weekUtil.hasConflict ? '*' : ''}`;
+      });
+
+      csvRows.push(
+        `"${person.person.name}","${person.person.email}",${person.summary.utilizationRate}%,${weekValues.join(',')}`
+      );
+    });
+
+    // Add legend
+    csvRows.push('');
+    csvRows.push('Legend:');
+    csvRows.push('* = Conflict (multiple overlapping projects)');
+
+    // Create and download CSV file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `capacity-timeline-${format(new Date(), "yyyy-MM-dd")}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({ title: "Timeline exported successfully" });
+  };
+
   const getStatusBadge = (status: string | null) => {
     const statusConfig = {
       open: { variant: "secondary", label: "Open" },
@@ -160,19 +217,20 @@ export default function ResourceManagementPage() {
     const today = new Date();
     const weeks = [];
     
-    // Generate 12 weeks: 4 weeks past, current week, 7 weeks future
-    for (let i = -4; i <= 7; i++) {
+    // Generate 12 weeks with offset: 4 weeks past, current week, 7 weeks future
+    const baseOffset = -4 + timelineWeeksOffset;
+    for (let i = baseOffset; i <= baseOffset + 11; i++) {
       const weekStart = startOfWeek(addWeeks(today, i), { weekStartsOn: 1 }); // Monday start
       const weekEnd = endOfWeek(addWeeks(today, i), { weekStartsOn: 1 });
       weeks.push({
         start: weekStart,
         end: weekEnd,
         label: format(weekStart, "MMM d"),
-        isCurrentWeek: i === 0
+        isCurrentWeek: i === 0 && timelineWeeksOffset === 0
       });
     }
     return weeks;
-  }, []);
+  }, [timelineWeeksOffset]);
 
   const getUtilizationColor = (rate: number) => {
     if (rate === 0) return "bg-gray-100 dark:bg-gray-800";
@@ -182,7 +240,7 @@ export default function ResourceManagementPage() {
   };
 
   const calculateWeeklyUtilization = (person: any, weekStart: Date, weekEnd: Date) => {
-    if (!person.allocations) return { hours: 0, rate: 0, projects: [] };
+    if (!person.allocations) return { hours: 0, rate: 0, projects: [], hasConflict: false };
     
     const weekEndDay = startOfDay(endOfWeek(weekStart, { weekStartsOn: 1 }));
     
@@ -221,9 +279,14 @@ export default function ResourceManagementPage() {
         name: alloc.projectName,
         hours: Math.round(proratedHours * 10) / 10, // Round to 1 decimal
         totalHours: alloc.hours ?? 0,
-        status: alloc.status
+        status: alloc.status,
+        startDate: alloc.plannedStartDate,
+        endDate: alloc.plannedEndDate
       });
     });
+
+    // Detect conflicts: multiple projects active in the same week
+    const hasConflict = activeAllocations.length > 1;
 
     const capacity = person.person?.weeklyCapacity || 40;
     const rate = capacity > 0 ? Math.round((totalWeekHours / capacity) * 100) : 0;
@@ -231,7 +294,8 @@ export default function ResourceManagementPage() {
     return {
       hours: Math.round(totalWeekHours * 10) / 10, // Round to 1 decimal
       rate,
-      projects: projectsInWeek
+      projects: projectsInWeek,
+      hasConflict
     };
   };
 
@@ -262,30 +326,27 @@ export default function ResourceManagementPage() {
                 Timeline
               </Button>
             </div>
-            <Button variant="outline" data-testid="button-export-assignments">
-              Export Assignments
-            </Button>
+            {view === "timeline" ? (
+              <Button 
+                variant="outline" 
+                onClick={exportTimelineData}
+                data-testid="button-export-timeline"
+              >
+                Export Timeline
+              </Button>
+            ) : (
+              <Button variant="outline" data-testid="button-export-assignments">
+                Export Assignments
+              </Button>
+            )}
           </div>
         </div>
 
         {/* Filters */}
         <Card className="p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <Filter className="w-4 h-4 text-muted-foreground" />
-            <Select value={filterProject} onValueChange={setFilterProject}>
-              <SelectTrigger className="w-[200px]" data-testid="select-filter-project">
-                <SelectValue placeholder="All Projects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Projects</SelectItem>
-                {projects.map((project: any) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
+            
             <Select value={filterPerson} onValueChange={setFilterPerson}>
               <SelectTrigger className="w-[200px]" data-testid="select-filter-person">
                 <SelectValue placeholder="All People" />
@@ -300,30 +361,114 @@ export default function ResourceManagementPage() {
               </SelectContent>
             </Select>
 
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-[150px]" data-testid="select-filter-status">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="in_progress">In Progress</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
+            {view === "list" && (
+              <>
+                <Select value={filterProject} onValueChange={setFilterProject}>
+                  <SelectTrigger className="w-[200px]" data-testid="select-filter-project">
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((project: any) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setFilterProject("all");
-                setFilterPerson("all");
-                setFilterStatus("all");
-              }}
-              data-testid="button-clear-filters"
-            >
-              Clear Filters
-            </Button>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-[150px]" data-testid="select-filter-status">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setFilterProject("all");
+                    setFilterPerson("all");
+                    setFilterStatus("all");
+                  }}
+                  data-testid="button-clear-filters"
+                >
+                  Clear Filters
+                </Button>
+              </>
+            )}
+
+            {view === "timeline" && (
+              <>
+                <div className="flex items-center gap-2 pl-4 border-l">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTimelineWeeksOffset(timelineWeeksOffset - 4)}
+                    data-testid="button-timeline-prev"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground min-w-[120px] text-center">
+                    {format(timelineWeeks[0]?.start || new Date(), "MMM d")} - {format(timelineWeeks[11]?.start || new Date(), "MMM d")}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTimelineWeeksOffset(timelineWeeksOffset + 4)}
+                    data-testid="button-timeline-next"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                  {timelineWeeksOffset !== 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setTimelineWeeksOffset(0)}
+                      data-testid="button-timeline-today"
+                    >
+                      Today
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pl-4 border-l">
+                  <span className="text-sm text-muted-foreground">Min Utilization:</span>
+                  <Select 
+                    value={utilizationThreshold.toString()} 
+                    onValueChange={(v) => setUtilizationThreshold(parseInt(v))}
+                  >
+                    <SelectTrigger className="w-[120px]" data-testid="select-utilization-threshold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">All (0%)</SelectItem>
+                      <SelectItem value="50">50%+</SelectItem>
+                      <SelectItem value="70">70%+</SelectItem>
+                      <SelectItem value="85">85%+</SelectItem>
+                      <SelectItem value="100">100%+</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer pl-4 border-l">
+                  <input
+                    type="checkbox"
+                    checked={showConflictsOnly}
+                    onChange={(e) => setShowConflictsOnly(e.target.checked)}
+                    className="rounded border-gray-300"
+                    data-testid="checkbox-conflicts-only"
+                  />
+                  <span className="text-sm">Conflicts only</span>
+                </label>
+              </>
+            )}
           </div>
         </Card>
 
@@ -418,6 +563,18 @@ export default function ResourceManagementPage() {
                     // Apply person filter
                     if (filterPerson !== "all" && person.person.id !== filterPerson) return null;
                     
+                    // Apply utilization threshold filter
+                    if (utilizationThreshold > 0 && person.summary.utilizationRate < utilizationThreshold) return null;
+                    
+                    // Apply conflicts-only filter
+                    if (showConflictsOnly) {
+                      const hasAnyConflict = timelineWeeks.some(week => {
+                        const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+                        return weekUtil.hasConflict;
+                      });
+                      if (!hasAnyConflict) return null;
+                    }
+                    
                     return (
                       <div key={person.person.id} className="flex border-b hover:bg-accent/30" data-testid={`timeline-row-${person.person.id}`}>
                         <div className="w-64 p-3 border-r">
@@ -435,19 +592,30 @@ export default function ResourceManagementPage() {
                               className={cn(
                                 "w-24 p-2 border-r text-center relative group cursor-pointer",
                                 getUtilizationColor(weekUtil.rate),
-                                week.isCurrentWeek && "ring-2 ring-primary/20 ring-inset"
+                                week.isCurrentWeek && "ring-2 ring-primary/20 ring-inset",
+                                weekUtil.hasConflict && "bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(0,0,0,0.1)_5px,rgba(0,0,0,0.1)_10px)]"
                               )}
                               data-testid={`cell-${person.person.id}-week-${idx}`}
                             >
                               {weekUtil.hours > 0 && (
                                 <>
-                                  <div className="text-sm font-medium">{weekUtil.hours}h</div>
+                                  <div className="flex items-center justify-center gap-1">
+                                    <div className="text-sm font-medium">{weekUtil.hours}h</div>
+                                    {weekUtil.hasConflict && (
+                                      <AlertCircle className="w-3 h-3 text-orange-600" data-testid={`icon-conflict-${person.person.id}-week-${idx}`} />
+                                    )}
+                                  </div>
                                   <div className="text-xs text-muted-foreground">{weekUtil.rate}%</div>
                                   
                                   {/* Tooltip on hover */}
                                   {weekUtil.projects.length > 0 && (
                                     <div className="absolute hidden group-hover:block z-20 bg-popover text-popover-foreground border rounded-md shadow-lg p-3 left-0 top-full mt-1 min-w-[220px]">
-                                      <div className="text-xs font-semibold mb-2">Week of {week.label}</div>
+                                      <div className="text-xs font-semibold mb-2">
+                                        Week of {week.label}
+                                        {weekUtil.hasConflict && (
+                                          <span className="ml-2 text-orange-600">⚠️ Conflict</span>
+                                        )}
+                                      </div>
                                       <div className="space-y-1">
                                         {weekUtil.projects.map((proj: any, pIdx: number) => (
                                           <div key={pIdx} className="text-xs">
@@ -459,6 +627,11 @@ export default function ResourceManagementPage() {
                                           </div>
                                         ))}
                                       </div>
+                                      {weekUtil.hasConflict && (
+                                        <div className="mt-2 pt-2 border-t text-xs text-orange-600">
+                                          ⚠️ {weekUtil.projects.length} overlapping projects
+                                        </div>
+                                      )}
                                       <div className="mt-2 pt-2 border-t text-xs font-semibold">
                                         Total: {weekUtil.hours}h ({weekUtil.rate}%)
                                       </div>
@@ -477,23 +650,29 @@ export default function ResourceManagementPage() {
 
               {/* Legend */}
               <div className="p-4 border-t bg-muted/30">
-                <div className="flex items-center gap-6 text-xs">
-                  <span className="font-semibold">Utilization:</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-gray-100 dark:bg-gray-800 border"></div>
-                    <span>No allocation</span>
+                <div className="flex items-center gap-6 text-xs flex-wrap">
+                  <div className="flex items-center gap-6">
+                    <span className="font-semibold">Utilization:</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-gray-100 dark:bg-gray-800 border"></div>
+                      <span>No allocation</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300"></div>
+                      <span>Under ({"<"}70%)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-green-100 dark:bg-green-900/30 border border-green-300"></div>
+                      <span>Optimal (70-100%)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-red-100 dark:bg-red-900/30 border border-red-300"></div>
+                      <span>Over ({">"}100%)</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300"></div>
-                    <span>Under ({"<"}70%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-green-100 dark:bg-green-900/30 border border-green-300"></div>
-                    <span>Optimal (70-100%)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-red-100 dark:bg-red-900/30 border border-red-300"></div>
-                    <span>Over ({">"}100%)</span>
+                  <div className="flex items-center gap-2 pl-6 border-l">
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                    <span>Conflict: Multiple overlapping projects</span>
                   </div>
                 </div>
               </div>
