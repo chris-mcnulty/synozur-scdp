@@ -150,3 +150,19 @@ Development workflow: Dev server requires manual restart - do not attempt automa
   - Supports optional query parameters: `startDate`, `endDate`, `personId`, `utilizationThreshold`
   - Returns aggregated summary metrics for dashboard cards
 - **List View**: Collapsible person-grouped assignment list with project details, hours, dates, and status badges
+
+### Recent Bug Fixes & Improvements (October 2025)
+- **CSV Export Authentication**: Fixed CSV export downloads using proper `fetch()` with credentials and session headers instead of `window.location.href`
+  - Uses `credentials: 'include'` and `X-Session-Id` header for session-based authentication
+  - Downloads file as blob with programmatic trigger
+  - Added error handling with toast notifications
+- **Text Export Field Access**: Corrected allocation field access in project text export
+  - Changed from flat fields to nested object access: `allocation.person?.name`, `allocation.role?.name`, `allocation.workstream?.name`
+  - Fixed date fields from `startDate/endDate` to `plannedStartDate/plannedEndDate`
+  - Added `taskDescription` to output for better context
+- **Alphabetical Sorting**: Project structure elements now sort alphabetically by name
+  - Applies to: Epics, Stages, Milestones, and Workstreams in project detail view
+  - Arrays properly cloned before sorting (`[...array].sort()`) to avoid React Query cache mutation
+- **Development Login Simplified**: Microsoft SSO login button now hidden in development environment
+  - SSO option only appears in production when Azure AD is configured
+  - Development environment shows only email/password login for simpler testing

@@ -154,7 +154,7 @@ export default function Login() {
           
           {/* TODO: Re-enable demo login for multi-tenant version with proper demo accounts (see replit.md backlog) */}
           
-          {(ssoStatus as any)?.configured === true && (
+          {!isDevelopment && (ssoStatus as any)?.configured === true && (
             <>
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
@@ -195,12 +195,14 @@ export default function Login() {
             </>
           )}
           
-          <p className="text-center text-sm text-muted-foreground mt-4">
-            {(ssoStatus as any)?.configured === true
-              ? "Use your corporate Microsoft account to sign in"
-              : "For production SSO, configure Azure AD environment variables"
-            }
-          </p>
+          {!isDevelopment && (
+            <p className="text-center text-sm text-muted-foreground mt-4">
+              {(ssoStatus as any)?.configured === true
+                ? "Use your corporate Microsoft account to sign in"
+                : "For production SSO, configure Azure AD environment variables"
+              }
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
