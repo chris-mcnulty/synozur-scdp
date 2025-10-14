@@ -180,10 +180,39 @@ export default function ResourceManagementPage() {
       );
     });
 
+    // Add detailed breakdown section with task descriptions
+    csvRows.push('');
+    csvRows.push('DETAILED BREAKDOWN BY PERSON AND WEEK');
+    csvRows.push('Person,Email,Week,Project,Task/Activity,Hours,Status');
+    
+    capacityData.capacityByPerson.forEach((person: any) => {
+      // Apply same filters
+      if (filterPerson !== "all" && person.person.id !== filterPerson) return;
+      if (utilizationThreshold > 0 && person.summary.utilizationRate < utilizationThreshold) return;
+      if (showConflictsOnly) {
+        const hasAnyConflict = timelineWeeks.some(week => {
+          const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+          return weekUtil.hasConflict;
+        });
+        if (!hasAnyConflict) return;
+      }
+
+      timelineWeeks.forEach(week => {
+        const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+        if (weekUtil.projects.length > 0) {
+          weekUtil.projects.forEach((proj: any) => {
+            csvRows.push(
+              `"${person.person.name}","${person.person.email}","${week.label}","${proj.name}","${proj.taskDescription || 'N/A'}",${proj.hours},${proj.status || 'N/A'}`
+            );
+          });
+        }
+      });
+    });
+
     // Add legend
     csvRows.push('');
-    csvRows.push('Legend:');
-    csvRows.push('* = Conflict (multiple overlapping projects)');
+    csvRows.push('LEGEND');
+    csvRows.push('* = Conflict (multiple overlapping projects in the same week)');
 
     // Create and download CSV file
     const csvContent = csvRows.join('\n');
