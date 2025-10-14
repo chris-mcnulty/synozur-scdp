@@ -161,6 +161,7 @@ const assignmentFormSchema = z.object({
   pricingMode: z.enum(["role", "person", "resource_name"]),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  taskDescription: z.string().optional(),
   notes: z.string().optional()
 });
 
@@ -965,6 +966,7 @@ export default function ProjectDetail() {
         stageId: data.stageId || null,
         startDate: data.startDate || null,
         endDate: data.endDate || null,
+        taskDescription: data.taskDescription || null,
         notes: data.notes || null,
         status: 'open'
       };
@@ -1036,6 +1038,7 @@ export default function ProjectDetail() {
         workstreamId: data.workstreamId === 'none' ? null : data.workstreamId,
         epicId: data.epicId === 'none' ? null : data.epicId,
         stageId: data.stageId === 'none' ? null : data.stageId,
+        taskDescription: data.taskDescription || null,
       };
       return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
         method: "PUT",
@@ -2133,6 +2136,7 @@ export default function ProjectDetail() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Resource</TableHead>
+                        <TableHead>Task/Activity</TableHead>
                         <TableHead>Role</TableHead>
                         <TableHead>Workstream</TableHead>
                         <TableHead>Epic/Stage</TableHead>
@@ -2165,6 +2169,13 @@ export default function ProjectDetail() {
                                 <Badge variant="secondary" className="ml-1">Unmatched</Badge>
                               </div>
                             )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {allocation.taskDescription || (
+                                <span className="text-muted-foreground italic">No task specified</span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>{allocation.role?.name || '—'}</TableCell>
                           <TableCell>{allocation.workstream || '—'}</TableCell>
@@ -4204,6 +4215,7 @@ export default function ProjectDetail() {
                 pricingMode: formData.get('pricingMode') as "role" | "person" | "resource_name",
                 startDate: formData.get('startDate') as string || undefined,
                 endDate: formData.get('endDate') as string || undefined,
+                taskDescription: formData.get('taskDescription') as string || undefined,
                 notes: formData.get('notes') as string || undefined
               };
               
@@ -4327,6 +4339,16 @@ export default function ProjectDetail() {
                     data-testid="input-end-date"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="taskDescription">Task/Activity Description</Label>
+                <Input 
+                  name="taskDescription"
+                  placeholder="e.g., UI Design, Backend Development, Testing..."
+                  defaultValue={editingAssignment?.taskDescription}
+                  data-testid="input-task-description"
+                />
               </div>
 
               <div className="space-y-2">

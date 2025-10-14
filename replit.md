@@ -57,7 +57,12 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 - **Vocabulary Management**: Centralized management of terminology with organization defaults, client overrides, and project overrides, following a cascading hierarchy.
 - **Project Assignments**: Allows project managers to assign team members to projects with specific roles, hours, and workstreams; employees can view personal assignments.
   - **Flexible Hours**: Hours field is optional in assignment forms (can be left blank if not yet determined)
-  - **Task/Activity Tracking**: When assignments are copied from estimate line items during project approval, the original task description is preserved and displayed in assignment views, tooltips, and exports, providing clear context on what specific work each person is assigned to
+  - **Task/Activity Tracking**: 
+    - Direct `taskDescription` field on project allocations supports both estimate-derived and manually-created assignments
+    - When assignments are copied from estimate line items during project approval, the original task description is automatically copied to the assignment
+    - Users can manually enter task descriptions when creating new assignments directly on projects
+    - Task descriptions are displayed in assignment tables, resource management timeline tooltips, and CSV exports
+    - Provides clear context on what specific work each person is assigned to
 - **Estimate Archival**: Option to hide inactive estimates from the main list while preserving all data.
 - **Project Text Export**: Generates a comprehensive text summary of project data for reporting, with date range filtering and role-based authorization.
 
