@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles, estimateLineItems } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -2135,7 +2135,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           status: projectAllocations.status,
           startedDate: projectAllocations.startedDate,
           completedDate: projectAllocations.completedDate,
-          weekNumber: projectAllocations.weekNumber
+          weekNumber: projectAllocations.weekNumber,
+          taskDescription: estimateLineItems.description
         })
         .from(projectAllocations)
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
@@ -2143,6 +2144,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(users, eq(projectAllocations.personId, users.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+        .leftJoin(estimateLineItems, eq(projectAllocations.estimateLineItemId, estimateLineItems.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
       
       // Format the response
@@ -2171,7 +2173,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         status: row.status,
         startedDate: row.startedDate,
         completedDate: row.completedDate,
-        weekNumber: row.weekNumber
+        weekNumber: row.weekNumber,
+        taskDescription: row.taskDescription
       }));
       
       res.json(formattedAllocations);
@@ -2279,13 +2282,15 @@ export async function registerRoutes(app: Express): Promise<void> {
           plannedEndDate: projectAllocations.plannedEndDate,
           status: projectAllocations.status,
           workstream: projectWorkstreams.name,
-          weekNumber: projectAllocations.weekNumber
+          weekNumber: projectAllocations.weekNumber,
+          taskDescription: estimateLineItems.description
         })
         .from(projectAllocations)
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(estimateLineItems, eq(projectAllocations.estimateLineItemId, estimateLineItems.id));
       
       const conditions: any[] = [];
       
