@@ -978,6 +978,9 @@ export const insertProjectMilestoneSchema = createInsertSchema(projectMilestones
 export const insertProjectAllocationSchema = createInsertSchema(projectAllocations).omit({
   id: true,
   createdAt: true,
+}).extend({
+  hours: z.union([z.string(), z.number()]).transform(val => String(val)),
+  rackRate: z.union([z.string(), z.number()]).transform(val => String(val)),
 });
 
 export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
