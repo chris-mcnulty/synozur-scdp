@@ -10,24 +10,31 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const { email, password } = req.body;
       
+      console.log("[AUTH] Login attempt:", { email, NODE_ENV: process.env.NODE_ENV });
+      
       if (!email || !password) {
         return res.status(400).json({ message: "Email and password are required" });
       }
 
       // Demo credentials for testing (only in development environment)
-      const validCredentials = process.env.NODE_ENV === 'development' ? [
+      const validCredentials = process.env.NODE_ENV !== 'production' ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
         { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
         { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
       ] : [];
+
+      console.log("[AUTH] Valid credentials count:", validCredentials.length);
 
       const credentials = validCredentials.find(cred => 
         cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
       );
 
       if (!credentials) {
+        console.log("[AUTH] Credentials check failed");
         return res.status(401).json({ message: "Invalid email or password" });
       }
+      
+      console.log("[AUTH] Credentials validated, looking up user in database");
 
       // Look up actual user from database
       const [dbUser] = await db.select()

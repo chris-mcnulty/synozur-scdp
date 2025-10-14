@@ -289,7 +289,6 @@ export default function ProjectDetail() {
   
   const { data: roles = [] } = useQuery<any[]>({
     queryKey: ['/api/roles'],
-    enabled: showAssignmentDialog,
   });
   
   // Clients for edit project dialog
