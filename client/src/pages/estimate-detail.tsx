@@ -532,6 +532,29 @@ function EstimateDetailContent() {
     }
   });
 
+  const revertApprovalMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest(`/api/estimates/${id}/revert-approval`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      toast({ 
+        title: "Estimate reverted to Final", 
+        description: "The approval has been undone successfully." 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to revert approval", 
+        description: error.message || "Please try again",
+        variant: "destructive" 
+      });
+    }
+  });
+
   const bulkUpdateMutation = useMutation({
     mutationFn: async ({ itemIds, updates }: { itemIds: string[]; updates: any }) => {
       // Update each item individually
@@ -1274,6 +1297,24 @@ function EstimateDetailContent() {
                       View Project
                     </Button>
                   )}
+                  
+                  <Button 
+                    onClick={() => {
+                      const confirmMessage = estimate?.projectId 
+                        ? 'This estimate is linked to a project. Are you sure you want to revert it to Final status? The project link will remain intact.'
+                        : 'Are you sure you want to revert this estimate to Final status? This will undo the approval.';
+                      
+                      if (window.confirm(confirmMessage)) {
+                        revertApprovalMutation.mutate();
+                      }
+                    }}
+                    variant="outline"
+                    disabled={revertApprovalMutation.isPending}
+                    data-testid="button-revert-to-final"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    {revertApprovalMutation.isPending ? 'Reverting...' : 'Revert to Final'}
+                  </Button>
                   
                   <Button 
                     onClick={() => {

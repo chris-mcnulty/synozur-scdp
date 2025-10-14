@@ -7652,6 +7652,33 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Revert estimate from approved to final
+  app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      // Get the estimate to verify it's approved
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+      
+      if (estimate.status !== 'approved') {
+        return res.status(400).json({ 
+          message: "Can only revert approved estimates", 
+          currentStatus: estimate.status 
+        });
+      }
+      
+      // Revert status to final
+      const updatedEstimate = await storage.updateEstimate(req.params.id, { 
+        status: "final"
+      });
+      res.json(updatedEstimate);
+    } catch (error) {
+      console.error("Error reverting estimate approval:", error);
+      res.status(500).json({ message: "Failed to revert estimate approval" });
+    }
+  });
+
   // Invoice batch endpoints
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
