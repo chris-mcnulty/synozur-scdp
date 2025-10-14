@@ -56,6 +56,7 @@ interface Assignment {
   startedDate: string | null;
   completedDate: string | null;
   weekNumber: number | null;
+  taskDescription: string | null;
 }
 
 interface GroupedAssignments {
@@ -740,6 +741,7 @@ export default function ResourceManagementPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Project</TableHead>
+                          <TableHead>Task/Activity</TableHead>
                           <TableHead>Workstream</TableHead>
                           <TableHead>Role</TableHead>
                           <TableHead>Hours</TableHead>
@@ -758,6 +760,13 @@ export default function ResourceManagementPage() {
                                 <div className="text-sm text-muted-foreground">
                                   {assignment.project.client.name}
                                 </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                {assignment.taskDescription || (
+                                  <span className="text-muted-foreground italic">No task specified</span>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>{assignment.workstream || "-"}</TableCell>
