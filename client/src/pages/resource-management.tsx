@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Layout } from "@/components/layout/layout";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, startOfWeek, addWeeks, endOfWeek, isWithinInterval, parseISO, differenceInCalendarDays, startOfDay } from "date-fns";
 
 interface Assignment {
   id: string;
@@ -153,6 +153,86 @@ export default function ResourceManagementPage() {
 
     const config = statusConfig[status as keyof typeof statusConfig] || { variant: "outline", label: status || "No Status" };
     return <Badge variant={config.variant as any}>{config.label}</Badge>;
+  };
+
+  // Timeline grid helpers
+  const timelineWeeks = useMemo(() => {
+    const today = new Date();
+    const weeks = [];
+    
+    // Generate 12 weeks: 4 weeks past, current week, 7 weeks future
+    for (let i = -4; i <= 7; i++) {
+      const weekStart = startOfWeek(addWeeks(today, i), { weekStartsOn: 1 }); // Monday start
+      const weekEnd = endOfWeek(addWeeks(today, i), { weekStartsOn: 1 });
+      weeks.push({
+        start: weekStart,
+        end: weekEnd,
+        label: format(weekStart, "MMM d"),
+        isCurrentWeek: i === 0
+      });
+    }
+    return weeks;
+  }, []);
+
+  const getUtilizationColor = (rate: number) => {
+    if (rate === 0) return "bg-gray-100 dark:bg-gray-800";
+    if (rate < 70) return "bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700";
+    if (rate <= 100) return "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700";
+    return "bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700";
+  };
+
+  const calculateWeeklyUtilization = (person: any, weekStart: Date, weekEnd: Date) => {
+    if (!person.allocations) return { hours: 0, rate: 0, projects: [] };
+    
+    const weekEndDay = startOfDay(endOfWeek(weekStart, { weekStartsOn: 1 }));
+    
+    const activeAllocations = person.allocations.filter((alloc: any) => {
+      if (!alloc.plannedStartDate || !alloc.plannedEndDate) return false;
+      const allocStart = startOfDay(parseISO(alloc.plannedStartDate));
+      const allocEnd = startOfDay(parseISO(alloc.plannedEndDate));
+      // Check if allocation overlaps with the week (symmetric interval overlap test)
+      return allocStart <= weekEndDay && allocEnd >= weekStart;
+    });
+
+    // Calculate prorated hours for this specific week
+    let totalWeekHours = 0;
+    const projectsInWeek: any[] = [];
+
+    activeAllocations.forEach((alloc: any) => {
+      const allocStart = startOfDay(parseISO(alloc.plannedStartDate));
+      const allocEnd = startOfDay(parseISO(alloc.plannedEndDate));
+      const weekEndDay = startOfDay(endOfWeek(weekStart, { weekStartsOn: 1 }));
+      
+      // Calculate overlap days using calendar days
+      const overlapStart = allocStart > weekStart ? allocStart : weekStart;
+      const overlapEnd = allocEnd < weekEndDay ? allocEnd : weekEndDay;
+      const overlapDays = differenceInCalendarDays(overlapEnd, overlapStart) + 1;
+      
+      // Calculate total allocation duration in calendar days
+      const totalDays = differenceInCalendarDays(allocEnd, allocStart) + 1;
+      
+      // Prorate hours based on overlap (handle null/undefined hours)
+      const totalHours = alloc.hours ?? 0;
+      const proratedHours = totalDays > 0 ? (totalHours * overlapDays) / totalDays : 0;
+      
+      totalWeekHours += proratedHours;
+      
+      projectsInWeek.push({
+        name: alloc.projectName,
+        hours: Math.round(proratedHours * 10) / 10, // Round to 1 decimal
+        totalHours: alloc.hours ?? 0,
+        status: alloc.status
+      });
+    });
+
+    const capacity = person.person?.weeklyCapacity || 40;
+    const rate = capacity > 0 ? Math.round((totalWeekHours / capacity) * 100) : 0;
+    
+    return {
+      hours: Math.round(totalWeekHours * 10) / 10, // Round to 1 decimal
+      rate,
+      projects: projectsInWeek
+    };
   };
 
   return (
@@ -298,16 +378,125 @@ export default function ResourceManagementPage() {
 
         {/* View Content */}
         {view === "timeline" ? (
-          <Card className="p-6">
-            <div className="text-center py-12">
-              <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Timeline View</h3>
-              <p className="text-muted-foreground mb-4">
-                Visual capacity planning timeline showing allocations across time periods
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Coming soon: Interactive timeline with drag-and-drop scheduling
-              </p>
+          <Card className="overflow-x-auto">
+            <div className="min-w-max">
+              {/* Timeline Header */}
+              <div className="sticky top-0 bg-background border-b z-10">
+                <div className="flex">
+                  <div className="w-64 p-3 border-r font-semibold">Team Member</div>
+                  {timelineWeeks.map((week, idx) => (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "w-24 p-3 text-center text-sm border-r",
+                        week.isCurrentWeek && "bg-primary/5 font-semibold"
+                      )}
+                      data-testid={`header-week-${idx}`}
+                    >
+                      {week.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Timeline Body */}
+              {isLoading ? (
+                <div className="p-6 space-y-4">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                </div>
+              ) : capacityData?.capacityByPerson?.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">No team members found</h3>
+                  <p className="text-muted-foreground">Add employees to see capacity planning</p>
+                </div>
+              ) : (
+                <div>
+                  {capacityData?.capacityByPerson?.map((person: any) => {
+                    // Apply person filter
+                    if (filterPerson !== "all" && person.person.id !== filterPerson) return null;
+                    
+                    return (
+                      <div key={person.person.id} className="flex border-b hover:bg-accent/30" data-testid={`timeline-row-${person.person.id}`}>
+                        <div className="w-64 p-3 border-r">
+                          <div className="font-medium">{person.person.name}</div>
+                          <div className="text-xs text-muted-foreground">{person.person.email}</div>
+                          <div className="text-xs mt-1">
+                            <span className="font-medium">{person.summary.utilizationRate}%</span> avg
+                          </div>
+                        </div>
+                        {timelineWeeks.map((week, idx) => {
+                          const weekUtil = calculateWeeklyUtilization(person, week.start, week.end);
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "w-24 p-2 border-r text-center relative group cursor-pointer",
+                                getUtilizationColor(weekUtil.rate),
+                                week.isCurrentWeek && "ring-2 ring-primary/20 ring-inset"
+                              )}
+                              data-testid={`cell-${person.person.id}-week-${idx}`}
+                            >
+                              {weekUtil.hours > 0 && (
+                                <>
+                                  <div className="text-sm font-medium">{weekUtil.hours}h</div>
+                                  <div className="text-xs text-muted-foreground">{weekUtil.rate}%</div>
+                                  
+                                  {/* Tooltip on hover */}
+                                  {weekUtil.projects.length > 0 && (
+                                    <div className="absolute hidden group-hover:block z-20 bg-popover text-popover-foreground border rounded-md shadow-lg p-3 left-0 top-full mt-1 min-w-[220px]">
+                                      <div className="text-xs font-semibold mb-2">Week of {week.label}</div>
+                                      <div className="space-y-1">
+                                        {weekUtil.projects.map((proj: any, pIdx: number) => (
+                                          <div key={pIdx} className="text-xs">
+                                            <div className="font-medium">{proj.name}</div>
+                                            <div className="text-muted-foreground">
+                                              {proj.hours}h this week
+                                              {proj.totalHours > 0 && ` (${proj.totalHours}h total)`} - {proj.status}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      <div className="mt-2 pt-2 border-t text-xs font-semibold">
+                                        Total: {weekUtil.hours}h ({weekUtil.rate}%)
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Legend */}
+              <div className="p-4 border-t bg-muted/30">
+                <div className="flex items-center gap-6 text-xs">
+                  <span className="font-semibold">Utilization:</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-gray-100 dark:bg-gray-800 border"></div>
+                    <span>No allocation</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-300"></div>
+                    <span>Under ({"<"}70%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-green-100 dark:bg-green-900/30 border border-green-300"></div>
+                    <span>Optimal (70-100%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 bg-red-100 dark:bg-red-900/30 border border-red-300"></div>
+                    <span>Over ({">"}100%)</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </Card>
         ) : (
