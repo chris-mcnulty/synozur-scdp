@@ -292,8 +292,8 @@ export const projectMilestones = pgTable("project_milestones", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
   projectEpicId: varchar("project_epic_id").references(() => projectEpics.id, { onDelete: 'cascade' }), // Optional for delivery milestones
-  estimateStageId: varchar("estimate_stage_id").references(() => estimateStages.id), // Link to original estimate stage
-  estimateMilestoneId: varchar("estimate_milestone_id").references(() => estimateMilestones.id), // Link to original estimate milestone
+  estimateStageId: varchar("estimate_stage_id").references(() => estimateStages.id, { onDelete: 'set null' }), // Link to original estimate stage
+  estimateMilestoneId: varchar("estimate_milestone_id").references(() => estimateMilestones.id, { onDelete: 'set null' }), // Link to original estimate milestone
   name: text("name").notNull(),
   description: text("description"),
   
