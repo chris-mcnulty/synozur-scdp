@@ -3935,30 +3935,17 @@ export class DatabaseStorage implements IStorage {
           });
         }
         
-        // 7. Create initial SOW with estimate total value
-        const estimateValue = estimate.presentedTotal || estimate.totalFees || '0';
-        const estimateHours = estimate.totalHours || estimate.blockHours || '0';
+        // 7. DO NOT create initial SOW automatically
+        // Estimate approval does not mean SOW approval
+        // Budget should remain zero until SOW is explicitly uploaded and approved
         
-        const [initialSow] = await tx.insert(sows).values({
-          projectId: project.id,
-          type: 'initial',
-          name: 'Initial SOW',
-          description: blockHourDescription || `Initial statement of work based on ${estimate.name}`,
-          value: estimateValue,
-          hours: estimateHours,
-          effectiveDate: projectData.startDate || new Date().toISOString().split('T')[0],
-          status: 'approved', // Auto-approve since project is being created from approved estimate
-          approvedAt: new Date(),
-          notes: `Created from estimate: ${estimate.name}`,
-        }).returning();
-        
-        // 8. Update project with SOW information
+        // 8. Set project with zero budget initially
         await tx.update(projects)
           .set({
-            sowValue: estimateValue,
-            sowDate: projectData.startDate || new Date().toISOString().split('T')[0],
-            hasSow: true,
-            baselineBudget: estimateValue,
+            sowValue: '0',
+            sowDate: null,
+            hasSow: false,
+            baselineBudget: '0',
           })
           .where(eq(projects.id, project.id));
         
