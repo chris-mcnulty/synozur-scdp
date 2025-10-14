@@ -339,6 +339,7 @@ export const projectAllocations = pgTable("project_allocations", {
   roleId: varchar("role_id").references(() => roles.id), // Role-based assignment
   personId: varchar("person_id").references(() => users.id), // Person-based assignment
   resourceName: text("resource_name"), // For unmatched resources from estimate
+  taskDescription: text("task_description"), // Description of the task/activity (copied from estimate or manually entered)
   hours: decimal("hours", { precision: 10, scale: 2 }).notNull(),
   pricingMode: text("pricing_mode").notNull(), // "role", "person", or "resource_name"
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }),
