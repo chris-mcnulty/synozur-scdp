@@ -147,6 +147,56 @@ export default function ResourceManagementPage() {
     setExpandedPeople(newExpanded);
   };
 
+  const exportAssignmentsData = () => {
+    if (groupedAssignments.length === 0) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    // Build CSV header
+    const csvRows = ['Person,Email,Project,Role,Workstream,Task/Activity,Hours,Week,Period,Status,Notes'];
+
+    // Build CSV rows
+    groupedAssignments.forEach((group: any) => {
+      // Apply person filter
+      if (filterPerson !== "all" && group.person.id !== filterPerson) return;
+
+      group.assignments.forEach((assignment: any) => {
+        const personName = group.person.name || 'Unknown';
+        const personEmail = group.person.email || '';
+        const projectName = assignment.project?.name || 'N/A';
+        const roleName = assignment.role?.name || 'N/A';
+        const workstream = assignment.workstream?.name || 'N/A';
+        const taskDescription = assignment.taskDescription || 'N/A';
+        const hours = assignment.hours || '0';
+        const week = assignment.weekNumber || 'N/A';
+        const period = assignment.plannedStartDate && assignment.plannedEndDate 
+          ? `${format(new Date(assignment.plannedStartDate), "MMM d")} - ${format(new Date(assignment.plannedEndDate), "MMM d")}`
+          : 'N/A';
+        const status = assignment.status || 'N/A';
+        const notes = assignment.notes || '';
+
+        csvRows.push(
+          `"${personName}","${personEmail}","${projectName}","${roleName}","${workstream}","${taskDescription}","${hours}","${week}","${period}","${status}","${notes}"`
+        );
+      });
+    });
+
+    // Create and download CSV file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `team-assignments-${format(new Date(), "yyyy-MM-dd")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: "CSV exported successfully" });
+  };
+
   const exportTimelineData = () => {
     if (!capacityData?.capacityByPerson || timelineWeeks.length === 0) {
       toast({ title: "No data to export", variant: "destructive" });
@@ -366,7 +416,11 @@ export default function ResourceManagementPage() {
                 Export Timeline
               </Button>
             ) : (
-              <Button variant="outline" data-testid="button-export-assignments">
+              <Button 
+                variant="outline" 
+                onClick={exportAssignmentsData}
+                data-testid="button-export-assignments"
+              >
                 Export Assignments
               </Button>
             )}
