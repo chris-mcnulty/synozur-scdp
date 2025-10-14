@@ -139,7 +139,7 @@ const metadataQuerySchema = z.object({
   skip: z.coerce.number().min(0).optional().default(0)
 });
 
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient } from "./services/graph-client.js";
@@ -2245,6 +2245,146 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch user assignments:", error);
       res.status(500).json({ message: "Failed to fetch assignments" });
+    }
+  });
+
+  // Get capacity planning data (timeline view)
+  app.get("/api/capacity/timeline", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { startDate, endDate, personId, utilizationThreshold } = req.query;
+      
+      // Get all active users (employees)
+      const allUsers = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role
+        })
+        .from(users)
+        .where(eq(users.role, 'employee'));
+      
+      // Get all allocations with date filtering
+      let allocationsQuery = db
+        .select({
+          id: projectAllocations.id,
+          personId: projectAllocations.personId,
+          projectId: projectAllocations.projectId,
+          projectName: projects.name,
+          clientName: clients.name,
+          roleId: projectAllocations.roleId,
+          roleName: roles.name,
+          hours: projectAllocations.hours,
+          plannedStartDate: projectAllocations.plannedStartDate,
+          plannedEndDate: projectAllocations.plannedEndDate,
+          status: projectAllocations.status,
+          workstream: projectWorkstreams.name,
+          weekNumber: projectAllocations.weekNumber
+        })
+        .from(projectAllocations)
+        .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
+        .innerJoin(clients, eq(projects.clientId, clients.id))
+        .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
+      
+      const conditions: any[] = [];
+      
+      if (startDate && endDate) {
+        conditions.push(
+          and(
+            sql`${projectAllocations.plannedEndDate} >= ${startDate}`,
+            sql`${projectAllocations.plannedStartDate} <= ${endDate}`
+          )
+        );
+      }
+      
+      if (personId) {
+        conditions.push(eq(projectAllocations.personId, personId as string));
+      }
+      
+      const allocations = conditions.length > 0
+        ? await allocationsQuery.where(and(...conditions))
+        : await allocationsQuery;
+      
+      // Build capacity data by person
+      const capacityByPerson = allUsers.map(user => {
+        const userAllocations = allocations.filter(a => a.personId === user.id);
+        
+        // Calculate total allocated hours
+        const totalAllocated = userAllocations.reduce((sum, a) => {
+          return sum + (parseFloat(String(a.hours || 0)));
+        }, 0);
+        
+        // Calculate weekly capacity (default 40 hours/week, 85% target utilization)
+        const weeklyCapacity = 40;
+        const targetUtilization = 0.85; // 85%
+        const targetHours = weeklyCapacity * targetUtilization;
+        
+        // Calculate utilization percentage
+        const utilizationRate = weeklyCapacity > 0 ? (totalAllocated / weeklyCapacity) * 100 : 0;
+        
+        // Determine utilization status
+        let utilizationStatus: 'under' | 'optimal' | 'over' = 'optimal';
+        if (utilizationRate < 70) utilizationStatus = 'under';
+        else if (utilizationRate > 100) utilizationStatus = 'over';
+        
+        return {
+          person: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            targetUtilization: 85,
+            weeklyCapacity: 40
+          },
+          allocations: userAllocations.map(a => ({
+            id: a.id,
+            projectId: a.projectId,
+            projectName: a.projectName,
+            clientName: a.clientName,
+            role: a.roleName,
+            hours: a.hours,
+            plannedStartDate: a.plannedStartDate,
+            plannedEndDate: a.plannedEndDate,
+            status: a.status,
+            workstream: a.workstream,
+            weekNumber: a.weekNumber
+          })),
+          summary: {
+            totalAllocated,
+            weeklyCapacity,
+            targetHours,
+            availableHours: weeklyCapacity - totalAllocated,
+            utilizationRate: Math.round(utilizationRate),
+            utilizationStatus
+          }
+        };
+      });
+      
+      // Filter by utilization threshold if provided
+      const filteredCapacity = utilizationThreshold
+        ? capacityByPerson.filter(p => p.summary.utilizationRate >= parseFloat(utilizationThreshold as string))
+        : capacityByPerson;
+      
+      // Calculate aggregate metrics
+      const totalCapacity = capacityByPerson.reduce((sum, p) => sum + p.summary.weeklyCapacity, 0);
+      const totalAllocated = capacityByPerson.reduce((sum, p) => sum + p.summary.totalAllocated, 0);
+      const totalAvailable = totalCapacity - totalAllocated;
+      const overAllocatedCount = capacityByPerson.filter(p => p.summary.utilizationStatus === 'over').length;
+      
+      res.json({
+        summary: {
+          totalCapacity,
+          totalAllocated,
+          totalAvailable,
+          overAllocatedCount,
+          averageUtilization: totalCapacity > 0 ? Math.round((totalAllocated / totalCapacity) * 100) : 0
+        },
+        people: filteredCapacity
+      });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch capacity timeline:", error);
+      res.status(500).json({ message: "Failed to fetch capacity data" });
     }
   });
 
