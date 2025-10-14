@@ -70,6 +70,7 @@ interface GroupedAssignments {
 
 export default function ResourceManagementPage() {
   const { toast } = useToast();
+  const [view, setView] = useState<"list" | "timeline">("list");
   const [expandedPeople, setExpandedPeople] = useState<Set<string>>(new Set());
   const [filterProject, setFilterProject] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -163,6 +164,24 @@ export default function ResourceManagementPage() {
             <p className="text-muted-foreground">View and manage team assignments across all projects</p>
           </div>
           <div className="flex gap-2">
+            <div className="flex items-center gap-1 bg-muted p-1 rounded-md">
+              <Button
+                variant={view === "list" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setView("list")}
+                data-testid="button-view-list"
+              >
+                List
+              </Button>
+              <Button
+                variant={view === "timeline" ? "default" : "ghost"}
+                size="sm"
+                onClick={() => setView("timeline")}
+                data-testid="button-view-timeline"
+              >
+                Timeline
+              </Button>
+            </div>
             <Button variant="outline" data-testid="button-export-assignments">
               Export Assignments
             </Button>
@@ -277,25 +296,39 @@ export default function ResourceManagementPage() {
           </Card>
         </div>
 
-        {/* Assignments Table */}
-        <Card>
-          {isLoading ? (
-            <div className="p-6 space-y-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : groupedAssignments.length === 0 ? (
-            <div className="p-12 text-center">
-              <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">No assignments found</h3>
-              <p className="text-muted-foreground">
-                {filterProject !== "all" || filterPerson !== "all" || filterStatus !== "all"
-                  ? "Try adjusting your filters"
-                  : "Start by creating assignments in your projects"}
+        {/* View Content */}
+        {view === "timeline" ? (
+          <Card className="p-6">
+            <div className="text-center py-12">
+              <Calendar className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Timeline View</h3>
+              <p className="text-muted-foreground mb-4">
+                Visual capacity planning timeline showing allocations across time periods
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Coming soon: Interactive timeline with drag-and-drop scheduling
               </p>
             </div>
-          ) : (
+          </Card>
+        ) : (
+          <Card>
+            {isLoading ? (
+              <div className="p-6 space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : groupedAssignments.length === 0 ? (
+              <div className="p-12 text-center">
+                <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">No assignments found</h3>
+                <p className="text-muted-foreground">
+                  {filterProject !== "all" || filterPerson !== "all" || filterStatus !== "all"
+                    ? "Try adjusting your filters"
+                    : "Start by creating assignments in your projects"}
+                </p>
+              </div>
+            ) : (
             <div>
               {groupedAssignments.map((group) => (
                 <Collapsible
@@ -390,8 +423,9 @@ export default function ResourceManagementPage() {
                 </Collapsible>
               ))}
             </div>
-          )}
-        </Card>
+            )}
+          </Card>
+        )}
       </div>
     </Layout>
   );
