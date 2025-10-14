@@ -1134,6 +1134,23 @@ export class DatabaseStorage implements IStorage {
         // Delete invoice lines for this project
         await tx.delete(invoiceLines).where(eq(invoiceLines.projectId, id));
         
+        // Delete project rate overrides
+        await tx.delete(projectRateOverrides).where(eq(projectRateOverrides.projectId, id));
+        
+        // Delete project allocations
+        await tx.delete(projectAllocations).where(eq(projectAllocations.projectId, id));
+        
+        // Delete project structure (milestones, stages, epics, workstreams)
+        await tx.delete(projectMilestones).where(eq(projectMilestones.projectId, id));
+        await tx.delete(projectWorkstreams).where(eq(projectWorkstreams.projectId, id));
+        
+        // Get all project epics to delete stages
+        const epics = await tx.select().from(projectEpics).where(eq(projectEpics.projectId, id));
+        for (const epic of epics) {
+          await tx.delete(projectStages).where(eq(projectStages.epicId, epic.id));
+        }
+        await tx.delete(projectEpics).where(eq(projectEpics.projectId, id));
+        
         // Unlink estimates from this project (DO NOT DELETE - estimates should be preserved)
         // Set projectId to NULL so the estimate can be reused or linked to a new project
         await tx.update(estimates)
