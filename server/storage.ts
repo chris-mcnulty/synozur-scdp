@@ -4011,6 +4011,7 @@ export class DatabaseStorage implements IStorage {
             await tx.insert(projectAllocations).values({
               projectId: project.id,
               estimateLineItemId: lineItem.id,
+              taskDescription: lineItem.description, // Copy task description from estimate line item
               pricingMode: assignmentMode || 'resource_name', // Map to correct field name
               personId,
               roleId,
