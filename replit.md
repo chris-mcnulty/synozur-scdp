@@ -1,7 +1,7 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Overview
-SCDP is a comprehensive consulting delivery platform designed to manage the entire lifecycle of consulting projects, from estimation to billing. It streamlines operations including time tracking, expense management, and resource allocation. The platform supports role-based access control and aims to automate invoice generation and manage rate structures, enhancing efficiency and providing robust management capabilities for consulting businesses.
+SCDP is a comprehensive platform designed to manage the entire lifecycle of consulting projects, from initial estimation to final billing. It streamlines operations such as time tracking, expense management, resource allocation, and automates invoice generation. The platform supports robust role-based access control and aims to enhance efficiency and provide strong management capabilities for consulting businesses. It includes features for managing rate structures and ensuring data integrity, particularly around estimates and project structures.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -40,36 +40,22 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 - **Current**: Local file storage for expense receipts and metadata.
 
 ### Data Integrity Rules
-- **Estimate Preservation**: Deleting a project NEVER deletes linked estimates. Estimates are preserved and unlinked (projectId set to NULL) so they can be revised and used to create new projects.
-- **Estimate-Project Workflow**: Users can create a project from an estimate, delete the project if needed, revise the estimate, and recreate a new project from the updated estimate without data loss.
-- **Project Structure Independence**: When a project is created from an estimate, the structure (epics, stages, workstreams, milestones) is COPIED, not linked. This allows independent modification of project structure without affecting the original estimate. Projects and estimates maintain separate, independent structures after creation.
+- **Estimate Preservation**: Deleting a project never deletes linked estimates; they are preserved and unlinked.
+- **Estimate-Project Workflow**: Allows creation, deletion, revision of projects from estimates without data loss.
+- **Project Structure Independence**: Project structures are copied from estimates, not linked, allowing independent modifications.
 
 ### Core Features
-- **Estimate Management**: Includes Excel import/export (with resource assignment, various import modes), AI-driven text export for presentation generation (excluding financial data), and status-based locking to prevent unauthorized modifications.
-  - **CSV Import Flexibility**: Supports multiple column header formats for better compatibility:
-    - "Activity" or "Description" for activity descriptions
-    - "Hours" or "Base Hours" for hour values
-    - Maintains backward compatibility with legacy formats
-  - **Assignment Copy on Approval**: Optional checkbox during estimate approval to copy resource assignments from estimate line items to project allocations
-    - Defaults to enabled (checked) for streamlined workflow
-    - Only visible when "Create project from this estimate" is selected
-    - Week-to-date conversion: Week numbers from estimates are converted to actual start/end dates based on project kickoff date
-    - Week 1 starts on kickoff date, each week spans 7 days
-    - Preserves hours, rates, roles, workstreams, and all assignment details
-    - When unchecked, only project structure (epics/stages) is copied without assignments
-- **Invoice Finalization**: Comprehensive review dialog with inline editing before finalization.
+- **Estimate Management**: Supports Excel import/export, AI-driven text export (non-financial), status-based locking, flexible CSV import, and optional resource assignment copying on project creation.
+- **Invoice Finalization**: Comprehensive review dialog with inline editing.
 - **Project Structure Transfer**: Automatic transfer of epics and stages from estimates to projects.
-- **Vocabulary Management**: Centralized management of terminology with organization defaults, client overrides, and project overrides, following a cascading hierarchy.
-- **Project Assignments**: Allows project managers to assign team members to projects with specific roles, hours, and workstreams; employees can view personal assignments.
-  - **Flexible Hours**: Hours field is optional in assignment forms (can be left blank if not yet determined)
-  - **Task/Activity Tracking**: 
-    - Direct `taskDescription` field on project allocations supports both estimate-derived and manually-created assignments
-    - When assignments are copied from estimate line items during project approval, the original task description is automatically copied to the assignment
-    - Users can manually enter task descriptions when creating new assignments directly on projects
-    - Task descriptions are displayed in assignment tables, resource management timeline tooltips, and CSV exports
-    - Provides clear context on what specific work each person is assigned to
-- **Estimate Archival**: Option to hide inactive estimates from the main list while preserving all data.
-- **Project Text Export**: Generates a comprehensive text summary of project data for reporting, with date range filtering and role-based authorization.
+- **Vocabulary Management**: Hierarchical management of terminology (organization, client, project levels).
+- **Project Assignments**: Assign team members with roles, hours, and workstreams; employees view personal assignments. Supports optional hours and task descriptions for allocations.
+- **Estimate Archival**: Option to hide inactive estimates.
+- **Project Text Export**: Generates comprehensive text summaries of project data with date filtering and role-based authorization for reporting.
+- **Invoice Batches Management**: Invoice batches grouped by client on the billing page, and a dedicated "Invoices" tab on project details.
+- **Resource Management & Capacity Planning**: Dual List and Timeline views for capacity, with a capacity summary dashboard, color-coded utilization, conflict detection, and enhanced filtering.
+- **My Assignments**: Personal dashboard for employees to view assignments in List or Kanban views, with filtering and quick status updates.
+- **Budget & SOW Management**: New projects start with zero budget; SOW value and budget history begin only upon explicit SOW upload and approval.
 
 ## External Dependencies
 
@@ -78,91 +64,3 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 - **UI Libraries**: Radix UI, Lucide React (icons), Tailwind CSS.
 - **Data Management**: TanStack Query, React Hook Form, Date-fns.
 - **Build & Runtime**: ESBuild, PostCSS, WS (WebSockets for Neon).
-## Key Features & Behaviors
-
-### Project Text Export
-- **Purpose**: Generates a comprehensive text summary of project data for copy/paste into other systems (presentations, reports, status updates)
-- **Format**: Plain text (.txt) file with structured sections and formatted data
-- **Content Included**:
-  - **Project Header**: Name, client, status, description, start/end dates, report date range
-  - **Team Assignments by Month**: Active allocations grouped by month showing person, role, workstream, hours, status, period, and notes
-  - **Project Structure**: 
-    - Epics and stages (with descriptions)
-    - Workstreams (with descriptions and budget hours)
-    - Milestones (with descriptions, target/actual dates, and status)
-  - **Time Entries by Month**: Overall summary plus monthly breakdown with person-level details and individual entry lines (date, billable status, hours, description)
-  - **Expenses Summary**: Total/billable amounts, expense count, breakdown by category
-  - **Invoices**: All invoice batches for the client with batch ID, period (start/end dates), status, and total amount
-- **Date Range Filtering**:
-  - "Entire Project" - exports all project data
-  - "Current Month" - filters time entries, expenses, and invoices to current month boundaries
-  - "Custom Date Range" - allows specifying exact start/end dates for filtering
-  - **What gets filtered**: Time entries (by date), expenses (by date), and invoices (by batch end date)
-  - **Not filtered**: Project structure, team resources (allocations), and milestones are always included in full
-- **UI Location**: "Export Report" button in project detail page header (next to "Edit Project" button)
-- **Vocabulary Support**: Uses custom vocabulary labels (Epic/Phase/Release, Stage/Sprint/etc.) from project settings throughout the export
-- **Dynamic Filename**: Pattern `{project-name}-report-{start-date}-{end-date}.txt` with sanitized project name (special characters replaced with underscores)
-- **API Endpoint**: `GET /api/projects/:id/export-text?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD`
-- **Authorization**: Only accessible by admins, billing-admins, executives, or the project's PM
-  - Returns 403 "You can only export projects you manage" for unauthorized users
-  - Prevents unauthorized access to sensitive project data (hours, rates, expenses, invoices)
-- **Use Cases**: Generate status reports, create project summaries for stakeholders, extract data for external reporting systems
-
-### Invoice Batches Management
-- **Client Grouping on Main Screen**: Invoice batches on the billing page (`/billing`) are now grouped by client for better organization
-  - Single-client batches appear under their respective client headers
-  - Multi-client batches appear under "Multiple Clients" section
-  - Each group shows batch count
-  - Groups sorted alphabetically with "Multiple Clients" at the end
-  - Handles both `clientName` (string) and `clientNames` (array) data formats
-- **Invoices Tab on Project Detail**: New "Invoices" tab in project analytics shows all invoice batches for the project's client
-  - Displays batch ID, projects, status, payment status, dates, and amounts
-  - Links to batch detail page for full information
-  - Respects pricing visibility permissions (amounts masked with `***` for users without pricing access)
-  - Shows loading and empty states
-  - Consistent UI/UX with billing page patterns
-
-### Resource Management & Capacity Planning
-- **Dual View System**: Toggle between List and Timeline views for team capacity visualization
-- **Capacity Summary Dashboard**: Four KPI cards showing:
-  - Total Capacity: Aggregate weekly team hours (40hrs/person default)
-  - Allocated Hours: Total hours assigned across all projects with utilization percentage
-  - Available Hours: Remaining capacity for new work
-  - Over-Allocated Count: Number of people exceeding 100% utilization
-- **Timeline Grid View** (`/resource-management`):
-  - **Visual Layout**: 12-week scrollable grid with people on Y-axis, weeks on X-axis (Monday start)
-  - **Color-Coded Cells**: Utilization-based colors (gray=none, yellow=under 70%, green=70-100%, red=over 100%)
-  - **Prorated Hours**: Multi-week allocations correctly distributed across weeks using calendar day proration
-  - **Interactive Tooltips**: Hover to see project breakdown, hours per project, and total utilization for each week
-  - **Current Week Indicator**: Visual ring highlight on current week column
-- **Conflict Detection**:
-  - Automatically detects when a person has multiple overlapping project assignments in the same week
-  - Visual indicators: Diagonal stripe pattern, orange warning icon, conflict badge in tooltip
-  - Shows count of overlapping projects in hover tooltip
-- **Enhanced Filters** (Timeline View):
-  - **Date Navigation**: Previous/Next buttons to scroll through time periods (4-week jumps), "Today" button to reset
-  - **Utilization Threshold**: Filter people by minimum utilization percentage (0%, 50%, 70%, 85%, 100%+)
-  - **Conflicts Only**: Checkbox to show only people with schedule conflicts
-  - **Person Filter**: Available in both List and Timeline views
-- **Capacity API** (`GET /api/capacity/timeline`):
-  - Fetches all employees with their project allocations
-  - Calculates per-person utilization metrics and over-allocation status
-  - Supports optional query parameters: `startDate`, `endDate`, `personId`, `utilizationThreshold`
-  - Returns aggregated summary metrics for dashboard cards
-- **List View**: Collapsible person-grouped assignment list with project details, hours, dates, and status badges
-
-### Recent Bug Fixes & Improvements (October 2025)
-- **CSV Export Authentication**: Fixed CSV export downloads using proper `fetch()` with credentials and session headers instead of `window.location.href`
-  - Uses `credentials: 'include'` and `X-Session-Id` header for session-based authentication
-  - Downloads file as blob with programmatic trigger
-  - Added error handling with toast notifications
-- **Text Export Field Access**: Corrected allocation field access in project text export
-  - Changed from flat fields to nested object access: `allocation.person?.name`, `allocation.role?.name`, `allocation.workstream?.name`
-  - Fixed date fields from `startDate/endDate` to `plannedStartDate/plannedEndDate`
-  - Added `taskDescription` to output for better context
-- **Alphabetical Sorting**: Project structure elements now sort alphabetically by name
-  - Applies to: Epics, Stages, Milestones, and Workstreams in project detail view
-  - Arrays properly cloned before sorting (`[...array].sort()`) to avoid React Query cache mutation
-- **Development Login Simplified**: Microsoft SSO login button now hidden in development environment
-  - SSO option only appears in production when Azure AD is configured
-  - Development environment shows only email/password login for simpler testing
