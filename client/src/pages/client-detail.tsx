@@ -514,98 +514,100 @@ export default function ClientDetail() {
                             data-testid="input-edit-nda-date"
                           />
                         </div>
-                        <div className="md:col-span-2 pt-4 border-t">
-                          <h4 className="text-sm font-medium mb-4">Terminology Customization (Optional)</h4>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Override default terminology for this client. Select from predefined options. Leave unset to use organization defaults (shown in parentheses).
-                          </p>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="epicTermId">Epic Term</Label>
-                              <Select
-                                value={editForm.epicTermId || ""}
-                                onValueChange={(value) => setEditForm({ ...editForm, epicTermId: value || null })}
-                              >
-                                <SelectTrigger data-testid="select-vocab-epic">
-                                  <SelectValue placeholder="Select epic term" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">
-                                    Use organization default{orgSelections?.epicTermId && ` (${getTermValue(orgSelections.epicTermId)})`}
-                                  </SelectItem>
-                                  {epicTerms.map(term => (
-                                    <SelectItem key={term.id} value={term.id}>
-                                      {term.termValue}
+                        {catalogTerms.length > 0 && (
+                          <div className="md:col-span-2 pt-4 border-t">
+                            <h4 className="text-sm font-medium mb-4">Terminology Customization (Optional)</h4>
+                            <p className="text-sm text-muted-foreground mb-4">
+                              Override default terminology for this client. Select from predefined options. Leave unset to use organization defaults (shown in parentheses).
+                            </p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="epicTermId">Epic Term</Label>
+                                <Select
+                                  value={editForm.epicTermId || ""}
+                                  onValueChange={(value) => setEditForm({ ...editForm, epicTermId: value || null })}
+                                >
+                                  <SelectTrigger data-testid="select-vocab-epic">
+                                    <SelectValue placeholder="Select epic term" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="">
+                                      Use organization default{orgSelections?.epicTermId && ` (${getTermValue(orgSelections.epicTermId)})`}
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="stageTermId">Stage Term</Label>
-                              <Select
-                                value={editForm.stageTermId || ""}
-                                onValueChange={(value) => setEditForm({ ...editForm, stageTermId: value || null })}
-                              >
-                                <SelectTrigger data-testid="select-vocab-stage">
-                                  <SelectValue placeholder="Select stage term" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">
-                                    Use organization default{orgSelections?.stageTermId && ` (${getTermValue(orgSelections.stageTermId)})`}
-                                  </SelectItem>
-                                  {stageTerms.map(term => (
-                                    <SelectItem key={term.id} value={term.id}>
-                                      {term.termValue}
+                                    {epicTerms?.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="stageTermId">Stage Term</Label>
+                                <Select
+                                  value={editForm.stageTermId || ""}
+                                  onValueChange={(value) => setEditForm({ ...editForm, stageTermId: value || null })}
+                                >
+                                  <SelectTrigger data-testid="select-vocab-stage">
+                                    <SelectValue placeholder="Select stage term" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="">
+                                      Use organization default{orgSelections?.stageTermId && ` (${getTermValue(orgSelections.stageTermId)})`}
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="activityTermId">Activity Term</Label>
-                              <Select
-                                value={editForm.activityTermId || ""}
-                                onValueChange={(value) => setEditForm({ ...editForm, activityTermId: value || null })}
-                              >
-                                <SelectTrigger data-testid="select-vocab-activity">
-                                  <SelectValue placeholder="Select activity term" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">
-                                    Use organization default{orgSelections?.activityTermId && ` (${getTermValue(orgSelections.activityTermId)})`}
-                                  </SelectItem>
-                                  {activityTerms.map(term => (
-                                    <SelectItem key={term.id} value={term.id}>
-                                      {term.termValue}
+                                    {stageTerms?.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="activityTermId">Activity Term</Label>
+                                <Select
+                                  value={editForm.activityTermId || ""}
+                                  onValueChange={(value) => setEditForm({ ...editForm, activityTermId: value || null })}
+                                >
+                                  <SelectTrigger data-testid="select-vocab-activity">
+                                    <SelectValue placeholder="Select activity term" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="">
+                                      Use organization default{orgSelections?.activityTermId && ` (${getTermValue(orgSelections.activityTermId)})`}
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="workstreamTermId">Workstream Term</Label>
-                              <Select
-                                value={editForm.workstreamTermId || ""}
-                                onValueChange={(value) => setEditForm({ ...editForm, workstreamTermId: value || null })}
-                              >
-                                <SelectTrigger data-testid="select-vocab-workstream">
-                                  <SelectValue placeholder="Select workstream term" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="">
-                                    Use organization default{orgSelections?.workstreamTermId && ` (${getTermValue(orgSelections.workstreamTermId)})`}
-                                  </SelectItem>
-                                  {workstreamTerms.map(term => (
-                                    <SelectItem key={term.id} value={term.id}>
-                                      {term.termValue}
+                                    {activityTerms?.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="workstreamTermId">Workstream Term</Label>
+                                <Select
+                                  value={editForm.workstreamTermId || ""}
+                                  onValueChange={(value) => setEditForm({ ...editForm, workstreamTermId: value || null })}
+                                >
+                                  <SelectTrigger data-testid="select-vocab-workstream">
+                                    <SelectValue placeholder="Select workstream term" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="">
+                                      Use organization default{orgSelections?.workstreamTermId && ` (${getTermValue(orgSelections.workstreamTermId)})`}
                                     </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                                    {workstreamTerms?.map(term => (
+                                      <SelectItem key={term.id} value={term.id}>
+                                        {term.termValue}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
