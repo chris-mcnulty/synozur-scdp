@@ -40,12 +40,12 @@ export default function CrossProjectResource() {
   const [selectedPerson, setSelectedPerson] = useState<string>("");
   const [startDate, setStartDate] = useState(subMonths(new Date(), 3).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [selectedClient, setSelectedClient] = useState<string>("");
-  const [selectedProject, setSelectedProject] = useState<string>("");
-  const [selectedStatus, setSelectedStatus] = useState<string>("");
+  const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("startDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [groupBy, setGroupBy] = useState<string>("");
+  const [groupBy, setGroupBy] = useState<string>("none");
 
   // Get current user first
   const { data: currentUser } = useQuery<any>({
@@ -83,12 +83,12 @@ export default function CrossProjectResource() {
     if (selectedPerson) params.append("personId", selectedPerson);
     if (startDate) params.append("startDate", startDate);
     if (endDate) params.append("endDate", endDate);
-    if (selectedClient) params.append("clientId", selectedClient);
-    if (selectedProject) params.append("projectId", selectedProject);
-    if (selectedStatus) params.append("status", selectedStatus);
+    if (selectedClient && selectedClient !== "all") params.append("clientId", selectedClient);
+    if (selectedProject && selectedProject !== "all") params.append("projectId", selectedProject);
+    if (selectedStatus && selectedStatus !== "all") params.append("status", selectedStatus);
     if (sortBy) params.append("sortBy", sortBy);
     if (sortOrder) params.append("sortOrder", sortOrder);
-    if (groupBy) params.append("groupBy", groupBy);
+    if (groupBy && groupBy !== "none") params.append("groupBy", groupBy);
     return params;
   };
 
@@ -162,7 +162,6 @@ export default function CrossProjectResource() {
                     <SelectValue placeholder="Select person" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All People</SelectItem>
                     {assignableUsers.map((user: any) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.name}
@@ -202,7 +201,7 @@ export default function CrossProjectResource() {
                   <SelectValue placeholder="All clients" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Clients</SelectItem>
+                  <SelectItem value="all">All Clients</SelectItem>
                   {clients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
@@ -219,7 +218,7 @@ export default function CrossProjectResource() {
                   <SelectValue placeholder="All projects" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Projects</SelectItem>
+                  <SelectItem value="all">All Projects</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
@@ -236,7 +235,7 @@ export default function CrossProjectResource() {
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
@@ -269,7 +268,7 @@ export default function CrossProjectResource() {
                   <SelectValue placeholder="No grouping" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No Grouping</SelectItem>
+                  <SelectItem value="none">No Grouping</SelectItem>
                   <SelectItem value="project">Project</SelectItem>
                   <SelectItem value="client">Client</SelectItem>
                   <SelectItem value="status">Status</SelectItem>
