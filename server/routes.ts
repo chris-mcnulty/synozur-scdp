@@ -2477,6 +2477,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get all assignments (for resource management)
   app.get("/api/assignments", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
+      console.log("[API] /api/assignments - Fetching allocations with epic and stage data");
       // Get all allocations across all projects
       const allocations = await db
         .select({
@@ -2513,6 +2514,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
+      
+      console.log(`[API] /api/assignments - Found ${allocations.length} allocations`);
       
       // Format the response
       const formattedAllocations = allocations.map(row => ({
