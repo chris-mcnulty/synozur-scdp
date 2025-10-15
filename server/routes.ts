@@ -1904,14 +1904,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           labels.push(`Week ${allocation.weekNumber}`);
         }
 
-        // Notes include hours and any additional notes
-        let notes = `Allocated Hours: ${allocation.hours || allocation.allocatedHours || 0}`;
-        if (allocation.rackRate || allocation.billingRate) {
-          notes += `, Rate: $${allocation.billingRate || allocation.rackRate || 0}/hr`;
-        }
-        if (allocation.notes) {
-          notes += ` | ${allocation.notes}`;
-        }
+        // Notes - keep blank as requested
+        const notes = "";
 
         // Use workstream as bucket
         const bucket = allocation.workstream?.name || allocation.workstream || "General";
@@ -1925,6 +1919,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         };
         const progress = progressMap[allocation.status || 'open'] || 'Not Started';
 
+        // Description - use taskDescription if available, otherwise show hours only if > 0
+        let description = allocation.taskDescription || "";
+        if (!description) {
+          const hours = allocation.hours || allocation.allocatedHours || 0;
+          if (hours > 0) {
+            description = `Hours: ${hours}`;
+          }
+        }
+
         return [
           taskName,
           assignedTo,
@@ -1935,7 +1938,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           bucket,
           progress,
           "Medium", // Priority
-          allocation.taskDescription || `Hours: ${allocation.hours || allocation.allocatedHours || 0}` // Description - use taskDescription if available
+          description
         ];
       });
 
