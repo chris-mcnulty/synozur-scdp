@@ -7,29 +7,68 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
-import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight } from "lucide-react";
-import { format } from "date-fns";
+import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight, ArrowUpDown } from "lucide-react";
+import { format, subMonths } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { useVocabulary } from "@/lib/vocabulary-context";
 
 export function MyAssignments() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [projectFilter, setProjectFilter] = useState<string>("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("");
+  const [clientFilter, setClientFilter] = useState<string>("");
+  const [startDate, setStartDate] = useState(subMonths(new Date(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState("");
+  const [sortBy, setSortBy] = useState<string>("startDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [groupBy, setGroupBy] = useState<string>("");
   const [view, setView] = useState<"list" | "kanban">("list");
+
+  // Get vocabulary terms
+  const vocabulary = useVocabulary();
 
   // Get current user
   const { data: currentUser } = useQuery<any>({
     queryKey: ['/api/users/me'],
   });
 
-  // Get user's assignments
-  const { data: assignments = [], isLoading } = useQuery<any[]>({
-    queryKey: ['/api/my-assignments'],
+  // Build query params for enhanced endpoint
+  const buildQueryParams = () => {
+    const params = new URLSearchParams();
+    if (startDate) params.append("startDate", startDate);
+    if (endDate) params.append("endDate", endDate);
+    if (projectFilter) params.append("projectId", projectFilter);
+    if (clientFilter) params.append("clientId", clientFilter);
+    if (statusFilter) params.append("status", statusFilter);
+    if (sortBy) params.append("sortBy", sortBy);
+    if (sortOrder) params.append("sortOrder", sortOrder);
+    if (groupBy) params.append("groupBy", groupBy);
+    return params;
+  };
+
+  // Get user's assignments using enhanced endpoint
+  const { data: assignmentsData, isLoading } = useQuery<any>({
+    queryKey: ['/api/my-assignments', startDate, endDate, projectFilter, clientFilter, statusFilter, sortBy, sortOrder, groupBy],
+    queryFn: async () => {
+      const params = buildQueryParams();
+      const response = await fetch(`/api/my-assignments?${params}`, {
+        credentials: "include",
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
+      });
+      if (!response.ok) throw new Error("Failed to fetch assignments");
+      return response.json();
+    },
     enabled: !!currentUser,
   });
+
+  // Extract assignments and summary from response
+  const assignments = assignmentsData?.assignments || [];
+  const summary = assignmentsData?.summary;
 
   // Get unique projects for filter
   const projects = useMemo(() => {

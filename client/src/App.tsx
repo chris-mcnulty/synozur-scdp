@@ -20,6 +20,7 @@ import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import { MyAssignments } from "@/pages/my-assignments";
 import ResourceManagement from "@/pages/resource-management";
+import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import About from "@/pages/about";
 import Login from "@/pages/login";
@@ -122,6 +123,9 @@ function Router() {
       </Route>
       <Route path="/resource-management">
         {user ? <ResourceManagement /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/cross-project-resource">
+        {user ? <CrossProjectResource /> : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}

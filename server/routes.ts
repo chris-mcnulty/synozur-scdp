@@ -1643,6 +1643,327 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Comprehensive Resource Utilization API - Cross-project view with vocabulary integration
+  app.get("/api/reports/resource-utilization", requireAuth, async (req, res) => {
+    try {
+      const { 
+        personId, 
+        startDate, 
+        endDate, 
+        clientId, 
+        projectId, 
+        status,
+        sortBy = 'startDate',
+        sortOrder = 'asc',
+        groupBy
+      } = req.query;
+
+      // Permission check - employees can only see their own data
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      const targetPersonId = personId as string || userId;
+
+      if (userRole === 'employee' && targetPersonId !== userId) {
+        return res.status(403).json({ message: "Employees can only view their own resource utilization" });
+      }
+
+      // Build query conditions
+      let allocationsQuery = db
+        .select({
+          id: projectAllocations.id,
+          projectId: projectAllocations.projectId,
+          projectName: projects.name,
+          projectCode: projects.code,
+          projectStatus: projects.status,
+          clientId: clients.id,
+          clientName: clients.name,
+          personId: projectAllocations.personId,
+          personName: users.name,
+          personEmail: users.email,
+          roleId: projectAllocations.roleId,
+          roleName: roles.name,
+          workstreamId: projectAllocations.projectWorkstreamId,
+          workstreamName: projectWorkstreams.name,
+          epicId: projectAllocations.projectEpicId,
+          stageId: projectAllocations.projectStageId,
+          hours: projectAllocations.hours,
+          plannedStartDate: projectAllocations.plannedStartDate,
+          plannedEndDate: projectAllocations.plannedEndDate,
+          status: projectAllocations.status,
+          startedDate: projectAllocations.startedDate,
+          completedDate: projectAllocations.completedDate,
+          weekNumber: projectAllocations.weekNumber,
+          taskDescription: projectAllocations.taskDescription,
+          notes: projectAllocations.notes,
+          pricingMode: projectAllocations.pricingMode,
+          billingRate: projectAllocations.billingRate,
+          // Include project vocabulary overrides for cascading
+          projectVocabulary: projects.vocabularyOverrides,
+          clientVocabulary: clients.vocabularyOverrides
+        })
+        .from(projectAllocations)
+        .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
+        .innerJoin(clients, eq(projects.clientId, clients.id))
+        .leftJoin(users, eq(projectAllocations.personId, users.id))
+        .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
+
+      const conditions: any[] = [];
+
+      // Filter by person
+      if (targetPersonId) {
+        conditions.push(eq(projectAllocations.personId, targetPersonId));
+      }
+
+      // Filter by date range
+      if (startDate && endDate) {
+        conditions.push(
+          and(
+            sql`${projectAllocations.plannedEndDate} >= ${startDate}`,
+            sql`${projectAllocations.plannedStartDate} <= ${endDate}`
+          )
+        );
+      }
+
+      // Filter by client
+      if (clientId) {
+        conditions.push(eq(clients.id, clientId as string));
+      }
+
+      // Filter by project
+      if (projectId) {
+        conditions.push(eq(projects.id, projectId as string));
+      }
+
+      // Filter by status
+      if (status) {
+        conditions.push(eq(projectAllocations.status, status as string));
+      }
+
+      const allocations = conditions.length > 0
+        ? await allocationsQuery.where(and(...conditions))
+        : await allocationsQuery;
+
+      // Get organization-level vocabulary defaults
+      const orgVocab = await storage.getOrganizationVocabulary();
+
+      // Process allocations with vocabulary-aware labels
+      const processedAllocations = allocations.map(allocation => {
+        // Parse vocabulary overrides
+        let projectVocab: any = {};
+        let clientVocab: any = {};
+        
+        try {
+          if (allocation.projectVocabulary) {
+            projectVocab = JSON.parse(allocation.projectVocabulary);
+          }
+        } catch {}
+        
+        try {
+          if (allocation.clientVocabulary) {
+            clientVocab = JSON.parse(allocation.clientVocabulary);
+          }
+        } catch {}
+
+        // Cascade vocabulary: Project → Client → Organization → Default
+        const vocabularyContext = {
+          epic: projectVocab.epic || clientVocab.epic || orgVocab.epic || 'Epic',
+          stage: projectVocab.stage || clientVocab.stage || orgVocab.stage || 'Stage',
+          activity: projectVocab.activity || clientVocab.activity || orgVocab.activity || 'Activity',
+          workstream: projectVocab.workstream || clientVocab.workstream || orgVocab.workstream || 'Workstream'
+        };
+
+        return {
+          id: allocation.id,
+          project: {
+            id: allocation.projectId,
+            name: allocation.projectName,
+            code: allocation.projectCode,
+            status: allocation.projectStatus,
+            client: {
+              id: allocation.clientId,
+              name: allocation.clientName
+            }
+          },
+          person: {
+            id: allocation.personId,
+            name: allocation.personName,
+            email: allocation.personEmail
+          },
+          role: allocation.roleId ? {
+            id: allocation.roleId,
+            name: allocation.roleName
+          } : null,
+          workstream: allocation.workstreamName,
+          epicId: allocation.epicId,
+          stageId: allocation.stageId,
+          hours: allocation.hours,
+          plannedStartDate: allocation.plannedStartDate,
+          plannedEndDate: allocation.plannedEndDate,
+          status: allocation.status,
+          startedDate: allocation.startedDate,
+          completedDate: allocation.completedDate,
+          weekNumber: allocation.weekNumber,
+          taskDescription: allocation.taskDescription,
+          notes: allocation.notes,
+          pricingMode: allocation.pricingMode,
+          billingRate: allocation.billingRate,
+          vocabularyContext // Include vocabulary for UI labeling
+        };
+      });
+
+      // Sort allocations
+      const sortedAllocations = [...processedAllocations].sort((a, b) => {
+        let comparison = 0;
+        
+        switch (sortBy) {
+          case 'startDate':
+            comparison = (a.plannedStartDate || '').localeCompare(b.plannedStartDate || '');
+            break;
+          case 'endDate':
+            comparison = (a.plannedEndDate || '').localeCompare(b.plannedEndDate || '');
+            break;
+          case 'project':
+            comparison = a.project.name.localeCompare(b.project.name);
+            break;
+          case 'client':
+            comparison = a.project.client.name.localeCompare(b.project.client.name);
+            break;
+          case 'status':
+            comparison = a.status.localeCompare(b.status);
+            break;
+          case 'hours':
+            comparison = parseFloat(String(a.hours || 0)) - parseFloat(String(b.hours || 0));
+            break;
+          default:
+            comparison = (a.plannedStartDate || '').localeCompare(b.plannedStartDate || '');
+        }
+
+        return sortOrder === 'desc' ? -comparison : comparison;
+      });
+
+      // Group allocations if requested
+      let groupedAllocations: any = null;
+      if (groupBy) {
+        groupedAllocations = sortedAllocations.reduce((groups: any, allocation) => {
+          let key: string;
+          
+          switch (groupBy) {
+            case 'project':
+              key = allocation.project.id;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.project.name,
+                  groupType: 'project',
+                  allocations: []
+                };
+              }
+              break;
+            case 'client':
+              key = allocation.project.client.id;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.project.client.name,
+                  groupType: 'client',
+                  allocations: []
+                };
+              }
+              break;
+            case 'status':
+              key = allocation.status;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.status,
+                  groupType: 'status',
+                  allocations: []
+                };
+              }
+              break;
+            case 'timeframe':
+              // Group by month based on start date
+              const date = new Date(allocation.plannedStartDate || '');
+              key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+                  groupType: 'timeframe',
+                  allocations: []
+                };
+              }
+              break;
+            default:
+              key = 'all';
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: 'All Assignments',
+                  groupType: 'all',
+                  allocations: []
+                };
+              }
+          }
+          
+          groups[key].allocations.push(allocation);
+          return groups;
+        }, {});
+      }
+
+      // Calculate utilization metrics for the person
+      const totalHours = processedAllocations.reduce((sum, a) => sum + parseFloat(String(a.hours || 0)), 0);
+      const activeAllocations = processedAllocations.filter(a => a.status === 'in_progress' || a.status === 'open');
+      const completedAllocations = processedAllocations.filter(a => a.status === 'completed');
+      
+      // Calculate weekly capacity (40 hours/week baseline)
+      const weeklyCapacity = 40;
+      const utilizationRate = weeklyCapacity > 0 ? (totalHours / weeklyCapacity) * 100 : 0;
+      
+      let utilizationStatus: 'under' | 'optimal' | 'over' = 'optimal';
+      if (utilizationRate < 70) utilizationStatus = 'under';
+      else if (utilizationRate > 100) utilizationStatus = 'over';
+
+      // Build response
+      const response: any = {
+        summary: {
+          totalAllocations: processedAllocations.length,
+          activeAllocations: activeAllocations.length,
+          completedAllocations: completedAllocations.length,
+          totalHours,
+          weeklyCapacity,
+          utilizationRate: Math.round(utilizationRate),
+          utilizationStatus,
+          projectCount: new Set(processedAllocations.map(a => a.project.id)).size,
+          clientCount: new Set(processedAllocations.map(a => a.project.client.id)).size
+        },
+        allocations: groupedAllocations ? Object.values(groupedAllocations) : sortedAllocations,
+        filters: {
+          personId: targetPersonId,
+          startDate,
+          endDate,
+          clientId,
+          projectId,
+          status,
+          sortBy,
+          sortOrder,
+          groupBy
+        }
+      };
+
+      // Include person details if querying for a specific person
+      if (targetPersonId && processedAllocations.length > 0) {
+        response.person = processedAllocations[0].person;
+      }
+
+      res.json(response);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch resource utilization:", error);
+      res.status(500).json({ message: "Failed to fetch resource utilization" });
+    }
+  });
+
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
@@ -2218,7 +2539,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Get current user's assignments
+  // Get current user's assignments - Enhanced with filtering, sorting, and grouping
   app.get("/api/my-assignments", requireAuth, async (req, res) => {
     try {
       const userId = req.user?.id;
@@ -2226,8 +2547,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(401).json({ message: "User not found" });
       }
       
-      // Get all allocations for the current user
-      const allocations = await db
+      const {
+        startDate,
+        endDate,
+        projectId,
+        clientId,
+        status,
+        sortBy = 'startDate',
+        sortOrder = 'desc',
+        groupBy
+      } = req.query;
+      
+      // Build query with dynamic filtering
+      let allocationsQuery = db
         .select({
           id: projectAllocations.id,
           projectId: projectAllocations.projectId,
@@ -2235,6 +2567,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           client: clients,
           workstreamId: projectAllocations.projectWorkstreamId,
           workstream: projectWorkstreams.name,
+          epicId: projectAllocations.projectEpicId,
+          stageId: projectAllocations.projectStageId,
           roleId: projectAllocations.roleId,
           role: roles,
           hours: projectAllocations.hours,
@@ -2244,41 +2578,248 @@ export async function registerRoutes(app: Express): Promise<void> {
           status: projectAllocations.status,
           startedDate: projectAllocations.startedDate,
           completedDate: projectAllocations.completedDate,
-          weekNumber: projectAllocations.weekNumber
+          weekNumber: projectAllocations.weekNumber,
+          taskDescription: projectAllocations.taskDescription,
+          pricingMode: projectAllocations.pricingMode,
+          // Include vocabulary overrides for cascading
+          projectVocabulary: projects.vocabularyOverrides,
+          clientVocabulary: clients.vocabularyOverrides
         })
         .from(projectAllocations)
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
-        .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-        .where(eq(projectAllocations.personId, userId))
-        .orderBy(desc(projectAllocations.plannedStartDate));
+        .leftJoin(roles, eq(projectAllocations.roleId, roles.id));
+
+      // Build filter conditions
+      const conditions: any[] = [eq(projectAllocations.personId, userId)];
+
+      // Date range filter
+      if (startDate && endDate) {
+        conditions.push(
+          and(
+            sql`${projectAllocations.plannedEndDate} >= ${startDate}`,
+            sql`${projectAllocations.plannedStartDate} <= ${endDate}`
+          )
+        );
+      }
+
+      // Project filter
+      if (projectId) {
+        conditions.push(eq(projects.id, projectId as string));
+      }
+
+      // Client filter
+      if (clientId) {
+        conditions.push(eq(clients.id, clientId as string));
+      }
+
+      // Status filter
+      if (status) {
+        conditions.push(eq(projectAllocations.status, status as string));
+      }
+
+      const allocations = await allocationsQuery.where(and(...conditions));
       
-      // Format the response
-      const formattedAllocations = allocations.map(row => ({
-        id: row.id,
-        projectId: row.projectId,
-        project: {
-          id: row.project.id,
-          name: row.project.name,
-          client: {
-            id: row.client.id,
-            name: row.client.name
+      // Get organization vocabulary for cascading
+      const orgVocab = await storage.getOrganizationVocabulary();
+
+      // Format the response with vocabulary-aware labels
+      const formattedAllocations = allocations.map(row => {
+        // Parse vocabulary overrides
+        let projectVocab: any = {};
+        let clientVocab: any = {};
+        
+        try {
+          if (row.projectVocabulary) {
+            projectVocab = JSON.parse(row.projectVocabulary);
           }
+        } catch {}
+        
+        try {
+          if (row.clientVocabulary) {
+            clientVocab = JSON.parse(row.clientVocabulary);
+          }
+        } catch {}
+
+        // Cascade vocabulary: Project → Client → Organization → Default
+        const vocabularyContext = {
+          epic: projectVocab.epic || clientVocab.epic || orgVocab.epic || 'Epic',
+          stage: projectVocab.stage || clientVocab.stage || orgVocab.stage || 'Stage',
+          activity: projectVocab.activity || clientVocab.activity || orgVocab.activity || 'Activity',
+          workstream: projectVocab.workstream || clientVocab.workstream || orgVocab.workstream || 'Workstream'
+        };
+
+        return {
+          id: row.id,
+          projectId: row.projectId,
+          project: {
+            id: row.project.id,
+            name: row.project.name,
+            code: row.project.code,
+            status: row.project.status,
+            client: {
+              id: row.client.id,
+              name: row.client.name
+            }
+          },
+          workstream: row.workstream,
+          epicId: row.epicId,
+          stageId: row.stageId,
+          role: row.role ? { id: row.role.id, name: row.role.name } : null,
+          hours: row.hours,
+          plannedStartDate: row.plannedStartDate,
+          plannedEndDate: row.plannedEndDate,
+          notes: row.notes,
+          status: row.status,
+          startedDate: row.startedDate,
+          completedDate: row.completedDate,
+          weekNumber: row.weekNumber,
+          taskDescription: row.taskDescription,
+          pricingMode: row.pricingMode,
+          vocabularyContext
+        };
+      });
+
+      // Sort assignments
+      const sortedAllocations = [...formattedAllocations].sort((a, b) => {
+        let comparison = 0;
+        
+        switch (sortBy) {
+          case 'startDate':
+            comparison = (a.plannedStartDate || '').localeCompare(b.plannedStartDate || '');
+            break;
+          case 'endDate':
+            comparison = (a.plannedEndDate || '').localeCompare(b.plannedEndDate || '');
+            break;
+          case 'project':
+            comparison = a.project.name.localeCompare(b.project.name);
+            break;
+          case 'client':
+            comparison = a.project.client.name.localeCompare(b.project.client.name);
+            break;
+          case 'status':
+            comparison = a.status.localeCompare(b.status);
+            break;
+          case 'hours':
+            comparison = parseFloat(String(a.hours || 0)) - parseFloat(String(b.hours || 0));
+            break;
+          default:
+            comparison = (a.plannedStartDate || '').localeCompare(b.plannedStartDate || '');
+        }
+
+        return sortOrder === 'desc' ? -comparison : comparison;
+      });
+
+      // Group assignments if requested
+      let groupedAllocations: any = null;
+      if (groupBy) {
+        groupedAllocations = sortedAllocations.reduce((groups: any, allocation) => {
+          let key: string;
+          
+          switch (groupBy) {
+            case 'project':
+              key = allocation.project.id;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.project.name,
+                  groupType: 'project',
+                  allocations: []
+                };
+              }
+              break;
+            case 'client':
+              key = allocation.project.client.id;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.project.client.name,
+                  groupType: 'client',
+                  allocations: []
+                };
+              }
+              break;
+            case 'status':
+              key = allocation.status;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.status,
+                  groupType: 'status',
+                  allocations: []
+                };
+              }
+              break;
+            case 'timeframe':
+              // Group by month based on start date
+              const date = new Date(allocation.plannedStartDate || '');
+              key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+                  groupType: 'timeframe',
+                  allocations: []
+                };
+              }
+              break;
+            case 'epic':
+              key = allocation.epicId || 'none';
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: allocation.epicId ? `${allocation.vocabularyContext.epic} ${allocation.epicId}` : `No ${allocation.vocabularyContext.epic}`,
+                  groupType: 'epic',
+                  allocations: []
+                };
+              }
+              break;
+            default:
+              key = 'all';
+              if (!groups[key]) {
+                groups[key] = {
+                  groupKey: key,
+                  groupName: 'All Assignments',
+                  groupType: 'all',
+                  allocations: []
+                };
+              }
+          }
+          
+          groups[key].allocations.push(allocation);
+          return groups;
+        }, {});
+      }
+
+      // Calculate summary metrics
+      const totalHours = sortedAllocations.reduce((sum, a) => sum + parseFloat(String(a.hours || 0)), 0);
+      const activeCount = sortedAllocations.filter(a => a.status === 'open' || a.status === 'in_progress').length;
+      const completedCount = sortedAllocations.filter(a => a.status === 'completed').length;
+
+      const response: any = {
+        summary: {
+          total: sortedAllocations.length,
+          active: activeCount,
+          completed: completedCount,
+          totalHours,
+          projectCount: new Set(sortedAllocations.map(a => a.project.id)).size,
+          clientCount: new Set(sortedAllocations.map(a => a.project.client.id)).size
         },
-        workstream: row.workstream,
-        role: row.role ? { id: row.role.id, name: row.role.name } : null,
-        hours: row.hours,
-        plannedStartDate: row.plannedStartDate,
-        plannedEndDate: row.plannedEndDate,
-        notes: row.notes,
-        status: row.status,
-        startedDate: row.startedDate,
-        completedDate: row.completedDate,
-        weekNumber: row.weekNumber
-      }));
+        assignments: groupedAllocations ? Object.values(groupedAllocations) : sortedAllocations,
+        filters: {
+          startDate,
+          endDate,
+          projectId,
+          clientId,
+          status,
+          sortBy,
+          sortOrder,
+          groupBy
+        }
+      };
       
-      res.json(formattedAllocations);
+      res.json(response);
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch user assignments:", error);
       res.status(500).json({ message: "Failed to fetch assignments" });
