@@ -54,6 +54,7 @@ Development workflow: Dev server requires manual restart - do not attempt automa
 - **Project Text Export**: Generates comprehensive text summaries of project data with date filtering and role-based authorization for reporting.
 - **Invoice Batches Management**: Invoice batches grouped by client on the billing page, and a dedicated "Invoices" tab on project details.
 - **Resource Management & Capacity Planning**: Dual List and Timeline views for capacity, with a capacity summary dashboard, color-coded utilization, conflict detection, and enhanced filtering.
+- **Cross-Project Resource Dashboard**: New comprehensive resource utilization view (`/cross-project-resource`) showing a person's assignments across all projects with timeline visualization, utilization metrics, advanced filtering (date range, client, project, status), sorting, grouping, and vocabulary integration. Role-based access: employees auto-view own data, managers/admins can select team members.
 - **My Assignments**: Personal dashboard for employees to view assignments in List or Kanban views, with filtering and quick status updates.
 - **Budget & SOW Management**: New projects start with zero budget; SOW value and budget history begin only upon explicit SOW upload and approval.
 
