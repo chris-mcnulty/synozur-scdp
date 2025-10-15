@@ -1855,12 +1855,29 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Convert allocations to CSV rows
       const rows = allocations.map((allocation: any) => {
-        // Build task name from epic/stage/workstream
-        let taskName = allocation.workstream?.name || allocation.workstream || "Task";
+        // Build task name from epic/stage/workstream or taskDescription
+        let taskName = "";
+        
+        // First try to build from structure
         if (allocation.epic?.name && allocation.stage?.name) {
-          taskName = `${allocation.epic.name} - ${allocation.stage.name}: ${taskName}`;
-        } else if (allocation.projectEpic?.name && allocation.projectStage?.name) {
-          taskName = `${allocation.projectEpic.name} - ${allocation.projectStage.name}: ${taskName}`;
+          const workstreamName = allocation.workstream?.name || allocation.workstream || "";
+          taskName = workstreamName 
+            ? `${allocation.epic.name} - ${allocation.stage.name}: ${workstreamName}`
+            : `${allocation.epic.name} - ${allocation.stage.name}`;
+        } 
+        // Try taskDescription if no structure
+        else if (allocation.taskDescription) {
+          taskName = allocation.taskDescription;
+        }
+        // Fall back to workstream or activity
+        else if (allocation.workstream?.name || allocation.workstream) {
+          taskName = allocation.workstream?.name || allocation.workstream;
+        }
+        else if (allocation.activity?.name) {
+          taskName = allocation.activity.name;
+        }
+        else {
+          taskName = "Task";
         }
 
         // Determine assignee
@@ -2763,10 +2780,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       textOutput += `CLIENT: ${project.client?.name || 'Unknown'}\n`;
       textOutput += `STATUS: ${project.status}\n`;
       if (project.description) {
-        textOutput += `DESCRIPTION: ${project.description}\n`;
+        textOutput += `\nOVERVIEW/VISION:\n${project.description}\n`;
       }
       if (project.startDate) {
-        textOutput += `START DATE: ${project.startDate}\n`;
+        textOutput += `\nSTART DATE: ${project.startDate}\n`;
       }
       if (project.endDate) {
         textOutput += `END DATE: ${project.endDate}\n`;
