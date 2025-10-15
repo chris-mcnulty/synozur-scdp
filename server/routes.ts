@@ -2137,7 +2137,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           startedDate: projectAllocations.startedDate,
           completedDate: projectAllocations.completedDate,
           weekNumber: projectAllocations.weekNumber,
-          taskDescription: estimateLineItems.description
+          taskDescription: projectAllocations.taskDescription
         })
         .from(projectAllocations)
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
@@ -2145,7 +2145,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(users, eq(projectAllocations.personId, users.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-        .leftJoin(estimateLineItems, eq(projectAllocations.estimateLineItemId, estimateLineItems.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
       
       // Format the response
