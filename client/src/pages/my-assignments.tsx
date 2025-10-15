@@ -20,6 +20,7 @@ export function MyAssignments() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [projectFilter, setProjectFilter] = useState<string>("");
   const [clientFilter, setClientFilter] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [startDate, setStartDate] = useState(subMonths(new Date(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState("");
   const [sortBy, setSortBy] = useState<string>("startDate");

@@ -115,20 +115,25 @@ export default function ResourceManagementPage() {
 
   // Group assignments by person
   const groupedAssignments: GroupedAssignments[] = assignments.reduce((acc: GroupedAssignments[], assignment) => {
-    if (!assignment.person) return acc;
-    
     // Apply filters
     if (filterProject !== "all" && assignment.projectId !== filterProject) return acc;
     if (filterStatus !== "all" && assignment.status !== filterStatus) return acc;
-    if (filterPerson !== "all" && assignment.person.id !== filterPerson) return acc;
+    if (filterPerson !== "all" && assignment.person?.id !== filterPerson) return acc;
 
-    const existingGroup = acc.find(g => g.person.id === assignment.person?.id);
+    // Handle assignments without a person (unassigned tasks)
+    const person = assignment.person || { 
+      id: 'unassigned', 
+      name: 'Unassigned', 
+      email: '' 
+    };
+
+    const existingGroup = acc.find(g => g.person.id === person.id);
     if (existingGroup) {
       existingGroup.assignments.push(assignment);
       existingGroup.totalHours += assignment.hours || 0;
     } else {
       acc.push({
-        person: assignment.person,
+        person: person,
         totalHours: assignment.hours || 0,
         assignments: [assignment],
       });
