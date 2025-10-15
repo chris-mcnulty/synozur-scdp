@@ -20,6 +20,10 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
   utilizationRate?: number;
   description?: string;
   vocabularyOverrides?: string | null;
+  epicTermId?: string | null;
+  stageTermId?: string | null;
+  activityTermId?: string | null;
+  workstreamTermId?: string | null;
 }
 
 export default function Projects() {
