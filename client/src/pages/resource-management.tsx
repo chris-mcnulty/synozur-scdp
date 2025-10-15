@@ -44,6 +44,10 @@ interface Assignment {
     email: string;
   };
   workstream: string | null;
+  epicId: string | null;
+  epicName: string | null;
+  stageId: string | null;
+  stageName: string | null;
   role: {
     id: string;
     name: string;
@@ -154,7 +158,7 @@ export default function ResourceManagementPage() {
     }
 
     // Build CSV header
-    const csvRows = ['Person,Email,Project,Role,Workstream,Task/Activity,Hours,Week,Period,Status,Notes'];
+    const csvRows = ['Person,Email,Project,Role,Epic,Stage,Workstream,Task/Activity,Hours,Week,Period,Status,Notes'];
 
     // Build CSV rows
     groupedAssignments.forEach((group: any) => {
@@ -166,7 +170,9 @@ export default function ResourceManagementPage() {
         const personEmail = group.person.email || '';
         const projectName = assignment.project?.name || 'N/A';
         const roleName = assignment.role?.name || 'N/A';
-        const workstream = assignment.workstream?.name || 'N/A';
+        const epicName = assignment.epicName || 'N/A';
+        const stageName = assignment.stageName || 'N/A';
+        const workstream = assignment.workstream || 'N/A';
         const taskDescription = assignment.taskDescription || 'N/A';
         const hours = assignment.hours || '0';
         const week = assignment.weekNumber || 'N/A';
@@ -177,7 +183,7 @@ export default function ResourceManagementPage() {
         const notes = assignment.notes || '';
 
         csvRows.push(
-          `"${personName}","${personEmail}","${projectName}","${roleName}","${workstream}","${taskDescription}","${hours}","${week}","${period}","${status}","${notes}"`
+          `"${personName}","${personEmail}","${projectName}","${roleName}","${epicName}","${stageName}","${workstream}","${taskDescription}","${hours}","${week}","${period}","${status}","${notes}"`
         );
       });
     });

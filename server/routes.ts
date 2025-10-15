@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, roles, estimateLineItems } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -1685,7 +1685,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           workstreamId: projectAllocations.projectWorkstreamId,
           workstreamName: projectWorkstreams.name,
           epicId: projectAllocations.projectEpicId,
+          epicName: projectEpics.name,
           stageId: projectAllocations.projectStageId,
+          stageName: projectStages.name,
           hours: projectAllocations.hours,
           plannedStartDate: projectAllocations.plannedStartDate,
           plannedEndDate: projectAllocations.plannedEndDate,
@@ -1706,7 +1708,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(users, eq(projectAllocations.personId, users.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
-        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
+        .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+        .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id));
 
       const conditions: any[] = [];
 
@@ -1796,7 +1800,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           } : null,
           workstream: allocation.workstreamName,
           epicId: allocation.epicId,
+          epicName: allocation.epicName,
           stageId: allocation.stageId,
+          stageName: allocation.stageName,
           hours: allocation.hours,
           plannedStartDate: allocation.plannedStartDate,
           plannedEndDate: allocation.plannedEndDate,
@@ -2482,6 +2488,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           person: users,
           workstreamId: projectAllocations.projectWorkstreamId,
           workstream: projectWorkstreams.name,
+          epicId: projectAllocations.projectEpicId,
+          epicName: projectEpics.name,
+          stageId: projectAllocations.projectStageId,
+          stageName: projectStages.name,
           roleId: projectAllocations.roleId,
           role: roles,
           hours: projectAllocations.hours,
@@ -2499,6 +2509,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(users, eq(projectAllocations.personId, users.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+        .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
       
@@ -2520,6 +2532,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           email: row.person.email
         } : null,
         workstream: row.workstream,
+        epicId: row.epicId,
+        epicName: row.epicName,
+        stageId: row.stageId,
+        stageName: row.stageName,
         role: row.role ? { id: row.role.id, name: row.role.name } : null,
         hours: row.hours,
         plannedStartDate: row.plannedStartDate,
