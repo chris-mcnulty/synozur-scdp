@@ -2166,10 +2166,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Create CSV header (Planner-compatible columns)
+      // Create CSV header with Epic, Stage, and Workstream columns
       const headers = [
         "Task Name",
         "Assigned To",
+        "Epic",
+        "Stage",
+        "Workstream",
         "Start Date",
         "Due Date",
         "Labels",
@@ -2253,9 +2256,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Hours - separate column at the end
         const hours = allocation.hours || allocation.allocatedHours || 0;
 
+        // Extract Epic, Stage, and Workstream as separate fields
+        const epicName = allocation.epic?.name || "";
+        const stageName = allocation.stage?.name || "";
+        const workstreamName = allocation.workstream?.name || allocation.workstream || "";
+
         return [
           taskName,
           assignedTo,
+          epicName,
+          stageName,
+          workstreamName,
           startDate,
           dueDate,
           labels.join("; "),
