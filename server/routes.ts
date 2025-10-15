@@ -1856,9 +1856,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Convert allocations to CSV rows
       const rows = allocations.map((allocation: any) => {
         // Build task name from epic/stage/workstream
-        let taskName = allocation.workstream || "Task";
-        if (allocation.epic && allocation.stage) {
+        let taskName = allocation.workstream?.name || allocation.workstream || "Task";
+        if (allocation.epic?.name && allocation.stage?.name) {
           taskName = `${allocation.epic.name} - ${allocation.stage.name}: ${taskName}`;
+        } else if (allocation.projectEpic?.name && allocation.projectStage?.name) {
+          taskName = `${allocation.projectEpic.name} - ${allocation.projectStage.name}: ${taskName}`;
         }
 
         // Determine assignee
@@ -1870,28 +1872,41 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
 
         // Format dates
-        const startDate = allocation.startDate || "";
-        const dueDate = allocation.endDate || "";
+        const startDate = allocation.plannedStartDate || allocation.startDate || "";
+        const dueDate = allocation.plannedEndDate || allocation.endDate || "";
 
-        // Create labels from role and assignment mode
+        // Create labels from role and status
         const labels = [];
-        if (allocation.role) {
+        if (allocation.role?.name) {
           labels.push(allocation.role.name);
         }
-        if (allocation.assignmentMode === "role") {
-          labels.push("Role-based");
-        } else if (allocation.assignmentMode === "resource") {
-          labels.push("Unassigned");
+        if (allocation.status) {
+          labels.push(allocation.status.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()));
         }
-        if (allocation.weekNumber !== null) {
+        if (allocation.weekNumber !== null && allocation.weekNumber !== undefined) {
           labels.push(`Week ${allocation.weekNumber}`);
         }
 
-        // Notes include hours and rate info
-        const notes = `Allocated Hours: ${allocation.allocatedHours || 0}, Rate: $${allocation.rate || 0}/hr`;
+        // Notes include hours and any additional notes
+        let notes = `Allocated Hours: ${allocation.hours || allocation.allocatedHours || 0}`;
+        if (allocation.rackRate || allocation.billingRate) {
+          notes += `, Rate: $${allocation.billingRate || allocation.rackRate || 0}/hr`;
+        }
+        if (allocation.notes) {
+          notes += ` | ${allocation.notes}`;
+        }
 
         // Use workstream as bucket
-        const bucket = allocation.workstream || "General";
+        const bucket = allocation.workstream?.name || allocation.workstream || "General";
+
+        // Map status to progress
+        const progressMap: Record<string, string> = {
+          'open': 'Not Started',
+          'in_progress': 'In Progress',
+          'completed': 'Completed',
+          'cancelled': 'Not Started'
+        };
+        const progress = progressMap[allocation.status || 'open'] || 'Not Started';
 
         return [
           taskName,
@@ -1901,9 +1916,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           labels.join("; "),
           notes,
           bucket,
-          "Not Started", // Progress
+          progress,
           "Medium", // Priority
-          `Hours: ${allocation.allocatedHours || 0}` // Description
+          allocation.taskDescription || `Hours: ${allocation.hours || allocation.allocatedHours || 0}` // Description - use taskDescription if available
         ];
       });
 
