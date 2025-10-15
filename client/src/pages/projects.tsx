@@ -70,6 +70,11 @@ export default function Projects() {
     queryKey: ["/api/users"],
   });
 
+  // Load vocabulary catalog for dropdowns
+  const { data: catalogTerms = [] } = useQuery<any[]>({
+    queryKey: ["/api/vocabulary-catalog"],
+  });
+
   const createProject = useMutation({
     mutationFn: (data: any) => apiRequest("/api/projects", {
       method: "POST",
@@ -663,18 +668,10 @@ export default function Projects() {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const endDateValue = formData.get('endDate') as string;
-                
-                // Build vocabulary overrides JSON from form fields
-                const vocabularyOverrides: any = {};
-                const vocabEpic = formData.get('vocabEpic') as string;
-                const vocabStage = formData.get('vocabStage') as string;
-                const vocabActivity = formData.get('vocabActivity') as string;
-                const vocabWorkstream = formData.get('vocabWorkstream') as string;
-                
-                if (vocabEpic && vocabEpic.trim()) vocabularyOverrides.epic = vocabEpic.trim();
-                if (vocabStage && vocabStage.trim()) vocabularyOverrides.stage = vocabStage.trim();
-                if (vocabActivity && vocabActivity.trim()) vocabularyOverrides.activity = vocabActivity.trim();
-                if (vocabWorkstream && vocabWorkstream.trim()) vocabularyOverrides.workstream = vocabWorkstream.trim();
+                const epicTermId = formData.get('epicTermId') as string;
+                const stageTermId = formData.get('stageTermId') as string;
+                const activityTermId = formData.get('activityTermId') as string;
+                const workstreamTermId = formData.get('workstreamTermId') as string;
                 
                 editProject.mutate({
                   id: projectToEdit.id,
@@ -690,9 +687,10 @@ export default function Projects() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
-                    vocabularyOverrides: Object.keys(vocabularyOverrides).length > 0 
-                      ? JSON.stringify(vocabularyOverrides) 
-                      : null,
+                    epicTermId: epicTermId && epicTermId !== '' ? epicTermId : null,
+                    stageTermId: stageTermId && stageTermId !== '' ? stageTermId : null,
+                    activityTermId: activityTermId && activityTermId !== '' ? activityTermId : null,
+                    workstreamTermId: workstreamTermId && workstreamTermId !== '' ? workstreamTermId : null,
                   }
                 });
               }}>
@@ -843,82 +841,80 @@ export default function Projects() {
                     <Label htmlFor="edit-hasSow">SOW Signed</Label>
                   </div>
 
-                  <div className="pt-4 border-t">
-                    <h4 className="text-sm font-medium mb-2">Vocabulary Customization (Optional)</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Override terminology for this project. Leave blank to inherit from client or organization defaults.
-                    </p>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="edit-vocabEpic">Epic Term</Label>
-                        <Input
-                          id="edit-vocabEpic"
-                          name="vocabEpic"
-                          defaultValue={(() => {
-                            try {
-                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
-                              return parsed.epic || "";
-                            } catch {
-                              return "";
-                            }
-                          })()}
-                          placeholder="e.g., Phase, Theme"
-                          data-testid="input-vocab-epic"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="edit-vocabStage">Stage Term</Label>
-                        <Input
-                          id="edit-vocabStage"
-                          name="vocabStage"
-                          defaultValue={(() => {
-                            try {
-                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
-                              return parsed.stage || "";
-                            } catch {
-                              return "";
-                            }
-                          })()}
-                          placeholder="e.g., Sprint, Wave"
-                          data-testid="input-vocab-stage"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="edit-vocabActivity">Activity Term</Label>
-                        <Input
-                          id="edit-vocabActivity"
-                          name="vocabActivity"
-                          defaultValue={(() => {
-                            try {
-                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
-                              return parsed.activity || "";
-                            } catch {
-                              return "";
-                            }
-                          })()}
-                          placeholder="e.g., Task, Milestone"
-                          data-testid="input-vocab-activity"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="edit-vocabWorkstream">Workstream Term</Label>
-                        <Input
-                          id="edit-vocabWorkstream"
-                          name="vocabWorkstream"
-                          defaultValue={(() => {
-                            try {
-                              const parsed = projectToEdit.vocabularyOverrides ? JSON.parse(projectToEdit.vocabularyOverrides) : {};
-                              return parsed.workstream || "";
-                            } catch {
-                              return "";
-                            }
-                          })()}
-                          placeholder="e.g., Track, Stream"
-                          data-testid="input-vocab-workstream"
-                        />
+                  {catalogTerms.length > 0 && (
+                    <div className="pt-4 border-t">
+                      <h4 className="text-sm font-medium mb-2">Terminology Customization (Optional)</h4>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Override default terminology for this project. Select from predefined options. Leave unset to use client or organization defaults.
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="epicTermId">Epic Term</Label>
+                          <Select name="epicTermId" defaultValue={projectToEdit.epicTermId || ""}>
+                            <SelectTrigger data-testid="select-edit-vocab-epic">
+                              <SelectValue placeholder="Use default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Use client/organization default</SelectItem>
+                              {catalogTerms.filter((t: any) => t.category === 'epic').map((term: any) => (
+                                <SelectItem key={term.id} value={term.id}>
+                                  {term.termValue}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="stageTermId">Stage Term</Label>
+                          <Select name="stageTermId" defaultValue={projectToEdit.stageTermId || ""}>
+                            <SelectTrigger data-testid="select-edit-vocab-stage">
+                              <SelectValue placeholder="Use default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Use client/organization default</SelectItem>
+                              {catalogTerms.filter((t: any) => t.category === 'stage').map((term: any) => (
+                                <SelectItem key={term.id} value={term.id}>
+                                  {term.termValue}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="activityTermId">Activity Term</Label>
+                          <Select name="activityTermId" defaultValue={projectToEdit.activityTermId || ""}>
+                            <SelectTrigger data-testid="select-edit-vocab-activity">
+                              <SelectValue placeholder="Use default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Use client/organization default</SelectItem>
+                              {catalogTerms.filter((t: any) => t.category === 'activity').map((term: any) => (
+                                <SelectItem key={term.id} value={term.id}>
+                                  {term.termValue}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="workstreamTermId">Workstream Term</Label>
+                          <Select name="workstreamTermId" defaultValue={projectToEdit.workstreamTermId || ""}>
+                            <SelectTrigger data-testid="select-edit-vocab-workstream">
+                              <SelectValue placeholder="Use default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Use client/organization default</SelectItem>
+                              {catalogTerms.filter((t: any) => t.category === 'workstream').map((term: any) => (
+                                <SelectItem key={term.id} value={term.id}>
+                                  {term.termValue}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button 

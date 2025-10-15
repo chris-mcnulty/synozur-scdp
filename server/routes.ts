@@ -1850,7 +1850,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         "Bucket",
         "Progress",
         "Priority",
-        "Description"
+        "Description",
+        "Hours"
       ];
 
       // Convert allocations to CSV rows
@@ -1919,14 +1920,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         };
         const progress = progressMap[allocation.status || 'open'] || 'Not Started';
 
-        // Description - use taskDescription if available, otherwise show hours only if > 0
-        let description = allocation.taskDescription || "";
-        if (!description) {
-          const hours = allocation.hours || allocation.allocatedHours || 0;
-          if (hours > 0) {
-            description = `Hours: ${hours}`;
-          }
-        }
+        // Description - use taskDescription if available
+        const description = allocation.taskDescription || "";
+        
+        // Hours - separate column at the end
+        const hours = allocation.hours || allocation.allocatedHours || 0;
 
         return [
           taskName,
@@ -1938,7 +1936,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           bucket,
           progress,
           "Medium", // Priority
-          description
+          description,
+          hours
         ];
       });
 
