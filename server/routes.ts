@@ -207,10 +207,14 @@ async function ensureEstimateIsEditable(estimateId: string, res: Response): Prom
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
 import { requireAuth, requireRole, getAllSessions } from "./session-store";
+import { checkAndRefreshToken, handleTokenRefresh, startTokenRefreshScheduler } from "./auth/sso-token-refresh";
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Register authentication routes first
   registerAuthRoutes(app);
+  
+  // Start SSO token refresh scheduler
+  startTokenRefreshScheduler();
   
   // Sessions are now managed in the shared session-store module
 
@@ -10317,6 +10321,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // SSO token refresh endpoint
+  app.post("/api/auth/sso/refresh", requireAuth, handleTokenRefresh);
+  
+  // Apply token refresh check middleware to protected routes
+  app.use("/api/*", checkAndRefreshToken);
+
   // SSO login endpoint - initiates auth flow
   app.get("/api/auth/sso/login", async (req, res) => {
     try {
@@ -10363,16 +10373,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.redirect("/?error=user_not_found");
       }
 
-      // Create session with actual database user ID
+      // Create session with actual database user ID and SSO tokens
       const { createSession } = await import("./session-store.js");
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
-      createSession(sessionId, {
+      // Store SSO tokens with the session
+      const ssoData = {
+        provider: 'azure-ad',
+        accessToken: tokenResponse.accessToken,
+        refreshToken: tokenResponse.refreshToken || null,
+        tokenExpiry: tokenResponse.expiresOn || new Date(Date.now() + 3600 * 1000)
+      };
+      
+      await createSession(sessionId, {
         id: dbUser.id,
         email: dbUser.email,
         name: dbUser.name,
-        role: dbUser.role
-      });
+        role: dbUser.role,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      }, ssoData);
 
       // Redirect to app with session ID
       res.redirect(`/?sessionId=${sessionId}`);
