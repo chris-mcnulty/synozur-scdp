@@ -80,7 +80,7 @@ export function Sidebar() {
   const isAdmin = hasAnyRole(['admin']);
   
   return (
-    <aside className="w-64 bg-card border-r border-border" data-testid="sidebar">
+    <aside className="hidden lg:block w-64 bg-card border-r border-border" data-testid="sidebar">
       <div className="p-6">
         <nav className="space-y-2">
           {/* Personal workspace - always visible to logged-in users */}

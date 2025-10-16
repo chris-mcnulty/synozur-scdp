@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, setSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { MobileNav } from "./mobile-nav";
 
 export function Header() {
   const { user } = useAuth();
@@ -37,10 +38,10 @@ export function Header() {
 
   return (
     <header className="bg-card border-b border-border sticky top-0 z-50" data-testid="header">
-      <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center space-x-6">
+      <div className="flex items-center justify-between px-4 lg:px-6 py-4">
+        <div className="flex items-center space-x-2 lg:space-x-6">
+          <MobileNav />
           <SynozurTextLogo />
-          
         </div>
         
         {/* User Menu */}
