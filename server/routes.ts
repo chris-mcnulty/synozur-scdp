@@ -10375,13 +10375,15 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Create session with actual database user ID and SSO tokens
       const { createSession } = await import("./session-store.js");
-      const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      const crypto = await import('crypto');
+      const sessionId = crypto.randomUUID();
       
       // Store SSO tokens with the session
+      // Check if MSAL returned a refresh token (available in confidential client flow with offline_access scope)
       const ssoData = {
         provider: 'azure-ad',
         accessToken: tokenResponse.accessToken,
-        refreshToken: tokenResponse.refreshToken || null,
+        refreshToken: (tokenResponse as any).refreshToken || null, // Check for refresh token
         tokenExpiry: tokenResponse.expiresOn || new Date(Date.now() + 3600 * 1000)
       };
       

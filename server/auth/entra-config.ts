@@ -80,12 +80,12 @@ export const msalInstance = isConfigured
 
 // Authentication request parameters
 export const authCodeRequest = {
-  scopes: ["user.read", "profile", "email", "openid"],
+  scopes: ["user.read", "profile", "email", "openid", "offline_access"], // Added offline_access for refresh token
   redirectUri: REDIRECT_URI,
 };
 
 export const tokenRequest = {
-  scopes: ["user.read", "profile", "email", "openid"],
+  scopes: ["user.read", "profile", "email", "openid", "offline_access"], // Added offline_access for refresh token
   redirectUri: REDIRECT_URI,
 };
 

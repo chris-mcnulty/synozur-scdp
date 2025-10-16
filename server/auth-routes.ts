@@ -45,8 +45,9 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "User not found in database" });
       }
 
-      // Generate session ID
-      const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      // Generate cryptographically secure session ID
+      const crypto = await import('crypto');
+      const sessionId = crypto.randomUUID();
       
       // Store session using shared session store with ACTUAL database user ID
       await createSession(sessionId, {

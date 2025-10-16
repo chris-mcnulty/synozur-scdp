@@ -1,4 +1,23 @@
 import { Request, Response, NextFunction } from "express";
+
+// Extend Express Request to include user with SSO data
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        isActive: boolean;
+        ssoProvider?: string | null;
+        ssoToken?: string | null;
+        ssoRefreshToken?: string | null;
+        ssoTokenExpiry?: Date | null;
+      };
+    }
+  }
+}
 import { 
   getDbSession, 
   createDbSession, 
@@ -31,10 +50,17 @@ export async function getSession(sessionId: string): Promise<any> {
   // Fetch from database
   const session = await getDbSession(sessionId);
   
-  // Cache the result
+  // Cache the complete session with SSO data
   if (session) {
     sessionCache.set(sessionId, {
-      session,
+      session: {
+        ...session,
+        // Ensure SSO data is included in cache
+        ssoProvider: session.ssoProvider,
+        ssoToken: session.ssoToken,
+        ssoRefreshToken: session.ssoRefreshToken,
+        ssoTokenExpiry: session.ssoTokenExpiry
+      },
       cacheExpiry: Date.now() + CACHE_TTL_MS
     });
   } else {
@@ -118,13 +144,18 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   // Update session activity
   await touchSession(sessionId);
   
-  // Attach user to request
+  // Attach user and SSO data to request
   req.user = {
     id: session.id || session.userId,
     email: session.email,
     name: session.name,
     role: session.role,
-    isActive: true
+    isActive: true,
+    // Include SSO token data for refresh logic
+    ssoProvider: session.ssoProvider,
+    ssoToken: session.ssoToken,
+    ssoRefreshToken: session.ssoRefreshToken,
+    ssoTokenExpiry: session.ssoTokenExpiry
   };
   
   console.log("[AUTH] Session valid - User:", req.user?.email, "Role:", req.user?.role);
