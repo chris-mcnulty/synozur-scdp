@@ -127,17 +127,25 @@ export async function cleanupExpiredSessions(): Promise<void> {
 // Shared authentication middleware - now async
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   const sessionId = req.headers['x-session-id'] as string;
+  const requestPath = req.path;
   
-  console.log("[AUTH] Session check - SessionId:", sessionId ? sessionId.substring(0, 4) + '...' : 'none');
+  console.log("[AUTH] Session check:", {
+    sessionId: sessionId ? sessionId.substring(0, 8) + '...' : 'none',
+    path: requestPath,
+    method: req.method
+  });
   
   if (!sessionId) {
-    console.log("[AUTH] No session ID provided");
+    console.log("[AUTH] Request rejected - No session ID provided");
     return res.status(401).json({ message: "Not authenticated" });
   }
   
   const session = await getSession(sessionId);
   if (!session) {
-    console.log("[AUTH] Session not found or expired");
+    console.log("[AUTH] Request rejected - Session not found or expired:", {
+      sessionId: sessionId.substring(0, 8) + '...',
+      path: requestPath
+    });
     return res.status(401).json({ message: "Not authenticated" });
   }
   
@@ -158,7 +166,13 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     ssoTokenExpiry: session.ssoTokenExpiry
   };
   
-  console.log("[AUTH] Session valid - User:", req.user?.email, "Role:", req.user?.role);
+  console.log("[AUTH] Session valid:", {
+    sessionId: sessionId.substring(0, 8) + '...',
+    user: req.user?.email,
+    role: req.user?.role,
+    ssoProvider: req.user?.ssoProvider || 'none',
+    hasRefreshToken: !!req.user?.ssoRefreshToken
+  });
   next();
 };
 

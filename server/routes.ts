@@ -10310,31 +10310,65 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // SSO login endpoint - initiates auth flow (MUST be before middleware)
   app.get("/api/auth/sso/login", async (req, res) => {
+    console.log("[SSO-LOGIN] Initiating SSO login flow");
+    console.log("[SSO-LOGIN] Request headers:", {
+      'x-session-id': req.headers['x-session-id'] ? 'present' : 'absent',
+      'user-agent': req.headers['user-agent'],
+      'referer': req.headers['referer']
+    });
+    
     try {
       if (!msalInstance) {
+        console.error("[SSO-LOGIN] MSAL instance not configured");
         return res.status(503).json({ message: "SSO not configured" });
       }
 
+      console.log("[SSO-LOGIN] Generating auth URL with redirect URI:", authCodeRequest.redirectUri);
       const authUrl = await msalInstance.getAuthCodeUrl(authCodeRequest);
+      console.log("[SSO-LOGIN] Auth URL generated successfully");
       res.json({ authUrl });
-    } catch (error) {
-      console.error("SSO login error:", error);
+    } catch (error: any) {
+      console.error("[SSO-LOGIN] Failed to generate auth URL:", {
+        error: error.message,
+        errorCode: error.errorCode,
+        stack: error.stack
+      });
       res.status(500).json({ message: "Failed to initiate SSO login" });
     }
   });
 
   // SSO callback endpoint - handles Azure AD redirect (MUST be before middleware)
   app.get("/api/auth/callback", async (req, res) => {
+    console.log("[SSO-CALLBACK] Processing Azure AD callback");
+    console.log("[SSO-CALLBACK] Query params:", {
+      hasCode: !!req.query.code,
+      hasError: !!req.query.error,
+      errorDescription: req.query.error_description
+    });
+    
     try {
       if (!msalInstance) {
+        console.error("[SSO-CALLBACK] MSAL instance not configured");
         return res.redirect("/?error=sso_not_configured");
       }
 
-      const { code } = req.query;
+      const { code, error, error_description } = req.query;
+      
+      // Handle Azure AD errors
+      if (error) {
+        console.error("[SSO-CALLBACK] Azure AD returned error:", {
+          error,
+          description: error_description
+        });
+        return res.redirect(`/?error=${error}`);
+      }
+      
       if (!code || typeof code !== 'string') {
+        console.error("[SSO-CALLBACK] Missing or invalid authorization code");
         return res.redirect("/?error=missing_auth_code");
       }
 
+      console.log("[SSO-CALLBACK] Exchanging auth code for tokens");
       // Exchange authorization code for tokens
       const tokenResponse = await msalInstance.acquireTokenByCode({
         ...authCodeRequest,
@@ -10342,17 +10376,34 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
 
       if (!tokenResponse?.account) {
+        console.error("[SSO-CALLBACK] No account in token response");
         return res.redirect("/?error=no_account");
       }
+
+      const userEmail = tokenResponse.account.username;
+      console.log("[SSO-CALLBACK] Token exchange successful for user:", userEmail);
+      console.log("[SSO-CALLBACK] Token details:", {
+        hasAccessToken: !!tokenResponse.accessToken,
+        hasRefreshToken: !!(tokenResponse as any).refreshToken,
+        expiresOn: tokenResponse.expiresOn,
+        scopes: tokenResponse.scopes
+      });
 
       // Look up user in database by email
       const [dbUser] = await db.select()
         .from(users)
-        .where(eq(users.email, tokenResponse.account.username));
+        .where(eq(users.email, userEmail));
 
       if (!dbUser) {
+        console.error("[SSO-CALLBACK] User not found in database:", userEmail);
         return res.redirect("/?error=user_not_found");
       }
+
+      console.log("[SSO-CALLBACK] Found user in database:", {
+        id: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role
+      });
 
       // Create session with actual database user ID and SSO tokens
       const { createSession } = await import("./session-store.js");
@@ -10368,6 +10419,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         tokenExpiry: tokenResponse.expiresOn || new Date(Date.now() + 3600 * 1000)
       };
       
+      console.log("[SSO-CALLBACK] Creating session:", {
+        sessionId: sessionId.substring(0, 8) + '...',
+        hasRefreshToken: !!ssoData.refreshToken,
+        tokenExpiry: ssoData.tokenExpiry
+      });
+      
       await createSession(sessionId, {
         id: dbUser.id,
         email: dbUser.email,
@@ -10377,10 +10434,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         userAgent: req.headers['user-agent']
       }, ssoData);
 
+      console.log("[SSO-CALLBACK] Session created successfully, redirecting user");
       // Redirect to app with session ID
       res.redirect(`/?sessionId=${sessionId}`);
-    } catch (error) {
-      console.error("SSO callback error:", error);
+    } catch (error: any) {
+      console.error("[SSO-CALLBACK] Fatal error during callback processing:", {
+        message: error.message,
+        errorCode: error.errorCode,
+        stack: error.stack,
+        details: error
+      });
       res.redirect("/?error=sso_failed");
     }
   });

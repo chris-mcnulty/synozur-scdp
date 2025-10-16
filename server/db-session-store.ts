@@ -16,13 +16,18 @@ export async function getDbSession(sessionId: string): Promise<any> {
       .where(eq(sessions.id, sessionId));
     
     if (!session) {
+      console.log("[DB-SESSION] Session not found in database:", sessionId.substring(0, 8) + '...');
       return null;
     }
     
     // Check if session has expired
     if (new Date() > new Date(session.expiresAt)) {
+      console.log("[DB-SESSION] Session expired and removed:", {
+        sessionId: sessionId.substring(0, 8) + '...',
+        expiresAt: session.expiresAt,
+        email: session.email
+      });
       await deleteDbSession(sessionId);
-      console.log("[DB-SESSION] Session expired and removed:", sessionId.substring(0, 4) + '...');
       return null;
     }
     
@@ -70,7 +75,13 @@ export async function createDbSession(sessionId: string, userData: any, ssoData?
     };
     
     await db.insert(sessions).values(sessionData);
-    console.log("[DB-SESSION] Created new session:", sessionId.substring(0, 4) + '...', 'for user:', userData.email);
+    console.log("[DB-SESSION] Created new session:", {
+      sessionId: sessionId.substring(0, 8) + '...',
+      email: userData.email,
+      ssoProvider: ssoData?.provider || 'regular',
+      durationHours,
+      expiresAt
+    });
   } catch (error) {
     console.error("[DB-SESSION] Error creating session:", error);
     throw error;

@@ -50,8 +50,10 @@ export async function refreshSsoToken(sessionId: string, refreshToken: string): 
 // Middleware to check and refresh SSO tokens automatically
 export async function checkAndRefreshToken(req: Request, res: Response, next: () => void): Promise<void> {
   const sessionId = req.headers['x-session-id'] as string;
+  const requestPath = req.path;
   
-  if (!sessionId) {
+  // Skip middleware for auth endpoints
+  if (!sessionId || requestPath.includes('/auth/')) {
     return next();
   }
   
@@ -64,20 +66,43 @@ export async function checkAndRefreshToken(req: Request, res: Response, next: ()
       const session = req.user as any;
       
       if (session?.ssoRefreshToken) {
-        console.log("[SSO] Token near expiry, attempting refresh for session:", sessionId.substring(0, 4) + '...');
+        console.log("[SSO-REFRESH] Token near expiry, attempting refresh:", {
+          sessionId: sessionId.substring(0, 8) + '...',
+          userEmail: session.email,
+          currentExpiry: session.ssoTokenExpiry
+        });
         
         try {
-          await refreshSsoToken(sessionId, session.ssoRefreshToken);
+          const result = await refreshSsoToken(sessionId, session.ssoRefreshToken);
+          if (result) {
+            console.log("[SSO-REFRESH] Token refreshed successfully:", {
+              sessionId: sessionId.substring(0, 8) + '...',
+              newExpiry: result.expiresOn
+            });
+          }
         } catch (error: any) {
           if (error?.message === 'REAUTHENTICATION_REQUIRED') {
-            // Don't block the request, but log that re-auth is needed
-            console.log("[SSO] User will need to re-authenticate soon");
+            console.warn("[SSO-REFRESH] Refresh token expired, user needs to re-authenticate:", {
+              sessionId: sessionId.substring(0, 8) + '...',
+              userEmail: session.email
+            });
+          } else {
+            console.error("[SSO-REFRESH] Token refresh failed:", {
+              sessionId: sessionId.substring(0, 8) + '...',
+              error: error.message
+            });
           }
         }
+      } else {
+        console.log("[SSO-REFRESH] No refresh token available for session:", sessionId.substring(0, 8) + '...');
       }
     }
-  } catch (error) {
-    console.error("[SSO] Error in token refresh check:", error);
+  } catch (error: any) {
+    console.error("[SSO-REFRESH] Error checking token refresh status:", {
+      sessionId: sessionId.substring(0, 8) + '...',
+      error: error.message,
+      stack: error.stack
+    });
   }
   
   next();

@@ -73,6 +73,18 @@ const baseUrl = getBaseUrl();
 export const REDIRECT_URI = process.env.AZURE_REDIRECT_URI || `${baseUrl}/api/auth/callback`;
 export const POST_LOGOUT_REDIRECT_URI = process.env.POST_LOGOUT_REDIRECT_URI || baseUrl;
 
+// Log configuration for debugging
+console.log("[ENTRA-CONFIG] Azure AD Configuration:", {
+  configured: isConfigured,
+  clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+  tenantId: process.env.AZURE_TENANT_ID || defaultTenantId,
+  hasSecret: !!process.env.AZURE_CLIENT_SECRET,
+  baseUrl,
+  redirectUri: REDIRECT_URI,
+  environment: process.env.NODE_ENV || 'development',
+  replitDomains: process.env.REPLIT_DOMAINS || 'none'
+});
+
 // Create MSAL application instance only if configured
 export const msalInstance = isConfigured 
   ? new ConfidentialClientApplication(msalConfig)
