@@ -1,0 +1,202 @@
+2025-10-16 16:27:26.69
+64432aa6
+User
+code: '23505',
+2025-10-16 16:27:26.69
+64432aa6
+User
+detail: 'Key (user_id)=(2041e7f2-d44c-41ba-aac2-4f516e4540cc) already exists.',
+2025-10-16 16:27:26.69
+64432aa6
+User
+hint: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+position: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+internalPosition: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+internalQuery: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+where: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+schema: 'public',
+2025-10-16 16:27:26.69
+64432aa6
+User
+table: 'sessions',
+2025-10-16 16:27:26.69
+64432aa6
+User
+column: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+dataType: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+constraint: 'sessions_user_id_idx',
+2025-10-16 16:27:26.69
+64432aa6
+User
+file: 'nbtinsert.c',
+2025-10-16 16:27:26.69
+64432aa6
+User
+line: '666',
+2025-10-16 16:27:26.69
+64432aa6
+User
+routine: '_bt_check_unique'
+2025-10-16 16:27:26.69
+64432aa6
+User
+}
+2025-10-16 16:27:26.69
+64432aa6
+User
+[SSO-CALLBACK] Fatal error during callback processing: {
+2025-10-16 16:27:26.69
+64432aa6
+User
+message: 'duplicate key value violates unique constraint "sessions_user_id_idx"',
+2025-10-16 16:27:26.69
+64432aa6
+User
+errorCode: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+stack: 'error: duplicate key value violates unique constraint "sessions_user_id_idx"\n' +
+2025-10-16 16:27:26.69
+64432aa6
+User
+' at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74\n' +
+2025-10-16 16:27:26.69
+64432aa6
+User
+' at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+2025-10-16 16:27:26.69
+64432aa6
+User
+' at async createDbSession (file:///home/runner/workspace/dist/index.js:8477:5)\n' +
+2025-10-16 16:27:26.69
+64432aa6
+User
+' at async createSession (file:///home/runner/workspace/dist/index.js:8604:3)\n' +
+2025-10-16 16:27:26.69
+64432aa6
+User
+' at async file:///home/runner/workspace/dist/index.js:17074:7',
+2025-10-16 16:27:26.69
+64432aa6
+User
+details: error: duplicate key value violates unique constraint "sessions_user_id_idx"
+2025-10-16 16:27:26.69
+64432aa6
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2025-10-16 16:27:26.69
+64432aa6
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2025-10-16 16:27:26.69
+64432aa6
+User
+at async createDbSession (file:///home/runner/workspace/dist/index.js:8477:5)
+2025-10-16 16:27:26.69
+64432aa6
+User
+at async createSession (file:///home/runner/workspace/dist/index.js:8604:3)
+2025-10-16 16:27:26.69
+64432aa6
+User
+at async file:///home/runner/workspace/dist/index.js:17074:7 {
+2025-10-16 16:27:26.69
+64432aa6
+User
+length: 243,
+2025-10-16 16:27:26.69
+64432aa6
+User
+severity: 'ERROR',
+2025-10-16 16:27:26.69
+64432aa6
+User
+code: '23505',
+2025-10-16 16:27:26.69
+64432aa6
+User
+detail: 'Key (user_id)=(2041e7f2-d44c-41ba-aac2-4f516e4540cc) already exists.',
+2025-10-16 16:27:26.69
+64432aa6
+User
+hint: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+position: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+internalPosition: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+internalQuery: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+where: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+schema: 'public',
+2025-10-16 16:27:26.69
+64432aa6
+User
+table: 'sessions',
+2025-10-16 16:27:26.69
+64432aa6
+User
+column: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+dataType: undefined,
+2025-10-16 16:27:26.69
+64432aa6
+User
+constraint: 'sessions_user_id_idx',
+2025-10-16 16:27:26.69
+64432aa6
+User
+file: 'nbtinsert.c',
+2025-10-16 16:27:26.69
+64432aa6
+User
+line: '666',
+2025-10-16 16:27:26.69
+64432aa6
+User
+routine: '_bt_check_unique'
+2025-10-16 16:27:26.69
+64432aa6
+User
+}
+2025-10-16 16:27:26.69
+64432aa6
+User
+}
+2025-10-16 16:27:26.69
+644

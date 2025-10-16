@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1589,8 +1589,8 @@ export const sessions = pgTable("sessions", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
 }, (table) => ({
-  userIdIdx: uniqueIndex("sessions_user_id_idx").on(table.userId),
-  expiresAtIdx: uniqueIndex("sessions_expires_at_idx").on(table.expiresAt),
+  userIdIdx: index("sessions_user_id_idx").on(table.userId), // Non-unique - users can have multiple sessions
+  expiresAtIdx: index("sessions_expires_at_idx").on(table.expiresAt), // Non-unique - multiple sessions can expire at same time
 }));
 
 // Session insert schema
