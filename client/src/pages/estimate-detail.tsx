@@ -66,7 +66,6 @@ function EstimateDetailContent() {
   const [filterStage, setFilterStage] = useState("all");
   const [filterWorkstream, setFilterWorkstream] = useState("");
   const [filterWeek, setFilterWeek] = useState("all");
-  const [filterUnresourced, setFilterUnresourced] = useState(false);
   const [filterResource, setFilterResource] = useState("all");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showResourceSummary, setShowResourceSummary] = useState(false);
@@ -165,12 +164,11 @@ function EstimateDetailContent() {
       // Allow filtering by week 0 - treat null/undefined as 0
       const itemWeek = item.week ?? 0;
       const matchesWeek = filterWeek === "all" || itemWeek.toString() === filterWeek;
-      const matchesUnresourced = !filterUnresourced || (!item.assignedUserId && !item.roleId);
       const matchesResource = filterResource === "all" || 
         (filterResource === "unassigned" && !item.assignedUserId && !item.roleId) ||
         (filterResource !== "unassigned" && item.resourceName === filterResource);
       
-      return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesUnresourced && matchesResource;
+      return matchesText && matchesEpic && matchesStage && matchesWorkstream && matchesWeek && matchesResource;
     });
     
     // Default sort by week (ascending)
@@ -2301,131 +2299,143 @@ function EstimateDetailContent() {
             </p>
           )}
 
-          {/* Filter Controls */}
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-            <h4 className="font-medium mb-3">Filter Line Items</h4>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <Label htmlFor="filter-text">Description</Label>
+          {/* Compact Filter Bar */}
+          <div className="mb-4 bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border">
+            <div className="flex flex-wrap gap-2 items-center">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px] max-w-[300px]">
                 <Input
-                  id="filter-text"
-                  placeholder="Search descriptions..."
+                  placeholder="🔍 Search descriptions..."
                   value={filterText}
                   onChange={(e) => setFilterText(e.target.value)}
+                  className="h-9"
                 />
               </div>
-              <div>
-                <Label htmlFor="filter-epic">{vocabulary.epic}</Label>
-                <Select value={filterEpic} onValueChange={setFilterEpic}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={`All ${vocabulary.epic}s`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
-                    <SelectItem value="none">No {vocabulary.epic}</SelectItem>
-                    {epics.map((epic) => (
-                      <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="filter-stage">{vocabulary.stage}</Label>
-                <Select value={filterStage} onValueChange={setFilterStage}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={`All ${vocabulary.stage}s`} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All {vocabulary.stage}s</SelectItem>
-                    <SelectItem value="none">No {vocabulary.stage}</SelectItem>
-                    {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
-                      <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="filter-workstream">{vocabulary.workstream}</Label>
-                <Input
-                  id="filter-workstream"
-                  placeholder={`Filter by ${vocabulary.workstream.toLowerCase()}...`}
-                  value={filterWorkstream}
-                  onChange={(e) => setFilterWorkstream(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="filter-week">Week</Label>
-                <Select value={filterWeek} onValueChange={setFilterWeek}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Weeks" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Weeks</SelectItem>
-                    {(() => {
-                      // Include week 0 and all other weeks
-                      const weeks = Array.from(new Set(lineItems.map((item: EstimateLineItem) => item.week ?? 0))).sort((a, b) => Number(a) - Number(b));
-                      return weeks.map((week) => (
-                        <SelectItem key={week} value={week.toString()}>
-                          Week {week}
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 mt-3">
-              <div className="flex-1">
-                <Label htmlFor="filter-resource">Resource</Label>
-                <Select value={filterResource} onValueChange={setFilterResource}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Resources" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Resources</SelectItem>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {(() => {
-                      const uniqueResources = Array.from(new Set(
-                        lineItems
-                          .map((item: EstimateLineItem) => item.resourceName)
-                          .filter((name): name is string => !!name)
-                      )).sort();
-                      return uniqueResources.map((resource) => (
-                        <SelectItem key={resource} value={resource}>{resource}</SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex items-center gap-2 mt-6">
-                <input
-                  type="checkbox"
+
+              {/* Filter Dropdowns */}
+              <Select value={filterEpic} onValueChange={setFilterEpic}>
+                <SelectTrigger className="w-[140px] h-9">
+                  <SelectValue placeholder={`All ${vocabulary.epic}s`} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
+                  <SelectItem value="none">No {vocabulary.epic}</SelectItem>
+                  {epics.map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={filterStage} onValueChange={setFilterStage}>
+                <SelectTrigger className="w-[140px] h-9">
+                  <SelectValue placeholder={`All ${vocabulary.stage}s`} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All {vocabulary.stage}s</SelectItem>
+                  <SelectItem value="none">No {vocabulary.stage}</SelectItem>
+                  {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={filterWeek} onValueChange={setFilterWeek}>
+                <SelectTrigger className="w-[110px] h-9">
+                  <SelectValue placeholder="All Weeks" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Weeks</SelectItem>
+                  {(() => {
+                    const weeks = Array.from(new Set(lineItems.map((item: EstimateLineItem) => item.week ?? 0))).sort((a, b) => Number(a) - Number(b));
+                    return weeks.map((week) => (
+                      <SelectItem key={week} value={week.toString()}>
+                        Week {week}
+                      </SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+
+              <Select value={filterResource} onValueChange={setFilterResource}>
+                <SelectTrigger className="w-[140px] h-9">
+                  <SelectValue placeholder="Resources" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Resources</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {(() => {
+                    const uniqueResources = Array.from(new Set(
+                      lineItems
+                        .map((item: EstimateLineItem) => item.resourceName)
+                        .filter((name): name is string => !!name)
+                    )).sort();
+                    return uniqueResources.map((resource) => (
+                      <SelectItem key={resource} value={resource}>{resource}</SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+
+              {/* Workstream filter - can be hidden on small screens */}
+              <Input
+                placeholder={`${vocabulary.workstream}...`}
+                value={filterWorkstream}
+                onChange={(e) => setFilterWorkstream(e.target.value)}
+                className="w-[120px] h-9 hidden lg:block"
+              />
+
+              {/* Toggle for resource summary */}
+              <div className="flex items-center space-x-1.5 px-2">
+                <Checkbox 
                   id="show-resource-summary"
                   checked={showResourceSummary}
-                  onChange={(e) => setShowResourceSummary(e.target.checked)}
+                  onCheckedChange={(checked) => setShowResourceSummary(checked as boolean)}
+                  className="h-4 w-4"
                 />
-                <Label htmlFor="show-resource-summary">Show Resource Summary</Label>
+                <Label htmlFor="show-resource-summary" className="text-sm font-normal cursor-pointer">
+                  Summary
+                </Label>
               </div>
-            </div>
-            {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || filterWeek !== "all" || filterUnresourced || filterResource !== "all") && (
-              <div className="mt-3">
+
+              {/* Clear filters button - only show when filters are active */}
+              {(filterText || filterEpic !== "all" || filterStage !== "all" || filterWorkstream || 
+                filterWeek !== "all" || filterResource !== "all") && (
                 <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setFilterText("");
                     setFilterEpic("all");
                     setFilterStage("all");
                     setFilterWorkstream("");
                     setFilterWeek("all");
-                    setFilterUnresourced(false);
                     setFilterResource("all");
                   }}
-                  variant="outline"
-                  size="sm"
+                  className="h-9 px-2"
                 >
-                  Clear All Filters
+                  <X className="h-4 w-4" />
+                  <span className="ml-1 hidden sm:inline">Clear</span>
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* Active filter count indicator */}
+            {(() => {
+              const activeFilters = [
+                filterText ? 1 : 0,
+                filterEpic !== "all" ? 1 : 0,
+                filterStage !== "all" ? 1 : 0,
+                filterWorkstream ? 1 : 0,
+                filterWeek !== "all" ? 1 : 0,
+                filterResource !== "all" ? 1 : 0,
+              ].reduce((sum, val) => sum + val, 0);
+              
+              return activeFilters > 0 ? (
+                <div className="text-xs text-muted-foreground mt-1.5">
+                  {activeFilters} active filter{activeFilters !== 1 ? 's' : ''} • {getFilteredLineItems().length} of {lineItems?.length || 0} items shown
+                </div>
+              ) : null;
+            })()}
           </div>
 
           {showResourceSummary && (
