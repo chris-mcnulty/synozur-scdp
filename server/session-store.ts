@@ -1,34 +1,55 @@
 import { Request, Response, NextFunction } from "express";
+import { 
+  getDbSession, 
+  createDbSession, 
+  deleteDbSession, 
+  touchDbSession, 
+  cleanupExpiredDbSessions,
+  getUserSessions
+} from "./db-session-store";
 
-// Shared session storage for the entire application
-const sessions: Map<string, any> = new Map();
+// Shared session storage for backward compatibility and caching
+const sessionCache: Map<string, any> = new Map();
+const CACHE_TTL_MS = 60 * 1000; // Cache for 1 minute to reduce DB calls
 
-// Session configuration
-const SESSION_DURATION_HOURS = 24;
+// Session configuration 
+const SESSION_DURATION_HOURS = 48; // Increased for better stability
 
-// Get all sessions (for debugging)
+// Get all sessions (for debugging) - now returns cached sessions
 export function getAllSessions(): Map<string, any> {
-  return sessions;
+  return sessionCache;
 }
 
-// Get a specific session
-export function getSession(sessionId: string): any {
-  const session = sessions.get(sessionId);
+// Get a specific session - now uses database with caching
+export async function getSession(sessionId: string): Promise<any> {
+  // Check cache first
+  const cached = sessionCache.get(sessionId);
+  if (cached && cached.cacheExpiry > Date.now()) {
+    return cached.session;
+  }
   
-  // Check if session exists and hasn't expired
-  if (session && session.expiresAt) {
-    if (new Date() > new Date(session.expiresAt)) {
-      sessions.delete(sessionId);
-      console.log("[SESSION] Session expired and removed:", sessionId.substring(0, 4) + '...');
-      return null;
-    }
+  // Fetch from database
+  const session = await getDbSession(sessionId);
+  
+  // Cache the result
+  if (session) {
+    sessionCache.set(sessionId, {
+      session,
+      cacheExpiry: Date.now() + CACHE_TTL_MS
+    });
+  } else {
+    // Clear from cache if not in DB
+    sessionCache.delete(sessionId);
   }
   
   return session;
 }
 
-// Create a new session
-export function createSession(sessionId: string, userData: any): void {
+// Create a new session - now uses database
+export async function createSession(sessionId: string, userData: any, ssoData?: any): Promise<void> {
+  await createDbSession(sessionId, userData, ssoData);
+  
+  // Add to cache
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + SESSION_DURATION_HOURS);
   
@@ -39,50 +60,46 @@ export function createSession(sessionId: string, userData: any): void {
     lastActivity: new Date()
   };
   
-  sessions.set(sessionId, sessionData);
-  console.log("[SESSION] Created new session:", sessionId.substring(0, 4) + '...', 'for user:', userData.email);
-}
-
-// Delete a session
-export function deleteSession(sessionId: string): void {
-  const existed = sessions.has(sessionId);
-  sessions.delete(sessionId);
-  if (existed) {
-    console.log("[SESSION] Deleted session:", sessionId.substring(0, 4) + '...');
-  }
-}
-
-// Update session activity (keep session alive)
-export function touchSession(sessionId: string): void {
-  const session = sessions.get(sessionId);
-  if (session) {
-    session.lastActivity = new Date();
-    // Optionally extend expiration on activity
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + SESSION_DURATION_HOURS);
-    session.expiresAt = expiresAt;
-  }
-}
-
-// Clean up expired sessions
-export function cleanupExpiredSessions(): void {
-  const now = new Date();
-  let cleaned = 0;
-  
-  sessions.forEach((session, sessionId) => {
-    if (session.expiresAt && new Date(session.expiresAt) < now) {
-      sessions.delete(sessionId);
-      cleaned++;
-    }
+  sessionCache.set(sessionId, {
+    session: sessionData,
+    cacheExpiry: Date.now() + CACHE_TTL_MS
   });
+}
+
+// Delete a session - now uses database
+export async function deleteSession(sessionId: string): Promise<void> {
+  await deleteDbSession(sessionId);
+  sessionCache.delete(sessionId);
+}
+
+// Update session activity (keep session alive) - now uses database
+export async function touchSession(sessionId: string): Promise<void> {
+  await touchDbSession(sessionId);
   
-  if (cleaned > 0) {
-    console.log(`[SESSION] Cleaned up ${cleaned} expired sessions`);
+  // Update cache if present
+  const cached = sessionCache.get(sessionId);
+  if (cached) {
+    cached.session.lastActivity = new Date();
+    cached.cacheExpiry = Date.now() + CACHE_TTL_MS;
   }
 }
 
-// Shared authentication middleware
-export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+// Clean up expired sessions - now uses database
+export async function cleanupExpiredSessions(): Promise<void> {
+  await cleanupExpiredDbSessions();
+  
+  // Clear expired entries from cache
+  const now = Date.now();
+  const entries = Array.from(sessionCache.entries());
+  for (const [sessionId, cached] of entries) {
+    if (cached.cacheExpiry < now) {
+      sessionCache.delete(sessionId);
+    }
+  }
+}
+
+// Shared authentication middleware - now async
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   const sessionId = req.headers['x-session-id'] as string;
   
   console.log("[AUTH] Session check - SessionId:", sessionId ? sessionId.substring(0, 4) + '...' : 'none');
@@ -92,14 +109,14 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
     return res.status(401).json({ message: "Not authenticated" });
   }
   
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) {
     console.log("[AUTH] Session not found or expired");
     return res.status(401).json({ message: "Not authenticated" });
   }
   
   // Update session activity
-  touchSession(sessionId);
+  await touchSession(sessionId);
   
   // Attach user to request
   req.user = {
@@ -124,8 +141,10 @@ export const requireRole = (roles: string[]) => (req: Request, res: Response, ne
 };
 
 // Run cleanup every hour
-setInterval(cleanupExpiredSessions, 60 * 60 * 1000);
+setInterval(() => {
+  cleanupExpiredSessions().catch(console.error);
+}, 60 * 60 * 1000);
 
-console.log("[SESSION] Session store initialized");
+console.log("[SESSION] Session store initialized with database backing");
 
-export default sessions;
+export default sessionCache;

@@ -49,7 +49,7 @@ export function registerAuthRoutes(app: Express): void {
       const sessionId = Math.random().toString(36).substring(2) + Date.now().toString(36);
       
       // Store session using shared session store with ACTUAL database user ID
-      createSession(sessionId, {
+      await createSession(sessionId, {
         id: dbUser.id, // Use actual database user ID, not session ID
         email: dbUser.email,
         name: dbUser.name,
@@ -78,7 +78,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "No session ID provided" });
       }
 
-      const session = getSession(sessionId);
+      const session = await getSession(sessionId);
       if (!session) {
         return res.status(401).json({ message: "Invalid session" });
       }
@@ -101,7 +101,7 @@ export function registerAuthRoutes(app: Express): void {
       const sessionId = req.headers['x-session-id'] as string;
       
       if (sessionId) {
-        deleteSession(sessionId);
+        await deleteSession(sessionId);
       }
       
       res.json({ success: true });
