@@ -1779,11 +1779,10 @@ function EstimateDetailContent() {
       ) : (
       /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="outputs">Quotes</TabsTrigger>
           <TabsTrigger value="inputs">Inputs</TabsTrigger>
           <TabsTrigger value="resources">Resources</TabsTrigger>
-          <TabsTrigger value="factors">Factors</TabsTrigger>
           <TabsTrigger value="management">Structure</TabsTrigger>
         </TabsList>
 
@@ -2051,44 +2050,6 @@ function EstimateDetailContent() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="factors" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Factor Multipliers</CardTitle>
-              <CardDescription>
-                Configure the multipliers for size, complexity, and confidence factors
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <h4 className="font-semibold mb-2">Size</h4>
-                  <div className="space-y-1 text-sm">
-                    <div>Small: {estimate?.sizeSmallMultiplier || "1.00"}x</div>
-                    <div>Medium: {estimate?.sizeMediumMultiplier || "1.05"}x</div>
-                    <div>Large: {estimate?.sizeLargeMultiplier || "1.10"}x</div>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">Complexity</h4>
-                  <div className="space-y-1 text-sm">
-                    <div>Small: {estimate?.complexitySmallMultiplier || "1.00"}x</div>
-                    <div>Medium: {estimate?.complexityMediumMultiplier || "1.05"}x</div>
-                    <div>Large: {estimate?.complexityLargeMultiplier || "1.10"}x</div>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-2">Confidence</h4>
-                  <div className="space-y-1 text-sm">
-                    <div>High: {estimate?.confidenceHighMultiplier || "1.00"}x</div>
-                    <div>Medium: {estimate?.confidenceMediumMultiplier || "1.10"}x</div>
-                    <div>Low: {estimate?.confidenceLowMultiplier || "1.20"}x</div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="inputs" className="space-y-6">
 
