@@ -113,7 +113,11 @@ export function MobileNav() {
           <SheetHeader className="px-6 py-4 border-b">
             <SheetTitle className="text-left">SCDP Navigation</SheetTitle>
             <div className="text-sm text-muted-foreground">
-              {user ? `${user.firstName} ${user.lastName}`.trim() || user.email : ''}
+              {user ? (
+                user.firstName && user.lastName 
+                  ? `${user.firstName} ${user.lastName}` 
+                  : user.name || user.email
+              ) : ''}
             </div>
           </SheetHeader>
           

@@ -203,6 +203,22 @@ export default function TimeTracking() {
     }
   });
 
+  // Sort all dropdowns alphabetically
+  const sortedMilestones = useMemo(() => {
+    if (!milestones) return [];
+    return [...milestones].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [milestones]);
+
+  const sortedWorkstreams = useMemo(() => {
+    if (!workstreams) return [];
+    return [...workstreams].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [workstreams]);
+
+  const sortedProjectStages = useMemo(() => {
+    if (!projectStages) return [];
+    return [...projectStages].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [projectStages]);
+
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
     queryKey: ["/api/projects", editProjectId, "milestones"],
@@ -262,6 +278,22 @@ export default function TimeTracking() {
       return response.json();
     }
   });
+
+  // Sort edit form dropdowns alphabetically
+  const sortedEditMilestones = useMemo(() => {
+    if (!editMilestones) return [];
+    return [...editMilestones].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [editMilestones]);
+
+  const sortedEditWorkstreams = useMemo(() => {
+    if (!editWorkstreams) return [];
+    return [...editWorkstreams].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [editWorkstreams]);
+
+  const sortedEditProjectStages = useMemo(() => {
+    if (!editProjectStages) return [];
+    return [...editProjectStages].sort((a: any, b: any) => a.name.localeCompare(b.name));
+  }, [editProjectStages]);
 
   const { data: timeEntries, isLoading } = useQuery<TimeEntryWithRelations[]>({
     queryKey: ["/api/time-entries", filters],
@@ -877,7 +909,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {milestones?.map((milestone: any) => (
+                            {sortedMilestones?.map((milestone: any) => (
                               <SelectItem key={milestone.id} value={milestone.id}>
                                 {milestone.name}
                               </SelectItem>
@@ -906,7 +938,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {workstreams?.map((workstream: any) => (
+                            {sortedWorkstreams?.map((workstream: any) => (
                               <SelectItem key={workstream.id} value={workstream.id}>
                                 {workstream.name}
                               </SelectItem>
@@ -935,7 +967,7 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {projectStages?.map((stage: any) => (
+                            {sortedProjectStages?.map((stage: any) => (
                               <SelectItem key={stage.id} value={stage.id}>
                                 {stage.name}
                               </SelectItem>
@@ -1280,7 +1312,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {editMilestones?.map((milestone: any) => (
+                          {sortedEditMilestones?.map((milestone: any) => (
                             <SelectItem key={milestone.id} value={milestone.id}>
                               {milestone.name}
                             </SelectItem>
@@ -1309,7 +1341,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {editWorkstreams?.map((workstream: any) => (
+                          {sortedEditWorkstreams?.map((workstream: any) => (
                             <SelectItem key={workstream.id} value={workstream.id}>
                               {workstream.name}
                             </SelectItem>
@@ -1338,7 +1370,7 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {editProjectStages?.map((stage: any) => (
+                          {sortedEditProjectStages?.map((stage: any) => (
                             <SelectItem key={stage.id} value={stage.id}>
                               {stage.name}
                             </SelectItem>
