@@ -136,11 +136,11 @@ export default function ResourceManagementPage() {
     const existingGroup = acc.find(g => g.person.id === person.id);
     if (existingGroup) {
       existingGroup.assignments.push(assignment);
-      existingGroup.totalHours += assignment.hours || 0;
+      existingGroup.totalHours += Number(assignment.hours) || 0;
     } else {
       acc.push({
         person: person,
-        totalHours: assignment.hours || 0,
+        totalHours: Number(assignment.hours) || 0,
         assignments: [assignment],
       });
     }
