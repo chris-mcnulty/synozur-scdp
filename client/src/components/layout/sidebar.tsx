@@ -14,7 +14,11 @@ import {
   Building2,
   Info,
   Briefcase,
-  Languages
+  Languages,
+  User,
+  Home,
+  Calculator,
+  CreditCard
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -68,44 +72,25 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 export function Sidebar() {
+  const { hasAnyRole } = useAuth();
+  
+  // Determine if user has management roles
+  const isManager = hasAnyRole(['admin', 'pm', 'executive']);
+  const isFinanceRole = hasAnyRole(['admin', 'billing-admin']);
+  const isAdmin = hasAnyRole(['admin']);
+  
   return (
     <aside className="w-64 bg-card border-r border-border" data-testid="sidebar">
       <div className="p-6">
         <nav className="space-y-2">
-          <SidebarSection title="Portfolio" />
+          {/* Personal workspace - always visible to logged-in users */}
+          <SidebarSection title="My Workspace" />
           
           <SidebarItem
-            href="/"
-            icon={<ChartLine />}
-            label="Dashboard"
+            href="/my-dashboard"
+            icon={<Home />}
+            label="My Dashboard"
           />
-          
-          <SidebarItem
-            href="/projects"
-            icon={<FolderOpen />}
-            label="Projects"
-          />
-
-          <SidebarItem
-            href="/clients"
-            icon={<Building2 />}
-            label="Clients"
-          />
-          
-          <SidebarItem
-            href="/estimates"
-            icon={<FileText />}
-            label="Estimates"
-          />
-          
-          <SidebarItem
-            href="/reports"
-            icon={<BarChart3 />}
-            label="Reports"
-            requiredRoles={["admin", "billing-admin", "pm", "executive"]}
-          />
-          
-          <SidebarSection title="Operations" />
           
           <SidebarItem
             href="/my-assignments"
@@ -114,67 +99,124 @@ export function Sidebar() {
           />
           
           <SidebarItem
-            href="/resource-management"
-            icon={<Users />}
-            label="Resource Management"
-            requiredRoles={["admin", "pm", "executive"]}
-          />
-          
-          <SidebarItem
             href="/time"
             icon={<Clock />}
-            label="Time Tracking"
+            label="My Time"
           />
           
           <SidebarItem
             href="/expenses"
             icon={<Receipt />}
-            label="Expenses"
+            label="My Expenses"
           />
           
           <SidebarItem
-            href="/expense-management"
-            icon={<UsersRound />}
-            label="Expense Management"
-            requiredRoles={["admin", "pm", "billing-admin"]}
+            href="/my-projects"
+            icon={<FolderOpen />}
+            label="My Projects"
           />
           
-          <SidebarItem
-            href="/billing"
-            icon={<DollarSign />}
-            label="Billing"
-          />
+          {/* Portfolio Management - for PMs and Leaders */}
+          {isManager && (
+            <>
+              <SidebarSection title="Portfolio Management" />
+              
+              <SidebarItem
+                href="/"
+                icon={<ChartLine />}
+                label="Portfolio Dashboard"
+              />
+              
+              <SidebarItem
+                href="/projects"
+                icon={<FolderOpen />}
+                label="All Projects"
+              />
+              
+              <SidebarItem
+                href="/clients"
+                icon={<Building2 />}
+                label="Clients"
+              />
+              
+              <SidebarItem
+                href="/estimates"
+                icon={<FileText />}
+                label="Estimates"
+              />
+              
+              <SidebarItem
+                href="/resource-management"
+                icon={<Users />}
+                label="Resource Management"
+              />
+              
+              <SidebarItem
+                href="/reports"
+                icon={<BarChart3 />}
+                label="Reports"
+              />
+            </>
+          )}
           
-          <SidebarSection title="Administration" />
+          {/* Financial - segregated financial operations */}
+          {isFinanceRole && (
+            <>
+              <SidebarSection title="Financial" />
+              
+              <SidebarItem
+                href="/billing"
+                icon={<DollarSign />}
+                label="Billing & Invoicing"
+              />
+              
+              <SidebarItem
+                href="/expense-management"
+                icon={<CreditCard />}
+                label="Expense Management"
+              />
+              
+              <SidebarItem
+                href="/rates"
+                icon={<Calculator />}
+                label="Rate Management"
+              />
+            </>
+          )}
           
-          <SidebarItem
-            href="/rates"
-            icon={<Receipt />}
-            label="Rate Management"
-            badge="Admin"
-            requiredRoles={["admin"]}
-          />
+          {/* Administration - centralized admin */}
+          {isAdmin && (
+            <>
+              <SidebarSection title="Administration" />
+              
+              <SidebarItem
+                href="/users"
+                icon={<Users />}
+                label="User Management"
+              />
+              
+              <SidebarItem
+                href="/system-settings"
+                icon={<Settings />}
+                label="System Settings"
+              />
+              
+              <SidebarItem
+                href="/vocabulary"
+                icon={<Languages />}
+                label="Vocabulary"
+              />
+            </>
+          )}
           
-          <SidebarItem
-            href="/users"
-            icon={<Users />}
-            label="User Management"
-            requiredRoles={["admin"]}
-          />
-          
-          <SidebarItem
-            href="/system-settings"
-            icon={<Settings />}
-            label="System Settings"
-            requiredRoles={["admin"]}
-          />
-          
-          <SidebarItem
-            href="/about"
-            icon={<Info />}
-            label="About"
-          />
-          
+          {/* About - always visible */}
+          <div className="pt-4">
+            <SidebarItem
+              href="/about"
+              icon={<Info />}
+              label="About"
+            />
+          </div>
         </nav>
       </div>
     </aside>

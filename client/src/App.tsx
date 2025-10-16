@@ -112,6 +112,13 @@ function Router() {
       <Route path="/dashboard">
         {user ? <Dashboard /> : <Redirect to="/login" />}
       </Route>
+      {/* Personal workspace routes */}
+      <Route path="/my-dashboard">
+        {user ? <Dashboard /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/my-projects">
+        {user ? <Projects /> : <Redirect to="/login" />}
+      </Route>
       <Route path="/projects">
         {user ? <Projects /> : <Redirect to="/login" />}
       </Route>
@@ -161,6 +168,9 @@ function Router() {
         {user ? <CrossProjectResource /> : <Redirect to="/login" />}
       </Route>
       <Route path="/system-settings">
+        {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">

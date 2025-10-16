@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -65,6 +65,45 @@ const rateSettingsSchema = z.object({
   }, "Mileage rate must be a valid number 0 or greater"),
 });
 
+const estimationFactorsSchema = z.object({
+  sizeSmallMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  sizeMediumMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  sizeLargeMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  complexitySmallMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  complexityMediumMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  complexityLargeMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  confidenceHighMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  confidenceMediumMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+  confidenceLowMultiplier: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0.5 && num <= 3;
+  }, "Must be between 0.5 and 3"),
+});
+
 const companySettingsSchema = z.object({
   companyName: z.string().min(1, "Company name is required"),
   companyLogoUrl: z.string().url().optional().or(z.literal("")),
@@ -86,6 +125,7 @@ const vocabularySelectionsSchema = z.object({
 type RateSettingsData = z.infer<typeof rateSettingsSchema>;
 type CompanySettingsData = z.infer<typeof companySettingsSchema>;
 type VocabularySelectionsData = z.infer<typeof vocabularySelectionsSchema>;
+type EstimationFactorsData = z.infer<typeof estimationFactorsSchema>;
 
 export default function SystemSettings() {
   const { toast } = useToast();
@@ -100,6 +140,17 @@ export default function SystemSettings() {
   const defaultBillingRate = settings.find(s => s.settingKey === 'DEFAULT_BILLING_RATE')?.settingValue || '0';
   const defaultCostRate = settings.find(s => s.settingKey === 'DEFAULT_COST_RATE')?.settingValue || '0';
   const mileageRate = settings.find(s => s.settingKey === 'MILEAGE_RATE')?.settingValue || '0.70';
+  
+  // Get current estimation factor settings
+  const sizeSmallMultiplier = settings.find(s => s.settingKey === 'SIZE_SMALL_MULTIPLIER')?.settingValue || '1.00';
+  const sizeMediumMultiplier = settings.find(s => s.settingKey === 'SIZE_MEDIUM_MULTIPLIER')?.settingValue || '1.05';
+  const sizeLargeMultiplier = settings.find(s => s.settingKey === 'SIZE_LARGE_MULTIPLIER')?.settingValue || '1.10';
+  const complexitySmallMultiplier = settings.find(s => s.settingKey === 'COMPLEXITY_SMALL_MULTIPLIER')?.settingValue || '1.00';
+  const complexityMediumMultiplier = settings.find(s => s.settingKey === 'COMPLEXITY_MEDIUM_MULTIPLIER')?.settingValue || '1.05';
+  const complexityLargeMultiplier = settings.find(s => s.settingKey === 'COMPLEXITY_LARGE_MULTIPLIER')?.settingValue || '1.10';
+  const confidenceHighMultiplier = settings.find(s => s.settingKey === 'CONFIDENCE_HIGH_MULTIPLIER')?.settingValue || '1.00';
+  const confidenceMediumMultiplier = settings.find(s => s.settingKey === 'CONFIDENCE_MEDIUM_MULTIPLIER')?.settingValue || '1.10';
+  const confidenceLowMultiplier = settings.find(s => s.settingKey === 'CONFIDENCE_LOW_MULTIPLIER')?.settingValue || '1.20';
 
   // Get current company settings
   const settingsMap = Object.fromEntries(settings.map(s => [s.settingKey, s.settingValue]));
@@ -138,6 +189,32 @@ export default function SystemSettings() {
       companyEmail: settingsMap.COMPANY_EMAIL || "",
       companyWebsite: settingsMap.COMPANY_WEBSITE || "",
       paymentTerms: settingsMap.PAYMENT_TERMS || "Payment due within 30 days",
+    },
+  });
+  
+  const estimationFactorsForm = useForm<EstimationFactorsData>({
+    resolver: zodResolver(estimationFactorsSchema),
+    defaultValues: {
+      sizeSmallMultiplier: "1.00",
+      sizeMediumMultiplier: "1.05",
+      sizeLargeMultiplier: "1.10",
+      complexitySmallMultiplier: "1.00",
+      complexityMediumMultiplier: "1.05",
+      complexityLargeMultiplier: "1.10",
+      confidenceHighMultiplier: "1.00",
+      confidenceMediumMultiplier: "1.10",
+      confidenceLowMultiplier: "1.20",
+    },
+    values: {
+      sizeSmallMultiplier,
+      sizeMediumMultiplier,
+      sizeLargeMultiplier,
+      complexitySmallMultiplier,
+      complexityMediumMultiplier,
+      complexityLargeMultiplier,
+      confidenceHighMultiplier,
+      confidenceMediumMultiplier,
+      confidenceLowMultiplier,
     },
   });
 
@@ -301,6 +378,51 @@ export default function SystemSettings() {
       });
     },
   });
+  
+  const updateEstimationFactorsMutation = useMutation({
+    mutationFn: async (data: EstimationFactorsData) => {
+      // Update all factor settings
+      const factorSettings = [
+        { key: 'SIZE_SMALL_MULTIPLIER', value: data.sizeSmallMultiplier, description: 'Multiplier for small size estimation' },
+        { key: 'SIZE_MEDIUM_MULTIPLIER', value: data.sizeMediumMultiplier, description: 'Multiplier for medium size estimation' },
+        { key: 'SIZE_LARGE_MULTIPLIER', value: data.sizeLargeMultiplier, description: 'Multiplier for large size estimation' },
+        { key: 'COMPLEXITY_SMALL_MULTIPLIER', value: data.complexitySmallMultiplier, description: 'Multiplier for small complexity estimation' },
+        { key: 'COMPLEXITY_MEDIUM_MULTIPLIER', value: data.complexityMediumMultiplier, description: 'Multiplier for medium complexity estimation' },
+        { key: 'COMPLEXITY_LARGE_MULTIPLIER', value: data.complexityLargeMultiplier, description: 'Multiplier for large complexity estimation' },
+        { key: 'CONFIDENCE_HIGH_MULTIPLIER', value: data.confidenceHighMultiplier, description: 'Multiplier for high confidence estimation' },
+        { key: 'CONFIDENCE_MEDIUM_MULTIPLIER', value: data.confidenceMediumMultiplier, description: 'Multiplier for medium confidence estimation' },
+        { key: 'CONFIDENCE_LOW_MULTIPLIER', value: data.confidenceLowMultiplier, description: 'Multiplier for low confidence estimation' },
+      ];
+      
+      await Promise.all(
+        factorSettings.map(setting => 
+          apiRequest("/api/settings", {
+            method: "POST",
+            body: JSON.stringify({
+              settingKey: setting.key,
+              settingValue: setting.value,
+              settingType: "number",
+              description: setting.description
+            }),
+          })
+        )
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Estimation factors updated",
+        description: "System-wide estimation factors have been updated successfully.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Failed to update estimation factors",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleRateSubmit = (data: RateSettingsData) => {
     updateRatesMutation.mutate(data);
@@ -312,6 +434,10 @@ export default function SystemSettings() {
 
   const handleVocabularySubmit = (data: VocabularySelectionsData) => {
     updateVocabularyMutation.mutate(data);
+  };
+  
+  const handleEstimationFactorsSubmit = (data: EstimationFactorsData) => {
+    updateEstimationFactorsMutation.mutate(data);
   };
 
   if (isLoading) {
@@ -349,6 +475,10 @@ export default function SystemSettings() {
             <TabsTrigger value="rates" className="flex items-center space-x-2">
               <DollarSign className="w-4 h-4" />
               <span>Default Rates</span>
+            </TabsTrigger>
+            <TabsTrigger value="factors" className="flex items-center space-x-2">
+              <Calculator className="w-4 h-4" />
+              <span>Estimation Factors</span>
             </TabsTrigger>
             <TabsTrigger value="catalog" className="flex items-center space-x-2">
               <BookOpen className="w-4 h-4" />
@@ -691,6 +821,254 @@ export default function SystemSettings() {
                       >
                         <Save className="w-4 h-4 mr-2" />
                         {updateRatesMutation.isPending ? "Saving..." : "Save Rate Settings"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="factors" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Calculator className="w-5 h-5" />
+                  <span>Estimation Factor Multipliers</span>
+                </CardTitle>
+                <CardDescription>
+                  Configure system-wide default multipliers for size, complexity, and confidence factors.
+                  These values are used when calculating adjusted hours in estimates.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    These are system-wide defaults used for all new estimates. Individual estimates can override these values if needed.
+                  </AlertDescription>
+                </Alert>
+
+                <Form {...estimationFactorsForm}>
+                  <form onSubmit={estimationFactorsForm.handleSubmit(handleEstimationFactorsSubmit)} className="space-y-8">
+                    {/* Size Factors */}
+                    <div>
+                      <h3 className="text-sm font-medium mb-4">Size Multipliers</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="sizeSmallMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Small</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-size-small"
+                                />
+                              </FormControl>
+                              <FormDescription>Base multiplier (typically 1.0)</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="sizeMediumMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Medium</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-size-medium"
+                                />
+                              </FormControl>
+                              <FormDescription>Moderate size increase</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="sizeLargeMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Large</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-size-large"
+                                />
+                              </FormControl>
+                              <FormDescription>Significant size increase</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Complexity Factors */}
+                    <div>
+                      <h3 className="text-sm font-medium mb-4">Complexity Multipliers</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="complexitySmallMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Simple</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-complexity-small"
+                                />
+                              </FormControl>
+                              <FormDescription>Base complexity (typically 1.0)</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="complexityMediumMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Medium</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-complexity-medium"
+                                />
+                              </FormControl>
+                              <FormDescription>Moderate complexity</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="complexityLargeMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Complex</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-complexity-large"
+                                />
+                              </FormControl>
+                              <FormDescription>High complexity</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Confidence Factors */}
+                    <div>
+                      <h3 className="text-sm font-medium mb-4">Confidence Multipliers</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="confidenceHighMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>High Confidence</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-confidence-high"
+                                />
+                              </FormControl>
+                              <FormDescription>Well understood (typically 1.0)</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="confidenceMediumMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Medium Confidence</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-confidence-medium"
+                                />
+                              </FormControl>
+                              <FormDescription>Some uncertainty</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={estimationFactorsForm.control}
+                          name="confidenceLowMultiplier"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Low Confidence</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.05"
+                                  min="0.5"
+                                  max="3"
+                                  {...field}
+                                  data-testid="input-confidence-low"
+                                />
+                              </FormControl>
+                              <FormDescription>High uncertainty</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button 
+                        type="submit" 
+                        disabled={updateEstimationFactorsMutation.isPending}
+                        data-testid="button-save-factors"
+                      >
+                        <Save className="w-4 h-4 mr-2" />
+                        {updateEstimationFactorsMutation.isPending ? "Saving..." : "Save Factor Settings"}
                       </Button>
                     </div>
                   </form>
