@@ -10308,13 +10308,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // SSO token refresh endpoint
-  app.post("/api/auth/sso/refresh", requireAuth, handleTokenRefresh);
-  
-  // Apply token refresh check middleware to protected routes
-  app.use("/api/*", checkAndRefreshToken);
-
-  // SSO login endpoint - initiates auth flow
+  // SSO login endpoint - initiates auth flow (MUST be before middleware)
   app.get("/api/auth/sso/login", async (req, res) => {
     try {
       if (!msalInstance) {
@@ -10329,7 +10323,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // SSO callback endpoint - handles Azure AD redirect
+  // SSO callback endpoint - handles Azure AD redirect (MUST be before middleware)
   app.get("/api/auth/callback", async (req, res) => {
     try {
       if (!msalInstance) {
@@ -10390,5 +10384,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.redirect("/?error=sso_failed");
     }
   });
+
+  // SSO token refresh endpoint (requires auth)
+  app.post("/api/auth/sso/refresh", requireAuth, handleTokenRefresh);
+  
+  // Apply token refresh check middleware to protected routes (AFTER SSO login/callback endpoints)
+  app.use("/api/*", checkAndRefreshToken);
 
 }
