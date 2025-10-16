@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -68,7 +68,21 @@ function EstimateDetailContent() {
   const [filterWeek, setFilterWeek] = useState("all");
   const [filterUnresourced, setFilterUnresourced] = useState(false);
   const [filterResource, setFilterResource] = useState("all");
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showResourceSummary, setShowResourceSummary] = useState(false);
+  
+  // Toggle expanded row state
+  const toggleExpandRow = (itemId: string) => {
+    setExpandedRows(prev => {
+      const newExpanded = new Set(prev);
+      if (newExpanded.has(itemId)) {
+        newExpanded.delete(itemId);
+      } else {
+        newExpanded.add(itemId);
+      }
+      return newExpanded;
+    });
+  };
   const [showEpicManagement, setShowEpicManagement] = useState(false);
   const [showStageManagement, setShowStageManagement] = useState(false);
   const [showSplitDialog, setShowSplitDialog] = useState(false);
@@ -2547,6 +2561,7 @@ function EstimateDetailContent() {
               <table className="w-full caption-bottom text-sm min-w-[1200px]">
                 <thead className="sticky top-0 bg-white dark:bg-slate-950 z-20 border-b shadow-sm">
                   <tr className="border-b hover:bg-transparent">
+                    <TableHead className="w-8 px-2 py-2 text-xs bg-white dark:bg-slate-950"></TableHead>
                     <TableHead className="w-10 px-2 py-2 text-xs bg-white dark:bg-slate-950">
                       <input
                         type="checkbox"
@@ -2570,21 +2585,11 @@ function EstimateDetailContent() {
                       }}
                     />
                     </TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Epic</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Stage</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Workstream</TableHead>
-                    <TableHead className="w-12 px-2 py-2 text-xs bg-white dark:bg-slate-950">Week</TableHead>
-                    <TableHead className="min-w-[180px] px-2 py-2 text-xs bg-white dark:bg-slate-950">Description</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Hours</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Factor</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Resource</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Rate</TableHead>
-                    <TableHead className="w-14 px-2 py-2 text-xs bg-white dark:bg-slate-950">Cost</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Adjust</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Adj.Hrs</TableHead>
-                    <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Total</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Margin</TableHead>
-                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950">Comments</TableHead>
+                    <TableHead className="min-w-[250px] px-2 py-2 text-xs bg-white dark:bg-slate-950">Description</TableHead>
+                    <TableHead className="w-32 px-2 py-2 text-xs bg-white dark:bg-slate-950">Epic / Stage</TableHead>
+                    <TableHead className="w-28 px-2 py-2 text-xs bg-white dark:bg-slate-950">Resource</TableHead>
+                    <TableHead className="w-20 px-2 py-2 text-xs bg-white dark:bg-slate-950 text-right">Hours</TableHead>
+                    <TableHead className="w-24 px-2 py-2 text-xs bg-white dark:bg-slate-950 text-right">Total</TableHead>
                     <TableHead className="w-16 px-2 py-2 text-xs bg-white dark:bg-slate-950">Actions</TableHead>
                 </tr>
               </thead>
@@ -2606,9 +2611,21 @@ function EstimateDetailContent() {
                   getFilteredLineItems().map((item: EstimateLineItem) => {
                     const epic = epics.find(e => e.id === item.epicId);
                     const stage = stages.find(s => s.id === item.stageId);
+                    const isExpanded = expandedRows.has(item.id);
                     return (
-                    <TableRow key={item.id} className={`${selectedItems.has(item.id) ? "bg-blue-50" : ""} h-10`}>
-                      <TableCell>
+                    <>
+                    <TableRow key={item.id} className={`${selectedItems.has(item.id) ? "bg-blue-50" : ""} border-b`}>
+                      <TableCell className="py-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleExpandRow(item.id)}
+                          className="h-6 w-6 p-0"
+                        >
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="py-2">
                         <input
                           type="checkbox"
                           checked={selectedItems.has(item.id)}
@@ -2623,30 +2640,7 @@ function EstimateDetailContent() {
                           }}
                         />
                       </TableCell>
-                      <TableCell>{epic?.name || "-"}</TableCell>
-                      <TableCell>{stage?.name || "-"}</TableCell>
-                      <TableCell>
-                        {editingField === `${item.id}-workstream` ? (
-                          <Input
-                            value={editingDraft[`${item.id}-workstream`] ?? ""}
-                            onChange={(e) => updateFieldDraft(item.id, "workstream", e.target.value)}
-                            onBlur={() => saveFieldDraft(item, "workstream")}
-                            placeholder="Workstream"
-                            className="min-w-[120px]"
-                            autoFocus
-                          />
-                        ) : (
-                          <div 
-                            onClick={() => startFieldEditing(item, "workstream")} 
-                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
-                            title="Click to edit workstream"
-                          >
-                            {item.workstream || "-"}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>{item.week ?? "0"}</TableCell>
-                      <TableCell className="min-w-[200px]">
+                      <TableCell className="py-2 min-w-[250px]">
                         {editingField === `${item.id}-description` ? (
                           <Input
                             value={editingDraft[`${item.id}-description`] ?? ""}
@@ -2660,279 +2654,156 @@ function EstimateDetailContent() {
                             className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200"
                             title="Click to edit description"
                           >
-                            {item.description}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingField === `${item.id}-baseHours` ? (
-                          <Input
-                            type="number"
-                            step="0.1"
-                            value={editingDraft[`${item.id}-baseHours`] ?? ""}
-                            onChange={(e) => updateFieldDraft(item.id, "baseHours", e.target.value)}
-                            onBlur={() => saveFieldDraft(item, "baseHours")}
-                            className="w-20"
-                            autoFocus
-                          />
-                        ) : (
-                          <div 
-                            onClick={() => startFieldEditing(item, "baseHours")} 
-                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
-                            title="Click to edit hours"
-                          >
-                            {Number(item.baseHours).toFixed(2)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {editingField === `${item.id}-factor` ? (
-                          <Input
-                            type="number"
-                            step="0.1"
-                            value={editingDraft[`${item.id}-factor`] ?? ""}
-                            onChange={(e) => updateFieldDraft(item.id, "factor", e.target.value)}
-                            onBlur={() => saveFieldDraft(item, "factor")}
-                            className="w-20"
-                            autoFocus
-                          />
-                        ) : (
-                          <div 
-                            onClick={() => startFieldEditing(item, "factor")} 
-                            className="cursor-pointer hover:bg-gray-50 p-1 rounded border border-transparent hover:border-gray-200 text-center w-20"
-                            title="Click to edit factor"
-                          >
-                            {Number(item.factor || 1)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Select 
-                            value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
-                            onValueChange={(value) => {
-                              if (value === "unassigned") {
-                                // Clear assignment
-                                const updatedItem = { 
-                                  ...item, 
-                                  assignedUserId: null,
-                                  roleId: null,
-                                  resourceName: "" 
-                                };
-                                const baseHours = Number(updatedItem.baseHours);
-                                const factor = Number(updatedItem.factor) || 1;
-                                const rate = Number(updatedItem.rate);
-                                const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                  baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
-                                );
-                                
-                                updateLineItemMutation.mutate({
-                                  itemId: item.id,
-                                  data: {
-                                    assignedUserId: null,
-                                    roleId: null,
-                                    resourceName: "",
-                                    adjustedHours: adjustedHours,
-                                    totalAmount: totalAmount
-                                  }
-                                });
-                              } else if (value.startsWith("role-")) {
-                                // Generic role selected
-                                const roleId = value.substring(5);
-                                const selectedRole = roles.find((r: any) => r.id === roleId);
-                                if (selectedRole) {
-                                  const updatedItem = { 
-                                    ...item, 
-                                    assignedUserId: null,
-                                    roleId: selectedRole.id, 
-                                    resourceName: selectedRole.name,
-                                    rate: selectedRole.defaultRackRate
-                                  };
-                                  const baseHours = Number(updatedItem.baseHours);
-                                  const factor = Number(updatedItem.factor) || 1;
-                                  const rate = Number(selectedRole.defaultRackRate);
-                                  const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                    baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
-                                  );
-                                  
-                                  updateLineItemMutation.mutate({
-                                    itemId: item.id,
-                                    data: {
-                                      assignedUserId: null,
-                                      roleId: selectedRole.id,
-                                      resourceName: selectedRole.name,
-                                      rate: Number(selectedRole.defaultRackRate),
-                                      adjustedHours: adjustedHours,
-                                      totalAmount: totalAmount
-                                    }
-                                  });
-                                }
-                              } else {
-                                // Specific user selected
-                                const selectedUser = assignableUsers.find((u: any) => u.id === value);
-                                if (selectedUser) {
-                                  const updatedItem = { 
-                                    ...item, 
-                                    assignedUserId: selectedUser.id,
-                                    roleId: null,
-                                    resourceName: selectedUser.name,
-                                    rate: selectedUser.defaultBillingRate,
-                                    costRate: selectedUser.defaultCostRate
-                                  };
-                                  const baseHours = Number(updatedItem.baseHours);
-                                  const factor = Number(updatedItem.factor) || 1;
-                                  const rate = Number(selectedUser.defaultBillingRate);
-                                  const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                    baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
-                                  );
-                                  
-                                  updateLineItemMutation.mutate({
-                                    itemId: item.id,
-                                    data: {
-                                      assignedUserId: selectedUser.id,
-                                      roleId: null,
-                                      resourceName: selectedUser.name,
-                                      rate: Number(selectedUser.defaultBillingRate),
-                                      costRate: Number(selectedUser.defaultCostRate),
-                                      adjustedHours: adjustedHours,
-                                      totalAmount: totalAmount
-                                    }
-                                  });
-                                }
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">Unassigned</SelectItem>
-                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
-                              {roles.map((role: any) => (
-                                <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
-                                  {role.name} (Role)
-                                </SelectItem>
-                              ))}
-                              <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Users</div>
-                              {assignableUsers.map((member: any) => (
-                                <SelectItem key={member.id} value={member.id}>
-                                  {member.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                      </TableCell>
-                      <TableCell>
-                        <span className="cursor-pointer">
-                          ${Math.round(Number(item.rate))}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {canViewCostMargins && item.costRate ? (
-                          <span className="text-muted-foreground">
-                            ${Math.round(Number(item.costRate))}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          <Select value={item.size} onValueChange={(value) => handleUpdateItem(item, "size", value)}>
-                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="small">S</SelectItem>
-                              <SelectItem value="medium">M</SelectItem>
-                              <SelectItem value="large">L</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select value={item.complexity} onValueChange={(value) => handleUpdateItem(item, "complexity", value)}>
-                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="small">Sim</SelectItem>
-                              <SelectItem value="medium">Med</SelectItem>
-                              <SelectItem value="large">Cplx</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Select value={item.confidence} onValueChange={(value) => handleUpdateItem(item, "confidence", value)}>
-                            <SelectTrigger className="w-16 h-7 px-1 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="high">Hi</SelectItem>
-                                <SelectItem value="medium">Med</SelectItem>
-                                <SelectItem value="low">Low</SelectItem>
-                              </SelectContent>
-                            </Select>
-                        </div>
-                      </TableCell>
-                      <TableCell>{Number(item.adjustedHours).toFixed(2)}</TableCell>
-                      <TableCell>${Math.round(Number(item.totalAmount)).toLocaleString()}</TableCell>
-                      <TableCell>
-                        {canViewCostMargins && item.margin ? (
-                          <span className={Number(item.marginPercent) > 0 ? "text-green-600" : "text-red-600"}>
-                            ${Math.round(Number(item.margin))} ({Number(item.marginPercent).toFixed(1)}%)
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-[150px]">
-                        {editingField === `${item.id}-comments` ? (
-                          <Input
-                            value={editingDraft[`${item.id}-comments`] ?? ""}
-                            onChange={(e) => updateFieldDraft(item.id, "comments", e.target.value)}
-                            onBlur={() => saveFieldDraft(item, "comments")}
-                            placeholder="Comments"
-                            className="min-w-[200px]"
-                            autoFocus
-                          />
-                        ) : (
-                          <div 
-                            onClick={() => startFieldEditing(item, "comments")} 
-                            className="cursor-pointer hover:bg-gray-50 p-1 rounded text-sm"
-                            title={item.comments || "Click to add comments"}
-                          >
-                            {item.comments ? (
-                              <span className="truncate block">
-                                {item.comments.length > 20 ? `${item.comments.substring(0, 20)}...` : item.comments}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
+                            <div className="font-medium">{item.description}</div>
+                            {item.week !== null && item.week !== undefined && (
+                              <div className="text-xs text-muted-foreground mt-1">Week {item.week}</div>
                             )}
                           </div>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
+                      <TableCell className="py-2">
+                        <div className="text-sm">
+                          <div>{epic?.name || "No epic"}</div>
+                          <div className="text-xs text-muted-foreground">{stage?.name || "No stage"}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <div className="text-sm">{item.resourceName || "Unassigned"}</div>
+                      </TableCell>
+                      <TableCell className="py-2 text-right">
+                        <div className="text-sm font-medium">{Number(item.adjustedHours || 0).toFixed(1)}</div>
+                      </TableCell>
+                      <TableCell className="py-2 text-right">
+                        <div className="text-sm font-medium">${Number(item.totalAmount || 0).toFixed(0)}</div>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <div className="flex items-center gap-1">
                           <Button
+                            size="sm"
                             variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              setSplittingItem(item);
-                              setSplitHours({ first: Math.floor(Number(item.adjustedHours || item.baseHours || 0) / 2).toString(), second: Math.ceil(Number(item.adjustedHours || item.baseHours || 0) / 2).toString() });
-                              setShowSplitDialog(true);
-                            }}
-                            title="Split this line item"
+                            className="h-7 w-7 p-0"
+                            onClick={() => setSplittingItem(item)}
                             disabled={!isEditable}
+                            title="Split item"
                           >
-                            <Split className="h-4 w-4" />
+                            <Split className="h-3 w-3" />
                           </Button>
                           <Button
+                            size="sm"
                             variant="ghost"
-                            size="icon"
-                            onClick={() => deleteLineItemMutation.mutate(item.id)}
+                            className="h-7 w-7 p-0"
+                            onClick={() => {
+                              if (confirm("Are you sure you want to delete this item?")) {
+                                deleteLineItemMutation.mutate(item.id);
+                              }
+                            }}
                             disabled={!isEditable}
+                            title="Delete item"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>
                     </TableRow>
-                  )})
+                    {isExpanded && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="bg-gray-50 dark:bg-slate-900 p-4">
+                          <div className="grid grid-cols-3 gap-6">
+                            {/* Left column - Additional details */}
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-medium mb-2">Details</h4>
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Workstream:</span>
+                                  <span className="font-medium">{item.workstream || "-"}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Base Hours:</span>
+                                  <span className="font-medium">{Number(item.baseHours).toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Factor:</span>
+                                  <span className="font-medium">{Number(item.factor || 1).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Middle column - Financial details */}
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-medium mb-2">Financial</h4>
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Rate:</span>
+                                  <span className="font-medium">${Number(item.rate || 0).toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-muted-foreground">Adjusted Hours:</span>
+                                  <span className="font-medium">{Number(item.adjustedHours || 0).toFixed(2)}</span>
+                                </div>
+                                {canViewCostMargins && (
+                                  <>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-muted-foreground">Cost:</span>
+                                      <span className="font-medium">${Number(item.totalCost || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="text-muted-foreground">Margin:</span>
+                                      <span className="font-medium text-green-600">
+                                        ${Number(item.margin || 0).toFixed(2)} 
+                                        ({Number(item.totalAmount) > 0 ? ((Number(item.margin || 0) / Number(item.totalAmount)) * 100).toFixed(1) : 0}%)
+                                      </span>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Right column - Comments and Resource */}
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-medium mb-2">Resource & Notes</h4>
+                              <div className="space-y-2">
+                                <div>
+                                  <span className="text-sm text-muted-foreground">Resource Assignment:</span>
+                                  <Select 
+                                    value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
+                                    onValueChange={(value) => {
+                                      // Resource assignment logic here (reuse existing logic)
+                                    }}
+                                    disabled={!isEditable}
+                                  >
+                                    <SelectTrigger className="mt-1">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                                      {roles.map((role: any) => (
+                                        <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
+                                          {role.name} (Role)
+                                        </SelectItem>
+                                      ))}
+                                      {assignableUsers.map((user: any) => (
+                                        <SelectItem key={user.id} value={user.id}>
+                                          {user.fullName}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <span className="text-sm text-muted-foreground">Comments:</span>
+                                  <div className="mt-1 p-2 bg-white dark:bg-slate-800 rounded border text-sm">
+                                    {item.comments || "No comments"}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </>
+                    );
+                  })
                 )}
               </tbody>
               </table>
