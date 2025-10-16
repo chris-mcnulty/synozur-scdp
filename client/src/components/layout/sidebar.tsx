@@ -18,7 +18,8 @@ import {
   User,
   Home,
   Calculator,
-  CreditCard
+  CreditCard,
+  Database
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -205,6 +206,12 @@ export function Sidebar() {
                 href="/vocabulary"
                 icon={<Languages />}
                 label="Vocabulary"
+              />
+              
+              <SidebarItem
+                href="/file-repository"
+                icon={<Database />}
+                label="File Repository"
               />
             </>
           )}

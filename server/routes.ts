@@ -4,6 +4,8 @@ import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSc
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
+import { LocalFileStorage } from "./services/local-file-storage.js";
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -601,6 +603,300 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(isSecurityError ? 400 : 500).json({ 
         message: isSecurityError ? error.message : "Failed to list files from SharePoint"
       });
+    }
+  });
+
+  // ============ FILE REPOSITORY MANAGEMENT ROUTES ============
+  
+  // Initialize local file storage
+  const localFileStorage = new LocalFileStorage();
+  
+  // Validation schemas for file operations
+  const fileUploadMetadataSchema = z.object({
+    documentType: z.enum(['receipt', 'invoice', 'contract', 'statementOfWork', 'estimate', 'changeOrder', 'report']),
+    clientId: z.string().optional(),
+    projectId: z.string().optional(),
+    amount: z.string().optional().transform(val => val ? parseFloat(val) : undefined),
+    tags: z.string().optional(),
+    vendor: z.string().optional(),
+    receiptDate: z.string().optional(),
+    effectiveDate: z.string().optional()
+  });
+  
+  // Configure multer for file uploads
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { 
+      fileSize: 50 * 1024 * 1024 // 50MB max file size
+    },
+    fileFilter: (req, file, cb) => {
+      // Basic MIME type check (will verify with magic bytes after upload)
+      const allowedMimeTypes = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+        'application/pdf', 
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain', 'text/csv'
+      ];
+      
+      if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`File type ${file.mimetype} not allowed`));
+      }
+    }
+  });
+  
+  // Get all files with optional filters
+  app.get("/api/files", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { search, type } = req.query;
+      
+      const filter: any = {};
+      if (type) filter.documentType = type as string;
+      
+      let files = await localFileStorage.listFiles(filter);
+      
+      // Apply search filter if provided
+      if (search) {
+        const searchLower = (search as string).toLowerCase();
+        files = files.filter(f => 
+          f.fileName.toLowerCase().includes(searchLower) ||
+          f.originalName.toLowerCase().includes(searchLower) ||
+          f.metadata.tags?.toLowerCase().includes(searchLower) ||
+          f.metadata.clientName?.toLowerCase().includes(searchLower) ||
+          f.metadata.projectCode?.toLowerCase().includes(searchLower)
+        );
+      }
+      
+      res.json(files);
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error listing files:", error);
+      res.status(500).json({ message: "Failed to list files" });
+    }
+  });
+  
+  // Get storage statistics
+  app.get("/api/files/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const stats = await localFileStorage.getStorageStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error getting storage stats:", error);
+      res.status(500).json({ message: "Failed to get storage statistics" });
+    }
+  });
+  
+  // Upload a new file
+  app.post("/api/files/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Validate metadata with schema
+      const validationResult = fileUploadMetadataSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid metadata", 
+          errors: validationResult.error.errors
+        });
+      }
+      
+      const metadata = validationResult.data;
+      
+      // Verify file type with magic bytes
+      const fileTypeResult = await fileTypeFromBuffer(req.file.buffer);
+      if (fileTypeResult) {
+        // Check if detected MIME type matches claimed MIME type
+        const detectedMime = fileTypeResult.mime;
+        const claimedMime = req.file.mimetype;
+        
+        // Allow some flexibility for text files which may not have magic bytes
+        if (claimedMime !== 'text/plain' && claimedMime !== 'text/csv') {
+          if (detectedMime !== claimedMime && !detectedMime.includes(claimedMime.split('/')[0])) {
+            return res.status(400).json({ 
+              message: `File type mismatch. Claimed: ${claimedMime}, Detected: ${detectedMime}` 
+            });
+          }
+        }
+      }
+      
+      // Get client name if clientId provided
+      let clientName: string | undefined;
+      if (metadata.clientId) {
+        const client = await storage.getClient(metadata.clientId);
+        if (!client) {
+          return res.status(400).json({ message: "Invalid client ID" });
+        }
+        clientName = client.name;
+      }
+      
+      // Get project code if projectId provided
+      let projectCode: string | undefined;
+      if (metadata.projectId) {
+        const project = await storage.getProject(metadata.projectId);
+        if (!project) {
+          return res.status(400).json({ message: "Invalid project ID" });
+        }
+        projectCode = project.code;
+        
+        // Validate project belongs to client if both specified
+        if (metadata.clientId && project.client.id !== metadata.clientId) {
+          return res.status(400).json({ message: "Project does not belong to specified client" });
+        }
+      }
+      
+      // Store file with validated metadata
+      const storedFile = await localFileStorage.storeFile(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+        {
+          documentType: metadata.documentType,
+          clientId: metadata.clientId,
+          clientName,
+          projectId: metadata.projectId,
+          projectCode,
+          amount: metadata.amount,
+          tags: metadata.tags,
+          createdByUserId: req.user!.id,
+          metadataVersion: 1
+        },
+        req.user!.email
+      );
+      
+      res.status(201).json(storedFile);
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error uploading file:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to upload file" 
+      });
+    }
+  });
+  
+  // Download a file
+  app.get("/api/files/:fileId/download", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const fileData = await localFileStorage.getFileContent(req.params.fileId);
+      
+      if (!fileData) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.setHeader('Content-Type', fileData.metadata.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileData.metadata.originalName}"`);
+      res.send(fileData.buffer);
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error downloading file:", error);
+      res.status(500).json({ message: "Failed to download file" });
+    }
+  });
+  
+  // Delete a file
+  app.delete("/api/files/:fileId", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const success = await localFileStorage.deleteFile(req.params.fileId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.json({ message: "File deleted successfully" });
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error deleting file:", error);
+      res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+  
+  // Update file metadata
+  app.patch("/api/files/:fileId/metadata", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const updatedFile = await localFileStorage.updateMetadata(req.params.fileId, req.body);
+      
+      if (!updatedFile) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.json(updatedFile);
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error updating metadata:", error);
+      res.status(500).json({ message: "Failed to update file metadata" });
+    }
+  });
+  
+  // Validate files in repository (check folder structure and file types)
+  app.post("/api/files/validate", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const files = await localFileStorage.listFiles();
+      const issues: string[] = [];
+      let totalFiles = 0;
+      
+      // Check each file
+      for (const file of files) {
+        totalFiles++;
+        
+        // Validate file is in correct folder for its type
+        const expectedType = file.metadata.documentType;
+        
+        // Check file extension matches content type
+        const ext = file.originalName.split('.').pop()?.toLowerCase();
+        if (ext) {
+          const mimeTypeMap: Record<string, string[]> = {
+            'application/pdf': ['pdf'],
+            'image/jpeg': ['jpg', 'jpeg'],
+            'image/png': ['png'],
+            'application/vnd.ms-excel': ['xls'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['xlsx'],
+            'application/msword': ['doc'],
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx'],
+            'text/plain': ['txt'],
+            'text/csv': ['csv']
+          };
+          
+          const expectedExts = mimeTypeMap[file.contentType];
+          if (expectedExts && !expectedExts.includes(ext)) {
+            issues.push(`File ${file.fileName}: Extension .${ext} doesn't match content type ${file.contentType}`);
+          }
+        }
+        
+        // Validate required metadata based on document type
+        switch (file.metadata.documentType) {
+          case 'receipt':
+          case 'invoice':
+            if (!file.metadata.amount) {
+              issues.push(`File ${file.fileName}: Missing amount for ${file.metadata.documentType}`);
+            }
+            if (!file.metadata.projectId && !file.metadata.clientId) {
+              issues.push(`File ${file.fileName}: ${file.metadata.documentType} should be linked to a project or client`);
+            }
+            break;
+            
+          case 'contract':
+          case 'statementOfWork':
+            if (!file.metadata.clientId) {
+              issues.push(`File ${file.fileName}: ${file.metadata.documentType} should be linked to a client`);
+            }
+            break;
+            
+          case 'estimate':
+          case 'changeOrder':
+            if (!file.metadata.projectId) {
+              issues.push(`File ${file.fileName}: ${file.metadata.documentType} should be linked to a project`);
+            }
+            break;
+        }
+      }
+      
+      res.json({
+        totalFiles,
+        issues: issues.length,
+        issueDetails: issues.slice(0, 100), // Return first 100 issues
+        status: issues.length === 0 ? 'valid' : 'issues_found'
+      });
+    } catch (error) {
+      console.error("[FILE REPOSITORY] Error validating files:", error);
+      res.status(500).json({ message: "Failed to validate files" });
     }
   });
 

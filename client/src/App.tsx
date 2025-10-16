@@ -24,6 +24,7 @@ import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import About from "@/pages/about";
 import Login from "@/pages/login";
+import FileRepository from "@/pages/file-repository";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -172,6 +173,9 @@ function Router() {
       </Route>
       <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/file-repository">
+        {user ? <FileRepository /> : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}
