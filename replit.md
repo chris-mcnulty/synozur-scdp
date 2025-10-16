@@ -1,5 +1,21 @@
 # SCDP - Synozur Consulting Delivery Platform
 
+## Recent Updates (December 2024)
+### UX & Mobile Responsiveness Improvements
+- **Desktop UX Enhancements**:
+  - Refactored estimate detail table: 7 default columns with expandable rows (previously 17 columns)
+  - Removed Factors tab from estimates (consolidated to system settings)
+  - Created compact filter bar with horizontal layout and active filter count
+  
+- **Mobile Optimizations**:
+  - Implemented responsive navigation with mobile hamburger menu
+  - Added mobile-optimized time entry: quick hour buttons (0.5h-8h), "Today" button
+  - Responsive headers and card layouts throughout
+
+- **Navigation & Organization**:
+  - Reorganized by user persona: "My Workspace", "Portfolio Management", "Financial", "Administration"
+  - Estimation factors centralized in system-wide settings (Admin panel)
+
 ## Overview
 SCDP is a comprehensive platform designed to manage the entire lifecycle of consulting projects, from initial estimation to final billing. It streamlines operations such as time tracking, expense management, resource allocation, and automates invoice generation. The platform supports robust role-based access control and aims to enhance efficiency and provide strong management capabilities for consulting businesses. It includes features for managing rate structures and ensuring data integrity, particularly around estimates and project structures.
 

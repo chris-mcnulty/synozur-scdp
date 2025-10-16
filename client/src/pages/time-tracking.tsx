@@ -604,16 +604,16 @@ export default function TimeTracking() {
 
   return (
     <Layout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="space-y-4 lg:space-y-6">
+        {/* Header - Responsive */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <h2 className="text-3xl font-bold" data-testid="time-tracking-title">Time Tracking</h2>
-            <p className="text-muted-foreground" data-testid="time-tracking-subtitle">
+            <h2 className="text-2xl lg:text-3xl font-bold" data-testid="time-tracking-title">Time Tracking</h2>
+            <p className="text-sm lg:text-base text-muted-foreground" data-testid="time-tracking-subtitle">
               Log your daily hours and track project progress
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               onClick={async () => {
@@ -699,11 +699,11 @@ export default function TimeTracking() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Time Entry Form */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+          {/* Time Entry Form - Mobile Optimized */}
           <Card className="lg:col-span-1" data-testid="time-entry-form">
-            <CardHeader>
-              <CardTitle className="flex items-center">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-lg lg:text-xl">
                 <Plus className="w-5 h-5 mr-2" />
                 Log Time
               </CardTitle>
@@ -722,7 +722,21 @@ export default function TimeTracking() {
                     name="date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <div className="flex items-center justify-between">
+                          <FormLabel>Date</FormLabel>
+                          {field.value !== formatLocalDate(new Date()) && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto py-0.5 px-2 text-xs"
+                              onClick={() => field.onChange(formatLocalDate(new Date()))}
+                              data-testid="button-today"
+                            >
+                              Today
+                            </Button>
+                          )}
+                        </div>
                         <Popover>
                           <PopoverTrigger asChild>
                             <FormControl>
@@ -813,6 +827,22 @@ export default function TimeTracking() {
                             data-testid="input-hours"
                           />
                         </FormControl>
+                        {/* Quick Hour Buttons - Mobile Optimized */}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {[0.5, 1, 2, 4, 8].map((hours) => (
+                            <Button
+                              key={hours}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="px-3 py-1 text-xs"
+                              onClick={() => field.onChange(hours.toString())}
+                              data-testid={`button-quick-hours-${hours}`}
+                            >
+                              {hours}h
+                            </Button>
+                          ))}
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
