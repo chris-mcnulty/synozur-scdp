@@ -1102,20 +1102,6 @@ export default function TimeTracking() {
                         <div className="text-sm text-muted-foreground mt-1" data-testid={`entry-description-${entry.id}`}>
                           {entry.description}
                         </div>
-                        {/* Show rates for admins */}
-                        {currentUser && currentUser.role && (currentUser.role === 'admin' || currentUser.role === 'billing-admin') && entry.billingRate && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            <span className="mr-3">Rate: ${entry.billingRate}/hr</span>
-                            {entry.costRate && (
-                              <>
-                                <span className="mr-3">Cost: ${entry.costRate}/hr</span>
-                                <span className="text-chart-2">
-                                  Margin: ${(parseFloat(entry.billingRate) - parseFloat(entry.costRate)).toFixed(2)}/hr
-                                </span>
-                              </>
-                            )}
-                          </div>
-                        )}
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
@@ -1125,15 +1111,6 @@ export default function TimeTracking() {
                           <div className="text-sm text-muted-foreground" data-testid={`entry-date-${entry.id}`}>
                             {format(parseLocalDate(entry.date), 'MMM d')}
                           </div>
-                          {entry.billingRate && (
-                            <div className="text-xs text-muted-foreground" data-testid={`entry-total-${entry.id}`}>
-                              {entry.project.commercialScheme === 'retainer' || entry.project.commercialScheme === 'milestone' ? (
-                                <span className="text-blue-600">Block/Retainer</span>
-                              ) : (
-                                `$${(parseFloat(entry.hours) * parseFloat(entry.billingRate)).toFixed(2)}`
-                              )}
-                            </div>
-                          )}
                         </div>
                         {canModifyEntry(entry) && (
                           <div className="flex gap-2">
