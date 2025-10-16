@@ -147,20 +147,7 @@ import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
 import { localFileStorage, type DocumentMetadata } from "./services/local-file-storage.js";
 
-// Extend Express Request interface to include user
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;
-        email: string;
-        name: string;
-        role: string;
-        isActive: boolean;
-      };
-    }
-  }
-}
+// User type is now defined in session-store.ts with SSO properties
 
 // Security helper: Filter sensitive financial data based on user role
 function filterSensitiveData(data: any, userRole: string): any {
