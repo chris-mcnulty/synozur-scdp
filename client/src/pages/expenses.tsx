@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -116,6 +116,17 @@ export default function Expenses() {
   const { data: expenses = [], isLoading } = useQuery<(Expense & { project: Project & { client: Client } })[]>({
     queryKey: ["/api/expenses"],
   });
+
+  // Filter and sort projects: only active, alphabetically by client then project name
+  const activeProjects = useMemo(() => {
+    return projects
+      .filter(p => p.status === 'active')
+      .sort((a, b) => {
+        const clientCompare = a.client.name.localeCompare(b.client.name);
+        if (clientCompare !== 0) return clientCompare;
+        return a.name.localeCompare(b.name);
+      });
+  }, [projects]);
 
   // Fetch users for person assignment (only for admin/PM roles)
   const { data: users = [], error: usersError } = useQuery<User[]>({
@@ -903,9 +914,9 @@ export default function Expenses() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {projects.map((project) => (
+                            {activeProjects.map((project) => (
                               <SelectItem key={project.id} value={project.id}>
-                                {project.name} - {project.client.name}
+                                {project.client.name} - {project.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1290,7 +1301,7 @@ export default function Expenses() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {projects.map((project) => (
+                        {activeProjects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             {project.client.name} - {project.name}
                           </SelectItem>

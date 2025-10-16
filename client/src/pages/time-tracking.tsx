@@ -131,6 +131,18 @@ export default function TimeTracking() {
     queryKey: ["/api/auth/user"],
   });
 
+  // Filter and sort projects: only active, alphabetically by client then project name
+  const activeProjects = useMemo(() => {
+    if (!projects) return [];
+    return projects
+      .filter(p => p.status === 'active')
+      .sort((a, b) => {
+        const clientCompare = a.client.name.localeCompare(b.client.name);
+        if (clientCompare !== 0) return clientCompare;
+        return a.name.localeCompare(b.name);
+      });
+  }, [projects]);
+
   // Fetch milestones and workstreams for selected project
   const { data: milestones, isLoading: milestonesLoading } = useQuery({
     queryKey: ["/api/projects", selectedProjectId, "milestones"],
@@ -796,9 +808,9 @@ export default function TimeTracking() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {projects?.map((project) => (
+                            {activeProjects?.map((project) => (
                               <SelectItem key={project.id} value={project.id}>
-                                {project.name} - {project.client.name}
+                                {project.client.name} - {project.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1215,9 +1227,9 @@ export default function TimeTracking() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {projects?.map((project) => (
+                          {activeProjects?.map((project) => (
                             <SelectItem key={project.id} value={project.id}>
-                              {project.name} - {project.client.name}
+                              {project.client.name} - {project.name}
                             </SelectItem>
                           ))}
                         </SelectContent>

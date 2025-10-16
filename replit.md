@@ -11,6 +11,7 @@
   - Implemented responsive navigation with mobile hamburger menu
   - Added mobile-optimized time entry: quick hour buttons (0.5h-8h), "Today" button
   - Responsive headers and card layouts throughout
+  - Project dropdowns (time entries & expenses) now show only active projects, sorted alphabetically, displayed as "Client - Project Name"
 
 - **Navigation & Organization**:
   - Reorganized by user persona: "My Workspace", "Portfolio Management", "Financial", "Administration"
