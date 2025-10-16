@@ -26,12 +26,23 @@ import About from "@/pages/about";
 import Login from "@/pages/login";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
-import { Redirect } from "wouter";
+import { Redirect, useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { setSessionId } from "@/lib/queryClient";
+import { useSessionRecovery } from "@/hooks/use-session-recovery";
+import { Loader2 } from "lucide-react";
 
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
+  const { isRecovering } = useSessionRecovery();
+  const [, setLocation] = useLocation();
+  
+  // Get user data first
+  const { data: user, isLoading, error } = useQuery({
+    queryKey: ["/api/auth/user"],
+    retry: false,
+    enabled: !processingSession && !isRecovering, // Only check auth after processing sessionId and not recovering
+  });
   
   // Update page title based on environment
   useEffect(() => {
@@ -56,16 +67,38 @@ function Router() {
     }
   }, []);
   
-  const { data: user, isLoading } = useQuery({
-    queryKey: ["/api/auth/user"],
-    retry: false,
-    enabled: !processingSession, // Only check auth after processing sessionId
-  });
+  // Check for redirect after login
+  useEffect(() => {
+    const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+    if (redirectPath && user) {
+      sessionStorage.removeItem('redirectAfterLogin');
+      setLocation(redirectPath);
+    }
+  }, [user, setLocation]);
 
-  if (processingSession || isLoading) {
+  // Show a better loading state
+  if (processingSession || isLoading || isRecovering) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="text-lg text-muted-foreground">
+            {isRecovering ? "Recovering session..." : "Loading..."}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Handle session errors gracefully
+  if (error && !user && window.location.pathname !== '/login') {
+    // Session validation failed, the recovery hook will handle redirect
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="text-lg text-muted-foreground">Redirecting to login...</div>
+        </div>
       </div>
     );
   }
