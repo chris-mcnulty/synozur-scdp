@@ -17,9 +17,9 @@ import { Link } from "wouter";
 import { useVocabulary } from "@/lib/vocabulary-context";
 
 export function MyAssignments() {
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [projectFilter, setProjectFilter] = useState<string>("");
-  const [clientFilter, setClientFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [startDate, setStartDate] = useState(subMonths(new Date(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState("");
@@ -41,9 +41,9 @@ export function MyAssignments() {
     const params = new URLSearchParams();
     if (startDate) params.append("startDate", startDate);
     if (endDate) params.append("endDate", endDate);
-    if (projectFilter) params.append("projectId", projectFilter);
-    if (clientFilter) params.append("clientId", clientFilter);
-    if (statusFilter) params.append("status", statusFilter);
+    if (projectFilter && projectFilter !== "all") params.append("projectId", projectFilter);
+    if (clientFilter && clientFilter !== "all") params.append("clientId", clientFilter);
+    if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
     if (sortBy) params.append("sortBy", sortBy);
     if (sortOrder) params.append("sortOrder", sortOrder);
     if (groupBy) params.append("groupBy", groupBy);

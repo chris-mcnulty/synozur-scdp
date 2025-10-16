@@ -90,6 +90,9 @@ export default function ResourceManagementPage() {
     queryFn: async () => {
       const response = await fetch("/api/assignments", {
         credentials: "include",
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
       });
       if (!response.ok) throw new Error("Failed to fetch assignments");
       return response.json();
@@ -102,6 +105,9 @@ export default function ResourceManagementPage() {
     queryFn: async () => {
       const response = await fetch("/api/capacity/timeline", {
         credentials: "include",
+        headers: {
+          'x-session-id': localStorage.getItem('sessionId') || ''
+        }
       });
       if (!response.ok) throw new Error("Failed to fetch capacity data");
       return response.json();
