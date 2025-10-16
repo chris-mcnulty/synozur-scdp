@@ -1572,6 +1572,35 @@ export const DEFAULT_VOCABULARY: Required<VocabularyTerms> = {
   workstream: "Workstream",
 };
 
+// Sessions - for persistent session storage
+export const sessions = pgTable("sessions", {
+  id: varchar("id").primaryKey(), // Session ID (generated randomly)
+  userId: varchar("user_id").notNull().references(() => users.id),
+  email: text("email").notNull(),
+  name: text("name").notNull(),
+  role: text("role").notNull(),
+  ssoProvider: text("sso_provider"), // 'azure-ad' or null for regular login
+  ssoToken: text("sso_token"), // SSO access token (encrypted in production)
+  ssoRefreshToken: text("sso_refresh_token"), // SSO refresh token (encrypted in production) 
+  ssoTokenExpiry: timestamp("sso_token_expiry"), // When the SSO token expires
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  lastActivity: timestamp("last_activity").notNull().default(sql`now()`),
+  expiresAt: timestamp("expires_at").notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+}, (table) => ({
+  userIdIdx: uniqueIndex("sessions_user_id_idx").on(table.userId),
+  expiresAtIdx: uniqueIndex("sessions_expires_at_idx").on(table.expiresAt),
+}));
+
+// Session insert schema
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  createdAt: true,
+  lastActivity: true
+});
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type Session = typeof sessions.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,
