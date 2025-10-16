@@ -20,10 +20,28 @@ export async function getDbSession(sessionId: string): Promise<any> {
     }
     
     // Check if session has expired
-    if (new Date() > new Date(session.expiresAt)) {
+    // For SSO sessions, be more lenient with expiry to allow token refresh
+    const isExpired = new Date() > new Date(session.expiresAt);
+    const isSsoSession = !!session.ssoProvider;
+    
+    if (isExpired && !isSsoSession) {
+      // Regular sessions: delete if expired
       await deleteDbSession(sessionId);
       console.log("[DB-SESSION] Session expired and removed:", sessionId.substring(0, 4) + '...');
       return null;
+    } else if (isExpired && isSsoSession) {
+      // SSO sessions: check if we're within grace period (1 hour) for token refresh
+      const gracePeriod = 60 * 60 * 1000; // 1 hour grace period
+      const timeSinceExpiry = Date.now() - new Date(session.expiresAt).getTime();
+      
+      if (timeSinceExpiry > gracePeriod) {
+        // Beyond grace period, session is truly expired
+        await deleteDbSession(sessionId);
+        console.log("[DB-SESSION] SSO session expired beyond grace period:", sessionId.substring(0, 4) + '...');
+        return null;
+      }
+      // Within grace period, allow session to continue for token refresh attempt
+      console.log("[DB-SESSION] SSO session expired but within grace period, allowing refresh attempt");
     }
     
     // Return session data in expected format
@@ -164,17 +182,22 @@ export async function invalidateUserSessions(userId: string): Promise<void> {
 // Update SSO tokens for a session
 export async function updateSsoTokens(sessionId: string, ssoData: any): Promise<void> {
   try {
+    // Also extend session expiry when tokens are refreshed successfully
+    const newExpiresAt = new Date();
+    newExpiresAt.setHours(newExpiresAt.getHours() + SSO_SESSION_DURATION_HOURS);
+    
     await db
       .update(sessions)
       .set({
         ssoToken: ssoData.accessToken,
         ssoRefreshToken: ssoData.refreshToken,
         ssoTokenExpiry: ssoData.tokenExpiry,
-        lastActivity: new Date()
+        lastActivity: new Date(),
+        expiresAt: newExpiresAt
       })
       .where(eq(sessions.id, sessionId));
     
-    console.log("[DB-SESSION] Updated SSO tokens for session:", sessionId.substring(0, 4) + '...');
+    console.log("[DB-SESSION] Updated SSO tokens and extended session for:", sessionId.substring(0, 4) + '...');
   } catch (error) {
     console.error("[DB-SESSION] Error updating SSO tokens:", error);
   }
@@ -200,6 +223,26 @@ export async function needsSsoRefresh(sessionId: string): Promise<boolean> {
   } catch (error) {
     console.error("[DB-SESSION] Error checking SSO refresh:", error);
     return false;
+  }
+}
+
+// Extend session when SSO token expires but can't be refreshed
+export async function extendSessionOnTokenExpiry(sessionId: string): Promise<void> {
+  try {
+    const newExpiresAt = new Date();
+    newExpiresAt.setHours(newExpiresAt.getHours() + 24); // Extend by 24 hours when token refresh fails
+    
+    await db
+      .update(sessions)
+      .set({
+        expiresAt: newExpiresAt,
+        lastActivity: new Date()
+      })
+      .where(eq(sessions.id, sessionId));
+    
+    console.log("[DB-SESSION] Extended session due to token expiry for:", sessionId.substring(0, 4) + '...');
+  } catch (error) {
+    console.error("[DB-SESSION] Error extending session:", error);
   }
 }
 

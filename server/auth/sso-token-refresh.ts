@@ -1,5 +1,5 @@
 import { msalInstance, tokenRequest } from "./entra-config";
-import { updateSsoTokens, needsSsoRefresh } from "../db-session-store";
+import { updateSsoTokens, needsSsoRefresh, extendSessionOnTokenExpiry } from "../db-session-store";
 import { Request, Response } from "express";
 
 // Refresh SSO token using refresh token
@@ -56,22 +56,41 @@ export async function checkAndRefreshToken(req: Request, res: Response, next: ()
   }
   
   try {
-    // Check if token needs refresh
-    const needsRefresh = await needsSsoRefresh(sessionId);
+    // Get current session
+    const session = req.user as any;
     
-    if (needsRefresh) {
-      // Get current session to retrieve refresh token
-      const session = req.user as any;
+    // Skip if not an SSO session
+    if (!session?.ssoProvider) {
+      return next();
+    }
+    
+    // Check if token is expired or needs refresh
+    const needsRefresh = await needsSsoRefresh(sessionId);
+    const tokenExpiry = session.ssoTokenExpiry ? new Date(session.ssoTokenExpiry) : null;
+    const isExpired = tokenExpiry && tokenExpiry < new Date();
+    
+    if (needsRefresh || isExpired) {
+      console.log(`[SSO] Token ${isExpired ? 'expired' : 'near expiry'} for session:`, sessionId.substring(0, 4) + '...');
       
-      if (session?.ssoRefreshToken) {
-        console.log("[SSO] Token near expiry, attempting refresh for session:", sessionId.substring(0, 4) + '...');
-        
+      // If no refresh token, extend session to prevent immediate lockout
+      if (!session.ssoRefreshToken) {
+        console.log("[SSO] No refresh token available - extending session temporarily");
+        await extendSessionOnTokenExpiry(sessionId);
+        // Don't block the request - allow user to continue working
+      } else {
+        // Attempt to refresh the token
         try {
           await refreshSsoToken(sessionId, session.ssoRefreshToken);
+          console.log("[SSO] Token refreshed successfully");
         } catch (error: any) {
+          console.error("[SSO] Token refresh failed:", error?.message || error);
+          
           if (error?.message === 'REAUTHENTICATION_REQUIRED') {
-            // Don't block the request, but log that re-auth is needed
-            console.log("[SSO] User will need to re-authenticate soon");
+            // Refresh token is also invalid - extend session to prevent lockout
+            console.log("[SSO] Refresh token invalid - extending session temporarily");
+            await extendSessionOnTokenExpiry(sessionId);
+            // Don't block the request - allow user to continue working
+            // They'll be prompted to re-authenticate when convenient
           }
         }
       }
