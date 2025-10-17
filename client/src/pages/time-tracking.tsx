@@ -101,6 +101,7 @@ export default function TimeTracking() {
       milestoneId: "",
       workstreamId: "",
       projectStageId: "",
+      allocationId: "",
     },
   });
 
@@ -116,6 +117,7 @@ export default function TimeTracking() {
       milestoneId: "",
       workstreamId: "",
       projectStageId: "",
+      allocationId: "",
     },
   });
 
@@ -203,6 +205,23 @@ export default function TimeTracking() {
     }
   });
 
+  // Fetch allocations for the selected project filtered by current user
+  const { data: allocations } = useQuery({
+    queryKey: ["/api/projects", selectedProjectId, "allocations"],
+    enabled: !!selectedProjectId && !!currentUser,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${selectedProjectId}/allocations`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch allocations');
+      const data = await response.json();
+      // Filter allocations for current user
+      return data.filter((a: any) => a.personId === currentUser?.id);
+    }
+  });
+
   // Sort all dropdowns alphabetically
   const sortedMilestones = useMemo(() => {
     if (!milestones) return [];
@@ -218,6 +237,11 @@ export default function TimeTracking() {
     if (!projectStages) return [];
     return [...projectStages].sort((a: any, b: any) => a.name.localeCompare(b.name));
   }, [projectStages]);
+  
+  const sortedAllocations = useMemo(() => {
+    if (!allocations) return [];
+    return [...allocations].sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''));
+  }, [allocations]);
 
   // Fetch milestones and workstreams for edit form
   const { data: editMilestones } = useQuery({
@@ -279,6 +303,23 @@ export default function TimeTracking() {
     }
   });
 
+  // Fetch allocations for edit form
+  const { data: editAllocations } = useQuery({
+    queryKey: ["/api/projects", editProjectId, "allocations"],
+    enabled: !!editProjectId && !!currentUser,
+    queryFn: async () => {
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${editProjectId}/allocations`, {
+        credentials: 'include',
+        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+      });
+      if (!response.ok) throw new Error('Failed to fetch allocations');
+      const data = await response.json();
+      // Filter allocations for current user
+      return data.filter((a: any) => a.personId === currentUser?.id);
+    }
+  });
+
   // Sort edit form dropdowns alphabetically
   const sortedEditMilestones = useMemo(() => {
     if (!editMilestones) return [];
@@ -294,6 +335,11 @@ export default function TimeTracking() {
     if (!editProjectStages) return [];
     return [...editProjectStages].sort((a: any, b: any) => a.name.localeCompare(b.name));
   }, [editProjectStages]);
+
+  const sortedEditAllocations = useMemo(() => {
+    if (!editAllocations) return [];
+    return [...editAllocations].sort((a: any, b: any) => (a.taskDescription || '').localeCompare(b.taskDescription || ''));
+  }, [editAllocations]);
 
   const { data: timeEntries, isLoading } = useQuery<TimeEntryWithRelations[]>({
     queryKey: ["/api/time-entries", filters],
@@ -334,6 +380,7 @@ export default function TimeTracking() {
       const currentMilestoneId = form.getValues("milestoneId");
       const currentWorkstreamId = form.getValues("workstreamId");
       const currentStageId = form.getValues("projectStageId");
+      const currentAllocationId = form.getValues("allocationId");
       
       form.reset({
         date: formatLocalDate(new Date()),
@@ -345,6 +392,7 @@ export default function TimeTracking() {
         milestoneId: currentMilestoneId,
         workstreamId: currentWorkstreamId,
         projectStageId: currentStageId,
+        allocationId: currentAllocationId,
       });
       
       // Also ensure the selectedProjectId state stays in sync
@@ -445,6 +493,7 @@ export default function TimeTracking() {
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
+      allocationId: data.allocationId === "" ? undefined : data.allocationId || undefined,
       // description is a text field, doesn't need special handling
     };
     console.log('Sending cleaned data:', cleanedData);
@@ -459,6 +508,7 @@ export default function TimeTracking() {
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
+      allocationId: data.allocationId === "" ? undefined : data.allocationId || undefined,
       // description is a text field, doesn't need special handling
     };
     updateTimeEntryMutation.mutate({ id: editingEntry.id, data: cleanedData });
@@ -476,6 +526,7 @@ export default function TimeTracking() {
       milestoneId: entry.milestoneId || "",
       workstreamId: entry.workstreamId || "",
       projectStageId: entry.projectStageId || "",
+      allocationId: (entry as any).allocationId || "",
     });
   };
 
@@ -981,6 +1032,35 @@ export default function TimeTracking() {
 
                   <FormField
                     control={form.control}
+                    name="allocationId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assignment (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value || undefined}
+                          disabled={!selectedProjectId}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-allocation">
+                              <SelectValue placeholder={!selectedProjectId ? "Select project first" : "Select assignment"} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {sortedAllocations?.map((allocation: any) => (
+                              <SelectItem key={allocation.id} value={allocation.id}>
+                                {allocation.taskDescription || `${allocation.hours}h allocation`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="description"
                     render={({ field }) => (
                       <FormItem>
@@ -1350,6 +1430,35 @@ export default function TimeTracking() {
                           {sortedEditProjectStages?.map((stage: any) => (
                             <SelectItem key={stage.id} value={stage.id}>
                               {stage.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={editForm.control}
+                  name="allocationId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Assignment (Optional)</FormLabel>
+                      <Select 
+                        onValueChange={field.onChange} 
+                        value={field.value || undefined}
+                        disabled={!editProjectId}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-allocation">
+                            <SelectValue placeholder={!editProjectId ? "Select project first" : "Select assignment"} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {sortedEditAllocations?.map((allocation: any) => (
+                            <SelectItem key={allocation.id} value={allocation.id}>
+                              {allocation.taskDescription || `${allocation.hours}h allocation`}
                             </SelectItem>
                           ))}
                         </SelectContent>
