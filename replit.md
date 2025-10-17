@@ -6,6 +6,15 @@
   - Development container: `b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr`
   - Production container: `b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr`
   - Environment-based container selection (DEV vs PROD)
+  - SharePoint configuration re-enabled in routes.ts (was temporarily stubbed)
+  
+- **Invoice & Document Management**:
+  - **Invoice Replacement**: Regenerating invoices automatically deletes previous version from SharePoint before saving new PDF
+  - **SOW/Change Order Documents**: Upload/download/replace functionality for Statement of Work and Change Order documents
+    - Documents stored in SharePoint with proper metadata (client, project, amount, effective date)
+    - Upload endpoint: `POST /api/sows/:id/upload` with multipart form data
+    - Download endpoint: `GET /api/sows/:id/download`
+    - UI: Upload/Replace/Download buttons in SOW table on project detail page
   
 - **File Repository Enhancements**:
   - Client auto-tagged from project selection (no separate client dropdown)

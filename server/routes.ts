@@ -211,21 +211,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Check if Entra ID is configured  
   const isEntraConfigured = !!msalInstance;
 
-  // Stubbed SharePoint config for local file storage migration
+  // SharePoint configuration
   const getSharePointConfig = async () => {
-    // Return disabled state to prevent SharePoint initialization errors
-    return {
-      configured: false,
-      containerId: '',
-      containerTypeId: '',
-      environment: 'development',
-      containerName: 'local-storage',
-      siteId: 'local-storage',
-      driveId: '',
-      created: false
-    };
-
-    /* Original SharePoint config disabled during local storage migration
     try {
       // Import container configuration from entra-config
       const { getSharePointContainerConfig } = await import('./auth/entra-config.js');
@@ -269,7 +256,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         configured: !!containerId
       };
     }
-    */
   };
 
   // Environment info endpoint
