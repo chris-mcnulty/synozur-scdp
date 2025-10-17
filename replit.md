@@ -105,8 +105,22 @@ Preferred communication style: Simple, everyday language.
 ### Project Structure
 - **Monorepo**: `/client` (React), `/server` (Express), `/shared` (common types/schemas).
 
+### Development & Testing
+- **Development Credentials** (server/auth-routes.ts - only enabled when NODE_ENV !== 'production'):
+  - Email: `admin@synozur.com`
+  - Password: `demo123`
+  - Alternative: `chris.mcnulty@synozur.com` / `demo123`
+  - Alternative: `sarah.chen@synozur.com` / `admin123`
+- **Testing Authentication**: ALWAYS use local auth credentials above for Playwright tests
+  - Login endpoint: `POST /api/auth/local/login`
+  - Login page: `/login`
+  - **CRITICAL**: Azure AD SSO is NOT enabled in development environment (Replit)
+  - Azure SSO only works in production deployment
+  - Never attempt Azure SSO authentication in tests running on Replit
+
 ### Authentication & Authorization
-- **SSO**: Azure AD (Microsoft Entra ID) integration.
+- **Production SSO**: Azure AD (Microsoft Entra ID) integration (production only).
+- **Development Auth**: Local email/password authentication (see Development & Testing section).
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage
