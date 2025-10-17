@@ -10871,10 +10871,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         scopes: tokenResponse.scopes
       });
 
-      // Look up user in database by email
+      // Look up user in database by email (case-insensitive)
       const [dbUser] = await db.select()
         .from(users)
-        .where(eq(users.email, userEmail));
+        .where(sql`LOWER(${users.email}) = LOWER(${userEmail})`);
 
       if (!dbUser) {
         console.error("[SSO-CALLBACK] User not found in database:", userEmail);
