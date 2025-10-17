@@ -777,8 +777,9 @@ function EstimateDetailContent() {
   const startFieldEditing = (item: EstimateLineItem, fieldName: string) => {
     const fieldKey = `${item.id}-${fieldName}`;
     setEditingField(fieldKey);
+    const defaultValue = fieldName === 'factor' ? 1 : (fieldName === 'baseHours' ? 0 : "");
     setEditingDraft({
-      [fieldKey]: item[fieldName as keyof EstimateLineItem] || (fieldName === 'factor' ? 1 : "")
+      [fieldKey]: item[fieldName as keyof EstimateLineItem] || defaultValue
     });
   };
 
@@ -2721,7 +2722,30 @@ function EstimateDetailContent() {
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Base Hours:</span>
-                                  <span className="font-medium">{Number(item.baseHours).toFixed(2)}</span>
+                                  {editingField === `${item.id}-baseHours` ? (
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={editingDraft[`${item.id}-baseHours`] || 0}
+                                      onChange={(e) => updateFieldDraft(item.id, 'baseHours', e.target.value)}
+                                      onBlur={() => saveFieldDraft(item, 'baseHours')}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveFieldDraft(item, 'baseHours');
+                                        if (e.key === 'Escape') { setEditingField(null); setEditingDraft({}); }
+                                      }}
+                                      className="h-6 w-20 text-right"
+                                      autoFocus
+                                      disabled={!isEditable}
+                                    />
+                                  ) : (
+                                    <span 
+                                      className={`font-medium ${isEditable ? 'cursor-pointer hover:text-primary' : ''}`}
+                                      onClick={() => isEditable && startFieldEditing(item, 'baseHours')}
+                                      title={isEditable ? 'Click to edit base hours' : ''}
+                                    >
+                                      {Number(item.baseHours).toFixed(2)}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Factor:</span>

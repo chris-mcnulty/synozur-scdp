@@ -21,11 +21,12 @@
 - **Estimate Detail White Screen**: Fixed white screen of death when viewing estimates
   - Added missing Checkbox component import to estimate-detail.tsx
 - **Estimate Expanded Row Editing**: Enhanced estimate detail UX with inline editing capabilities
+  - Base Hours field now editable inline (click to edit, Enter to save, Escape to cancel)
   - Factor field now editable inline (click to edit, Enter to save, Escape to cancel)
   - Size, Complexity, Confidence fields now visible and editable via dropdowns
   - Resource assignment dropdown now functional with automatic rate updates and recalculation
   - Fixed field name bugs: Changed from `user.fullName`/`user.rate` to correct `user.name`/`user.defaultBillingRate`
-  - Changes save immediately with proper calculation of adjusted hours and total amount
+  - Changes save immediately with automatic recalculation of adjusted hours and total amount
   - Fixed calculation bug: Sequential attribute changes now use pending values to prevent stale calculations
 - **Unassignable User Resource Management**: Admins can now manage assignments even when users become unassignable
   - Dropdown includes currently assigned users even if marked as unassignable
