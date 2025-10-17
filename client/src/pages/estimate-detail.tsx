@@ -29,6 +29,7 @@ function EstimateDetailContent() {
   const csvFileInputRef = useRef<HTMLInputElement>(null);
   const [editingField, setEditingField] = useState<string | null>(null); // format: "itemId-fieldName"
   const [editingDraft, setEditingDraft] = useState<Record<string, any>>({});
+  const [pendingAttributes, setPendingAttributes] = useState<Record<string, { size?: string; complexity?: string; confidence?: string }>>({});
   const [showEpicDialog, setShowEpicDialog] = useState(false);
   const [showStageDialog, setShowStageDialog] = useState(false);
   const [newEpicName, setNewEpicName] = useState("");
@@ -412,9 +413,21 @@ function EstimateDetailContent() {
         method: "PATCH",
         body: JSON.stringify(data)
       }),
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
       setEditingField(null);
+      setPendingAttributes(prev => {
+        const next = { ...prev };
+        if (next[variables.itemId]) {
+          if (variables.data.size !== undefined) delete next[variables.itemId].size;
+          if (variables.data.complexity !== undefined) delete next[variables.itemId].complexity;
+          if (variables.data.confidence !== undefined) delete next[variables.itemId].confidence;
+          if (Object.keys(next[variables.itemId]).length === 0) {
+            delete next[variables.itemId];
+          }
+        }
+        return next;
+      });
       toast({ title: "Line item updated successfully" });
     }
   });
@@ -665,6 +678,15 @@ function EstimateDetailContent() {
       });
     }
   });
+
+  const getEffectiveAttributes = (item: EstimateLineItem) => {
+    const pending = pendingAttributes[item.id] || {};
+    return {
+      size: pending.size || item.size,
+      complexity: pending.complexity || item.complexity,
+      confidence: pending.confidence || item.confidence
+    };
+  };
 
   const calculateAdjustedValues = (baseHours: number, factor: number, rate: number, size: string, complexity: string, confidence: string) => {
     if (!estimate) return { adjustedHours: 0, totalAmount: 0 };
@@ -2719,6 +2741,132 @@ function EstimateDetailContent() {
                                       {Number(item.factor || 1).toFixed(2)}
                                     </span>
                                   )}
+                                </div>
+                                <div className="flex justify-between text-sm items-center">
+                                  <span className="text-muted-foreground">Size:</span>
+                                  <Select 
+                                    value={item.size || "small"} 
+                                    onValueChange={(value) => {
+                                      if (!isEditable) return;
+                                      
+                                      setPendingAttributes(prev => ({
+                                        ...prev,
+                                        [item.id]: { ...prev[item.id], size: value }
+                                      }));
+                                      
+                                      const baseHours = Number(item.baseHours || 0);
+                                      const factor = Number(item.factor || 1);
+                                      const rate = Number(item.rate || 0);
+                                      const pending = pendingAttributes[item.id] || {};
+                                      const effectiveComplexity = pending.complexity || item.complexity;
+                                      const effectiveConfidence = pending.confidence || item.confidence;
+                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                        baseHours, factor, rate, value, effectiveComplexity, effectiveConfidence
+                                      );
+                                      updateLineItemMutation.mutate({
+                                        itemId: item.id,
+                                        data: {
+                                          size: value,
+                                          adjustedHours: String(adjustedHours),
+                                          totalAmount: String(totalAmount)
+                                        }
+                                      });
+                                    }}
+                                    disabled={!isEditable}
+                                  >
+                                    <SelectTrigger className="h-6 w-24">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="small">Small</SelectItem>
+                                      <SelectItem value="medium">Medium</SelectItem>
+                                      <SelectItem value="large">Large</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="flex justify-between text-sm items-center">
+                                  <span className="text-muted-foreground">Complexity:</span>
+                                  <Select 
+                                    value={item.complexity || "small"} 
+                                    onValueChange={(value) => {
+                                      if (!isEditable) return;
+                                      
+                                      setPendingAttributes(prev => ({
+                                        ...prev,
+                                        [item.id]: { ...prev[item.id], complexity: value }
+                                      }));
+                                      
+                                      const baseHours = Number(item.baseHours || 0);
+                                      const factor = Number(item.factor || 1);
+                                      const rate = Number(item.rate || 0);
+                                      const pending = pendingAttributes[item.id] || {};
+                                      const effectiveSize = pending.size || item.size;
+                                      const effectiveConfidence = pending.confidence || item.confidence;
+                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                        baseHours, factor, rate, effectiveSize, value, effectiveConfidence
+                                      );
+                                      updateLineItemMutation.mutate({
+                                        itemId: item.id,
+                                        data: {
+                                          complexity: value,
+                                          adjustedHours: String(adjustedHours),
+                                          totalAmount: String(totalAmount)
+                                        }
+                                      });
+                                    }}
+                                    disabled={!isEditable}
+                                  >
+                                    <SelectTrigger className="h-6 w-24">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="small">Small</SelectItem>
+                                      <SelectItem value="medium">Medium</SelectItem>
+                                      <SelectItem value="large">Large</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="flex justify-between text-sm items-center">
+                                  <span className="text-muted-foreground">Confidence:</span>
+                                  <Select 
+                                    value={item.confidence || "high"} 
+                                    onValueChange={(value) => {
+                                      if (!isEditable) return;
+                                      
+                                      setPendingAttributes(prev => ({
+                                        ...prev,
+                                        [item.id]: { ...prev[item.id], confidence: value }
+                                      }));
+                                      
+                                      const baseHours = Number(item.baseHours || 0);
+                                      const factor = Number(item.factor || 1);
+                                      const rate = Number(item.rate || 0);
+                                      const pending = pendingAttributes[item.id] || {};
+                                      const effectiveSize = pending.size || item.size;
+                                      const effectiveComplexity = pending.complexity || item.complexity;
+                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
+                                        baseHours, factor, rate, effectiveSize, effectiveComplexity, value
+                                      );
+                                      updateLineItemMutation.mutate({
+                                        itemId: item.id,
+                                        data: {
+                                          confidence: value,
+                                          adjustedHours: String(adjustedHours),
+                                          totalAmount: String(totalAmount)
+                                        }
+                                      });
+                                    }}
+                                    disabled={!isEditable}
+                                  >
+                                    <SelectTrigger className="h-6 w-24">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="high">High</SelectItem>
+                                      <SelectItem value="medium">Medium</SelectItem>
+                                      <SelectItem value="low">Low</SelectItem>
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </div>
                             </div>

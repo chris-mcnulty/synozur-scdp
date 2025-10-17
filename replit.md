@@ -9,8 +9,10 @@
   - Added missing Checkbox component import to estimate-detail.tsx
 - **Estimate Expanded Row Editing**: Enhanced estimate detail UX with inline editing capabilities
   - Factor field now editable inline (click to edit, Enter to save, Escape to cancel)
+  - Size, Complexity, Confidence fields now visible and editable via dropdowns
   - Resource assignment dropdown now functional with automatic rate updates and recalculation
   - Changes save immediately with proper calculation of adjusted hours and total amount
+  - Fixed calculation bug: Sequential attribute changes now use pending values to prevent stale calculations
 
 ### SharePoint Embedded Integration (October 17, 2025)
 - **File Storage Migration**: Migrated from local file storage to SharePoint Embedded containers
