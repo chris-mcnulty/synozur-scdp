@@ -4534,11 +4534,11 @@ export default function ProjectDetail() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
-                    // Convert empty strings to null for vocabulary term IDs
-                    epicTermId: epicTermIdValue || null,
-                    stageTermId: stageTermIdValue || null,
-                    activityTermId: activityTermIdValue || null,
-                    workstreamTermId: workstreamTermIdValue || null,
+                    // Convert empty strings and __default__ to null for vocabulary term IDs
+                    epicTermId: epicTermIdValue && epicTermIdValue !== '__default__' ? epicTermIdValue : null,
+                    stageTermId: stageTermIdValue && stageTermIdValue !== '__default__' ? stageTermIdValue : null,
+                    activityTermId: activityTermIdValue && activityTermIdValue !== '__default__' ? activityTermIdValue : null,
+                    workstreamTermId: workstreamTermIdValue && workstreamTermIdValue !== '__default__' ? workstreamTermIdValue : null,
                   }
                 });
               }}>
@@ -4605,13 +4605,13 @@ export default function ProjectDetail() {
                           <Label htmlFor="edit-epicTermId">Epic Term</Label>
                           <Select 
                             name="epicTermId" 
-                            defaultValue={projectToEdit.epicTermId || effectiveClientDefaults.epicTermId || ""}
+                            defaultValue={projectToEdit.epicTermId || effectiveClientDefaults.epicTermId || "__default__"}
                           >
                             <SelectTrigger data-testid="select-edit-epic-term">
                               <SelectValue placeholder="Select epic term" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None (use client/org default{effectiveClientDefaults.epicTermId ? ` - ${getTermValueById(effectiveClientDefaults.epicTermId)}` : ''})</SelectItem>
+                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.epicTermId ? ` - ${getTermValueById(effectiveClientDefaults.epicTermId)}` : ''})</SelectItem>
                               {vocabularyTermsByType.epicTerms?.map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -4625,13 +4625,13 @@ export default function ProjectDetail() {
                           <Label htmlFor="edit-stageTermId">Stage Term</Label>
                           <Select 
                             name="stageTermId" 
-                            defaultValue={projectToEdit.stageTermId || effectiveClientDefaults.stageTermId || ""}
+                            defaultValue={projectToEdit.stageTermId || effectiveClientDefaults.stageTermId || "__default__"}
                           >
                             <SelectTrigger data-testid="select-edit-stage-term">
                               <SelectValue placeholder="Select stage term" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None (use client/org default{effectiveClientDefaults.stageTermId ? ` - ${getTermValueById(effectiveClientDefaults.stageTermId)}` : ''})</SelectItem>
+                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.stageTermId ? ` - ${getTermValueById(effectiveClientDefaults.stageTermId)}` : ''})</SelectItem>
                               {vocabularyTermsByType.stageTerms?.map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -4645,13 +4645,13 @@ export default function ProjectDetail() {
                           <Label htmlFor="edit-activityTermId">Activity Term</Label>
                           <Select 
                             name="activityTermId" 
-                            defaultValue={projectToEdit.activityTermId || effectiveClientDefaults.activityTermId || ""}
+                            defaultValue={projectToEdit.activityTermId || effectiveClientDefaults.activityTermId || "__default__"}
                           >
                             <SelectTrigger data-testid="select-edit-activity-term">
                               <SelectValue placeholder="Select activity term" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None (use client/org default{effectiveClientDefaults.activityTermId ? ` - ${getTermValueById(effectiveClientDefaults.activityTermId)}` : ''})</SelectItem>
+                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.activityTermId ? ` - ${getTermValueById(effectiveClientDefaults.activityTermId)}` : ''})</SelectItem>
                               {vocabularyTermsByType.activityTerms?.map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -4665,13 +4665,13 @@ export default function ProjectDetail() {
                           <Label htmlFor="edit-workstreamTermId">Workstream Term</Label>
                           <Select 
                             name="workstreamTermId" 
-                            defaultValue={projectToEdit.workstreamTermId || effectiveClientDefaults.workstreamTermId || ""}
+                            defaultValue={projectToEdit.workstreamTermId || effectiveClientDefaults.workstreamTermId || "__default__"}
                           >
                             <SelectTrigger data-testid="select-edit-workstream-term">
                               <SelectValue placeholder="Select workstream term" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">None (use client/org default{effectiveClientDefaults.workstreamTermId ? ` - ${getTermValueById(effectiveClientDefaults.workstreamTermId)}` : ''})</SelectItem>
+                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.workstreamTermId ? ` - ${getTermValueById(effectiveClientDefaults.workstreamTermId)}` : ''})</SelectItem>
                               {vocabularyTermsByType.workstreamTerms?.map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}

@@ -691,10 +691,10 @@ export default function Projects() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
-                    epicTermId: epicTermId && epicTermId !== '' ? epicTermId : null,
-                    stageTermId: stageTermId && stageTermId !== '' ? stageTermId : null,
-                    activityTermId: activityTermId && activityTermId !== '' ? activityTermId : null,
-                    workstreamTermId: workstreamTermId && workstreamTermId !== '' ? workstreamTermId : null,
+                    epicTermId: epicTermId && epicTermId !== '' && epicTermId !== '__default__' ? epicTermId : null,
+                    stageTermId: stageTermId && stageTermId !== '' && stageTermId !== '__default__' ? stageTermId : null,
+                    activityTermId: activityTermId && activityTermId !== '' && activityTermId !== '__default__' ? activityTermId : null,
+                    workstreamTermId: workstreamTermId && workstreamTermId !== '' && workstreamTermId !== '__default__' ? workstreamTermId : null,
                   }
                 });
               }}>
@@ -854,12 +854,12 @@ export default function Projects() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
                           <Label htmlFor="epicTermId">Epic Term</Label>
-                          <Select name="epicTermId" defaultValue={projectToEdit.epicTermId || ""}>
+                          <Select name="epicTermId" defaultValue={projectToEdit.epicTermId || "__default__"}>
                             <SelectTrigger data-testid="select-edit-vocab-epic">
                               <SelectValue placeholder="Use default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Use client/organization default</SelectItem>
+                              <SelectItem value="__default__">Use client/organization default</SelectItem>
                               {catalogTerms.filter((t: any) => t.category === 'epic').map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -870,12 +870,12 @@ export default function Projects() {
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="stageTermId">Stage Term</Label>
-                          <Select name="stageTermId" defaultValue={projectToEdit.stageTermId || ""}>
+                          <Select name="stageTermId" defaultValue={projectToEdit.stageTermId || "__default__"}>
                             <SelectTrigger data-testid="select-edit-vocab-stage">
                               <SelectValue placeholder="Use default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Use client/organization default</SelectItem>
+                              <SelectItem value="__default__">Use client/organization default</SelectItem>
                               {catalogTerms.filter((t: any) => t.category === 'stage').map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -886,12 +886,12 @@ export default function Projects() {
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="activityTermId">Activity Term</Label>
-                          <Select name="activityTermId" defaultValue={projectToEdit.activityTermId || ""}>
+                          <Select name="activityTermId" defaultValue={projectToEdit.activityTermId || "__default__"}>
                             <SelectTrigger data-testid="select-edit-vocab-activity">
                               <SelectValue placeholder="Use default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Use client/organization default</SelectItem>
+                              <SelectItem value="__default__">Use client/organization default</SelectItem>
                               {catalogTerms.filter((t: any) => t.category === 'activity').map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}
@@ -902,12 +902,12 @@ export default function Projects() {
                         </div>
                         <div className="grid gap-2">
                           <Label htmlFor="workstreamTermId">Workstream Term</Label>
-                          <Select name="workstreamTermId" defaultValue={projectToEdit.workstreamTermId || ""}>
+                          <Select name="workstreamTermId" defaultValue={projectToEdit.workstreamTermId || "__default__"}>
                             <SelectTrigger data-testid="select-edit-vocab-workstream">
                               <SelectValue placeholder="Use default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Use client/organization default</SelectItem>
+                              <SelectItem value="__default__">Use client/organization default</SelectItem>
                               {catalogTerms.filter((t: any) => t.category === 'workstream').map((term: any) => (
                                 <SelectItem key={term.id} value={term.id}>
                                   {term.termValue}

@@ -524,14 +524,14 @@ export default function ClientDetail() {
                               <div className="space-y-2">
                                 <Label htmlFor="epicTermId">Epic Term</Label>
                                 <Select
-                                  value={editForm.epicTermId || ""}
-                                  onValueChange={(value) => setEditForm({ ...editForm, epicTermId: value || null })}
+                                  value={editForm.epicTermId || "__default__"}
+                                  onValueChange={(value) => setEditForm({ ...editForm, epicTermId: value === "__default__" ? null : value })}
                                 >
                                   <SelectTrigger data-testid="select-vocab-epic">
                                     <SelectValue placeholder="Select epic term" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="">
+                                    <SelectItem value="__default__">
                                       Use organization default{orgSelections?.epicTermId && ` (${getTermValue(orgSelections.epicTermId)})`}
                                     </SelectItem>
                                     {epicTerms?.map(term => (
@@ -545,14 +545,14 @@ export default function ClientDetail() {
                               <div className="space-y-2">
                                 <Label htmlFor="stageTermId">Stage Term</Label>
                                 <Select
-                                  value={editForm.stageTermId || ""}
-                                  onValueChange={(value) => setEditForm({ ...editForm, stageTermId: value || null })}
+                                  value={editForm.stageTermId || "__default__"}
+                                  onValueChange={(value) => setEditForm({ ...editForm, stageTermId: value === "__default__" ? null : value })}
                                 >
                                   <SelectTrigger data-testid="select-vocab-stage">
                                     <SelectValue placeholder="Select stage term" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="">
+                                    <SelectItem value="__default__">
                                       Use organization default{orgSelections?.stageTermId && ` (${getTermValue(orgSelections.stageTermId)})`}
                                     </SelectItem>
                                     {stageTerms?.map(term => (
@@ -566,14 +566,14 @@ export default function ClientDetail() {
                               <div className="space-y-2">
                                 <Label htmlFor="activityTermId">Activity Term</Label>
                                 <Select
-                                  value={editForm.activityTermId || ""}
-                                  onValueChange={(value) => setEditForm({ ...editForm, activityTermId: value || null })}
+                                  value={editForm.activityTermId || "__default__"}
+                                  onValueChange={(value) => setEditForm({ ...editForm, activityTermId: value === "__default__" ? null : value })}
                                 >
                                   <SelectTrigger data-testid="select-vocab-activity">
                                     <SelectValue placeholder="Select activity term" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="">
+                                    <SelectItem value="__default__">
                                       Use organization default{orgSelections?.activityTermId && ` (${getTermValue(orgSelections.activityTermId)})`}
                                     </SelectItem>
                                     {activityTerms?.map(term => (
@@ -587,14 +587,14 @@ export default function ClientDetail() {
                               <div className="space-y-2">
                                 <Label htmlFor="workstreamTermId">Workstream Term</Label>
                                 <Select
-                                  value={editForm.workstreamTermId || ""}
-                                  onValueChange={(value) => setEditForm({ ...editForm, workstreamTermId: value || null })}
+                                  value={editForm.workstreamTermId || "__default__"}
+                                  onValueChange={(value) => setEditForm({ ...editForm, workstreamTermId: value === "__default__" ? null : value })}
                                 >
                                   <SelectTrigger data-testid="select-vocab-workstream">
                                     <SelectValue placeholder="Select workstream term" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="">
+                                    <SelectItem value="__default__">
                                       Use organization default{orgSelections?.workstreamTermId && ` (${getTermValue(orgSelections.workstreamTermId)})`}
                                     </SelectItem>
                                     {workstreamTerms?.map(term => (

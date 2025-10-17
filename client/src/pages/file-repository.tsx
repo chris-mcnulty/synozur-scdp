@@ -68,7 +68,7 @@ interface MetadataTemplate {
 export default function FileRepository() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedType, setSelectedType] = useState("");
+  const [selectedType, setSelectedType] = useState("all");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadMetadata, setUploadMetadata] = useState({
     documentType: "receipt",
@@ -92,7 +92,7 @@ export default function FileRepository() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (searchQuery) params.append("search", searchQuery);
-      if (selectedType) params.append("type", selectedType);
+      if (selectedType && selectedType !== "all") params.append("type", selectedType);
       return apiRequest(`/api/files?${params.toString()}`);
     }
   });
@@ -507,7 +507,7 @@ export default function FileRepository() {
                   <SelectValue placeholder="All types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All types</SelectItem>
+                  <SelectItem value="all">All types</SelectItem>
                   {DOCUMENT_TYPES.map(type => (
                     <SelectItem key={type.value} value={type.value}>
                       {type.label}
