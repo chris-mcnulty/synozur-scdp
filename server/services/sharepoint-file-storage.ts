@@ -67,24 +67,25 @@ export class SharePointFileStorage {
       const sanitizedName = this.sanitizeFileName(originalName);
       const fileName = fileId ? `${fileId}_${sanitizedName}` : `${Date.now()}_${sanitizedName}`;
       
-      // Prepare metadata for SharePoint columns
-      const sharePointMetadata = {
+      // Prepare metadata for SharePoint columns with proper types
+      const sharePointMetadata: Record<string, string | number | boolean | null> = {
         DocumentType: metadata.documentType,
-        ClientId: metadata.clientId || '',
-        ClientName: metadata.clientName || '',
-        ProjectId: metadata.projectId || '',
-        ProjectCode: metadata.projectCode || '',
-        Amount: metadata.amount?.toString() || '',
-        Tags: metadata.tags || '',
         CreatedByUserId: metadata.createdByUserId,
-        MetadataVersion: metadata.metadataVersion.toString(),
-        EffectiveDate: metadata.effectiveDate?.toISOString() || '',
-        EstimateId: metadata.estimateId || '',
-        ChangeOrderId: metadata.changeOrderId || ''
+        MetadataVersion: metadata.metadataVersion // Keep as number
       };
+      
+      // Only add optional fields if they have values
+      if (metadata.clientId) sharePointMetadata.ClientId = metadata.clientId;
+      if (metadata.clientName) sharePointMetadata.ClientName = metadata.clientName;
+      if (metadata.projectId) sharePointMetadata.ProjectId = metadata.projectId;
+      if (metadata.projectCode) sharePointMetadata.ProjectCode = metadata.projectCode;
+      if (metadata.amount !== undefined) sharePointMetadata.Amount = metadata.amount; // Keep as number
+      if (metadata.tags) sharePointMetadata.Tags = metadata.tags;
+      if (metadata.effectiveDate) sharePointMetadata.EffectiveDate = metadata.effectiveDate.toISOString();
+      if (metadata.estimateId) sharePointMetadata.EstimateId = metadata.estimateId;
+      if (metadata.changeOrderId) sharePointMetadata.ChangeOrderId = metadata.changeOrderId;
 
-      // Upload file to SharePoint using the uploadFile method
-      // uploadFile(siteIdOrContainerId, driveIdOrContainerId, folderPath, fileName, fileBuffer, projectCode?, expenseId?)
+      // Upload file to SharePoint with metadata
       const driveItem = await this.graphClient.uploadFile(
         this.containerId,  // siteIdOrContainerId (ignored for SPE)
         this.containerId,  // driveIdOrContainerId (used as containerId)
@@ -92,7 +93,8 @@ export class SharePointFileStorage {
         fileName,
         buffer,
         metadata.projectCode,
-        metadata.estimateId  // Using estimateId as a reference
+        metadata.estimateId,  // Using estimateId as a reference
+        sharePointMetadata    // Pass metadata to be stored in list columns
       );
 
       // Return stored file info

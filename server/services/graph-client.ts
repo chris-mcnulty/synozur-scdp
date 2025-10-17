@@ -684,7 +684,8 @@ export class GraphClient {
     fileName: string,
     fileBuffer: Buffer,
     projectCode?: string,
-    expenseId?: string
+    expenseId?: string,
+    metadata?: Record<string, string | number | boolean | null> // NEW: Optional metadata to store in list columns
   ): Promise<DriveItem> {
     // For SharePoint Embedded, use the second parameter as containerId
     const containerId = driveIdOrContainerId;
@@ -700,19 +701,67 @@ export class GraphClient {
       // Construct the upload path
       const uploadPath = `${normalizedFolderPath}/${sanitizedFileName}`.replace(/\/+/g, '/');
       
+      // Upload the file
+      let driveItem: DriveItem;
+      
       // For large files (>4MB), use resumable upload
       if (fileBuffer.length > 4 * 1024 * 1024) {
-        return this.uploadLargeFileWithRetry(containerId, uploadPath, fileBuffer);
+        driveItem = await this.uploadLargeFileWithRetry(containerId, uploadPath, fileBuffer);
+      } else {
+        // For small files, use simple upload with container endpoint
+        driveItem = await this.makeGraphRequest<DriveItem>(
+          'PUT',
+          `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`,
+          fileBuffer,
+          { 'Content-Type': 'application/octet-stream' }
+        );
       }
       
-      // For small files, use simple upload with container endpoint
-      return await this.makeGraphRequest<DriveItem>(
-        'PUT',
-        `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`,
-        fileBuffer,
-        { 'Content-Type': 'application/octet-stream' }
-      );
+      // If metadata provided, update the list item fields
+      if (metadata && Object.keys(metadata).length > 0) {
+        try {
+          await this.updateFileMetadata(containerId, driveItem.id, metadata);
+        } catch (error) {
+          console.warn('[GraphClient] Failed to update metadata, file uploaded but metadata not saved:', error);
+        }
+      }
+      
+      return driveItem;
     }, `uploadFile(${sanitizedFileName})`);
+  }
+  
+  /**
+   * Update file metadata in SharePoint list columns
+   */
+  async updateFileMetadata(
+    containerId: string,
+    itemId: string,
+    metadata: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    try {
+      // Filter out empty values and null fields
+      const cleanedMetadata: Record<string, any> = {};
+      for (const [key, value] of Object.entries(metadata)) {
+        // Skip empty strings, null, and undefined values
+        if (value !== '' && value !== null && value !== undefined) {
+          cleanedMetadata[key] = value;
+        }
+      }
+      
+      // Only update if there's metadata to set
+      if (Object.keys(cleanedMetadata).length > 0) {
+        // Update list item fields via PATCH request
+        await this.makeGraphRequest(
+          'PATCH',
+          `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}/listItem/fields`,
+          cleanedMetadata
+        );
+        console.log('[GraphClient] Metadata updated successfully for item:', itemId);
+      }
+    } catch (error) {
+      console.error('[GraphClient] Failed to update metadata:', error);
+      throw error;
+    }
   }
 
   /**
@@ -986,9 +1035,10 @@ export class GraphClient {
     return this.withRetry(async () => {
       const pathForApi = folderPath === '/' ? '' : `:${folderPath}:`;
       
+      // Request with expanded listItem fields to get metadata for all files
       const response = await this.makeGraphRequest<GraphResponse<DriveItem>>(
         'GET',
-        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children`
+        `/storage/fileStorage/containers/${containerId}/drive/root${pathForApi}/children?$expand=listItem($expand=fields)`
       );
       
       return response.value || [];
@@ -1004,7 +1054,11 @@ export class GraphClient {
     const containerId = driveIdOrContainerId;
     
     return this.withRetry(async () => {
-      return await this.makeGraphRequest<DriveItem>('GET', `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}`);
+      // Request item with expanded listItem fields to get metadata
+      return await this.makeGraphRequest<DriveItem>(
+        'GET', 
+        `/storage/fileStorage/containers/${containerId}/drive/items/${itemId}?$expand=listItem($expand=fields)`
+      );
     }, `getItem(${itemId})`);
   }
 
