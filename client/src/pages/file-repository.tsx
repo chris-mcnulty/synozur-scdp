@@ -583,7 +583,7 @@ export default function FileRepository() {
                     </TableRow>
                   ) : (
                     files.map((file) => {
-                      const project = projects.find((p: any) => p.id === file.metadata.projectId);
+                      const project = sortedActiveProjects.find((p: any) => p.id === file.metadata.projectId);
                       return (
                         <TableRow key={file.id}>
                           <TableCell>

@@ -6,6 +6,7 @@ import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { LocalFileStorage } from "./services/local-file-storage.js";
+import { SharePointFileStorage } from "./services/sharepoint-file-storage.js";
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -608,8 +609,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // ============ FILE REPOSITORY MANAGEMENT ROUTES ============
   
-  // Initialize local file storage
-  const localFileStorage = new LocalFileStorage();
+  // Initialize file storage services
+  const sharePointFileStorage = new SharePointFileStorage();
+  const localFileStorage = new LocalFileStorage(); // Keep as fallback
+  
+  // Use SharePoint storage by default
+  const fileStorage = sharePointFileStorage;
   
   // Validation schemas for file operations
   const fileUploadMetadataSchema = z.object({
@@ -655,7 +660,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filter: any = {};
       if (type) filter.documentType = type as string;
       
-      let files = await localFileStorage.listFiles(filter);
+      let files = await fileStorage.listFiles(filter);
       
       // Apply search filter if provided
       if (search) {
@@ -679,7 +684,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get storage statistics
   app.get("/api/files/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const stats = await localFileStorage.getStorageStats();
+      const stats = await fileStorage.getStorageStats();
       res.json(stats);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error getting storage stats:", error);
@@ -748,7 +753,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       // Store file with validated metadata
-      const storedFile = await localFileStorage.storeFile(
+      const storedFile = await fileStorage.storeFile(
         req.file.buffer,
         req.file.originalname,
         req.file.mimetype,
@@ -778,7 +783,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Download a file
   app.get("/api/files/:fileId/download", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const fileData = await localFileStorage.getFileContent(req.params.fileId);
+      const fileData = await fileStorage.getFileContent(req.params.fileId);
       
       if (!fileData) {
         return res.status(404).json({ message: "File not found" });
@@ -796,7 +801,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Delete a file
   app.delete("/api/files/:fileId", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const success = await localFileStorage.deleteFile(req.params.fileId);
+      const success = await fileStorage.deleteFile(req.params.fileId);
       
       if (!success) {
         return res.status(404).json({ message: "File not found" });
@@ -812,7 +817,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Update file metadata
   app.patch("/api/files/:fileId/metadata", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const updatedFile = await localFileStorage.updateMetadata(req.params.fileId, req.body);
+      const updatedFile = await fileStorage.updateMetadata(req.params.fileId, req.body);
       
       if (!updatedFile) {
         return res.status(404).json({ message: "File not found" });
@@ -828,7 +833,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Validate files in repository (check folder structure and file types)
   app.post("/api/files/validate", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const files = await localFileStorage.listFiles();
+      const files = await fileStorage.listFiles();
       const issues: string[] = [];
       let totalFiles = 0;
       

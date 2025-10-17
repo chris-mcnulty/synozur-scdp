@@ -25,10 +25,22 @@ export class SharePointFileStorage {
 
   constructor() {
     this.graphClient = new GraphClient();
-    this.containerId = process.env.SHAREPOINT_CONTAINER_ID || '';
+    
+    // Determine environment: use PROD container when deployed, DEV otherwise
+    const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      this.containerId = process.env.SHAREPOINT_CONTAINER_ID_PROD || '';
+      console.log('[SharePointStorage] Using PRODUCTION container');
+    } else {
+      this.containerId = process.env.SHAREPOINT_CONTAINER_ID_DEV || '';
+      console.log('[SharePointStorage] Using DEVELOPMENT container');
+    }
     
     if (!this.containerId) {
-      console.warn('[SharePointStorage] SHAREPOINT_CONTAINER_ID not set. Please configure this environment variable.');
+      console.warn('[SharePointStorage] SharePoint container ID not set. Please configure SHAREPOINT_CONTAINER_ID_DEV and SHAREPOINT_CONTAINER_ID_PROD environment variables.');
+    } else {
+      console.log(`[SharePointStorage] Container ID: ${this.containerId.substring(0, 20)}...`);
     }
   }
 
