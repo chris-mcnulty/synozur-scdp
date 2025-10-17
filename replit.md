@@ -9,6 +9,11 @@
   - SharePoint configuration re-enabled in routes.ts (was temporarily stubbed)
   
 - **Invoice & Document Management**:
+  - **Invoice PDF Viewing**: New endpoints to view and access invoice PDFs from SharePoint
+    - View endpoint: `GET /api/invoice-batches/:batchId/pdf/view` - Opens PDF in browser (inline)
+    - Exists endpoint: `GET /api/invoice-batches/:batchId/pdf/exists` - Checks if PDF exists in SharePoint
+    - UI: "View PDF (SharePoint)" button on batch detail page opens PDF in new tab
+    - PDFs stored with batchId as fileId for consistent lookup and Copilot indexing
   - **Invoice Replacement**: Regenerating invoices automatically deletes previous version from SharePoint before saving new PDF
   - **SOW/Change Order Documents**: Upload/download/replace functionality for Statement of Work and Change Order documents
     - Documents stored in SharePoint with proper metadata (client, project, amount, effective date)
