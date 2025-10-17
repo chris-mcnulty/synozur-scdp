@@ -693,6 +693,44 @@ export default function ProjectDetail() {
     }
   });
 
+  const uploadSowDocumentMutation = useMutation({
+    mutationFn: async ({ sowId, file }: { sowId: string; file: File }) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch(`/api/sows/${sowId}/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to upload document');
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Document uploaded",
+        description: "The SOW document has been uploaded successfully."
+      });
+      refetchSows();
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload document",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const handleSowUpload = (sowId: string, file: File) => {
+    uploadSowDocumentMutation.mutate({ sowId, file });
+  };
+
   // Milestone mutations
   const createMilestoneMutation = useMutation({
     mutationFn: async (data: MilestoneFormData) => {
@@ -2516,20 +2554,71 @@ export default function ProjectDetail() {
                           </TableCell>
                           <TableCell>{format(new Date(sow.effectiveDate), "MMM d, yyyy")}</TableCell>
                           <TableCell>
-                            {sow.documentUrl ? (
-                              <a
-                                href={sow.documentUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-primary hover:underline"
-                                data-testid={`sow-document-link-${sow.id}`}
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                                {sow.documentName || "View"}
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {sow.documentUrl ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => window.open(`/api/sows/${sow.id}/download`, '_blank')}
+                                    className="h-7 px-2"
+                                    data-testid={`button-download-sow-${sow.id}`}
+                                  >
+                                    <Download className="w-3 h-3 mr-1" />
+                                    {sow.documentName || "Download"}
+                                  </Button>
+                                  <label htmlFor={`sow-upload-${sow.id}`}>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 px-2"
+                                      asChild
+                                      data-testid={`button-replace-sow-${sow.id}`}
+                                    >
+                                      <span>
+                                        <Upload className="w-3 h-3 mr-1" />
+                                        Replace
+                                      </span>
+                                    </Button>
+                                    <input
+                                      id={`sow-upload-${sow.id}`}
+                                      type="file"
+                                      className="hidden"
+                                      accept=".pdf,.doc,.docx"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleSowUpload(sow.id, file);
+                                      }}
+                                    />
+                                  </label>
+                                </>
+                              ) : (
+                                <label htmlFor={`sow-upload-${sow.id}`}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2"
+                                    asChild
+                                    data-testid={`button-upload-sow-${sow.id}`}
+                                  >
+                                    <span>
+                                      <Upload className="w-3 h-3 mr-1" />
+                                      Upload
+                                    </span>
+                                  </Button>
+                                  <input
+                                    id={`sow-upload-${sow.id}`}
+                                    type="file"
+                                    className="hidden"
+                                    accept=".pdf,.doc,.docx"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handleSowUpload(sow.id, file);
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
