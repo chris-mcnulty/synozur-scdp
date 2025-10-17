@@ -24,7 +24,6 @@ SCDP is a comprehensive platform designed to manage the entire lifecycle of cons
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
-Development workflow: Dev server requires manual restart - do not attempt automated restarts.
 
 ## System Architecture
 
