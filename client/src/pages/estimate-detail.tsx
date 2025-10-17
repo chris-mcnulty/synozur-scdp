@@ -2789,7 +2789,7 @@ function EstimateDetailContent() {
                                       const baseHours = Number(item.baseHours || 0);
                                       const factor = Number(item.factor || 1);
                                       const rate = Number(updates.rate || 0);
-                                      const { adjustedHours, totalAmount } = calculateLineItemTotals(
+                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
                                         baseHours, factor, rate, item.size, item.complexity, item.confidence
                                       );
                                       

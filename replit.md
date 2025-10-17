@@ -7,6 +7,10 @@
   - Updated SSO callback to use `LOWER()` for email comparison (was using exact match)
 - **Estimate Detail White Screen**: Fixed white screen of death when viewing estimates
   - Added missing Checkbox component import to estimate-detail.tsx
+- **Estimate Expanded Row Editing**: Enhanced estimate detail UX with inline editing capabilities
+  - Factor field now editable inline (click to edit, Enter to save, Escape to cancel)
+  - Resource assignment dropdown now functional with automatic rate updates and recalculation
+  - Changes save immediately with proper calculation of adjusted hours and total amount
 
 ### SharePoint Embedded Integration (October 17, 2025)
 - **File Storage Migration**: Migrated from local file storage to SharePoint Embedded containers
