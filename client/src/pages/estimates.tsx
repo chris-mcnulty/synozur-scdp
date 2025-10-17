@@ -365,7 +365,7 @@ export default function Estimates() {
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Total Hours</TableHead>
-                    <TableHead>Total Cost</TableHead>
+                    <TableHead>Quote Total</TableHead>
                     <TableHead>Valid Until</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>

@@ -28,6 +28,14 @@
   - Fixed field name bugs: Changed from `user.fullName`/`user.rate` to correct `user.name`/`user.defaultBillingRate`
   - Changes save immediately with automatic recalculation of adjusted hours and total amount
   - Fixed calculation bug: Sequential attribute changes now use pending values to prevent stale calculations
+- **Cost and Margin Calculations**: Fixed missing cost and margin calculations on estimate line items
+  - Added totalCost, margin, and marginPercent calculations to all line item operations
+  - Calculations now include: adjustedHours × costRate = totalCost, totalAmount - totalCost = margin
+  - All inline editing, dropdown changes, and resource assignments now recalculate cost/margin
+  - Enhanced calculateAdjustedValues to return all financial metrics including profit margins
+- **Estimate List Column Labels**: Renamed "Total Cost" column to "Quote Total" for clarity
+  - Column displays customer-facing presentedTotal (quote total) not internal costs
+  - Blue highlighting shows when quote total differs from calculated line items sum
 - **Unassignable User Resource Management**: Admins can now manage assignments even when users become unassignable
   - Dropdown includes currently assigned users even if marked as unassignable
   - Inactive/unassignable users shown with "(Inactive)" label

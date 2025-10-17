@@ -696,8 +696,8 @@ function EstimateDetailContent() {
     };
   };
 
-  const calculateAdjustedValues = (baseHours: number, factor: number, rate: number, size: string, complexity: string, confidence: string) => {
-    if (!estimate) return { adjustedHours: 0, totalAmount: 0 };
+  const calculateAdjustedValues = (baseHours: number, factor: number, rate: number, costRate: number, size: string, complexity: string, confidence: string) => {
+    if (!estimate) return { adjustedHours: 0, totalAmount: 0, totalCost: 0, margin: 0, marginPercent: 0 };
     
     let sizeMultiplier = 1.0;
     if (size === "medium") sizeMultiplier = Number(estimate.sizeMediumMultiplier || 1.05);
@@ -713,8 +713,11 @@ function EstimateDetailContent() {
     
     const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
     const totalAmount = adjustedHours * rate;
+    const totalCost = adjustedHours * costRate;
+    const margin = totalAmount - totalCost;
+    const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
     
-    return { adjustedHours, totalAmount };
+    return { adjustedHours, totalAmount, totalCost, margin, marginPercent };
   };
 
   const handleAddItem = () => {
@@ -743,8 +746,8 @@ function EstimateDetailContent() {
       return;
     }
     
-    const { adjustedHours, totalAmount } = calculateAdjustedValues(
-      baseHours, factor, rate, newItem.size, newItem.complexity, newItem.confidence
+    const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+      baseHours, factor, rate, costRate, newItem.size, newItem.complexity, newItem.confidence
     );
     
     // Backend normalizeEstimateLineItemPayload will handle type conversion
@@ -767,6 +770,9 @@ function EstimateDetailContent() {
       resourceName: newItem.resourceName || null,
       adjustedHours: String(adjustedHours),
       totalAmount: String(totalAmount),
+      totalCost: String(totalCost),
+      margin: String(margin),
+      marginPercent: String(marginPercent),
       sortOrder: lineItems?.length || 0
     };
     
@@ -827,19 +833,23 @@ function EstimateDetailContent() {
     
     // For fields that affect calculations, include calculated values
     let finalData = updateData;
-    if (['baseHours', 'factor', 'rate'].includes(fieldName)) {
+    if (['baseHours', 'factor', 'rate', 'costRate'].includes(fieldName)) {
       const baseHours = fieldName === 'baseHours' ? Number(draftValue) : Number(item.baseHours);
       const factor = fieldName === 'factor' ? Number(draftValue) : Number(item.factor) || 1;
       const rate = fieldName === 'rate' ? Number(draftValue) : Number(item.rate);
+      const costRate = fieldName === 'costRate' ? Number(draftValue) : Number(item.costRate || 0);
       
-      const { adjustedHours, totalAmount } = calculateAdjustedValues(
-        baseHours, factor, rate, item.size, item.complexity, item.confidence
+      const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+        baseHours, factor, rate, costRate, item.size, item.complexity, item.confidence
       );
       
       finalData = {
         ...updateData,
         adjustedHours: String(adjustedHours),
-        totalAmount: String(totalAmount)
+        totalAmount: String(totalAmount),
+        totalCost: String(totalCost),
+        margin: String(margin),
+        marginPercent: String(marginPercent)
       };
     }
     
@@ -872,15 +882,16 @@ function EstimateDetailContent() {
     const baseHours = Number(updatedItem.baseHours);
     const factor = Number(updatedItem.factor) || 1;
     const rate = Number(updatedItem.rate);
-    const { adjustedHours, totalAmount } = calculateAdjustedValues(
-      baseHours, factor, rate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
+    const costRate = Number(updatedItem.costRate || 0);
+    const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+      baseHours, factor, rate, costRate, updatedItem.size, updatedItem.complexity, updatedItem.confidence
     );
     
     // Send numeric fields as strings - backend Zod validation expects strings
     // Convert all numeric fields to strings
     const dataToSend: any = {};
     for (const [key, value] of Object.entries(updatedItem)) {
-      if (['baseHours', 'factor', 'rate', 'costRate', 'week', 'adjustedHours', 'totalAmount'].includes(key)) {
+      if (['baseHours', 'factor', 'rate', 'costRate', 'week', 'adjustedHours', 'totalAmount', 'totalCost', 'margin', 'marginPercent'].includes(key)) {
         dataToSend[key] = value !== null && value !== undefined && value !== '' ? String(value) : value;
       } else {
         dataToSend[key] = value;
@@ -892,7 +903,10 @@ function EstimateDetailContent() {
       data: {
         ...dataToSend,
         adjustedHours: String(adjustedHours),
-        totalAmount: String(totalAmount)
+        totalAmount: String(totalAmount),
+        totalCost: String(totalCost),
+        margin: String(margin),
+        marginPercent: String(marginPercent)
       }
     });
   };
@@ -2789,18 +2803,22 @@ function EstimateDetailContent() {
                                       const baseHours = Number(item.baseHours || 0);
                                       const factor = Number(item.factor || 1);
                                       const rate = Number(item.rate || 0);
+                                      const costRate = Number(item.costRate || 0);
                                       const pending = pendingAttributes[item.id] || {};
                                       const effectiveComplexity = pending.complexity || item.complexity;
                                       const effectiveConfidence = pending.confidence || item.confidence;
-                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                        baseHours, factor, rate, value, effectiveComplexity, effectiveConfidence
+                                      const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+                                        baseHours, factor, rate, costRate, value, effectiveComplexity, effectiveConfidence
                                       );
                                       updateLineItemMutation.mutate({
                                         itemId: item.id,
                                         data: {
                                           size: value,
                                           adjustedHours: String(adjustedHours),
-                                          totalAmount: String(totalAmount)
+                                          totalAmount: String(totalAmount),
+                                          totalCost: String(totalCost),
+                                          margin: String(margin),
+                                          marginPercent: String(marginPercent)
                                         }
                                       });
                                     }}
@@ -2831,18 +2849,22 @@ function EstimateDetailContent() {
                                       const baseHours = Number(item.baseHours || 0);
                                       const factor = Number(item.factor || 1);
                                       const rate = Number(item.rate || 0);
+                                      const costRate = Number(item.costRate || 0);
                                       const pending = pendingAttributes[item.id] || {};
                                       const effectiveSize = pending.size || item.size;
                                       const effectiveConfidence = pending.confidence || item.confidence;
-                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                        baseHours, factor, rate, effectiveSize, value, effectiveConfidence
+                                      const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+                                        baseHours, factor, rate, costRate, effectiveSize, value, effectiveConfidence
                                       );
                                       updateLineItemMutation.mutate({
                                         itemId: item.id,
                                         data: {
                                           complexity: value,
                                           adjustedHours: String(adjustedHours),
-                                          totalAmount: String(totalAmount)
+                                          totalAmount: String(totalAmount),
+                                          totalCost: String(totalCost),
+                                          margin: String(margin),
+                                          marginPercent: String(marginPercent)
                                         }
                                       });
                                     }}
@@ -2873,18 +2895,22 @@ function EstimateDetailContent() {
                                       const baseHours = Number(item.baseHours || 0);
                                       const factor = Number(item.factor || 1);
                                       const rate = Number(item.rate || 0);
+                                      const costRate = Number(item.costRate || 0);
                                       const pending = pendingAttributes[item.id] || {};
                                       const effectiveSize = pending.size || item.size;
                                       const effectiveComplexity = pending.complexity || item.complexity;
-                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                        baseHours, factor, rate, effectiveSize, effectiveComplexity, value
+                                      const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+                                        baseHours, factor, rate, costRate, effectiveSize, effectiveComplexity, value
                                       );
                                       updateLineItemMutation.mutate({
                                         itemId: item.id,
                                         data: {
                                           confidence: value,
                                           adjustedHours: String(adjustedHours),
-                                          totalAmount: String(totalAmount)
+                                          totalAmount: String(totalAmount),
+                                          totalCost: String(totalCost),
+                                          margin: String(margin),
+                                          marginPercent: String(marginPercent)
                                         }
                                       });
                                     }}
@@ -2950,6 +2976,7 @@ function EstimateDetailContent() {
                                         updates.roleId = null;
                                         updates.resourceName = null;
                                         updates.rate = "0";
+                                        updates.costRate = "0";
                                       } else if (value.startsWith("role-")) {
                                         const roleId = value.replace("role-", "");
                                         const role = roles.find((r: any) => r.id === roleId);
@@ -2957,20 +2984,23 @@ function EstimateDetailContent() {
                                         updates.roleId = roleId;
                                         updates.resourceName = role?.name || null;
                                         updates.rate = role?.rate || "0";
+                                        updates.costRate = role?.defaultCostRate || "0";
                                       } else {
                                         const user = assignableUsers.find((u: any) => u.id === value);
                                         updates.assignedUserId = value;
                                         updates.roleId = null;
                                         updates.resourceName = user?.name || null;
                                         updates.rate = user?.defaultBillingRate || "0";
+                                        updates.costRate = user?.defaultCostRate || "0";
                                       }
                                       
-                                      // Recalculate with new rate
+                                      // Recalculate with new rate and cost rate
                                       const baseHours = Number(item.baseHours || 0);
                                       const factor = Number(item.factor || 1);
                                       const rate = Number(updates.rate || 0);
-                                      const { adjustedHours, totalAmount } = calculateAdjustedValues(
-                                        baseHours, factor, rate, item.size, item.complexity, item.confidence
+                                      const costRate = Number(updates.costRate || 0);
+                                      const { adjustedHours, totalAmount, totalCost, margin, marginPercent } = calculateAdjustedValues(
+                                        baseHours, factor, rate, costRate, item.size, item.complexity, item.confidence
                                       );
                                       
                                       updateLineItemMutation.mutate({
@@ -2978,7 +3008,10 @@ function EstimateDetailContent() {
                                         data: {
                                           ...updates,
                                           adjustedHours: String(adjustedHours),
-                                          totalAmount: String(totalAmount)
+                                          totalAmount: String(totalAmount),
+                                          totalCost: String(totalCost),
+                                          margin: String(margin),
+                                          marginPercent: String(marginPercent)
                                         }
                                       });
                                     }}
