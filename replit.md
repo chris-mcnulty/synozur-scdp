@@ -1,5 +1,21 @@
 # SCDP - Synozur Consulting Delivery Platform
 
+## Recent Updates (October 2025)
+### SharePoint Embedded Integration (October 17, 2025)
+- **File Storage Migration**: Migrated from local file storage to SharePoint Embedded containers
+  - Development container: `b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr`
+  - Production container: `b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr`
+  - Environment-based container selection (DEV vs PROD)
+  
+- **File Repository Enhancements**:
+  - Client auto-tagged from project selection (no separate client dropdown)
+  - Projects sorted alphabetically by "[Client] - [Project]" format
+  - Only active projects shown in file upload interface
+  
+- **Time Tracking Enhancements**:
+  - Added assignment/allocation dropdown to link time entries to project allocations
+  - Displays allocations filtered by authenticated user
+
 ## Recent Updates (December 2024)
 ### UX & Mobile Responsiveness Improvements
 - **Desktop UX Enhancements**:
@@ -55,7 +71,11 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage
-- **Current**: Local file storage for expense receipts and metadata.
+- **SharePoint Embedded**: Files stored in Microsoft SharePoint containers with metadata
+  - Environment-based container selection (DEV/PROD)
+  - Container IDs configured via `SHAREPOINT_CONTAINER_ID_DEV` and `SHAREPOINT_CONTAINER_ID_PROD` secrets
+  - Automatic folder structure by document type (receipts, invoices, contracts, etc.)
+- **Legacy**: Local file storage retained as fallback
 
 ### Data Integrity Rules
 - **Estimate Preservation**: Deleting a project never deletes linked estimates; they are preserved and unlinked.
