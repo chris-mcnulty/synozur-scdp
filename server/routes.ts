@@ -660,7 +660,22 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filter: any = {};
       if (type) filter.documentType = type as string;
       
+      // Check BOTH SharePoint and local storage to handle fallback cases
       let files = await fileStorage.listFiles(filter);
+      
+      // Also check local storage in case files were saved there as fallback
+      try {
+        const localFiles = await localFileStorage.listFiles(filter);
+        if (localFiles.length > 0) {
+          console.log(`[FILE REPOSITORY] Found ${localFiles.length} files in local storage`);
+          // Merge local files, avoiding duplicates based on fileName
+          const existingFileNames = new Set(files.map(f => f.fileName));
+          const uniqueLocalFiles = localFiles.filter(f => !existingFileNames.has(f.fileName));
+          files = [...files, ...uniqueLocalFiles];
+        }
+      } catch (localError) {
+        console.log("[FILE REPOSITORY] Could not check local storage:", localError);
+      }
       
       // Apply search filter if provided
       if (search) {
@@ -684,8 +699,32 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get storage statistics
   app.get("/api/files/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const stats = await fileStorage.getStorageStats();
-      res.json(stats);
+      // Get stats from both storages and merge them
+      const sharePointStats = await fileStorage.getStorageStats();
+      let combinedStats = sharePointStats;
+      
+      try {
+        const localStats = await localFileStorage.getStorageStats();
+        if (localStats.totalFiles > 0) {
+          // Merge stats
+          combinedStats.totalFiles += localStats.totalFiles;
+          combinedStats.totalSize += localStats.totalSize;
+          
+          // Merge document type stats
+          for (const [type, stats] of Object.entries(localStats.byDocumentType)) {
+            if (combinedStats.byDocumentType[type]) {
+              combinedStats.byDocumentType[type].count += (stats as any).count;
+              combinedStats.byDocumentType[type].size += (stats as any).size;
+            } else {
+              combinedStats.byDocumentType[type] = stats as any;
+            }
+          }
+        }
+      } catch (localError) {
+        console.log("[FILE REPOSITORY] Could not get local storage stats:", localError);
+      }
+      
+      res.json(combinedStats);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error getting storage stats:", error);
       res.status(500).json({ message: "Failed to get storage statistics" });

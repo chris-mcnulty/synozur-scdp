@@ -143,3 +143,14 @@ request = "launch"
 sourceMaps = true
 stopOnEntry = false
 type = "node"
+
+[workflows]
+
+[[workflows.workflow]]
+name = "Dev Server"
+mode = "sequential"
+author = 47096868
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "nodemon index.js"

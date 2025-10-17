@@ -229,6 +229,7 @@ export class SharePointFileStorage {
     }
 
     try {
+      console.log('[SharePointStorage] listFiles - Called with filter:', filter);
       // Build OData filter query
       const filters: string[] = [];
       if (filter?.documentType) {
@@ -244,6 +245,13 @@ export class SharePointFileStorage {
       // List all files recursively and filter in memory
       // Note: GraphClient doesn't have metadata querying yet, so we'll list all and filter locally
       const allItems = await this.listAllFiles(this.containerId);
+      console.log(`[SharePointStorage] listFiles - Retrieved ${allItems.length} total items`);
+
+      // Count items without metadata
+      const itemsWithoutMetadata = allItems.filter((item: any) => !item.listItem?.fields).length;
+      if (itemsWithoutMetadata > 0) {
+        console.warn(`[SharePointStorage] listFiles - ${itemsWithoutMetadata} items have no listItem.fields and will be filtered out`);
+      }
 
       // Filter based on criteria
       const filteredItems = allItems.filter((item: any) => {
@@ -256,6 +264,8 @@ export class SharePointFileStorage {
         
         return true;
       });
+
+      console.log(`[SharePointStorage] listFiles - After filtering: ${filteredItems.length} items match criteria`);
 
       return filteredItems.map((item: any) => {
         const fields = item.listItem?.fields || {};
@@ -393,15 +403,15 @@ export class SharePointFileStorage {
    */
   private getFolderPath(documentType: string): string {
     const folderMap: Record<string, string> = {
-      receipt: 'receipts',
-      invoice: 'invoices',
-      contract: 'contracts',
-      statementOfWork: 'statements',
-      estimate: 'estimates',
-      changeOrder: 'change_orders',
-      report: 'reports'
+      receipt: '/receipts',
+      invoice: '/invoices',
+      contract: '/contracts',
+      statementOfWork: '/statements',
+      estimate: '/estimates',
+      changeOrder: '/change_orders',
+      report: '/reports'
     };
-    return folderMap[documentType] || 'receipts';
+    return folderMap[documentType] || '/receipts';
   }
 
   /**
@@ -419,19 +429,32 @@ export class SharePointFileStorage {
    * List all files recursively from all folder types
    */
   private async listAllFiles(containerId: string): Promise<any[]> {
+    console.log('[SharePointStorage] listAllFiles - Starting to list files from all folders');
     const allFiles: any[] = [];
     const folderTypes = ['receipts', 'invoices', 'contracts', 'statements', 'estimates', 'change_orders', 'reports'];
     
     for (const folder of folderTypes) {
       try {
+        console.log(`[SharePointStorage] listAllFiles - Listing files from /${folder}`);
         const files = await this.graphClient.listFiles(containerId, `/${folder}`);
+        console.log(`[SharePointStorage] listAllFiles - Found ${files.length} files in /${folder}`);
+        if (files.length > 0) {
+          const sampleFile = files[0] as any;
+          console.log(`[SharePointStorage] listAllFiles - Sample file from /${folder}:`, {
+            name: sampleFile.name,
+            id: sampleFile.id,
+            hasListItem: !!sampleFile.listItem,
+            hasFields: !!sampleFile.listItem?.fields
+          });
+        }
         allFiles.push(...files);
       } catch (error) {
         // Folder might not exist yet, continue
-        console.debug(`[SharePointStorage] Could not list ${folder}:`, error);
+        console.log(`[SharePointStorage] Could not list ${folder}:`, error instanceof Error ? error.message : error);
       }
     }
     
+    console.log(`[SharePointStorage] listAllFiles - Total files found: ${allFiles.length}`);
     return allFiles;
   }
 }
