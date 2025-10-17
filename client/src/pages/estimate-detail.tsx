@@ -3046,19 +3046,28 @@ function EstimateDetailContent() {
           })()}
 
           <div className="mt-4 flex justify-end">
-            <div className="text-right">
+            <div className="text-right space-y-1">
               <div className="text-sm text-muted-foreground">
                 Total Hours: {Math.round(totalHours)}
               </div>
-              <div className="text-lg font-semibold">
-                Total Amount: ${Math.round(
-                  estimate?.blockDollars ? Number(estimate.blockDollars) : 
-                  (estimate?.presentedTotal ? Number(estimate.presentedTotal) : totalAmount)
-                ).toLocaleString()}
-              </div>
-              {estimate?.blockDollars && totalAmount > 0 && (
-                <div className="text-sm text-muted-foreground">
-                  (Line Items Total: ${Math.round(totalAmount).toLocaleString()})
+              {estimate?.presentedTotal && Number(estimate.presentedTotal) !== totalAmount ? (
+                <>
+                  <div className="text-sm text-muted-foreground">
+                    Line Items Total: ${Math.round(totalAmount).toLocaleString()}
+                  </div>
+                  <div className="text-lg font-semibold text-blue-600">
+                    Quote Total: ${Math.round(Number(estimate.presentedTotal)).toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    (Override: {Number(estimate.presentedTotal) > totalAmount ? '+' : ''}{Math.round(Number(estimate.presentedTotal) - totalAmount).toLocaleString()})
+                  </div>
+                </>
+              ) : (
+                <div className="text-lg font-semibold">
+                  Total Amount: ${Math.round(
+                    estimate?.blockDollars ? Number(estimate.blockDollars) : 
+                    (estimate?.presentedTotal ? Number(estimate.presentedTotal) : totalAmount)
+                  ).toLocaleString()}
                 </div>
               )}
             </div>

@@ -1,6 +1,13 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Recent Updates (October 2025)
+### Enhancements (October 17, 2025)
+- **Quote Total Display in Estimate Summary**: Enhanced estimate summary to clearly show quote total vs line items total
+  - When `presentedTotal` differs from calculated sum: Shows both "Line Items Total" and "Quote Total" (highlighted in blue)
+  - Displays override amount: e.g., "(Override: +$3,000)" when quote total is adjusted
+  - Falls back to simple "Total Amount" display when quote total matches calculated sum
+  - Makes pricing overrides transparent for consulting quotes
+
 ### Bug Fixes (October 17, 2025)
 - **Case-Insensitive SSO Login**: Fixed Azure SSO login to use case-insensitive email matching
   - Users like Michelle.Caldwell@synozur.com now successfully match michelle.caldwell@synozur.com in database
@@ -11,8 +18,13 @@
   - Factor field now editable inline (click to edit, Enter to save, Escape to cancel)
   - Size, Complexity, Confidence fields now visible and editable via dropdowns
   - Resource assignment dropdown now functional with automatic rate updates and recalculation
+  - Fixed field name bugs: Changed from `user.fullName`/`user.rate` to correct `user.name`/`user.defaultBillingRate`
   - Changes save immediately with proper calculation of adjusted hours and total amount
   - Fixed calculation bug: Sequential attribute changes now use pending values to prevent stale calculations
+- **Unassignable User Resource Management**: Admins can now manage assignments even when users become unassignable
+  - Dropdown includes currently assigned users even if marked as unassignable
+  - Inactive/unassignable users shown with "(Inactive)" label
+  - Allows admins to reassign work from inactive users without errors
 
 ### SharePoint Embedded Integration (October 17, 2025)
 - **File Storage Migration**: Migrated from local file storage to SharePoint Embedded containers
