@@ -4091,6 +4091,104 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // SOW/Change Order Document Upload
+  app.post("/api/sows/:id/upload", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const sow = await storage.getSow(req.params.id);
+      if (!sow) {
+        return res.status(404).json({ message: "SOW not found" });
+      }
+
+      // Get project for client info
+      const project = await storage.getProject(sow.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Delete existing document if present
+      if (sow.documentUrl) {
+        try {
+          await sharePointFileStorage.deleteFile(sow.documentUrl);
+          console.log(`[SOW] Deleted previous document for SOW ${sow.id}`);
+        } catch (error) {
+          console.log(`[SOW] No previous document to delete`);
+        }
+      }
+
+      // Save to SharePoint
+      const savedFile = await sharePointFileStorage.storeFile(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+        {
+          documentType: sow.type === 'initial' ? 'statementOfWork' : 'changeOrder',
+          clientId: project.clientId,
+          clientName: project.client?.name,
+          projectId: sow.projectId,
+          projectCode: project.code,
+          amount: parseFloat(sow.value),
+          effectiveDate: sow.effectiveDate ? new Date(sow.effectiveDate) : undefined,
+          createdByUserId: req.user!.id,
+          metadataVersion: 1,
+          tags: `${sow.type},sow,${project.code},${project.client?.name?.toLowerCase().replace(/\s+/g, '-')}`
+        },
+        req.user!.email,
+        sow.id // Use SOW ID as fileId for consistent lookup
+      );
+
+      // Update SOW with document info
+      const updated = await storage.updateSow(sow.id, {
+        documentUrl: savedFile.id, // Store SharePoint file ID
+        documentName: req.file.originalname
+      });
+
+      res.json({
+        message: "Document uploaded successfully",
+        sow: updated,
+        file: {
+          id: savedFile.id,
+          name: savedFile.fileName,
+          size: savedFile.size
+        }
+      });
+    } catch (error: any) {
+      console.error("[SOW UPLOAD] Error:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to upload document" 
+      });
+    }
+  });
+
+  // Download SOW/Change Order Document
+  app.get("/api/sows/:id/download", requireAuth, async (req, res) => {
+    try {
+      const sow = await storage.getSow(req.params.id);
+      if (!sow) {
+        return res.status(404).json({ message: "SOW not found" });
+      }
+
+      if (!sow.documentUrl) {
+        return res.status(404).json({ message: "No document attached to this SOW" });
+      }
+
+      const fileData = await sharePointFileStorage.getFileContent(sow.documentUrl);
+      if (!fileData) {
+        return res.status(404).json({ message: "Document not found in storage" });
+      }
+
+      res.setHeader('Content-Type', fileData.metadata.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${sow.documentName || 'document.pdf'}"`);
+      res.send(fileData.buffer);
+    } catch (error: any) {
+      console.error("[SOW DOWNLOAD] Error:", error);
+      res.status(500).json({ message: "Failed to download document" });
+    }
+  });
+
   // SOWs (Statements of Work)
   app.get("/api/projects/:id/sows", requireAuth, async (req, res) => {
     try {
@@ -9105,8 +9203,47 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       });
 
+      // Delete any existing invoice PDF for this batch (if editing/regenerating)
+      try {
+        const existingFile = await sharePointFileStorage.getFileMetadata(batchId);
+        if (existingFile) {
+          await sharePointFileStorage.deleteFile(batchId);
+          console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
+        }
+      } catch (error) {
+        // File doesn't exist, that's fine
+      }
+
+      // Save PDF to SharePoint Embedded
+      const fileName = `invoice-${batchId}.pdf`;
+      const clientId = lines[0]?.client?.id || '';
+      const clientName = lines[0]?.client?.name || 'Unknown Client';
+      const totalAmount = parseFloat(batch.totalAmount || '0');
+      
+      const savedFile = await sharePointFileStorage.storeFile(
+        pdfBuffer,
+        fileName,
+        'application/pdf',
+        {
+          documentType: 'invoice',
+          clientId,
+          clientName,
+          projectId: lines[0]?.project?.id,
+          projectCode: lines[0]?.project?.code,
+          amount: totalAmount,
+          effectiveDate: new Date(batch.createdAt),
+          createdByUserId: req.user!.id,
+          metadataVersion: 1,
+          tags: `invoice,batch-${batchId},${clientName.toLowerCase().replace(/\s+/g, '-')}`
+        },
+        req.user!.email,
+        batchId // Use batchId as fileId for consistent lookup and replacement
+      );
+
+      console.log(`[INVOICE] Saved invoice ${fileName} to SharePoint with ID: ${savedFile.id}`);
+
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="invoice-' + batchId + '.pdf"');
+      res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
       res.send(pdfBuffer);
     } catch (error: any) {
       console.error("Failed to generate PDF:", error);
