@@ -9239,6 +9239,50 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // View Invoice PDF from SharePoint
+  app.get("/api/invoice-batches/:batchId/pdf/view", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+
+      // Try to get the invoice PDF from SharePoint using batchId as fileId
+      const fileData = await sharePointFileStorage.getFileContent(batchId);
+      
+      if (!fileData) {
+        return res.status(404).json({ 
+          message: "Invoice PDF not found in SharePoint. Please regenerate the invoice." 
+        });
+      }
+
+      // Return the PDF for viewing (inline, not download)
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="invoice-${batchId}.pdf"`);
+      res.send(fileData.buffer);
+    } catch (error: any) {
+      console.error("Failed to retrieve PDF from SharePoint:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to retrieve PDF from SharePoint" 
+      });
+    }
+  });
+
+  // Check if Invoice PDF exists in SharePoint
+  app.get("/api/invoice-batches/:batchId/pdf/exists", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+
+      const fileMetadata = await sharePointFileStorage.getFileMetadata(batchId);
+      
+      res.json({ 
+        exists: !!fileMetadata,
+        fileName: fileMetadata?.fileName,
+        size: fileMetadata?.size
+      });
+    } catch (error: any) {
+      // File doesn't exist
+      res.json({ exists: false });
+    }
+  });
+
   // Invoice Line Adjustments API Routes
 
   // Line-item editing

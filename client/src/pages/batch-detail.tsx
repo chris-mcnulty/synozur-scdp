@@ -66,7 +66,8 @@ import {
   Milestone,
   Target,
   Trash2,
-  User as UserIcon
+  User as UserIcon,
+  ExternalLink
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1089,6 +1090,15 @@ export default function BatchDetail() {
           >
             <FileText className="mr-2 h-4 w-4" />
             {isPDFGenerating ? "Generating PDF..." : "Download PDF"}
+          </Button>
+          
+          <Button
+            onClick={() => window.open(`/api/invoice-batches/${batchId}/pdf/view`, '_blank')}
+            variant="outline"
+            data-testid="button-view-pdf-sharepoint"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            View PDF (SharePoint)
           </Button>
 
           {batchDetails?.status === 'finalized' && (
