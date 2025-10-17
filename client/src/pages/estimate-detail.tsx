@@ -941,7 +941,9 @@ function EstimateDetailContent() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `estimate-${id}.csv`;
+      // Use estimate name, sanitized for filename safety
+      const safeName = (estimate?.name || 'estimate').replace(/[^a-zA-Z0-9]/g, '_');
+      a.download = `${safeName}-export.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast({ title: "CSV exported successfully" });
@@ -961,7 +963,9 @@ function EstimateDetailContent() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `estimate-${id}-ai-export.txt`;
+      // Use estimate name, sanitized for filename safety
+      const safeName = (estimate?.name || 'estimate').replace(/[^a-zA-Z0-9]/g, '_');
+      a.download = `${safeName}-ai-export.txt`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast({ title: "Text export downloaded successfully" });
