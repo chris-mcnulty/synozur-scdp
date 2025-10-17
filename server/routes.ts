@@ -616,6 +616,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Use SharePoint storage by default
   const fileStorage = sharePointFileStorage;
   
+  // Diagnostic endpoint to check which storage is active
+  app.get("/api/files/storage-info", requireAuth, requireRole(["admin"]), async (req, res) => {
+    const isSharePoint = fileStorage === sharePointFileStorage;
+    const localFiles = await localFileStorage.listFiles();
+    const sharePointFiles = await sharePointFileStorage.listFiles();
+    
+    res.json({
+      activeStorage: isSharePoint ? "SharePoint" : "Local",
+      localFileCount: localFiles.length,
+      sharePointFileCount: sharePointFiles.length,
+      containerIdConfigured: !!process.env.SHAREPOINT_CONTAINER_ID_DEV || !!process.env.SHAREPOINT_CONTAINER_ID_PROD
+    });
+  });
+  
   // Validation schemas for file operations
   const fileUploadMetadataSchema = z.object({
     documentType: z.enum(['receipt', 'invoice', 'contract', 'statementOfWork', 'estimate', 'changeOrder', 'report']),
@@ -7521,7 +7535,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             tags: ('expense,' + projectCode + ',' + (expense.category || 'uncategorized')).toLowerCase()
           };
 
-          const uploadResult = await localFileStorage.storeFile(
+          const uploadResult = await sharePointFileStorage.storeFile(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
@@ -7911,7 +7925,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             const createdReceipt = await storage.createPendingReceipt(receiptData);
 
             // Now store the file using the receipt ID
-            const storedFile = await localFileStorage.storeFile(
+            const storedFile = await sharePointFileStorage.storeFile(
               file.buffer,
               file.originalname,
               file.mimetype,
