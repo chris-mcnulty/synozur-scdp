@@ -1,0 +1,21 @@
+{
+  "id": "5c274305-a60c-4fc8-b158-b0bb3d3254fc",
+  "fileName": "2020-01-31_11_01_51_Boardwalk_d96318a4.pdf",
+  "originalName": "2020-01-31 11_01_51 Boardwalk.pdf",
+  "filePath": "/home/runner/workspace/uploads/receipts/2020-01-31_11_01_51_Boardwalk_d96318a4.pdf",
+  "size": 370552,
+  "contentType": "application/pdf",
+  "metadata": {
+    "documentType": "receipt",
+    "clientId": "de11ff24-d798-42cc-ab90-8292ec16dff8",
+    "clientName": "H&F Test",
+    "projectId": "62d8f981-70f1-4095-b6ad-21021060f94d",
+    "projectCode": "HF-002",
+    "amount": 5,
+    "createdByUserId": "bb17cbbb-49bb-4b70-b124-9abe90faaa35",
+    "metadataVersion": 1,
+    "tags": "expense,hf-002,meals"
+  },
+  "uploadedAt": "2025-10-17T12:43:15.621Z",
+  "uploadedBy": "bb17cbbb-49bb-4b70-b124-9abe90faaa35"
+}

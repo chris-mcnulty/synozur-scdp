@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,7 +72,6 @@ export default function FileRepository() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadMetadata, setUploadMetadata] = useState({
     documentType: "receipt",
-    clientId: "",
     projectId: "",
     amount: "",
     tags: ""
@@ -103,17 +102,22 @@ export default function FileRepository() {
     queryFn: () => apiRequest("/api/files/stats")
   });
 
-  // Fetch projects for metadata
-  const { data: projects = [] } = useQuery({
+  // Fetch projects for metadata (with client data for display)
+  const { data: allProjects = [] } = useQuery({
     queryKey: ["/api/projects"],
     queryFn: () => apiRequest("/api/projects")
   });
 
-  // Fetch clients for metadata
-  const { data: clients = [] } = useQuery({
-    queryKey: ["/api/clients"],
-    queryFn: () => apiRequest("/api/clients")
-  });
+  // Filter to active projects and sort by "[Client] - [Project]" alphabetically
+  const sortedActiveProjects = useMemo(() => {
+    return allProjects
+      .filter((p: any) => p.status === 'active')
+      .sort((a: any, b: any) => {
+        const aDisplay = `${a.client?.name || 'Unknown'} - ${a.name}`;
+        const bDisplay = `${b.client?.name || 'Unknown'} - ${b.name}`;
+        return aDisplay.localeCompare(bDisplay);
+      });
+  }, [allProjects]);
 
   // Upload file mutation
   const uploadMutation = useMutation({
@@ -143,7 +147,6 @@ export default function FileRepository() {
       setUploadFile(null);
       setUploadMetadata({
         documentType: "receipt",
-        clientId: "",
         projectId: "",
         amount: "",
         tags: ""
@@ -225,6 +228,11 @@ export default function FileRepository() {
     }
   });
 
+  // Get client ID from selected project
+  const selectedProject = useMemo(() => {
+    return sortedActiveProjects.find((p: any) => p.id === uploadMetadata.projectId);
+  }, [sortedActiveProjects, uploadMetadata.projectId]);
+
   // Handle file upload
   const handleUpload = () => {
     if (!uploadFile || !user) return;
@@ -232,7 +240,10 @@ export default function FileRepository() {
     const formData = new FormData();
     formData.append("file", uploadFile);
     formData.append("documentType", uploadMetadata.documentType);
-    formData.append("clientId", uploadMetadata.clientId);
+    // Client is implied by project selection
+    if (selectedProject?.clientId) {
+      formData.append("clientId", selectedProject.clientId);
+    }
     formData.append("projectId", uploadMetadata.projectId);
     if (uploadMetadata.amount) {
       formData.append("amount", uploadMetadata.amount);
@@ -369,25 +380,7 @@ export default function FileRepository() {
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor="client">Client</Label>
-                    <Select
-                      value={uploadMetadata.clientId}
-                      onValueChange={(value) => setUploadMetadata({ ...uploadMetadata, clientId: value })}
-                    >
-                      <SelectTrigger data-testid="select-client">
-                        <SelectValue placeholder="Select a client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map((client: any) => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="project">Project</Label>
+                    <Label htmlFor="project">Project (Client is auto-tagged)</Label>
                     <Select
                       value={uploadMetadata.projectId}
                       onValueChange={(value) => setUploadMetadata({ ...uploadMetadata, projectId: value })}
@@ -396,13 +389,18 @@ export default function FileRepository() {
                         <SelectValue placeholder="Select a project" />
                       </SelectTrigger>
                       <SelectContent>
-                        {projects.map((project: any) => (
+                        {sortedActiveProjects.map((project: any) => (
                           <SelectItem key={project.id} value={project.id}>
-                            {project.name}
+                            {project.client?.name || 'Unknown'} - {project.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    {selectedProject && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Client: {selectedProject.client?.name || 'Unknown'}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="amount">Amount (optional)</Label>
