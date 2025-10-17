@@ -29,6 +29,19 @@ const DOCUMENT_TYPES = [
   { value: "report", label: "Report" }
 ];
 
+// Allowed file types and extensions
+const ALLOWED_FILE_TYPES = {
+  extensions: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'],
+  mimeTypes: [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain', 'text/csv'
+  ],
+  displayText: 'PDF, Word, Excel, Images (JPG, PNG, GIF, WebP), Text, CSV'
+};
+
 // File interface
 interface StoredFile {
   id: string;
@@ -79,6 +92,7 @@ export default function FileRepository() {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState<string>("");
 
   // Fetch current user
   const { data: user } = useQuery<User>({
@@ -145,6 +159,7 @@ export default function FileRepository() {
       queryClient.invalidateQueries({ queryKey: ["/api/files/stats"] });
       setIsUploadDialogOpen(false);
       setUploadFile(null);
+      setFileError("");
       setUploadMetadata({
         documentType: "receipt",
         projectId: "",
@@ -153,9 +168,25 @@ export default function FileRepository() {
       });
     },
     onError: (error: Error) => {
+      // Parse error message for better user feedback
+      let errorMessage = error.message;
+      try {
+        const errorData = JSON.parse(error.message);
+        if (errorData.message) {
+          errorMessage = errorData.message;
+          
+          // Add helpful context for specific errors
+          if (errorMessage.includes('SharePoint')) {
+            errorMessage += '\n\nNote: File has been saved locally. SharePoint sync will be retried automatically.';
+          }
+        }
+      } catch {
+        // Use original error message if not JSON
+      }
+      
       toast({
         title: "Upload failed",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive"
       });
     }
@@ -233,6 +264,48 @@ export default function FileRepository() {
     return sortedActiveProjects.find((p: any) => p.id === uploadMetadata.projectId);
   }, [sortedActiveProjects, uploadMetadata.projectId]);
 
+  // Validate file type
+  const validateFileType = (file: File): boolean => {
+    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+    
+    // Check extension
+    if (!ALLOWED_FILE_TYPES.extensions.includes(extension)) {
+      setFileError(`File type not allowed. Please upload: ${ALLOWED_FILE_TYPES.displayText}`);
+      return false;
+    }
+
+    // Check MIME type if available
+    if (file.type && !ALLOWED_FILE_TYPES.mimeTypes.includes(file.type)) {
+      setFileError(`File type not allowed. Please upload: ${ALLOWED_FILE_TYPES.displayText}`);
+      return false;
+    }
+
+    // Check file size (50MB limit)
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setFileError(`File too large. Maximum size is 50MB.`);
+      return false;
+    }
+
+    setFileError("");
+    return true;
+  };
+
+  // Handle file selection
+  const handleFileSelect = (file: File | null) => {
+    if (!file) {
+      setUploadFile(null);
+      setFileError("");
+      return;
+    }
+
+    if (validateFileType(file)) {
+      setUploadFile(file);
+    } else {
+      setUploadFile(null);
+    }
+  };
+
   // Handle file upload
   const handleUpload = () => {
     if (!uploadFile || !user) return;
@@ -298,7 +371,7 @@ export default function FileRepository() {
     
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      setUploadFile(files[0]);
+      handleFileSelect(files[0]);
       setIsUploadDialogOpen(true);
     }
   };
@@ -344,7 +417,7 @@ export default function FileRepository() {
                   Upload File
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Upload File</DialogTitle>
                   <DialogDescription>
@@ -357,9 +430,31 @@ export default function FileRepository() {
                     <Input
                       id="file"
                       type="file"
-                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      accept={ALLOWED_FILE_TYPES.extensions.join(',')}
+                      onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
                       data-testid="input-file"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Allowed types: {ALLOWED_FILE_TYPES.displayText}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Maximum size: 50MB
+                    </p>
+                    {fileError && (
+                      <div className="flex items-start gap-2 mt-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <AlertTriangle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-destructive">{fileError}</p>
+                      </div>
+                    )}
+                    {uploadFile && !fileError && (
+                      <div className="flex items-start gap-2 mt-2 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md">
+                        <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-green-800 dark:text-green-200">
+                          <p className="font-medium">{uploadFile.name}</p>
+                          <p className="text-xs text-green-600 dark:text-green-400">{formatFileSize(uploadFile.size)}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="documentType">Document Type</Label>

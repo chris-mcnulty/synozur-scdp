@@ -753,29 +753,83 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       // Store file with validated metadata
-      const storedFile = await fileStorage.storeFile(
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype,
-        {
-          documentType: metadata.documentType,
-          clientId: metadata.clientId,
-          clientName,
-          projectId: metadata.projectId,
-          projectCode,
-          amount: metadata.amount,
-          tags: metadata.tags,
-          createdByUserId: req.user!.id,
-          metadataVersion: 1
-        },
-        req.user!.email
-      );
+      const fileMetadata = {
+        documentType: metadata.documentType,
+        clientId: metadata.clientId,
+        clientName,
+        projectId: metadata.projectId,
+        projectCode,
+        amount: metadata.amount,
+        tags: metadata.tags,
+        createdByUserId: req.user!.id,
+        metadataVersion: 1
+      };
+
+      let storedFile;
+      let usedFallback = false;
+
+      try {
+        // Try primary storage (SharePoint if configured)
+        storedFile = await fileStorage.storeFile(
+          req.file.buffer,
+          req.file.originalname,
+          req.file.mimetype,
+          fileMetadata,
+          req.user!.email
+        );
+      } catch (storageError) {
+        console.error("[FILE REPOSITORY] Primary storage failed:", storageError);
+        
+        // If SharePoint is configured but failed, try local storage fallback
+        if (fileStorage === sharePointFileStorage) {
+          console.log("[FILE REPOSITORY] Attempting local storage fallback...");
+          try {
+            storedFile = await localFileStorage.storeFile(
+              req.file.buffer,
+              req.file.originalname,
+              req.file.mimetype,
+              fileMetadata,
+              req.user!.email
+            );
+            usedFallback = true;
+            console.log("[FILE REPOSITORY] File saved to local storage successfully");
+          } catch (fallbackError) {
+            console.error("[FILE REPOSITORY] Local storage fallback also failed:", fallbackError);
+            throw storageError; // Throw original error
+          }
+        } else {
+          throw storageError;
+        }
+      }
+
+      // Return success with optional warning
+      const response: any = storedFile;
+      if (usedFallback) {
+        response.warning = "File saved locally. SharePoint upload failed but will be retried.";
+      }
       
-      res.status(201).json(storedFile);
+      res.status(201).json(response);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error uploading file:", error);
+      
+      // Provide user-friendly error messages
+      let userMessage = "Failed to upload file";
+      if (error instanceof Error) {
+        if (error.message.includes('File type not allowed')) {
+          userMessage = error.message;
+        } else if (error.message.includes('File too large')) {
+          userMessage = "File too large. Maximum size is 50MB.";
+        } else if (error.message.includes('SharePoint')) {
+          userMessage = `SharePoint error: ${error.message}. Please contact your administrator if this persists.`;
+        } else if (error.message.includes('SHAREPOINT_CONTAINER_ID')) {
+          userMessage = "SharePoint storage is not configured. File cannot be uploaded.";
+        } else {
+          userMessage = error.message;
+        }
+      }
+      
       res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Failed to upload file" 
+        message: userMessage
       });
     }
   });

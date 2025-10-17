@@ -2,6 +2,23 @@
 
 ## Recent Updates (October 2025)
 ### Enhancements (October 17, 2025)
+- **File Upload Improvements**: Enhanced file repository with comprehensive validation and error handling
+  - **Frontend Validation**: File type and size validation before upload with clear error messages
+  - **Allowed File Types**: PDF, Word (.doc/.docx), Excel (.xls/.xlsx), Images (JPG, PNG, GIF, WebP), Text, CSV
+  - **File Size Limit**: 50MB maximum per file
+  - **User-Friendly Messaging**: Clear guidance on allowed types and size limits displayed in upload dialog
+  - **Visual Feedback**: Green checkmark for valid files, red error alerts for invalid files
+  - **Drag-and-Drop Validation**: File type checking works with both file picker and drag-and-drop
+  
+- **SharePoint Error Handling**: Enhanced production error handling with fallback and diagnostics
+  - **Automatic Fallback**: If SharePoint upload fails, system automatically falls back to local storage
+  - **Diagnostic Logging**: Detailed logging of upload attempts, container IDs, and failure reasons
+  - **User-Friendly Error Messages**: Clear guidance for common SharePoint errors
+  - **Known Issue**: SharePoint Embedded API error "not supported for AAD accounts" may indicate:
+    - Container ID pointing to regular SharePoint site instead of SharePoint Embedded container
+    - App registration lacking proper SharePoint Embedded permissions
+    - Container not properly configured for app-only authentication
+  - **Recommendation**: When SharePoint error occurs in production, verify SHAREPOINT_CONTAINER_ID_PROD points to a valid SharePoint Embedded container (not a regular site)
 - **Quote Total Display Throughout App**: Enhanced all estimate displays to show quote total vs line items total
   - **Estimate Detail Page**: When `presentedTotal` differs from calculated sum, shows both "Line Items Total" and "Quote Total" (highlighted in blue) with override amount
   - **Estimates List Page**: Quote totals shown in blue with tooltip showing line items total when different

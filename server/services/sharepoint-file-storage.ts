@@ -59,6 +59,14 @@ export class SharePointFileStorage {
       throw new Error('SHAREPOINT_CONTAINER_ID not configured');
     }
 
+    console.log('[SharePointStorage] Starting file upload:', {
+      fileName: originalName,
+      size: buffer.length,
+      contentType,
+      documentType: metadata.documentType,
+      containerId: this.containerId.substring(0, 20) + '...'
+    });
+
     try {
       // Generate folder path based on document type
       const folderPath = this.getFolderPath(metadata.documentType);
@@ -66,6 +74,12 @@ export class SharePointFileStorage {
       // Sanitize filename
       const sanitizedName = this.sanitizeFileName(originalName);
       const fileName = fileId ? `${fileId}_${sanitizedName}` : `${Date.now()}_${sanitizedName}`;
+      
+      console.log('[SharePointStorage] Upload details:', {
+        folderPath,
+        fileName,
+        fileSize: buffer.length
+      });
       
       // Prepare metadata for SharePoint columns with proper types
       const sharePointMetadata: Record<string, string | number | boolean | null> = {
@@ -97,6 +111,11 @@ export class SharePointFileStorage {
         sharePointMetadata    // Pass metadata to be stored in list columns
       );
 
+      console.log('[SharePointStorage] Upload successful:', {
+        driveItemId: driveItem.id,
+        webUrl: driveItem.webUrl
+      });
+
       // Return stored file info
       return {
         id: driveItem.id,
@@ -111,7 +130,20 @@ export class SharePointFileStorage {
       };
     } catch (error) {
       console.error('[SharePointStorage] Upload failed:', error);
-      throw new Error(`Failed to upload file to SharePoint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      
+      // Enhanced error message for common issues
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Check for specific SharePoint Embedded errors
+      if (errorMessage.includes('not supported for AAD accounts')) {
+        errorMessage = `SharePoint Embedded API error: The container may not be properly configured as a SharePoint Embedded container. Container ID: ${this.containerId.substring(0, 20)}... Please verify the container is a SharePoint Embedded container, not a regular SharePoint site.`;
+      } else if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+        errorMessage = `SharePoint authentication error: The application may not have permission to access this container. Please check the app registration and container permissions.`;
+      } else if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+        errorMessage = `SharePoint container not found: Container ID ${this.containerId.substring(0, 20)}... may be invalid or inaccessible.`;
+      }
+      
+      throw new Error(`Failed to upload file to SharePoint: ${errorMessage}`);
     }
   }
 
