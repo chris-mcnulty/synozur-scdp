@@ -2929,8 +2929,8 @@ function EstimateDetailContent() {
                                         const user = assignableUsers.find((u: any) => u.id === value);
                                         updates.assignedUserId = value;
                                         updates.roleId = null;
-                                        updates.resourceName = user?.fullName || null;
-                                        updates.rate = user?.rate || "0";
+                                        updates.resourceName = user?.name || null;
+                                        updates.rate = user?.defaultBillingRate || "0";
                                       }
                                       
                                       // Recalculate with new rate
@@ -2964,7 +2964,7 @@ function EstimateDetailContent() {
                                       ))}
                                       {assignableUsers.map((user: any) => (
                                         <SelectItem key={user.id} value={user.id}>
-                                          {user.fullName}
+                                          {user.name}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
