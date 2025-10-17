@@ -1,6 +1,13 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Recent Updates (October 2025)
+### Bug Fixes (October 17, 2025)
+- **Case-Insensitive SSO Login**: Fixed Azure SSO login to use case-insensitive email matching
+  - Users like Michelle.Caldwell@synozur.com now successfully match michelle.caldwell@synozur.com in database
+  - Updated SSO callback to use `LOWER()` for email comparison (was using exact match)
+- **Estimate Detail White Screen**: Fixed white screen of death when viewing estimates
+  - Added missing Checkbox component import to estimate-detail.tsx
+
 ### SharePoint Embedded Integration (October 17, 2025)
 - **File Storage Migration**: Migrated from local file storage to SharePoint Embedded containers
   - Development container: `b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr`
