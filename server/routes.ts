@@ -5599,7 +5599,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", "attachment; filename=\"estimate-" + req.params.id + ".xlsx\"");
+      res.setHeader("Content-Disposition", `attachment; filename="${estimate?.name.replace(/[^a-z0-9]/gi, '_') || 'estimate'}-export.xlsx"`);
       res.send(buffer);
     } catch (error) {
       res.status(500).json({ message: "Failed to export Excel file" });

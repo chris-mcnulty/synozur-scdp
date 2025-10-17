@@ -2,11 +2,17 @@
 
 ## Recent Updates (October 2025)
 ### Enhancements (October 17, 2025)
-- **Quote Total Display in Estimate Summary**: Enhanced estimate summary to clearly show quote total vs line items total
-  - When `presentedTotal` differs from calculated sum: Shows both "Line Items Total" and "Quote Total" (highlighted in blue)
-  - Displays override amount: e.g., "(Override: +$3,000)" when quote total is adjusted
-  - Falls back to simple "Total Amount" display when quote total matches calculated sum
-  - Makes pricing overrides transparent for consulting quotes
+- **Quote Total Display Throughout App**: Enhanced all estimate displays to show quote total vs line items total
+  - **Estimate Detail Page**: When `presentedTotal` differs from calculated sum, shows both "Line Items Total" and "Quote Total" (highlighted in blue) with override amount
+  - **Estimates List Page**: Quote totals shown in blue with tooltip showing line items total when different
+  - **Total Value Card**: Summary now uses quote totals (presentedTotal) instead of raw calculated amounts
+  - Falls back to simple total display when quote total matches calculated sum
+  - Makes pricing overrides transparent throughout the application
+- **Export Filenames Use Estimate Names**: All estimate exports now use descriptive filenames instead of GUIDs
+  - Text export (AI): `[EstimateName]-ai-export.txt` (e.g., "Phase_1_Discovery-ai-export.txt")
+  - CSV export: `[EstimateName]-export.csv` (e.g., "Phase_1_Discovery-export.csv")
+  - Excel export: `[EstimateName]-export.xlsx` (e.g., "Phase_1_Discovery-export.xlsx")
+  - Non-alphanumeric characters in estimate names replaced with underscores for safe filenames
 
 ### Bug Fixes (October 17, 2025)
 - **Case-Insensitive SSO Login**: Fixed Azure SSO login to use case-insensitive email matching

@@ -50,6 +50,8 @@ interface Estimate {
   estimateType?: 'detailed' | 'block';
   totalHours: number;
   totalCost: number;
+  totalAmount: number;
+  presentedTotal?: number;
   archived: boolean;
   createdAt: string;
   validUntil: string;
@@ -319,9 +321,9 @@ export default function Estimates() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ${estimates.reduce((sum, e) => sum + e.totalCost, 0).toLocaleString()}
+                ${estimates.reduce((sum, e) => sum + (e.presentedTotal || e.totalAmount || e.totalCost || 0), 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">All estimates</p>
+              <p className="text-xs text-muted-foreground">All estimates (quote totals)</p>
             </CardContent>
           </Card>
         </div>
@@ -383,7 +385,15 @@ export default function Estimates() {
                       </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
                       <TableCell>{(estimate.totalHours || 0).toFixed(2)}</TableCell>
-                      <TableCell>${(estimate.totalCost || 0).toLocaleString()}</TableCell>
+                      <TableCell>
+                        {estimate.presentedTotal && estimate.presentedTotal !== estimate.totalAmount ? (
+                          <span className="text-blue-600 font-medium" title={`Line items: $${(estimate.totalAmount || 0).toLocaleString()}`}>
+                            ${(estimate.presentedTotal || 0).toLocaleString()}
+                          </span>
+                        ) : (
+                          <span>${((estimate.presentedTotal || estimate.totalAmount || estimate.totalCost) || 0).toLocaleString()}</span>
+                        )}
+                      </TableCell>
                       <TableCell>{estimate.validUntil ? format(new Date(estimate.validUntil), "MMM d, yyyy") : "-"}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
