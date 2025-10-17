@@ -2695,7 +2695,30 @@ function EstimateDetailContent() {
                                 </div>
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Factor:</span>
-                                  <span className="font-medium">{Number(item.factor || 1).toFixed(2)}</span>
+                                  {editingField === `${item.id}-factor` ? (
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      value={editingDraft[`${item.id}-factor`] || 1}
+                                      onChange={(e) => updateFieldDraft(item.id, 'factor', e.target.value)}
+                                      onBlur={() => saveFieldDraft(item, 'factor')}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveFieldDraft(item, 'factor');
+                                        if (e.key === 'Escape') { setEditingField(null); setEditingDraft({}); }
+                                      }}
+                                      className="h-6 w-20 text-right"
+                                      autoFocus
+                                      disabled={!isEditable}
+                                    />
+                                  ) : (
+                                    <span 
+                                      className={`font-medium ${isEditable ? 'cursor-pointer hover:text-primary' : ''}`}
+                                      onClick={() => isEditable && startFieldEditing(item, 'factor')}
+                                      title={isEditable ? 'Click to edit factor' : ''}
+                                    >
+                                      {Number(item.factor || 1).toFixed(2)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2739,7 +2762,45 @@ function EstimateDetailContent() {
                                   <Select 
                                     value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
                                     onValueChange={(value) => {
-                                      // Resource assignment logic here (reuse existing logic)
+                                      if (!isEditable) return;
+                                      
+                                      const updates: any = {};
+                                      if (value === "unassigned") {
+                                        updates.assignedUserId = null;
+                                        updates.roleId = null;
+                                        updates.resourceName = null;
+                                        updates.rate = "0";
+                                      } else if (value.startsWith("role-")) {
+                                        const roleId = value.replace("role-", "");
+                                        const role = roles.find((r: any) => r.id === roleId);
+                                        updates.assignedUserId = null;
+                                        updates.roleId = roleId;
+                                        updates.resourceName = role?.name || null;
+                                        updates.rate = role?.rate || "0";
+                                      } else {
+                                        const user = assignableUsers.find((u: any) => u.id === value);
+                                        updates.assignedUserId = value;
+                                        updates.roleId = null;
+                                        updates.resourceName = user?.fullName || null;
+                                        updates.rate = user?.rate || "0";
+                                      }
+                                      
+                                      // Recalculate with new rate
+                                      const baseHours = Number(item.baseHours || 0);
+                                      const factor = Number(item.factor || 1);
+                                      const rate = Number(updates.rate || 0);
+                                      const { adjustedHours, totalAmount } = calculateLineItemTotals(
+                                        baseHours, factor, rate, item.size, item.complexity, item.confidence
+                                      );
+                                      
+                                      updateLineItemMutation.mutate({
+                                        itemId: item.id,
+                                        data: {
+                                          ...updates,
+                                          adjustedHours: String(adjustedHours),
+                                          totalAmount: String(totalAmount)
+                                        }
+                                      });
                                     }}
                                     disabled={!isEditable}
                                   >
