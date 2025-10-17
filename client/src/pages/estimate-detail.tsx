@@ -149,7 +149,15 @@ function EstimateDetailContent() {
     queryKey: ["/api/users"],
   });
 
-  const assignableUsers = users.filter((u: any) => u.isAssignable && u.isActive);
+  // Get IDs of users currently assigned to any line item
+  const currentlyAssignedUserIds = new Set(
+    lineItems.map((item: EstimateLineItem) => item.assignedUserId).filter(Boolean)
+  );
+
+  // Include users that are either assignable OR currently assigned (so admins can change assignments)
+  const assignableUsers = users.filter((u: any) => 
+    (u.isAssignable && u.isActive) || currentlyAssignedUserIds.has(u.id)
+  );
 
   // Function to get filtered line items based on current filter criteria
   const getFilteredLineItems = () => {
@@ -2962,11 +2970,14 @@ function EstimateDetailContent() {
                                           {role.name} (Role)
                                         </SelectItem>
                                       ))}
-                                      {assignableUsers.map((user: any) => (
-                                        <SelectItem key={user.id} value={user.id}>
-                                          {user.name}
-                                        </SelectItem>
-                                      ))}
+                                      {assignableUsers.map((user: any) => {
+                                        const isInactive = !user.isAssignable || !user.isActive;
+                                        return (
+                                          <SelectItem key={user.id} value={user.id}>
+                                            {user.name}{isInactive ? ' (Inactive)' : ''}
+                                          </SelectItem>
+                                        );
+                                      })}
                                     </SelectContent>
                                   </Select>
                                 </div>
