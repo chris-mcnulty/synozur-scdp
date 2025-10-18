@@ -287,10 +287,23 @@ export class GraphClient {
       const errorText = await response.text();
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
+      // Enhanced logging for SharePoint Embedded errors
+      console.error('[GraphClient] Request failed:', {
+        method,
+        url: url.replace(/containers\/[^\/]+/, 'containers/***'),
+        status: response.status,
+        statusText: response.statusText
+      });
+      
       try {
         const errorData = JSON.parse(errorText) as GraphErrorResponse;
         if (errorData.error) {
           errorMessage = `${errorData.error.code}: ${errorData.error.message}`;
+          console.error('[GraphClient] Graph API error:', {
+            code: errorData.error.code,
+            message: errorData.error.message,
+            innerError: errorData.error.innerError
+          });
         }
       } catch {
         errorMessage += ` - ${errorText}`;
