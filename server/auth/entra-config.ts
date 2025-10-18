@@ -4,31 +4,74 @@ import { ConfidentialClientApplication, Configuration } from '@azure/msal-node';
 const defaultClientId = "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6"; // SCDP-Content owning app
 const defaultTenantId = "b4fbeaf7-1c91-43bb-8031-49eb8d4175ee";   // Synozur tenant
 
-// Check if Azure AD is configured (use defaults if not explicitly set)
+// Determine if certificate-based authentication is configured
+const hasCertificateAuth = !!(
+  process.env.AZURE_CERTIFICATE_PRIVATE_KEY && 
+  process.env.AZURE_CERTIFICATE_THUMBPRINT
+);
+
+// Check if Azure AD is configured (certificate auth preferred, fallback to client secret)
 const isConfigured = !!(process.env.AZURE_CLIENT_ID || defaultClientId) && 
                     !!(process.env.AZURE_TENANT_ID || defaultTenantId) && 
-                    !!process.env.AZURE_CLIENT_SECRET;
+                    (hasCertificateAuth || !!process.env.AZURE_CLIENT_SECRET);
 
 // Microsoft Entra ID (Azure AD) configuration
+let msalConfig: Configuration;
 
-export const msalConfig: Configuration = {
-  auth: {
-    clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
-    authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
-    clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
-  },
-  system: {
-    loggerOptions: {
-      loggerCallback(loglevel: any, message: string) {
-        if (isConfigured) {
-          console.log(message);
-        }
+if (hasCertificateAuth) {
+  // Certificate-based authentication (recommended for SharePoint Embedded)
+  console.log('[ENTRA-CONFIG] Using certificate-based authentication');
+  
+  // Decode the base64-encoded private key
+  const privateKeyBase64 = process.env.AZURE_CERTIFICATE_PRIVATE_KEY!;
+  const privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+  
+  msalConfig = {
+    auth: {
+      clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+      authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
+      clientCertificate: {
+        thumbprint: process.env.AZURE_CERTIFICATE_THUMBPRINT!.replace(/:/g, ''), // Remove colons
+        privateKey: privateKey,
       },
-      piiLoggingEnabled: false,
-      logLevel: 3,
+    },
+    system: {
+      loggerOptions: {
+        loggerCallback(loglevel: any, message: string) {
+          if (isConfigured) {
+            console.log(message);
+          }
+        },
+        piiLoggingEnabled: false,
+        logLevel: 3,
+      }
     }
-  }
-};
+  };
+} else {
+  // Fallback to client secret authentication
+  console.log('[ENTRA-CONFIG] Using client secret authentication (certificate auth preferred)');
+  
+  msalConfig = {
+    auth: {
+      clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
+      authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
+      clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
+    },
+    system: {
+      loggerOptions: {
+        loggerCallback(loglevel: any, message: string) {
+          if (isConfigured) {
+            console.log(message);
+          }
+        },
+        piiLoggingEnabled: false,
+        logLevel: 3,
+      }
+    }
+  };
+}
+
+export { msalConfig };
 
 // Scopes for Microsoft Graph API - User delegated
 export const graphScopes = ["https://graph.microsoft.com/user.read"];
@@ -78,6 +121,8 @@ console.log("[ENTRA-CONFIG] Azure AD Configuration:", {
   configured: isConfigured,
   clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
   tenantId: process.env.AZURE_TENANT_ID || defaultTenantId,
+  authMethod: hasCertificateAuth ? 'certificate' : 'client-secret',
+  hasCertificate: hasCertificateAuth,
   hasSecret: !!process.env.AZURE_CLIENT_SECRET,
   baseUrl,
   redirectUri: REDIRECT_URI,

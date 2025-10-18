@@ -12,30 +12,29 @@
   - Added leading slashes to all folder paths (`/receipts`, `/invoices`, etc.)
   - Ensures upload and listing operations use consistent paths
 
-### SharePoint Authentication Issues
-**Current Issue**: "This API is not supported for AAD accounts" error in production
-- Both dev and prod containers are confirmed valid SharePoint Embedded containers
-- Error indicates authentication/permissions issue, not invalid container
+### SharePoint Authentication Configuration
+**Certificate-Based Authentication** (IMPLEMENTED - October 18, 2025)
+- ✅ Generated self-signed certificate for Azure AD authentication
+- ✅ Certificate private key stored securely in `AZURE_CERTIFICATE_PRIVATE_KEY` secret
+- ✅ Certificate thumbprint stored in `AZURE_CERTIFICATE_THUMBPRINT` secret
+- ✅ Application updated to use certificate authentication (preferred over client secrets)
+- ✅ Certificate files protected in `.gitignore` to prevent Git exposure
 
-**Recommended Solutions** (in priority order):
-1. **Certificate-Based Authentication** (Microsoft's recommendation for SharePoint Embedded)
-   - Current setup uses client secret authentication
-   - SharePoint Embedded APIs may require certificate authentication
-   - Generate self-signed certificate and upload to Azure App Registration
-   
-2. **API Permissions Check**:
-   - Verify `FileStorageContainer.Selected` permission is granted with admin consent
-   - App Registration ID: `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (SCDP-Content)
-   - Check Azure Portal → API Permissions → Ensure SharePoint (not just Graph) permissions
-   
-3. **Token Scope Verification**:
-   - Current scope: `https://graph.microsoft.com/.default`
-   - May need SharePoint-specific scope: `https://{tenant}.sharepoint.com/.default`
+**Next Steps** (Azure Portal Configuration Required):
+1. Upload certificate to Azure App Registration:
+   - Go to Azure Portal → App Registrations → SCDP-Content (198aa0a6-d2ed-4f35-b41b-b6f6778a30d6)
+   - Navigate to "Certificates & secrets" → "Certificates" tab
+   - Click "Upload certificate" and upload `/home/runner/workspace/certs/certificate.pem`
+   - Verify thumbprint matches: `FB:AA:23:CA:DE:67:1C:19:8B:EE:FB:35:A5:33:FE:72:FD:94:7E:7B`
 
-**Diagnostic Logging Added**:
-- SharePoint file storage operations now include detailed logging
-- Look for `[SharePointStorage]` prefixed messages in server logs
-- Logs show container ID (truncated), file operations, and failure reasons
+2. Verify API Permissions:
+   - Ensure `FileStorageContainer.Selected` permission is granted with admin consent
+   - Check that SharePoint (not just Graph) permissions are configured
+
+**Diagnostic Logging**:
+- SharePoint operations include detailed logging with `[SharePointStorage]` and `[GraphClient]` prefixes
+- Authentication method logged on startup (certificate vs client-secret)
+- Request failures include status codes, error messages, and sanitized URLs
 
 ## Overview
 SCDP is a comprehensive platform designed to manage the entire lifecycle of consulting projects, from initial estimation to final billing. It streamlines operations such as time tracking, expense management, resource allocation, and automates invoice generation. The platform supports robust role-based access control and aims to enhance efficiency and provide strong management capabilities for consulting businesses. It includes features for managing rate structures and ensuring data integrity, particularly around estimates and project structures. Key capabilities include improved file management with SharePoint integration, transparent quote total displays, and enhanced resource management for better capacity planning.
