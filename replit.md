@@ -1,5 +1,42 @@
 # SCDP - Synozur Consulting Delivery Platform
 
+## Recent Updates (October 2025)
+### Critical Fixes (October 18, 2025)
+- **SharePoint-Only File Storage**: Removed local storage fallback to ensure Copilot indexing
+  - Files now ONLY upload to SharePoint Embedded (no local fallback)
+  - Ensures all files are indexed by Microsoft Graph and available to Copilot
+  - Upload failures surface immediately with clear error messages
+  - **ACTION REQUIRED**: SharePoint authentication must be properly configured (see SharePoint Authentication Issues below)
+  
+- **File Repository Path Consistency**: Fixed folder path formatting for SharePoint
+  - Added leading slashes to all folder paths (`/receipts`, `/invoices`, etc.)
+  - Ensures upload and listing operations use consistent paths
+
+### SharePoint Authentication Issues
+**Current Issue**: "This API is not supported for AAD accounts" error in production
+- Both dev and prod containers are confirmed valid SharePoint Embedded containers
+- Error indicates authentication/permissions issue, not invalid container
+
+**Recommended Solutions** (in priority order):
+1. **Certificate-Based Authentication** (Microsoft's recommendation for SharePoint Embedded)
+   - Current setup uses client secret authentication
+   - SharePoint Embedded APIs may require certificate authentication
+   - Generate self-signed certificate and upload to Azure App Registration
+   
+2. **API Permissions Check**:
+   - Verify `FileStorageContainer.Selected` permission is granted with admin consent
+   - App Registration ID: `198aa0a6-d2ed-4f35-b41b-b6f6778a30d6` (SCDP-Content)
+   - Check Azure Portal → API Permissions → Ensure SharePoint (not just Graph) permissions
+   
+3. **Token Scope Verification**:
+   - Current scope: `https://graph.microsoft.com/.default`
+   - May need SharePoint-specific scope: `https://{tenant}.sharepoint.com/.default`
+
+**Diagnostic Logging Added**:
+- SharePoint file storage operations now include detailed logging
+- Look for `[SharePointStorage]` prefixed messages in server logs
+- Logs show container ID (truncated), file operations, and failure reasons
+
 ## Overview
 SCDP is a comprehensive platform designed to manage the entire lifecycle of consulting projects, from initial estimation to final billing. It streamlines operations such as time tracking, expense management, resource allocation, and automates invoice generation. The platform supports robust role-based access control and aims to enhance efficiency and provide strong management capabilities for consulting businesses. It includes features for managing rate structures and ensuring data integrity, particularly around estimates and project structures. Key capabilities include improved file management with SharePoint integration, transparent quote total displays, and enhanced resource management for better capacity planning.
 
@@ -38,9 +75,9 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions. Case-insensitive email matching for SSO.
 
 ### Document Storage
-- **Primary Storage**: SharePoint Embedded for file storage with environment-based container selection.
-- **Fallback**: Local file storage.
-- **Functionality**: Comprehensive file validation (type, size), user-friendly error messaging, automatic fallback to local storage on SharePoint failure, and robust handling for invoices, SOWs, and other project documents.
+- **Primary Storage**: SharePoint Embedded ONLY for file storage with environment-based container selection.
+- **No Fallback**: Local storage fallback removed to ensure all files are Copilot-indexable via Microsoft Graph.
+- **Functionality**: Comprehensive file validation (type, size), user-friendly error messaging, enhanced diagnostics for SharePoint failures, and robust handling for invoices, SOWs, and other project documents.
 
 ### Data Integrity
 - **Estimate Preservation**: Estimates are preserved and unlinked upon project deletion.

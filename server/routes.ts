@@ -660,22 +660,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filter: any = {};
       if (type) filter.documentType = type as string;
       
-      // Check BOTH SharePoint and local storage to handle fallback cases
+      // List files from SharePoint only (Copilot indexing requires SharePoint storage)
       let files = await fileStorage.listFiles(filter);
-      
-      // Also check local storage in case files were saved there as fallback
-      try {
-        const localFiles = await localFileStorage.listFiles(filter);
-        if (localFiles.length > 0) {
-          console.log(`[FILE REPOSITORY] Found ${localFiles.length} files in local storage`);
-          // Merge local files, avoiding duplicates based on fileName
-          const existingFileNames = new Set(files.map(f => f.fileName));
-          const uniqueLocalFiles = localFiles.filter(f => !existingFileNames.has(f.fileName));
-          files = [...files, ...uniqueLocalFiles];
-        }
-      } catch (localError) {
-        console.log("[FILE REPOSITORY] Could not check local storage:", localError);
-      }
       
       // Apply search filter if provided
       if (search) {
@@ -699,32 +685,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get storage statistics
   app.get("/api/files/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      // Get stats from both storages and merge them
-      const sharePointStats = await fileStorage.getStorageStats();
-      let combinedStats = sharePointStats;
-      
-      try {
-        const localStats = await localFileStorage.getStorageStats();
-        if (localStats.totalFiles > 0) {
-          // Merge stats
-          combinedStats.totalFiles += localStats.totalFiles;
-          combinedStats.totalSize += localStats.totalSize;
-          
-          // Merge document type stats
-          for (const [type, stats] of Object.entries(localStats.byDocumentType)) {
-            if (combinedStats.byDocumentType[type]) {
-              combinedStats.byDocumentType[type].count += (stats as any).count;
-              combinedStats.byDocumentType[type].size += (stats as any).size;
-            } else {
-              combinedStats.byDocumentType[type] = stats as any;
-            }
-          }
-        }
-      } catch (localError) {
-        console.log("[FILE REPOSITORY] Could not get local storage stats:", localError);
-      }
-      
-      res.json(combinedStats);
+      // Get stats from SharePoint only (Copilot indexing requires SharePoint storage)
+      const stats = await fileStorage.getStorageStats();
+      res.json(stats);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error getting storage stats:", error);
       res.status(500).json({ message: "Failed to get storage statistics" });
@@ -804,50 +767,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         metadataVersion: 1
       };
 
-      let storedFile;
-      let usedFallback = false;
-
-      try {
-        // Try primary storage (SharePoint if configured)
-        storedFile = await fileStorage.storeFile(
-          req.file.buffer,
-          req.file.originalname,
-          req.file.mimetype,
-          fileMetadata,
-          req.user!.email
-        );
-      } catch (storageError) {
-        console.error("[FILE REPOSITORY] Primary storage failed:", storageError);
-        
-        // If SharePoint is configured but failed, try local storage fallback
-        if (fileStorage === sharePointFileStorage) {
-          console.log("[FILE REPOSITORY] Attempting local storage fallback...");
-          try {
-            storedFile = await localFileStorage.storeFile(
-              req.file.buffer,
-              req.file.originalname,
-              req.file.mimetype,
-              fileMetadata,
-              req.user!.email
-            );
-            usedFallback = true;
-            console.log("[FILE REPOSITORY] File saved to local storage successfully");
-          } catch (fallbackError) {
-            console.error("[FILE REPOSITORY] Local storage fallback also failed:", fallbackError);
-            throw storageError; // Throw original error
-          }
-        } else {
-          throw storageError;
-        }
-      }
-
-      // Return success with optional warning
-      const response: any = storedFile;
-      if (usedFallback) {
-        response.warning = "File saved locally. SharePoint upload failed but will be retried.";
-      }
+      // Upload to SharePoint only (no fallback to local storage)
+      // Files must go to SharePoint for Copilot indexing
+      const storedFile = await fileStorage.storeFile(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+        fileMetadata,
+        req.user!.email
+      );
       
-      res.status(201).json(response);
+      res.status(201).json(storedFile);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error uploading file:", error);
       
