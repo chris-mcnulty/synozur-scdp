@@ -2703,9 +2703,13 @@ function EstimateDetailContent() {
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0"
-                            onClick={() => setSplittingItem(item)}
+                            onClick={() => {
+                              setSplittingItem(item);
+                              setShowSplitDialog(true);
+                            }}
                             disabled={!isEditable}
                             title="Split item"
+                            data-testid={`button-split-${item.id}`}
                           >
                             <Split className="h-3 w-3" />
                           </Button>
@@ -2720,6 +2724,7 @@ function EstimateDetailContent() {
                             }}
                             disabled={!isEditable}
                             title="Delete item"
+                            data-testid={`button-delete-${item.id}`}
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -3044,9 +3049,34 @@ function EstimateDetailContent() {
                                 </div>
                                 <div>
                                   <span className="text-sm text-muted-foreground">Comments:</span>
-                                  <div className="mt-1 p-2 bg-white dark:bg-slate-800 rounded border text-sm">
-                                    {item.comments || "No comments"}
-                                  </div>
+                                  {editingField === `${item.id}-comments` ? (
+                                    <Input
+                                      className="mt-1"
+                                      value={editingDraft[`${item.id}-comments`] || ""}
+                                      onChange={(e) => updateFieldDraft(item.id, "comments", e.target.value)}
+                                      onBlur={() => saveFieldDraft(item, "comments")}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          saveFieldDraft(item, "comments");
+                                        } else if (e.key === 'Escape') {
+                                          setEditingField(null);
+                                          setEditingDraft({});
+                                        }
+                                      }}
+                                      autoFocus
+                                      disabled={!isEditable}
+                                      data-testid={`input-comments-edit-${item.id}`}
+                                    />
+                                  ) : (
+                                    <div 
+                                      className={`mt-1 p-2 bg-white dark:bg-slate-800 rounded border text-sm ${isEditable ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700' : ''}`}
+                                      onClick={() => isEditable && startFieldEditing(item, "comments")}
+                                      title={isEditable ? "Click to edit comments" : ""}
+                                      data-testid={`text-comments-${item.id}`}
+                                    >
+                                      {item.comments || "No comments"}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
