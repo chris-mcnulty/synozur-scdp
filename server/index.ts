@@ -211,9 +211,28 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
     log('⚠️ No DATABASE_URL provided - database features disabled');
   }
   
-  // Setup Vite or static serving based on environment
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Auto-register SharePoint Embedded container type in production
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT === '1';
   const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  if (isProduction) {
+    log('🔄 Auto-registering SharePoint Embedded container type...');
+    try {
+      const { ContainerRegistration } = await import('./services/container-registration.js');
+      const containerReg = new ContainerRegistration();
+      const result = await containerReg.registerContainerType();
+      
+      if (result.success) {
+        log('✅ SharePoint container type registration successful');
+      } else {
+        log(`⚠️ Container registration failed: ${result.message}`);
+        log('💡 File uploads may fail - see AZURE_APP_PERMISSIONS_SETUP.md');
+      }
+    } catch (regError: any) {
+      log(`⚠️ Container registration error: ${regError.message}`);
+      log('💡 This is expected if Azure permissions are not yet configured');
+    }
+  }
   
   log(`Frontend server configuration:`);
   log(`  - Environment: ${process.env.NODE_ENV}`);
