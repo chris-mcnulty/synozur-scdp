@@ -1,12 +1,41 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Recent Updates (October 2025)
-### Critical Fixes (October 18, 2025)
+### Critical SharePoint Fixes (October 23, 2025)
+**ISSUE IDENTIFIED**: SharePoint Embedded file uploads failing with "container may not be properly configured" error
+
+**ROOT CAUSE**: Missing SharePoint Online permissions. SharePoint Embedded requires permissions from BOTH:
+- ✅ Microsoft Graph: `FileStorageContainer.Selected` (already configured)
+- ❌ **SharePoint Online: `Container.Selected` (MISSING - this is the issue!)**
+
+**FIXES IMPLEMENTED**:
+1. **Comprehensive Setup Documentation**: Created `AZURE_APP_PERMISSIONS_SETUP.md` with step-by-step instructions
+2. **Container Registration Service**: Added automatic container type registration on app startup
+3. **Admin Endpoints**: Added `/api/admin/register-container-type` and `/api/admin/container-registration-status` for manual control
+4. **Enhanced Error Messages**: File upload errors now reference setup documentation
+
+**ACTION REQUIRED** (Azure Portal Configuration):
+1. Add SharePoint Online permissions to app manifest:
+   - Go to Azure Portal → App Registrations → SCDP-Content (198aa0a6-d2ed-4f35-b41b-b6f6778a30d6)
+   - Click **Manifest**
+   - Add SharePoint permissions (see `AZURE_APP_PERMISSIONS_SETUP.md` for exact JSON)
+   - Save manifest
+
+2. Grant admin consent:
+   - Use admin consent URL or Enterprise applications link
+   - Verify all 4 permissions show as granted
+
+3. Verify container registration:
+   - Check `/api/admin/container-registration-status` endpoint
+   - If needed, trigger `/api/admin/register-container-type` endpoint
+
+**See `AZURE_APP_PERMISSIONS_SETUP.md` for complete instructions.**
+
+### Previous Fixes (October 18, 2025)
 - **SharePoint-Only File Storage**: Removed local storage fallback to ensure Copilot indexing
   - Files now ONLY upload to SharePoint Embedded (no local fallback)
   - Ensures all files are indexed by Microsoft Graph and available to Copilot
   - Upload failures surface immediately with clear error messages
-  - **ACTION REQUIRED**: SharePoint authentication must be properly configured (see SharePoint Authentication Issues below)
   
 - **File Repository Path Consistency**: Fixed folder path formatting for SharePoint
   - Added leading slashes to all folder paths (`/receipts`, `/invoices`, etc.)
@@ -19,17 +48,7 @@
 - ✅ Certificate thumbprint stored in `AZURE_CERTIFICATE_THUMBPRINT` secret
 - ✅ Application updated to use certificate authentication (preferred over client secrets)
 - ✅ Certificate files protected in `.gitignore` to prevent Git exposure
-
-**Next Steps** (Azure Portal Configuration Required):
-1. Upload certificate to Azure App Registration:
-   - Go to Azure Portal → App Registrations → SCDP-Content (198aa0a6-d2ed-4f35-b41b-b6f6778a30d6)
-   - Navigate to "Certificates & secrets" → "Certificates" tab
-   - Click "Upload certificate" and upload `/home/runner/workspace/certs/certificate.pem`
-   - Verify thumbprint matches: `FB:AA:23:CA:DE:67:1C:19:8B:EE:FB:35:A5:33:FE:72:FD:94:7E:7B`
-
-2. Verify API Permissions:
-   - Ensure `FileStorageContainer.Selected` permission is granted with admin consent
-   - Check that SharePoint (not just Graph) permissions are configured
+- ✅ Certificate thumbprint verified: `FB:AA:23:CA:DE:67:1C:19:8B:EE:FB:35:A5:33:FE:72:FD:94:7E:7B`
 
 **Diagnostic Logging**:
 - SharePoint operations include detailed logging with `[SharePointStorage]` and `[GraphClient]` prefixes

@@ -7,6 +7,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { LocalFileStorage } from "./services/local-file-storage.js";
 import { SharePointFileStorage } from "./services/sharepoint-file-storage.js";
+import { containerRegistration } from "./services/container-registration.js";
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -781,25 +782,43 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("[FILE REPOSITORY] Error uploading file:", error);
       
-      // Provide user-friendly error messages
+      // Provide user-friendly error messages with setup guidance
       let userMessage = "Failed to upload file";
+      let setupHelpNeeded = false;
+      
       if (error instanceof Error) {
         if (error.message.includes('File type not allowed')) {
           userMessage = error.message;
         } else if (error.message.includes('File too large')) {
           userMessage = "File too large. Maximum size is 50MB.";
+        } else if (error.message.includes('container may not be properly configured') || 
+                   error.message.includes('Container.Selected') ||
+                   error.message.includes('403') || 
+                   error.message.includes('401')) {
+          userMessage = `Failed to upload file to SharePoint: SharePoint Embedded API error: The container may not be properly configured as a SharePoint Embedded container. Container ID: ${process.env.SHAREPOINT_CONTAINER_ID_PROD?.substring(0, 30)}... Please verify the container is a SharePoint Embedded container, not a regular SharePoint site. Please contact your administrator if this persists.`;
+          setupHelpNeeded = true;
         } else if (error.message.includes('SharePoint')) {
           userMessage = `SharePoint error: ${error.message}. Please contact your administrator if this persists.`;
+          setupHelpNeeded = true;
         } else if (error.message.includes('SHAREPOINT_CONTAINER_ID')) {
           userMessage = "SharePoint storage is not configured. File cannot be uploaded.";
+          setupHelpNeeded = true;
         } else {
           userMessage = error.message;
         }
       }
       
-      res.status(500).json({ 
+      const response: any = { 
         message: userMessage
-      });
+      };
+      
+      // Add setup guidance if it's a SharePoint configuration issue
+      if (setupHelpNeeded) {
+        response.setupHelp = "See AZURE_APP_PERMISSIONS_SETUP.md for configuration details";
+        response.requiredAction = "Azure administrator must add SharePoint Online Container.Selected permissions and register the container type";
+      }
+      
+      res.status(500).json(response);
     }
   });
   
@@ -7680,8 +7699,26 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
 
         } catch (error: any) {
-          console.error('[ATTACHMENT_UPLOAD] Local storage upload error:', error);
-          res.status(500).json({ message: "Failed to upload attachment" });
+          console.error('[ATTACHMENT_UPLOAD] SharePoint upload error:', error);
+          
+          // Provide setup guidance for SharePoint errors
+          let errorMessage = "Failed to upload attachment";
+          const response: any = { message: errorMessage };
+          
+          if (error instanceof Error) {
+            if (error.message.includes('container may not be properly configured') || 
+                error.message.includes('Container.Selected') ||
+                error.message.includes('403') || 
+                error.message.includes('401')) {
+              response.message = "Expense was created but receipt upload failed.";
+              response.setupHelp = "See AZURE_APP_PERMISSIONS_SETUP.md for SharePoint configuration details";
+              response.requiredAction = "Azure administrator must add SharePoint Online Container.Selected permissions";
+            } else {
+              response.message = error.message;
+            }
+          }
+          
+          res.status(500).json(response);
         }
       });
 
@@ -10653,6 +10690,54 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({ ...profit, margin });
     } catch (error) {
       res.status(500).json({ message: "Failed to calculate project profit" });
+    }
+  });
+
+  // ===================== SHAREPOINT CONTAINER REGISTRATION =====================
+
+  // Register SharePoint Embedded container type with tenant
+  // This is required before SharePoint Embedded file operations will work
+  app.post("/api/admin/register-container-type", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      console.log("[CONTAINER_REGISTRATION] Admin-triggered container type registration");
+      
+      const result = await containerRegistration.registerContainerType();
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: result.message,
+          details: result.details
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: result.message,
+          details: result.details,
+          help: "See AZURE_APP_PERMISSIONS_SETUP.md for configuration details"
+        });
+      }
+    } catch (error) {
+      console.error("[CONTAINER_REGISTRATION] Endpoint error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error during registration",
+        help: "See AZURE_APP_PERMISSIONS_SETUP.md for configuration details"
+      });
+    }
+  });
+
+  // Check SharePoint Embedded container type registration status
+  app.get("/api/admin/container-registration-status", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const status = await containerRegistration.checkRegistrationStatus();
+      res.json(status);
+    } catch (error) {
+      console.error("[CONTAINER_REGISTRATION] Status check error:", error);
+      res.status(500).json({
+        isRegistered: false,
+        message: error instanceof Error ? error.message : "Unknown error checking status"
+      });
     }
   });
 
