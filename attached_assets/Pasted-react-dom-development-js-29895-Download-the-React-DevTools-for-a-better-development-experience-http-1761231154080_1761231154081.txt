@@ -1,0 +1,37 @@
+react-dom.development.js:29895 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+expenses.tsx:262 === CREATE EXPENSE SUBMIT ===
+expenses.tsx:263 Form data received: {projectId: 'test-milestone', projectResourceId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', date: '2025-10-23', category: 'other', quantity: '', …}
+expenses.tsx:480 === TRANSFORM DATA v2 FIXED ===
+expenses.tsx:481 Input data: {projectId: 'test-milestone', projectResourceId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', date: '2025-10-23', category: 'other', quantity: '', …}
+expenses.tsx:482 Current mileage rate (fixed): 0.7
+expenses.tsx:515 Non-mileage: cleared quantity and unit
+expenses.tsx:527 Final transformed data: {projectId: 'test-milestone', projectResourceId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', date: '2025-10-23', category: 'other', quantity: null, …}
+expenses.tsx:528 === END TRANSFORM ===
+expenses.tsx:285 Data after transformation: {projectId: 'test-milestone', projectResourceId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', date: '2025-10-23', category: 'other', quantity: null, …}
+expenses.tsx:289 Expense created: {id: '5aa1d24d-21a6-4147-b693-e4c3551f00ea', personId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', projectId: 'test-milestone', projectResourceId: 'bb17cbbb-49bb-4b70-b124-9abe90faaa35', date: '2025-10-23', …}
+use-session-recovery.tsx:79   POST https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t1dp.spock.replit.dev/api/expenses/5aa1d24d-21a6-4147-b693-e4c3551f00ea/attachments 500 (Internal Server Error)
+window.fetch @ use-session-recovery.tsx:79
+onSubmit @ expenses.tsx:297
+await in onSubmit
+(anonymous) @ createFormControl.ts:1247
+await in (anonymous)
+callCallback2 @ react-dom.development.js:4164
+invokeGuardedCallbackDev @ react-dom.development.js:4213
+invokeGuardedCallback @ react-dom.development.js:4277
+invokeGuardedCallbackAndCatchFirstError @ react-dom.development.js:4291
+executeDispatch @ react-dom.development.js:9041
+processDispatchQueueItemsInOrder @ react-dom.development.js:9073
+processDispatchQueue @ react-dom.development.js:9086
+dispatchEventsForPlugins @ react-dom.development.js:9097
+(anonymous) @ react-dom.development.js:9288
+batchedUpdates$1 @ react-dom.development.js:26179
+batchedUpdates @ react-dom.development.js:3991
+dispatchEventForPluginEventSystem @ react-dom.development.js:9287
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ react-dom.development.js:6465
+dispatchEvent @ react-dom.development.js:6457
+dispatchDiscreteEvent @ react-dom.development.js:6430
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
