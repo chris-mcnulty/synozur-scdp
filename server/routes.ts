@@ -10764,6 +10764,52 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Create a new SharePoint Embedded container
+  app.post("/api/admin/create-container", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { containerName, description } = req.body;
+      
+      if (!containerName) {
+        return res.status(400).json({
+          success: false,
+          message: "Container name is required"
+        });
+      }
+      
+      console.log("[CONTAINER_CREATOR] Admin-triggered container creation:", containerName);
+      
+      const { ContainerCreator } = await import('./services/container-creator.js');
+      const creator = new ContainerCreator();
+      const result = await creator.createContainer(containerName, description);
+      
+      if (result.success) {
+        res.status(200).json({
+          success: true,
+          message: result.message,
+          containerId: result.containerId,
+          details: result.details,
+          nextSteps: [
+            `Set SHAREPOINT_CONTAINER_ID_DEV or SHAREPOINT_CONTAINER_ID_PROD to: ${result.containerId}`,
+            "Restart the application to use the new container",
+            "Test file uploads to verify the container is working"
+          ]
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: result.message,
+          details: result.details
+        });
+      }
+    } catch (error) {
+      console.error("[CONTAINER_CREATOR] Endpoint error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error during container creation"
+      });
+    }
+  });
+
   // TEMPORARY: Production Time Entry Recovery Endpoint
   // This endpoint can be removed after successful recovery
   app.post("/api/admin/recover-time-entries", requireAuth, requireRole(["admin"]), async (req, res) => {
