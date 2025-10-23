@@ -876,7 +876,7 @@ export default function Expenses() {
                                 data-testid="button-select-expense-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value), "PPP")
+                                  format(new Date(field.value + 'T00:00:00'), "PPP")
                                 ) : (
                                   <span>Pick a date</span>
                                 )}
@@ -887,7 +887,7 @@ export default function Expenses() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
+                              selected={field.value ? new Date(field.value + 'T12:00:00') : undefined}
                               onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
@@ -1243,7 +1243,7 @@ export default function Expenses() {
                             ${parseFloat(expense.amount).toFixed(2)}
                           </div>
                           <div className="text-sm text-muted-foreground" data-testid={`expense-date-${expense.id}`}>
-                            {format(new Date(expense.date), 'MMM d, yyyy')}
+                            {format(new Date(expense.date + 'T00:00:00'), 'MMM d, yyyy')}
                           </div>
                         </div>
                         <Button
