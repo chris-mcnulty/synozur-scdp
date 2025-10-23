@@ -1,35 +1,44 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Recent Updates (October 2025)
-### Critical SharePoint Fixes (October 23, 2025)
-**ISSUE IDENTIFIED**: SharePoint Embedded file uploads failing with "container may not be properly configured" error
+### SharePoint Embedded Container Creation (October 23, 2025)
+**PROBLEM SOLVED**: Old container IDs were regular SharePoint site IDs, not SharePoint Embedded containers
 
-**ROOT CAUSE**: Missing SharePoint Online permissions. SharePoint Embedded requires permissions from BOTH:
-- ✅ Microsoft Graph: `FileStorageContainer.Selected` (already configured)
-- ❌ **SharePoint Online: `Container.Selected` (MISSING - this is the issue!)**
+**ROOT CAUSE**: The configured container IDs pointed to standard SharePoint document libraries, which are NOT compatible with SharePoint Embedded API endpoints. This caused "not supported for AAD accounts" errors.
 
-**FIXES IMPLEMENTED**:
+**SOLUTION**:
+1. **Created Proper SharePoint Embedded Containers** via Graph API:
+   - Development: `b!Q_qADAIca0Cu-aeuOgslQqfLWKB8--ZHsUm3tyOlZDdG6n9Ubkb3QIkp93khRfOV`
+   - Production: `b!12MPrLRMzku_C6l3KdqLjKfLWKB8--ZHsUm3tyOlZDdG6n9Ubkb3QIkp93khRfOV`
+2. **Added Admin Container Creator Endpoint**: `/api/admin/create-container` for creating new containers on-demand
+3. **Container Type Registration**: Ensured containerTypeId `358aba7d-bb55-4ce0-a08d-e51f03d5edf1` is registered with tenant
+
+**CONFIGURATION REQUIRED**:
+- Update Replit secrets:
+  - `SHAREPOINT_CONTAINER_ID_DEV` → `b!Q_qADAIca0Cu-aeuOgslQqfLWKB8--ZHsUm3tyOlZDdG6n9Ubkb3QIkp93khRfOV`
+  - `SHAREPOINT_CONTAINER_ID_PROD` → `b!12MPrLRMzku_C6l3KdqLjKfLWKB8--ZHsUm3tyOlZDdG6n9Ubkb3QIkp93khRfOV`
+- Restart application after updating secrets
+
+### Expense Date Timezone Fix (October 23, 2025)
+**ISSUE**: Expense dates displaying one day earlier than selected due to UTC timezone conversion
+
+**SOLUTION**: Fixed Date object creation to prevent timezone shifts:
+- Display dates: Append `'T00:00:00'` to YYYY-MM-DD strings for local timezone interpretation
+- Calendar selection: Append `'T12:00:00'` to ensure correct date highlighting in date picker
+- Affected areas: Expense list display, date picker button, calendar component
+
+### Previous SharePoint Fixes (October 23, 2025)
+**Container Registration & Permissions**:
 1. **Comprehensive Setup Documentation**: Created `AZURE_APP_PERMISSIONS_SETUP.md` with step-by-step instructions
 2. **Container Registration Service**: Added automatic container type registration on app startup
 3. **Admin Endpoints**: Added `/api/admin/register-container-type` and `/api/admin/container-registration-status` for manual control
 4. **Enhanced Error Messages**: File upload errors now reference setup documentation
 
-**ACTION REQUIRED** (Azure Portal Configuration):
-1. Add SharePoint Online permissions to app manifest:
-   - Go to Azure Portal → App Registrations → SCDP-Content (198aa0a6-d2ed-4f35-b41b-b6f6778a30d6)
-   - Click **Manifest**
-   - Add SharePoint permissions (see `AZURE_APP_PERMISSIONS_SETUP.md` for exact JSON)
-   - Save manifest
-
-2. Grant admin consent:
-   - Use admin consent URL or Enterprise applications link
-   - Verify all 4 permissions show as granted
-
-3. Verify container registration:
-   - Check `/api/admin/container-registration-status` endpoint
-   - If needed, trigger `/api/admin/register-container-type` endpoint
-
-**See `AZURE_APP_PERMISSIONS_SETUP.md` for complete instructions.**
+**Azure Portal Configuration**:
+- SharePoint Embedded requires permissions from BOTH:
+  - ✅ Microsoft Graph: `FileStorageContainer.Selected` (configured)
+  - ✅ SharePoint Online: `Container.Selected` (configured)
+- See `AZURE_APP_PERMISSIONS_SETUP.md` for complete setup details
 
 ### Previous Fixes (October 18, 2025)
 - **SharePoint-Only File Storage**: Removed local storage fallback to ensure Copilot indexing
