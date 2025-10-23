@@ -211,27 +211,30 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
     log('⚠️ No DATABASE_URL provided - database features disabled');
   }
   
-  // Auto-register SharePoint Embedded container type in production
+  // Auto-register SharePoint Embedded container type (both dev and production)
   const isProduction = process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT === '1';
   const isDevelopment = process.env.NODE_ENV === 'development';
   
-  if (isProduction) {
-    log('🔄 Auto-registering SharePoint Embedded container type...');
-    try {
-      const { ContainerRegistrationService } = await import('./services/container-registration.js');
-      const containerReg = new ContainerRegistrationService();
-      const result = await containerReg.registerContainerType();
-      
-      if (result.success) {
-        log('✅ SharePoint container type registration successful');
-      } else {
-        log(`⚠️ Container registration failed: ${result.message}`);
-        log('💡 File uploads may fail - see AZURE_APP_PERMISSIONS_SETUP.md');
-      }
-    } catch (regError: any) {
-      log(`⚠️ Container registration error: ${regError.message}`);
-      log('💡 This is expected if Azure permissions are not yet configured');
+  // CRITICAL: Run container registration in BOTH dev and production
+  // This is required for SharePoint Embedded file uploads to work
+  log('🔄 Auto-registering SharePoint Embedded container type...');
+  try {
+    const { ContainerRegistrationService } = await import('./services/container-registration.js');
+    const containerReg = new ContainerRegistrationService();
+    const result = await containerReg.registerContainerType();
+    
+    if (result.success) {
+      log('✅ SharePoint container type registration successful');
+      log('   File uploads to SharePoint Embedded are now enabled');
+    } else {
+      log(`⚠️ Container registration failed: ${result.message}`);
+      log('💡 File uploads may fail - see AZURE_APP_PERMISSIONS_SETUP.md');
+      log('   Run POST /api/admin/register-container-type to retry manually');
     }
+  } catch (regError: any) {
+    log(`⚠️ Container registration error: ${regError.message}`);
+    log('💡 This is expected if Azure permissions are not yet configured');
+    log('   See AZURE_APP_PERMISSIONS_SETUP.md for setup instructions');
   }
   
   log(`Frontend server configuration:`);
