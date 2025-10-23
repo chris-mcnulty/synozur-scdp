@@ -218,8 +218,8 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
   if (isProduction) {
     log('🔄 Auto-registering SharePoint Embedded container type...');
     try {
-      const { ContainerRegistration } = await import('./services/container-registration.js');
-      const containerReg = new ContainerRegistration();
+      const { ContainerRegistrationService } = await import('./services/container-registration.js');
+      const containerReg = new ContainerRegistrationService();
       const result = await containerReg.registerContainerType();
       
       if (result.success) {
