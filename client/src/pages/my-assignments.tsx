@@ -16,6 +16,28 @@ import { toast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useVocabulary } from "@/lib/vocabulary-context";
 
+// Type for assignment with joined data
+interface Assignment {
+  id: string;
+  projectId: string;
+  status: string;
+  plannedStartDate?: string;
+  plannedEndDate?: string;
+  startedDate?: string;
+  completedDate?: string;
+  hours: string;
+  notes?: string;
+  workstream?: string;
+  project?: {
+    id: string;
+    name: string;
+    client?: {
+      id: string;
+      name: string;
+    };
+  };
+}
+
 export function MyAssignments() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
@@ -74,7 +96,7 @@ export function MyAssignments() {
   // Get unique projects for filter
   const projects = useMemo(() => {
     const projectMap = new Map();
-    assignments.forEach(assignment => {
+    assignments.forEach((assignment: Assignment) => {
       if (assignment.project && !projectMap.has(assignment.project.id)) {
         projectMap.set(assignment.project.id, assignment.project);
       }
@@ -84,7 +106,7 @@ export function MyAssignments() {
 
   // Filter assignments
   const filteredAssignments = useMemo(() => {
-    return assignments.filter(assignment => {
+    return assignments.filter((assignment: Assignment) => {
       // Status filter
       if (statusFilter !== "all" && assignment.status !== statusFilter) return false;
       
@@ -114,13 +136,13 @@ export function MyAssignments() {
   // Group assignments by status for kanban view
   const assignmentsByStatus = useMemo(() => {
     const grouped = {
-      open: [] as any[],
-      in_progress: [] as any[],
-      completed: [] as any[],
-      cancelled: [] as any[]
+      open: [] as Assignment[],
+      in_progress: [] as Assignment[],
+      completed: [] as Assignment[],
+      cancelled: [] as Assignment[]
     };
     
-    filteredAssignments.forEach(assignment => {
+    filteredAssignments.forEach((assignment: Assignment) => {
       const status = assignment.status || 'open';
       if (status in grouped) {
         grouped[status as keyof typeof grouped].push(assignment);
@@ -137,7 +159,7 @@ export function MyAssignments() {
       
       // Auto-set dates based on status
       const today = new Date().toISOString().split('T')[0];
-      if (status === 'in_progress' && !assignments.find(a => a.id === id)?.startedDate) {
+      if (status === 'in_progress' && !assignments.find((a: Assignment) => a.id === id)?.startedDate) {
         updates.startedDate = today;
       } else if (status === 'completed') {
         updates.completedDate = today;
@@ -339,7 +361,7 @@ export function MyAssignments() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredAssignments.map((assignment) => (
+                    filteredAssignments.map((assignment: Assignment) => (
                       <TableRow key={assignment.id}>
                         <TableCell>
                           <Link href={`/projects/${assignment.project?.id}`}>
@@ -429,7 +451,7 @@ export function MyAssignments() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredAssignments.reduce((sum, a) => sum + parseFloat(a.hours || 0), 0).toFixed(1)}
+                {filteredAssignments.reduce((sum: number, a: Assignment) => sum + parseFloat(a.hours || "0"), 0).toFixed(1)}
               </div>
             </CardContent>
           </Card>
@@ -440,7 +462,7 @@ export function MyAssignments() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredAssignments.filter(a => a.status === 'open').length}
+                {filteredAssignments.filter((a: Assignment) => a.status === 'open').length}
               </div>
             </CardContent>
           </Card>
@@ -451,7 +473,7 @@ export function MyAssignments() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredAssignments.filter(a => a.status === 'in_progress').length}
+                {filteredAssignments.filter((a: Assignment) => a.status === 'in_progress').length}
               </div>
             </CardContent>
           </Card>
@@ -462,7 +484,7 @@ export function MyAssignments() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredAssignments.filter(a => a.status === 'completed').length}
+                {filteredAssignments.filter((a: Assignment) => a.status === 'completed').length}
               </div>
             </CardContent>
           </Card>

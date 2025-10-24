@@ -3452,7 +3452,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         quantity: "1",
         rate: milestone.amount || "0",
         type: "milestone",
-        projectMilestoneId: milestoneId
+        projectMilestoneId: milestoneId,
+        // Populate monetary tracking fields for invoice analytics
+        originalAmount: milestone.amount || "0",
+        billedAmount: milestone.amount || "0",
+        varianceAmount: "0",
+        originalRate: milestone.amount || "0",
+        originalQuantity: "1"
       });
       
       res.json({ batch, milestone });
