@@ -22,6 +22,7 @@ import { MyAssignments } from "@/pages/my-assignments";
 import ResourceManagement from "@/pages/resource-management";
 import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
+import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import About from "@/pages/about";
 import Login from "@/pages/login";
 import FileRepository from "@/pages/file-repository";
@@ -170,6 +171,9 @@ function Router() {
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/admin/sharepoint">
+        {user ? <AdminSharePoint /> : <Redirect to="/login" />}
       </Route>
       <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}

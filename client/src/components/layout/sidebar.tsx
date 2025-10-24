@@ -213,6 +213,12 @@ export function Sidebar() {
                 icon={<Database />}
                 label="File Repository"
               />
+              
+              <SidebarItem
+                href="/admin/sharepoint"
+                icon={<Settings />}
+                label="SharePoint Diagnostics"
+              />
             </>
           )}
           
