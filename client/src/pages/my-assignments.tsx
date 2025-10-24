@@ -363,20 +363,38 @@ export function MyAssignments() {
                         </TableCell>
                         <TableCell>{getStatusBadge(assignment.status)}</TableCell>
                         <TableCell>
-                          <Select
-                            value={assignment.status}
-                            onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value, projectId: assignment.project?.id || assignment.projectId })}
-                          >
-                            <SelectTrigger className="w-32" data-testid={`select-update-status-${assignment.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="open">Open</SelectItem>
-                              <SelectItem value="in_progress">In Progress</SelectItem>
-                              <SelectItem value="completed">Completed</SelectItem>
-                              <SelectItem value="cancelled">Cancelled</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center gap-2">
+                            {assignment.status !== 'completed' && assignment.status !== 'cancelled' && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateStatusMutation.mutate({ 
+                                  id: assignment.id, 
+                                  status: 'completed', 
+                                  projectId: assignment.project?.id || assignment.projectId 
+                                })}
+                                className="h-8"
+                                data-testid={`button-complete-${assignment.id}`}
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Mark Complete
+                              </Button>
+                            )}
+                            <Select
+                              value={assignment.status}
+                              onValueChange={(value) => updateStatusMutation.mutate({ id: assignment.id, status: value, projectId: assignment.project?.id || assignment.projectId })}
+                            >
+                              <SelectTrigger className="w-32" data-testid={`select-update-status-${assignment.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="open">Open</SelectItem>
+                                <SelectItem value="in_progress">In Progress</SelectItem>
+                                <SelectItem value="completed">Completed</SelectItem>
+                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

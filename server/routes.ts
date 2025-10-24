@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -3429,12 +3429,30 @@ export async function registerRoutes(app: Express): Promise<void> {
         pricingSnapshotDate: new Date().toISOString().split('T')[0],
         discountPercent: null,
         discountAmount: null,
-        totalAmount: "0",
+        totalAmount: milestone.amount || "0",
         invoicingMode: "project",
         batchType: "mixed",
         projectMilestoneId: milestoneId,
         exportedToQBO: false,
         createdBy: userId
+      });
+      
+      // Automatically create an invoice line for the milestone amount
+      // This allows milestone-based invoicing without time entries
+      const [project] = await db.select({ clientId: projects.clientId })
+        .from(projects)
+        .where(eq(projects.id, milestone.projectId));
+      
+      await db.insert(invoiceLines).values({
+        batchId,
+        projectId: milestone.projectId,
+        clientId: project.clientId,
+        description: `${milestone.name} - Payment Milestone`,
+        amount: milestone.amount || "0",
+        quantity: "1",
+        rate: milestone.amount || "0",
+        type: "milestone",
+        projectMilestoneId: milestoneId
       });
       
       res.json({ batch, milestone });
