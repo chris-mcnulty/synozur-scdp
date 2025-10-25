@@ -390,6 +390,25 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // SharePoint configuration endpoint
+  app.get("/api/sharepoint/config", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const sharePointConfig = await getSharePointConfig();
+      const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+      
+      res.json({
+        environment: isProduction ? 'production' : 'development',
+        containerId: sharePointConfig.containerId || '',
+        containerTypeId: sharePointConfig.containerTypeId,
+        containerName: sharePointConfig.containerName,
+        configured: sharePointConfig.configured
+      });
+    } catch (error) {
+      console.error('[SharePoint Config] Error:', error);
+      res.status(500).json({ message: "Failed to get SharePoint configuration" });
+    }
+  });
+
   // SharePoint health check endpoint
   app.get("/api/sharepoint/health", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
