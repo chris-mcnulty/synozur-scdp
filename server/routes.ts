@@ -10759,13 +10759,13 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // ===================== SHAREPOINT CONTAINER REGISTRATION =====================
+  // ===================== SHAREPOINT CONTAINER ACCESS VERIFICATION =====================
 
-  // Register SharePoint Embedded container type with tenant
-  // This is required before SharePoint Embedded file operations will work
-  app.post("/api/admin/register-container-type", requireAuth, requireRole(["admin"]), async (req, res) => {
+  // Verify SharePoint Embedded container type access via Graph API
+  // This checks that your app can access the container type through Microsoft Graph
+  app.post("/api/admin/verify-container-access", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      console.log("[CONTAINER_REGISTRATION] Admin-triggered container type registration");
+      console.log("[CONTAINER_ACCESS] Admin-triggered container type access verification");
       
       const result = await containerRegistration.registerContainerType();
       
@@ -10784,10 +10784,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
     } catch (error) {
-      console.error("[CONTAINER_REGISTRATION] Endpoint error:", error);
+      console.error("[CONTAINER_ACCESS] Endpoint error:", error);
       res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Unknown error during registration",
+        message: error instanceof Error ? error.message : "Unknown error during verification",
         help: "See AZURE_APP_PERMISSIONS_SETUP.md for configuration details"
       });
     }

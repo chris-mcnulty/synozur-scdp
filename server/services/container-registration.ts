@@ -1,12 +1,14 @@
 /**
  * SharePoint Embedded Container Type Registration Service
- * Handles one-time registration of container types with the tenant
  * 
- * IMPORTANT: This requires SharePoint Online Container.Selected permissions
+ * IMPORTANT: SharePoint Embedded uses Microsoft Graph API, not SharePoint REST API
+ * Container types are pre-registered in Partner Center, not via API
+ * This service verifies that your app can access the container type via Graph API
+ * 
  * See AZURE_APP_PERMISSIONS_SETUP.md for configuration details
  */
 
-import { msalInstance, clientCredentialsRequest } from '../auth/entra-config.js';
+import { GraphClient } from './graph-client.js';
 
 export interface ContainerTypeRegistrationResult {
   success: boolean;
@@ -16,263 +18,173 @@ export interface ContainerTypeRegistrationResult {
 
 export class ContainerRegistrationService {
   private readonly containerTypeId = '358aba7d-bb55-4ce0-a08d-e51f03d5edf1';
-  private readonly appId = process.env.AZURE_CLIENT_ID || '198aa0a6-d2ed-4f35-b41b-b6f6778a30d6';
-  private readonly tenantId = process.env.AZURE_TENANT_ID || 'b4fbeaf7-1c91-43bb-8031-49eb8d4175ee';
+  private graphClient: GraphClient;
   
-  /**
-   * Get SharePoint admin site URL for the tenant
-   */
-  private getSharePointAdminUrl(): string {
-    // Extract tenant name from tenant ID or use environment variable
-    const tenantName = process.env.SHAREPOINT_TENANT_NAME || 'synozur';
-    return `https://${tenantName}-admin.sharepoint.com`;
+  constructor() {
+    this.graphClient = new GraphClient();
   }
 
   /**
-   * Get access token for SharePoint Online Admin API
-   * CRITICAL: Must use SharePoint resource scope, not Microsoft Graph scope
-   */
-  private async getSharePointAccessToken(): Promise<string> {
-    if (!msalInstance) {
-      throw new Error('MSAL instance not configured. Please check Azure AD environment variables.');
-    }
-
-    try {
-      // Get tenant name for SharePoint admin URL
-      const tenantName = process.env.SHAREPOINT_TENANT_NAME || 'synozur';
-      
-      // CRITICAL: Request token with SharePoint Admin scope, NOT Graph scope
-      // SharePoint admin APIs require tokens for the SharePoint resource
-      const sharePointAdminScope = `https://${tenantName}-admin.sharepoint.com/.default`;
-      
-      console.log('[ContainerRegistration] Requesting token for SharePoint resource:', sharePointAdminScope);
-      
-      // CRITICAL: Merge SharePoint scope with base clientCredentialsRequest
-      // MSAL requires the full request configuration, not just scopes
-      const response = await msalInstance.acquireTokenByClientCredential({
-        ...clientCredentialsRequest,
-        scopes: [sharePointAdminScope],
-      });
-      
-      if (!response) {
-        throw new Error('Failed to acquire access token - no response received');
-      }
-      
-      console.log('[ContainerRegistration] Successfully acquired SharePoint access token');
-      return response.accessToken;
-    } catch (error) {
-      console.error('[ContainerRegistration] Authentication failed:', error);
-      throw new Error(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Register container type with the tenant
-   * This must be called before accessing SharePoint Embedded containers
-   * 
-   * API Documentation: https://learn.microsoft.com/en-us/sharepoint/dev/embedded/getting-started/register-api-documentation
+   * Verify access to container type via Microsoft Graph API
+   * This confirms that your app has the necessary permissions
    */
   async registerContainerType(): Promise<ContainerTypeRegistrationResult> {
-    console.log('[ContainerRegistration] Starting container type registration...');
+    console.log('[ContainerRegistration] Verifying container type access via Graph API...');
     
     try {
-      // Get access token
-      const accessToken = await this.getSharePointAccessToken();
+      // Try to get the container type via Graph API
+      // This verifies that:
+      // 1. The container type exists
+      // 2. Your app has Container.Selected permissions
+      // 3. Graph API authentication is working
+      const containerType = await this.graphClient.getContainerType(this.containerTypeId);
       
-      // Construct registration API endpoint
-      const adminUrl = this.getSharePointAdminUrl();
-      const registrationUrl = `${adminUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
-      
-      console.log('[ContainerRegistration] Registration URL:', registrationUrl.replace(this.containerTypeId, '***'));
-      
-      // Prepare registration payload
-      const payload = {
-        value: [
-          {
-            appId: this.appId,
-            delegated: ['full'], // Full control for delegated permissions
-            appOnly: ['full']    // Full control for app-only permissions
-          }
-        ]
-      };
-      
-      console.log('[ContainerRegistration] Sending registration request...');
-      
-      // Make registration API call
-      const response = await fetch(registrationUrl, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload)
+      console.log('[ContainerRegistration] Container type accessible:', {
+        id: containerType.id,
+        displayName: containerType.displayName
       });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[ContainerRegistration] Registration failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText
-        });
-        
-        // Parse error message
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) {
-            errorMessage = errorData.error.message || errorMessage;
-          }
-        } catch {
-          errorMessage += ` - ${errorText}`;
-        }
-        
-        return {
-          success: false,
-          message: `Container type registration failed: ${errorMessage}`,
-          details: {
-            status: response.status,
-            error: errorText
-          }
-        };
-      }
-      
-      const result = await response.json();
-      console.log('[ContainerRegistration] Registration successful:', result);
       
       return {
         success: true,
-        message: 'Container type registered successfully',
-        details: result
+        message: 'Container type is accessible via Graph API',
+        details: {
+          id: containerType.id,
+          displayName: containerType.displayName,
+          description: containerType.description,
+          isBuiltIn: containerType.isBuiltIn
+        }
       };
       
     } catch (error) {
-      console.error('[ContainerRegistration] Registration error:', error);
+      console.error('[ContainerRegistration] Container type access verification failed:', error);
+      
+      // Provide helpful error messages
+      let message = 'Failed to access container type via Graph API';
+      let details: any = { error: error instanceof Error ? error.message : String(error) };
+      
+      if (error instanceof Error) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          message = 'Container type not found. Please ensure the container type ID is correct.';
+          details.help = 'Container types must be registered in Microsoft Partner Center first.';
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          message = 'Access denied to container type. Please check API permissions.';
+          details.help = 'Ensure your Azure AD app has FileStorageContainer.Selected permission from Microsoft Graph.';
+        } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          message = 'Authentication failed. Please check Azure AD configuration.';
+          details.help = 'Verify AZURE_CLIENT_ID, AZURE_TENANT_ID, and authentication credentials.';
+        }
+      }
+      
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unknown error during registration',
-        details: { error }
+        message,
+        details
       };
     }
   }
 
   /**
-   * Check if container type is already registered
-   * This can be used to avoid unnecessary registration calls
+   * Check if container type is accessible via Graph API
+   * This verifies that your app has the necessary permissions
    */
   async checkRegistrationStatus(): Promise<{
     isRegistered: boolean;
     message: string;
     details?: any;
   }> {
-    console.log('[ContainerRegistration] Checking registration status...');
+    console.log('[ContainerRegistration] Checking container type accessibility via Graph API...');
     
     try {
-      const accessToken = await this.getSharePointAccessToken();
-      const adminUrl = this.getSharePointAdminUrl();
-      const checkUrl = `${adminUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
+      // Try to get the container type via Graph API
+      const containerType = await this.graphClient.getContainerType(this.containerTypeId);
       
-      console.log('[ContainerRegistration] Check URL:', checkUrl);
-      console.log('[ContainerRegistration] Admin URL:', adminUrl);
-      console.log('[ContainerRegistration] Container Type ID:', this.containerTypeId);
+      console.log('[ContainerRegistration] Container type is accessible:', containerType.displayName);
       
-      const response = await fetch(checkUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json',
+      return {
+        isRegistered: true,
+        message: 'Container type is accessible. Your app has the necessary permissions.',
+        details: {
+          id: containerType.id,
+          displayName: containerType.displayName,
+          description: containerType.description,
+          isBuiltIn: containerType.isBuiltIn,
+          note: 'SharePoint Embedded uses Graph API, not SharePoint REST API'
         }
-      });
-      
-      console.log('[ContainerRegistration] Response status:', response.status);
-      
-      if (response.ok) {
-        const result = await response.json();
-        const hasPermissions = result.value && result.value.length > 0;
-        
-        return {
-          isRegistered: hasPermissions,
-          message: hasPermissions 
-            ? 'Container type is registered' 
-            : 'Container type exists but has no permissions',
-          details: result
-        };
-      } else if (response.status === 404) {
-        return {
-          isRegistered: false,
-          message: 'Container type not found - registration required'
-        };
-      } else {
-        const errorText = await response.text();
-        console.error('[ContainerRegistration] Error response:', errorText);
-        
-        let errorDetails: any = { status: response.status, rawError: errorText };
-        try {
-          errorDetails.parsedError = JSON.parse(errorText);
-        } catch {
-          // Error text is not JSON
-        }
-        
-        return {
-          isRegistered: false,
-          message: `Failed to check registration status: HTTP ${response.status}`,
-          details: errorDetails
-        };
-      }
+      };
       
     } catch (error) {
-      console.error('[ContainerRegistration] Status check error:', error);
+      console.error('[ContainerRegistration] Container type not accessible:', error);
+      
+      let message = 'Container type is not accessible';
+      let details: any = { 
+        error: error instanceof Error ? error.message : String(error),
+        containerTypeId: this.containerTypeId
+      };
+      
+      if (error instanceof Error) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          message = 'Container type not found via Graph API';
+          details.help = [
+            'Ensure container type ID is correct: ' + this.containerTypeId,
+            'Container types must be registered in Microsoft Partner Center',
+            'Verify you have FileStorageContainer.Selected permission in Azure AD'
+          ];
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          message = 'Access denied - missing API permissions';
+          details.help = [
+            'Add FileStorageContainer.Selected permission from Microsoft Graph in Azure Portal',
+            'Grant admin consent for the permission',
+            'Wait a few minutes for permissions to propagate'
+          ];
+        } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          message = 'Authentication failed';
+          details.help = [
+            'Verify AZURE_CLIENT_ID, AZURE_TENANT_ID are correct',
+            'Check that certificate or client secret is configured',
+            'Ensure Azure AD app is properly set up'
+          ];
+        }
+      }
+      
       return {
         isRegistered: false,
-        message: error instanceof Error ? error.message : 'Unknown error checking status',
-        details: { error: error instanceof Error ? error.message : String(error) }
+        message,
+        details
       };
     }
   }
 
   /**
-   * Initialize container type on app startup
-   * This checks registration status and registers if needed
+   * Initialize container type check on app startup
+   * This verifies access in production environment
    */
   async initializeOnStartup(): Promise<void> {
-    console.log('[ContainerRegistration] Initializing container type on startup...');
+    console.log('[ContainerRegistration] Checking container type access on startup...');
     
     // Check if running in production environment
     const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
     
     if (!isProduction) {
-      console.log('[ContainerRegistration] Skipping auto-registration in development environment');
-      console.log('[ContainerRegistration] Use POST /api/admin/register-container-type to manually register');
+      console.log('[ContainerRegistration] Skipping automatic check in development environment');
+      console.log('[ContainerRegistration] Visit /admin/sharepoint to manually verify access');
       return;
     }
     
     try {
-      // Check current status
       const status = await this.checkRegistrationStatus();
       
       if (status.isRegistered) {
-        console.log('[ContainerRegistration] Container type already registered ✓');
-        return;
-      }
-      
-      console.log('[ContainerRegistration] Container type not registered, attempting registration...');
-      
-      // Attempt registration
-      const result = await this.registerContainerType();
-      
-      if (result.success) {
-        console.log('[ContainerRegistration] Container type registration completed successfully ✓');
+        console.log('[ContainerRegistration] ✓ Container type is accessible via Graph API');
       } else {
-        console.error('[ContainerRegistration] Container type registration failed:', result.message);
-        console.error('[ContainerRegistration] SharePoint Embedded functionality may not work correctly');
-        console.error('[ContainerRegistration] Please ensure Azure AD permissions are configured correctly');
-        console.error('[ContainerRegistration] See AZURE_APP_PERMISSIONS_SETUP.md for details');
+        console.error('[ContainerRegistration] ✗ Container type is not accessible');
+        console.error('[ContainerRegistration] Message:', status.message);
+        console.error('[ContainerRegistration] SharePoint Embedded functionality may not work');
+        console.error('[ContainerRegistration] See /admin/sharepoint for troubleshooting');
       }
       
     } catch (error) {
-      console.error('[ContainerRegistration] Startup initialization failed:', error);
-      console.error('[ContainerRegistration] This may prevent SharePoint Embedded functionality');
+      console.error('[ContainerRegistration] Startup check failed:', error);
+      console.error('[ContainerRegistration] Visit /admin/sharepoint to diagnose the issue');
     }
   }
 }

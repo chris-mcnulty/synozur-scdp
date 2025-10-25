@@ -28,24 +28,24 @@ export function AdminSharePoint() {
     enabled: isAdmin // Only query if user is admin
   });
 
-  // Register container type mutation
-  const registerMutation = useMutation({
+  // Verify container access mutation
+  const verifyAccessMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('/api/admin/register-container-type', {
+      return await apiRequest('/api/admin/verify-container-access', {
         method: 'POST',
       });
     },
     onSuccess: (data) => {
       toast({
         title: "Success",
-        description: data.message || "Container type registered successfully"
+        description: data.message || "Container type is accessible via Graph API"
       });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/container-registration-status'] });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to register container type",
+        description: error.message || "Failed to verify container type access",
         variant: "destructive"
       });
     }
@@ -180,14 +180,14 @@ export function AdminSharePoint() {
           </CardContent>
         </Card>
 
-        {/* Registration Status */}
+        {/* Access Verification */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Container Type Registration</CardTitle>
+                <CardTitle>Container Type Access</CardTitle>
                 <CardDescription>
-                  Your app must be registered with the container type
+                  Verify that your app can access the container type via Microsoft Graph API
                 </CardDescription>
               </div>
               <Button
@@ -206,7 +206,7 @@ export function AdminSharePoint() {
             {regLoading ? (
               <div className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Checking registration status...</span>
+                <span>Checking container type access...</span>
               </div>
             ) : regStatus ? (
               <div className="space-y-4">
@@ -214,7 +214,7 @@ export function AdminSharePoint() {
                   {getStatusIcon(regStatus.isRegistered)}
                   <div>
                     <div className="font-semibold">
-                      {regStatus.isRegistered ? 'Registered' : 'Not Registered'}
+                      {regStatus.isRegistered ? 'Accessible' : 'Not Accessible'}
                     </div>
                     <div className="text-sm text-muted-foreground">
                       {regStatus.message}
@@ -235,21 +235,21 @@ export function AdminSharePoint() {
 
                 {!regStatus.isRegistered && (
                   <Button
-                    onClick={() => registerMutation.mutate()}
-                    disabled={registerMutation.isPending}
-                    data-testid="button-register-container-type"
+                    onClick={() => verifyAccessMutation.mutate()}
+                    disabled={verifyAccessMutation.isPending}
+                    data-testid="button-verify-container-access"
                   >
-                    {registerMutation.isPending && (
+                    {verifyAccessMutation.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Register Container Type
+                    Verify Access
                   </Button>
                 )}
               </div>
             ) : (
               <div className="flex items-center gap-2 text-yellow-600">
                 <AlertTriangle className="w-5 h-5" />
-                <span>Unable to check registration status</span>
+                <span>Unable to check container type access</span>
               </div>
             )}
           </CardContent>
@@ -313,15 +313,34 @@ export function AdminSharePoint() {
           <CardHeader>
             <CardTitle>Troubleshooting</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p><strong>If upload fails:</strong></p>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li>Verify the container ID secrets are updated with the new container IDs</li>
-              <li>Ensure container type is registered (use button above)</li>
-              <li>Check that Azure AD app has Container.Selected permissions</li>
-              <li>Verify the container type is PAYGO (standard), not trial</li>
-              <li>Restart the application after updating secrets</li>
-            </ol>
+          <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="font-semibold mb-1">If container type is not accessible:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Verify Azure AD app has <code className="bg-muted px-1 rounded">FileStorageContainer.Selected</code> permission</li>
+                <li>Grant admin consent for the Microsoft Graph permission</li>
+                <li>Ensure container type ID is correct: <code className="bg-muted px-1 rounded text-xs">358aba7d-bb55-4ce0-a08d-e51f03d5edf1</code></li>
+                <li>Container types must be pre-registered in Microsoft Partner Center</li>
+                <li>Wait a few minutes for permissions to propagate after granting consent</li>
+              </ol>
+            </div>
+            
+            <div>
+              <p className="font-semibold mb-1">If file upload fails:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Verify container ID secrets are set correctly (DEV and PROD)</li>
+                <li>Ensure containers are SharePoint Embedded containers, not regular SharePoint sites</li>
+                <li>Check that your app has access to the specific containers</li>
+                <li>Restart the application after updating secrets</li>
+              </ol>
+            </div>
+            
+            <div className="mt-3 p-3 bg-muted rounded">
+              <p className="text-xs text-muted-foreground">
+                <strong>Note:</strong> SharePoint Embedded uses Microsoft Graph API, not SharePoint REST API.
+                Ensure your Azure AD app has the correct Graph API permissions, not SharePoint Online permissions.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
