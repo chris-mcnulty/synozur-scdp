@@ -173,6 +173,10 @@ export class ContainerRegistrationService {
       const adminUrl = this.getSharePointAdminUrl();
       const checkUrl = `${adminUrl}/_api/v2.1/storageContainerTypes/${this.containerTypeId}/applicationPermissions`;
       
+      console.log('[ContainerRegistration] Check URL:', checkUrl);
+      console.log('[ContainerRegistration] Admin URL:', adminUrl);
+      console.log('[ContainerRegistration] Container Type ID:', this.containerTypeId);
+      
       const response = await fetch(checkUrl, {
         method: 'GET',
         headers: {
@@ -180,6 +184,8 @@ export class ContainerRegistrationService {
           'Accept': 'application/json',
         }
       });
+      
+      console.log('[ContainerRegistration] Response status:', response.status);
       
       if (response.ok) {
         const result = await response.json();
@@ -199,10 +205,19 @@ export class ContainerRegistrationService {
         };
       } else {
         const errorText = await response.text();
+        console.error('[ContainerRegistration] Error response:', errorText);
+        
+        let errorDetails: any = { status: response.status, rawError: errorText };
+        try {
+          errorDetails.parsedError = JSON.parse(errorText);
+        } catch {
+          // Error text is not JSON
+        }
+        
         return {
           isRegistered: false,
           message: `Failed to check registration status: HTTP ${response.status}`,
-          details: { error: errorText }
+          details: errorDetails
         };
       }
       
@@ -211,7 +226,7 @@ export class ContainerRegistrationService {
       return {
         isRegistered: false,
         message: error instanceof Error ? error.message : 'Unknown error checking status',
-        details: { error }
+        details: { error: error instanceof Error ? error.message : String(error) }
       };
     }
   }

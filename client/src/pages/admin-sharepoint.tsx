@@ -222,6 +222,17 @@ export function AdminSharePoint() {
                   </div>
                 </div>
 
+                {regStatus.details && (
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                      Technical Details
+                    </summary>
+                    <pre className="mt-2 p-2 bg-muted rounded overflow-x-auto">
+                      {JSON.stringify(regStatus.details, null, 2)}
+                    </pre>
+                  </details>
+                )}
+
                 {!regStatus.isRegistered && (
                   <Button
                     onClick={() => registerMutation.mutate()}
