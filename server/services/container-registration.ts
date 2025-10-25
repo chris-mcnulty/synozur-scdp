@@ -37,69 +37,72 @@ export class ContainerRegistrationService {
   /**
    * Verify access to SharePoint Embedded containers via Microsoft Graph API
    * This confirms that your app has the necessary permissions
+   * 
+   * NOTE: The list containers endpoint has a known bug in preview where it fails with
+   * "failed to parse filter parameter" - so we check the specific container directly
    */
   async registerContainerType(): Promise<ContainerTypeRegistrationResult> {
     console.log('[ContainerAccess] Verifying SharePoint Embedded container access via Graph API...');
     
+    const configuredContainerId = this.getConfiguredContainerId();
+    
     try {
-      // First, try to list containers to verify basic Graph API access
-      const containers = await this.graphClient.listFileStorageContainers();
-      
-      console.log('[ContainerAccess] Successfully listed containers:', {
-        count: containers.length,
-        containerIds: containers.map(c => c.id)
-      });
-      
-      // Check if we can access the specific configured container
-      const configuredContainerId = this.getConfiguredContainerId();
-      
+      // If we have a configured container, check it directly
+      // This avoids the buggy list containers endpoint
       if (configuredContainerId) {
         try {
           const container = await this.graphClient.getFileStorageContainer(configuredContainerId);
           
           console.log('[ContainerAccess] Successfully accessed configured container:', {
             id: container.id,
-            displayName: container.displayName
+            displayName: container.displayName,
+            status: container.status
           });
           
           return {
             success: true,
-            message: 'SharePoint Embedded containers are accessible. Your app has the necessary permissions.',
+            message: 'SharePoint Embedded container is accessible. Your app has the necessary permissions.',
             details: {
-              totalContainers: containers.length,
               configuredContainer: {
                 id: container.id,
                 displayName: container.displayName,
-                status: container.status
+                status: container.status,
+                containerTypeId: container.containerTypeId
               },
-              allContainers: containers.map(c => ({
-                id: c.id,
-                displayName: c.displayName
-              }))
+              note: 'Successfully verified access to configured SharePoint Embedded container'
             }
           };
         } catch (containerError) {
-          // Can list containers but not access the specific one
-          console.warn('[ContainerAccess] Cannot access configured container:', containerError);
+          console.error('[ContainerAccess] Cannot access configured container:', containerError);
           
           return {
             success: false,
-            message: 'Can list containers but cannot access the configured container',
+            message: 'Cannot access the configured SharePoint Embedded container',
             details: {
-              totalContainers: containers.length,
               configuredContainerId,
               error: containerError instanceof Error ? containerError.message : String(containerError),
               help: [
-                'The configured container ID might be incorrect',
-                'Ensure the container ID is a SharePoint Embedded container, not a regular SharePoint site',
-                'Verify your app has permission to access this specific container',
-                `Available containers: ${containers.map(c => c.displayName).join(', ')}`
+                'Ensure the container ID is correct and is a SharePoint Embedded container',
+                'Verify your app has FileStorageContainer.Selected permission in Azure AD',
+                'Check that the container exists and your app has been granted access to it',
+                'Container IDs should look like: b!xxx... (not regular SharePoint site IDs)'
               ]
             }
           };
         }
-      } else {
-        // No container configured, but Graph API works
+      }
+      
+      // No container configured - try to list containers
+      // NOTE: This endpoint has a known bug in preview and might fail
+      try {
+        console.log('[ContainerAccess] No container configured, attempting to list available containers...');
+        const containers = await this.graphClient.listFileStorageContainers();
+        
+        console.log('[ContainerAccess] Successfully listed containers:', {
+          count: containers.length,
+          containerIds: containers.map(c => c.id)
+        });
+        
         return {
           success: true,
           message: 'Graph API access verified. Container ID not configured yet.',
@@ -107,9 +110,27 @@ export class ContainerRegistrationService {
             totalContainers: containers.length,
             allContainers: containers.map(c => ({
               id: c.id,
-              displayName: c.displayName
+              displayName: c.displayName,
+              status: c.status
             })),
-            note: 'Set SHAREPOINT_CONTAINER_ID_DEV and SHAREPOINT_CONTAINER_ID_PROD environment variables'
+            note: 'Set SHAREPOINT_CONTAINER_ID_DEV and SHAREPOINT_CONTAINER_ID_PROD environment variables to use one of these containers'
+          }
+        };
+      } catch (listError) {
+        // List containers endpoint is broken in preview
+        console.warn('[ContainerAccess] List containers endpoint failed (known preview limitation):', listError);
+        
+        return {
+          success: false,
+          message: 'Container ID not configured and cannot list containers (SharePoint Embedded preview limitation)',
+          details: {
+            error: listError instanceof Error ? listError.message : String(listError),
+            help: [
+              'The list containers endpoint has a known bug in SharePoint Embedded preview',
+              'Please configure SHAREPOINT_CONTAINER_ID_DEV and SHAREPOINT_CONTAINER_ID_PROD with your container IDs',
+              'Container IDs can be obtained from Microsoft Partner Center or created via Graph API',
+              'Once configured, this verification will check your specific container directly'
+            ]
           }
         };
       }
