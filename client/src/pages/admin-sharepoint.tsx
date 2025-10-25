@@ -3,14 +3,19 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
-import { Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldAlert } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldAlert, PlusCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
 export function AdminSharePoint() {
   const [testResult, setTestResult] = useState<any>(null);
+  const [containerName, setContainerName] = useState("");
+  const [containerDescription, setContainerDescription] = useState("");
+  const [creationResult, setCreationResult] = useState<any>(null);
   const { hasAnyRole, user, isLoading: authLoading } = useAuth();
 
   // Check if user is admin
@@ -46,6 +51,36 @@ export function AdminSharePoint() {
       toast({
         title: "Error",
         description: error.message || "Failed to verify container type access",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Create container mutation
+  const createContainerMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('/api/admin/create-container', {
+        method: 'POST',
+        body: JSON.stringify({
+          containerName,
+          description: containerDescription || undefined
+        })
+      });
+    },
+    onSuccess: (data) => {
+      setCreationResult({ success: true, data });
+      toast({
+        title: "Container Created",
+        description: `Container ID: ${data.containerId}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/sharepoint/config'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/container-registration-status'] });
+    },
+    onError: (error: any) => {
+      setCreationResult({ success: false, error: error.message });
+      toast({
+        title: "Container Creation Failed",
+        description: error.message,
         variant: "destructive"
       });
     }
@@ -176,6 +211,98 @@ export function AdminSharePoint() {
               </div>
             ) : (
               <div className="text-muted-foreground">Failed to load configuration</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Create New Container */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PlusCircle className="w-5 h-5" />
+              Create New SharePoint Embedded Container
+            </CardTitle>
+            <CardDescription>
+              Create a new container if the current one doesn't exist or you need a new one
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="containerName">Container Name *</Label>
+                <Input
+                  id="containerName"
+                  placeholder="e.g., SCDP-Development or SCDP-Production"
+                  value={containerName}
+                  onChange={(e) => setContainerName(e.target.value)}
+                  data-testid="input-container-name"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="containerDescription">Description (Optional)</Label>
+                <Input
+                  id="containerDescription"
+                  placeholder="e.g., SharePoint Embedded container for SCDP development"
+                  value={containerDescription}
+                  onChange={(e) => setContainerDescription(e.target.value)}
+                  data-testid="input-container-description"
+                />
+              </div>
+
+              <Button
+                onClick={() => createContainerMutation.mutate()}
+                disabled={createContainerMutation.isPending || !containerName.trim()}
+                data-testid="button-create-container"
+              >
+                {createContainerMutation.isPending && (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                )}
+                Create Container
+              </Button>
+            </div>
+
+            {creationResult && (
+              <div className={`p-4 rounded-lg border ${
+                creationResult.success 
+                  ? 'bg-green-50 border-green-200' 
+                  : 'bg-red-50 border-red-200'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {creationResult.success ? (
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                  ) : (
+                    <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <div className="font-semibold mb-1">
+                      {creationResult.success ? 'Container Created Successfully' : 'Creation Failed'}
+                    </div>
+                    {creationResult.success ? (
+                      <div className="space-y-2 text-sm">
+                        <div>
+                          <strong>Container ID:</strong>
+                          <div className="font-mono text-xs break-all mt-1 p-2 bg-white rounded border">
+                            {creationResult.data.containerId}
+                          </div>
+                        </div>
+                        {creationResult.data.nextSteps && (
+                          <div className="mt-3">
+                            <strong>Next Steps:</strong>
+                            <ol className="list-decimal list-inside mt-1 space-y-1">
+                              {creationResult.data.nextSteps.map((step: string, idx: number) => (
+                                <li key={idx}>{step}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-red-700">{creationResult.error}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
