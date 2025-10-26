@@ -10853,6 +10853,76 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Grant application permissions to existing container
+  app.post("/api/admin/grant-container-permissions", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const sharePointConfig = await getSharePointConfig();
+      
+      if (!sharePointConfig.configured || !sharePointConfig.containerId) {
+        return res.status(400).json({
+          success: false,
+          message: "SharePoint container not configured"
+        });
+      }
+      
+      console.log("[GRANT_PERMISSIONS] Granting permissions to container:", sharePointConfig.containerId);
+      
+      // Get client ID
+      const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+      
+      // Grant owner permissions to the application
+      const permissionPayload = {
+        roles: ["owner"],
+        grantedToIdentitiesV2: [
+          {
+            application: {
+              id: clientId,
+              displayName: "SCDP Application"
+            }
+          }
+        ]
+      };
+      
+      await graphClient.authenticate();
+      const response = await fetch(
+        `https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${sharePointConfig.containerId}/permissions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${await graphClient.authenticate()}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(permissionPayload)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[GRANT_PERMISSIONS] Failed:", errorText);
+        throw new Error(`Failed to grant permissions: HTTP ${response.status} - ${errorText}`);
+      }
+      
+      const permission = await response.json();
+      console.log("[GRANT_PERMISSIONS] Success:", permission.id);
+      
+      res.json({
+        success: true,
+        message: "Application permissions granted successfully to container",
+        permission: {
+          id: permission.id,
+          roles: permission.roles
+        }
+      });
+      
+    } catch (error) {
+      console.error("[GRANT_PERMISSIONS] Error:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Failed to grant permissions"
+      });
+    }
+  });
+
   // Test SharePoint Embedded upload (admin diagnostics only)
   app.post("/api/admin/test-sharepoint-upload", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

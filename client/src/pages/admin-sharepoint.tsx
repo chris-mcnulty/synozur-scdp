@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
-import { Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldAlert, PlusCircle } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldAlert, PlusCircle, Shield, AlertCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -80,6 +80,30 @@ export function AdminSharePoint() {
       setCreationResult({ success: false, error: error.message });
       toast({
         title: "Container Creation Failed",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Grant permissions mutation
+  const grantPermissionsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('/api/admin/grant-container-permissions', {
+        method: 'POST',
+      });
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: "Application permissions granted to container"
+      });
+      // Refresh config after granting permissions
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/sharepoint/config'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Permission Grant Failed",
         description: error.message,
         variant: "destructive"
       });
@@ -358,6 +382,42 @@ export function AdminSharePoint() {
                 <span>Unable to check container type access</span>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Grant Permissions */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Grant Permissions
+            </CardTitle>
+            <CardDescription>
+              Grant your application permissions to access the container
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+                <div className="flex-1 text-sm text-blue-900">
+                  <div className="font-semibold mb-1">Required Step</div>
+                  <p>If you just created a container, you must grant your application permission to access it before uploading files.</p>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => grantPermissionsMutation.mutate()}
+              disabled={grantPermissionsMutation.isPending}
+              data-testid="button-grant-permissions"
+              variant="default"
+            >
+              {grantPermissionsMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Grant Application Permissions
+            </Button>
           </CardContent>
         </Card>
 

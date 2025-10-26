@@ -82,9 +82,28 @@ export class ContainerCreator {
         displayName: container.displayName
       });
       
+      // CRITICAL: Grant permissions to the application for the container
+      console.log('[ContainerCreator] Granting application permissions to container...');
+      const permissionResult = await this.grantApplicationPermissions(
+        accessToken,
+        container.id
+      );
+      
+      if (!permissionResult.success) {
+        console.warn('[ContainerCreator] Failed to grant permissions:', permissionResult.message);
+        return {
+          success: false,
+          message: `Container created but failed to grant permissions: ${permissionResult.message}`,
+          containerId: container.id,
+          details: { container, permissionError: permissionResult.message }
+        };
+      }
+      
+      console.log('[ContainerCreator] Permissions granted successfully');
+      
       return {
         success: true,
-        message: 'SharePoint Embedded container created successfully',
+        message: 'SharePoint Embedded container created and permissions granted successfully',
         containerId: container.id,
         details: container
       };
@@ -95,6 +114,74 @@ export class ContainerCreator {
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error during container creation',
         details: { error }
+      };
+    }
+  }
+
+  /**
+   * Grant application permissions to a container
+   */
+  private async grantApplicationPermissions(
+    accessToken: string,
+    containerId: string
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      // Get the application's client ID from environment
+      const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
+      
+      // Grant the application "owner" role on the container
+      const permissionPayload = {
+        roles: ["owner"],
+        grantedToIdentitiesV2: [
+          {
+            application: {
+              id: clientId,
+              displayName: "SCDP Application"
+            }
+          }
+        ]
+      };
+      
+      console.log('[ContainerCreator] Granting owner permissions to app:', clientId);
+      
+      const response = await fetch(
+        `${this.graphBaseUrl}/storage/fileStorage/containers/${containerId}/permissions`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(permissionPayload)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[ContainerCreator] Permission grant failed:', {
+          status: response.status,
+          error: errorText
+        });
+        
+        return {
+          success: false,
+          message: `Failed to grant permissions: HTTP ${response.status}`
+        };
+      }
+      
+      const permission = await response.json();
+      console.log('[ContainerCreator] Permission granted:', permission.id);
+      
+      return {
+        success: true,
+        message: 'Application permissions granted successfully'
+      };
+      
+    } catch (error) {
+      console.error('[ContainerCreator] Error granting permissions:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
