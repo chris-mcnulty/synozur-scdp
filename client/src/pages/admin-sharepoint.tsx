@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, CheckCircle, XCircle, AlertTriangle, RefreshCw, ShieldAlert, PlusCircle, Shield, AlertCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
@@ -386,23 +387,30 @@ export function AdminSharePoint() {
         </Card>
 
         {/* Grant Permissions */}
-        <Card>
+        <Card className="border-blue-200 bg-blue-50/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              Grant Permissions
+              <Shield className="w-5 h-5 text-blue-600" />
+              Register Container Type Permissions
             </CardTitle>
             <CardDescription>
-              Grant your application permissions to access the container
+              Register application permissions using SharePoint REST API v2.1
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-blue-100 border border-blue-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div className="flex-1 text-sm text-blue-900">
-                  <div className="font-semibold mb-1">Required Step</div>
-                  <p>If you just created a container, you must grant your application permission to access it before uploading files.</p>
+                <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 text-sm text-blue-900 space-y-2">
+                  <div className="font-semibold">Two-Layer Authorization Required</div>
+                  <p>SharePoint Embedded uses a two-layer authorization model:</p>
+                  <ol className="list-decimal ml-4 space-y-1">
+                    <li><strong>Graph API Permissions</strong> - Already configured ✅ (FileStorageContainer.Selected)</li>
+                    <li><strong>Container Type Registration</strong> - Grants "full" access to all containers of this type</li>
+                  </ol>
+                  <p className="mt-2">
+                    This uses the SharePoint REST API v2.1 endpoint to register your application with the container type.
+                  </p>
                 </div>
               </div>
             </div>
@@ -412,12 +420,56 @@ export function AdminSharePoint() {
               disabled={grantPermissionsMutation.isPending}
               data-testid="button-grant-permissions"
               variant="default"
+              className="w-full"
             >
               {grantPermissionsMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Grant Application Permissions
+              <ShieldAlert className="mr-2 h-4 w-4" />
+              Register Application Permissions
             </Button>
+
+            {grantPermissionsMutation.isError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Permission Registration Failed</AlertTitle>
+                <AlertDescription className="space-y-2 text-sm">
+                  <p>
+                    {grantPermissionsMutation.error instanceof Error
+                      ? grantPermissionsMutation.error.message
+                      : "Failed to register container type permissions"}
+                  </p>
+                  <p className="mt-2 text-xs">
+                    <strong>Manual Setup Available:</strong> See{" "}
+                    <code className="bg-red-100 px-1 py-0.5 rounded text-xs">
+                      SHAREPOINT_PERMISSIONS_SETUP.md
+                    </code>{" "}
+                    for PowerShell instructions to register permissions manually.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {grantPermissionsMutation.isSuccess && (
+              <Alert className="bg-green-50 border-green-200">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertTitle className="text-green-900">
+                  Container Type Permissions Registered! 🎉
+                </AlertTitle>
+                <AlertDescription className="text-green-800 space-y-2 text-sm">
+                  <p>
+                    Your application now has <strong>full access</strong> to all containers of this type:
+                  </p>
+                  <ul className="list-disc ml-4 text-xs space-y-1">
+                    <li>Delegated permissions: full</li>
+                    <li>App-only permissions: full</li>
+                  </ul>
+                  <p className="mt-2 font-semibold">
+                    ✅ You can now test file uploads!
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
           </CardContent>
         </Card>
 

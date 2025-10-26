@@ -1710,5 +1710,124 @@ export class GraphClient {
   }
 }
 
+/**
+ * Register container type application permissions using SharePoint REST API v2.1
+ * This grants the owning application permissions to all containers of this type
+ */
+export async function registerContainerTypePermissions(
+  containerTypeId: string,
+  appId: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    console.log('[GraphClient] Registering container type permissions:', {
+      containerTypeId,
+      appId
+    });
+
+    // Get access token for SharePoint API
+    if (!msalInstance) {
+      throw new Error('MSAL instance not initialized');
+    }
+    
+    const tokenResponse = await msalInstance.acquireTokenByClientCredential({
+      scopes: ['https://graph.microsoft.com/.default'],
+      skipCache: false,
+    });
+
+    if (!tokenResponse?.accessToken) {
+      throw new Error('Failed to acquire access token');
+    }
+
+    // First, get the tenant's root SharePoint site URL
+    const rootSiteResponse = await fetch(
+      'https://graph.microsoft.com/v1.0/sites/root',
+      {
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.accessToken}`,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (!rootSiteResponse.ok) {
+      const errorText = await rootSiteResponse.text();
+      throw new Error(`Failed to get root site: ${rootSiteResponse.status} - ${errorText}`);
+    }
+
+    const rootSite = await rootSiteResponse.json();
+    const rootSiteUrl = rootSite.webUrl; // e.g., https://synozur.sharepoint.com
+    
+    console.log('[GraphClient] Root SharePoint site URL:', rootSiteUrl);
+
+    // Construct the SharePoint REST API v2.1 endpoint
+    const registrationUrl = `${rootSiteUrl}/_api/v2.1/storageContainerTypes/${containerTypeId}/applicationPermissions`;
+    
+    console.log('[GraphClient] Registration URL:', registrationUrl);
+
+    // Prepare the payload
+    const payload = {
+      value: [
+        {
+          appId: appId,
+          delegated: ["full"],
+          appOnly: ["full"]
+        }
+      ]
+    };
+
+    console.log('[GraphClient] Registration payload:', JSON.stringify(payload, null, 2));
+
+    // Make the PUT request to register permissions
+    const registrationResponse = await fetch(
+      registrationUrl,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.accessToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const responseText = await registrationResponse.text();
+    console.log('[GraphClient] Registration response:', {
+      status: registrationResponse.status,
+      statusText: registrationResponse.statusText,
+      body: responseText
+    });
+
+    if (!registrationResponse.ok) {
+      let errorMessage = `HTTP ${registrationResponse.status}`;
+      try {
+        const errorData = JSON.parse(responseText);
+        if (errorData.error) {
+          errorMessage = errorData.error.message || errorMessage;
+        }
+      } catch {
+        errorMessage += `: ${responseText}`;
+      }
+      
+      return {
+        success: false,
+        message: `Registration failed: ${errorMessage}`
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Container type permissions registered successfully. Your application now has full access to all containers of this type.'
+    };
+
+  } catch (error: any) {
+    console.error('[GraphClient] Error registering container type permissions:', error);
+    return {
+      success: false,
+      message: `Error: ${error.message}`
+    };
+  }
+}
+
 // Export singleton instance
 export const graphClient = new GraphClient();

@@ -146,7 +146,7 @@ const metadataQuerySchema = z.object({
 import { eq, and, desc, sql } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
-import { graphClient } from "./services/graph-client.js";
+import { graphClient, registerContainerTypePermissions } from "./services/graph-client.js";
 import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
 import { localFileStorage, type DocumentMetadata } from "./services/local-file-storage.js";
@@ -10853,90 +10853,48 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Grant application permissions to existing container
+  // Register container type application permissions using SharePoint REST API v2.1
   app.post("/api/admin/grant-container-permissions", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const sharePointConfig = await getSharePointConfig();
+      console.log("[REGISTER_PERMISSIONS] Starting container type registration...");
       
-      if (!sharePointConfig.configured || !sharePointConfig.containerId) {
-        return res.status(400).json({
-          success: false,
-          message: "SharePoint container not configured"
-        });
-      }
-      
-      console.log("[GRANT_PERMISSIONS] Granting permissions to container:", sharePointConfig.containerId);
-      
-      // Get client ID
+      // Get the container type ID and client ID
+      const containerTypeId = "358aba7d-bb55-4ce0-a08d-e51f03d5edf1"; // SCDP PAYGO container type
       const clientId = process.env.AZURE_CLIENT_ID || "198aa0a6-d2ed-4f35-b41b-b6f6778a30d6";
       
-      // Grant owner permissions to the application
-      const permissionPayload = {
-        roles: ["owner"],
-        grantedToIdentitiesV2: [
-          {
-            application: {
-              id: clientId,
-              displayName: "SCDP Application"
-            }
-          }
-        ]
-      };
-      
-      await graphClient.authenticate();
-      const response = await fetch(
-        `https://graph.microsoft.com/v1.0/storage/fileStorage/containers/${sharePointConfig.containerId}/permissions`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${await graphClient.authenticate()}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(permissionPayload)
-        }
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[GRANT_PERMISSIONS] HTTP Error:", {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorText
-        });
-        
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) {
-            errorMessage = errorData.error.message || errorMessage;
-          }
-        } catch {
-          errorMessage += `: ${errorText}`;
-        }
-        
-        throw new Error(`Failed to grant permissions: ${errorMessage}`);
-      }
-      
-      const responseText = await response.text();
-      console.log("[GRANT_PERMISSIONS] Raw response:", responseText);
-      
-      const permission = responseText ? JSON.parse(responseText) : {};
-      console.log("[GRANT_PERMISSIONS] Success:", permission.id || 'granted');
-      
-      res.json({
-        success: true,
-        message: "Application permissions granted successfully to container",
-        permission: {
-          id: permission.id,
-          roles: permission.roles
-        }
+      console.log("[REGISTER_PERMISSIONS] Parameters:", {
+        containerTypeId,
+        clientId
       });
       
+      // Use the SharePoint REST API v2.1 to register permissions
+      const result = await registerContainerTypePermissions(containerTypeId, clientId);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          details: {
+            containerTypeId,
+            clientId,
+            permissions: {
+              delegated: ["full"],
+              appOnly: ["full"]
+            }
+          }
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: result.message
+        });
+      }
+      
     } catch (error) {
-      console.error("[GRANT_PERMISSIONS] Error:", error);
+      console.error("[REGISTER_PERMISSIONS] Error:", error);
       res.status(500).json({
         success: false,
-        message: error instanceof Error ? error.message : "Failed to grant permissions"
+        message: error instanceof Error ? error.message : "Failed to register container type permissions"
       });
     }
   });
