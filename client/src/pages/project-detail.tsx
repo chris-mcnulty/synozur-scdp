@@ -220,6 +220,10 @@ export default function ProjectDetail() {
   const [approvingSow, setApprovingSow] = useState<Sow | null>(null);
   const [showBudgetImpactDialog, setShowBudgetImpactDialog] = useState(false);
   
+  // Payment milestone state
+  const [showPaymentMilestoneDialog, setShowPaymentMilestoneDialog] = useState(false);
+  const [editingPaymentMilestone, setEditingPaymentMilestone] = useState<any>(null);
+  
   // Payment milestone invoice state
   const [generatingInvoiceForMilestone, setGeneratingInvoiceForMilestone] = useState<any>(null);
   const [showMilestoneInvoiceDialog, setShowMilestoneInvoiceDialog] = useState(false);
@@ -1612,6 +1616,7 @@ export default function ProjectDetail() {
             <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
             <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
             <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
+            <TabsTrigger value="payment-milestones" data-testid="tab-payment-milestones">Payment Milestones</TabsTrigger>
             <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
@@ -2927,10 +2932,24 @@ export default function ProjectDetail() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Payment Milestones</CardTitle>
-                  <CardDescription>
-                    Financial schedule and invoicing milestones for this project
-                  </CardDescription>
+                  <div>
+                    <CardTitle>Payment Milestones</CardTitle>
+                    <CardDescription>
+                      Financial schedule and invoicing milestones for this project
+                    </CardDescription>
+                  </div>
+                  {['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
+                    <Button
+                      onClick={() => {
+                        setEditingPaymentMilestone(null);
+                        setShowPaymentMilestoneDialog(true);
+                      }}
+                      data-testid="button-create-payment-milestone"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Payment Milestone
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -2944,10 +2963,10 @@ export default function ProjectDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Name</TableHead>
+                        <TableHead>Milestone Name</TableHead>
                         <TableHead>Amount</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>Target Date</TableHead>
+                        <TableHead>Invoice Status</TableHead>
                         <TableHead>Linked to</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -2963,7 +2982,7 @@ export default function ProjectDetail() {
                         [...paymentMilestones]
                           .sort((a, b) => {
                             if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
-                            if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+                            if (a.targetDate && b.targetDate) return a.targetDate.localeCompare(b.targetDate);
                             return 0;
                           })
                           .map((pm: any) => {
@@ -2974,13 +2993,13 @@ export default function ProjectDetail() {
                               <TableRow key={pm.id} data-testid={`payment-milestone-row-${pm.id}`}>
                                 <TableCell className="font-medium">{pm.name}</TableCell>
                                 <TableCell>${Number(pm.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                <TableCell>{pm.dueDate ? format(parseISO(pm.dueDate), 'MMM d, yyyy') : '-'}</TableCell>
+                                <TableCell>{pm.targetDate ? format(parseISO(pm.targetDate), 'MMM d, yyyy') : '-'}</TableCell>
                                 <TableCell>
                                   <Badge 
-                                    variant={pm.status === 'invoiced' ? 'default' : pm.status === 'planned' ? 'secondary' : 'destructive'}
+                                    variant={pm.invoiceStatus === 'paid' ? 'default' : pm.invoiceStatus === 'invoiced' ? 'secondary' : 'outline'}
                                     data-testid={`badge-status-${pm.id}`}
                                   >
-                                    {pm.status === 'invoiced' ? 'Invoiced' : pm.status === 'planned' ? 'Planned' : 'Canceled'}
+                                    {pm.invoiceStatus === 'paid' ? 'Paid' : pm.invoiceStatus === 'invoiced' ? 'Invoiced' : 'Planned'}
                                   </Badge>
                                 </TableCell>
                                 <TableCell>
@@ -2991,20 +3010,64 @@ export default function ProjectDetail() {
                                   ) : '-'}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {pm.status === 'planned' && ['admin', 'billing-admin'].includes(user?.role || '') && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setGeneratingInvoiceForMilestone(pm);
-                                        setMilestoneInvoiceDates({ startDate: '', endDate: '' });
-                                        setShowMilestoneInvoiceDialog(true);
-                                      }}
-                                      data-testid={`button-generate-invoice-${pm.id}`}
-                                    >
-                                      Generate Invoice
-                                    </Button>
-                                  )}
+                                  <div className="flex items-center justify-end gap-2">
+                                    {['admin', 'billing-admin', 'pm'].includes(user?.role || '') && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => {
+                                            setEditingPaymentMilestone(pm);
+                                            setShowPaymentMilestoneDialog(true);
+                                          }}
+                                          data-testid={`button-edit-pm-${pm.id}`}
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={async () => {
+                                            if (confirm(`Delete payment milestone "${pm.name}"?`)) {
+                                              try {
+                                                await apiRequest(`/api/payment-milestones/${pm.id}`, {
+                                                  method: 'DELETE'
+                                                });
+                                                toast({
+                                                  title: "Success",
+                                                  description: "Payment milestone deleted"
+                                                });
+                                                refetchPaymentMilestones();
+                                              } catch (error: any) {
+                                                toast({
+                                                  title: "Error",
+                                                  description: error.message || "Failed to delete milestone",
+                                                  variant: "destructive"
+                                                });
+                                              }
+                                            }
+                                          }}
+                                          data-testid={`button-delete-pm-${pm.id}`}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      </>
+                                    )}
+                                    {pm.invoiceStatus === 'planned' && ['admin', 'billing-admin'].includes(user?.role || '') && (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => {
+                                          setGeneratingInvoiceForMilestone(pm);
+                                          setMilestoneInvoiceDates({ startDate: '', endDate: '' });
+                                          setShowMilestoneInvoiceDialog(true);
+                                        }}
+                                        data-testid={`button-generate-invoice-${pm.id}`}
+                                      >
+                                        <DollarSign className="w-4 h-4 mr-1" />
+                                        Generate Invoice
+                                      </Button>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             );
@@ -3019,6 +3082,46 @@ export default function ProjectDetail() {
 
           {/* Invoices Tab */}
           <TabsContent value="invoices" className="space-y-6">
+            {/* Quick Milestone Invoice Card */}
+            {paymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length > 0 && 
+              ['admin', 'billing-admin'].includes(user?.role || '') && (
+              <Card className="border-blue-200 bg-blue-50/30">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-blue-900">Quick Milestone Invoice</CardTitle>
+                      <CardDescription>
+                        Generate invoice from planned payment milestones
+                      </CardDescription>
+                    </div>
+                    <Select 
+                      onValueChange={(value) => {
+                        const selected = paymentMilestones.find((pm: any) => pm.id === value);
+                        if (selected) {
+                          setGeneratingInvoiceForMilestone(selected);
+                          setMilestoneInvoiceDates({ startDate: '', endDate: '' });
+                          setShowMilestoneInvoiceDialog(true);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-[300px]" data-testid="select-quick-milestone">
+                        <SelectValue placeholder="Select milestone to invoice..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentMilestones
+                          .filter((pm: any) => pm.invoiceStatus === 'planned')
+                          .map((pm: any) => (
+                            <SelectItem key={pm.id} value={pm.id}>
+                              {pm.name} - ${Number(pm.amount ?? 0).toLocaleString()}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardHeader>
+              </Card>
+            )}
+            
             <Card>
               <CardHeader>
                 <CardTitle>Invoices</CardTitle>
@@ -3975,6 +4078,151 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-delete-workstream"
               >
                 Delete Workstream
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create/Edit Payment Milestone Dialog */}
+        <Dialog open={showPaymentMilestoneDialog} onOpenChange={setShowPaymentMilestoneDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingPaymentMilestone ? 'Edit Payment Milestone' : 'Create Payment Milestone'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="pm-name">Milestone Name *</Label>
+                <Input
+                  id="pm-name"
+                  placeholder="e.g., Phase 1 Completion Payment"
+                  defaultValue={editingPaymentMilestone?.name || ''}
+                  data-testid="input-pm-name"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="pm-description">Description</Label>
+                <Textarea
+                  id="pm-description"
+                  placeholder="Describe what triggers this payment..."
+                  defaultValue={editingPaymentMilestone?.description || ''}
+                  data-testid="input-pm-description"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="pm-amount">Amount *</Label>
+                  <Input
+                    id="pm-amount"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    defaultValue={editingPaymentMilestone?.amount || ''}
+                    data-testid="input-pm-amount"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="pm-target-date">Target Date</Label>
+                  <Input
+                    id="pm-target-date"
+                    type="date"
+                    defaultValue={editingPaymentMilestone?.targetDate || ''}
+                    data-testid="input-pm-target-date"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="pm-invoice-status">Invoice Status</Label>
+                <Select defaultValue={editingPaymentMilestone?.invoiceStatus || 'planned'}>
+                  <SelectTrigger id="pm-invoice-status" data-testid="select-pm-invoice-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="invoiced">Invoiced</SelectItem>
+                    <SelectItem value="paid">Paid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPaymentMilestoneDialog(false);
+                  setEditingPaymentMilestone(null);
+                }}
+                data-testid="button-cancel-pm"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  const name = (document.getElementById('pm-name') as HTMLInputElement)?.value;
+                  const description = (document.getElementById('pm-description') as HTMLTextAreaElement)?.value;
+                  const amount = (document.getElementById('pm-amount') as HTMLInputElement)?.value;
+                  const targetDate = (document.getElementById('pm-target-date') as HTMLInputElement)?.value;
+                  const invoiceStatus = (document.querySelector('[data-testid="select-pm-invoice-status"] [role="combobox"]') as any)?.textContent?.toLowerCase() || 'planned';
+                  
+                  if (!name || !amount) {
+                    toast({
+                      title: "Validation Error",
+                      description: "Please provide milestone name and amount",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  
+                  try {
+                    const payload = {
+                      projectId: id,
+                      name,
+                      description: description || null,
+                      amount: parseFloat(amount),
+                      targetDate: targetDate || null,
+                      invoiceStatus,
+                      isPaymentMilestone: true
+                    };
+                    
+                    if (editingPaymentMilestone) {
+                      await apiRequest(`/api/payment-milestones/${editingPaymentMilestone.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(payload)
+                      });
+                      toast({
+                        title: "Success",
+                        description: "Payment milestone updated successfully"
+                      });
+                    } else {
+                      await apiRequest('/api/payment-milestones', {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                      });
+                      toast({
+                        title: "Success",
+                        description: "Payment milestone created successfully"
+                      });
+                    }
+                    
+                    setShowPaymentMilestoneDialog(false);
+                    setEditingPaymentMilestone(null);
+                    refetchPaymentMilestones();
+                  } catch (error: any) {
+                    toast({
+                      title: "Error",
+                      description: error.message || "Failed to save payment milestone",
+                      variant: "destructive"
+                    });
+                  }
+                }}
+                data-testid="button-save-pm"
+              >
+                {editingPaymentMilestone ? 'Update' : 'Create'} Milestone
               </Button>
             </DialogFooter>
           </DialogContent>

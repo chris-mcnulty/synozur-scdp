@@ -1,6 +1,35 @@
 # SCDP - Synozur Consulting Delivery Platform
 
 ## Recent Updates (October 2025)
+### Payment Milestones Feature (October 26, 2025)
+**FEATURE ADDED**: Milestone-based invoice generation without time entries
+
+**IMPLEMENTATION**:
+1. **Payment Milestones Tab**: Added to project detail page with full CRUD capabilities
+   - Create/edit/delete payment milestones with name, description, amount, target date
+   - View invoice status (planned, invoiced, paid)
+   - Role-based access: admin, billing-admin, pm can manage milestones
+2. **Invoice Generation**: 
+   - Generate invoice button on each planned milestone
+   - Quick milestone invoice selector on Invoices tab
+   - Creates invoice batches with milestone amount only (no time entries)
+   - Only admin and billing-admin roles can generate invoices
+3. **API Endpoints**:
+   - GET `/api/projects/:projectId/payment-milestones` - List payment milestones
+   - POST `/api/payment-milestones` - Create payment milestone
+   - PATCH `/api/payment-milestones/:id` - Update payment milestone
+   - DELETE `/api/payment-milestones/:id` - Delete payment milestone
+   - POST `/api/payment-milestones/:milestoneId/generate-invoice` - Generate invoice from milestone
+
+**USE CASE**: Enables milestone-based billing for fixed-price projects without requiring time entries for invoicing
+
+**ADMIN STORAGE DIAGNOSTICS**: Enhanced `/admin/sharepoint` page with storage information display
+- Shows active storage strategy (Smart Routing)
+- Displays routing rules (local vs SharePoint by document type)
+- File counts by storage type with breakdown by document type
+- Files awaiting migration tracker
+- Real-time refresh capability via `/api/files/storage-info` endpoint
+
 ### SharePoint Embedded Container Creation (October 23, 2025)
 **PROBLEM SOLVED**: Old container IDs were regular SharePoint site IDs, not SharePoint Embedded containers
 
