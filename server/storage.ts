@@ -2178,10 +2178,8 @@ export class DatabaseStorage implements IStorage {
   async getProjectMilestones(projectId: string): Promise<ProjectMilestone[]> {
     return await db.select()
       .from(projectMilestones)
-      .innerJoin(projectEpics, eq(projectMilestones.projectEpicId, projectEpics.id))
-      .where(eq(projectEpics.projectId, projectId))
-      .orderBy(projectMilestones.sortOrder)
-      .then(rows => rows.map(r => r.project_milestones));
+      .where(eq(projectMilestones.projectId, projectId))
+      .orderBy(projectMilestones.sortOrder);
   }
 
   async getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]> {

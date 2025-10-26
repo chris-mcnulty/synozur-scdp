@@ -82,9 +82,10 @@ export default function Billing() {
   const [endDate, setEndDate] = useState(getTodayBusinessDate());
   const [newBatchOpen, setNewBatchOpen] = useState(false);
   const [invoicingMode, setInvoicingMode] = useState<'client' | 'project'>('client');
-  const [batchType, setBatchType] = useState<'services' | 'expenses' | 'mixed'>('mixed');
+  const [batchType, setBatchType] = useState<'services' | 'expenses' | 'mixed' | 'milestone'>('mixed');
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -113,6 +114,12 @@ export default function Billing() {
   // Fetch default discount settings
   const { data: discountSettings } = useQuery<DiscountSettings>({
     queryKey: ["/api/invoice-batches/discount-settings"],
+  });
+
+  // Fetch all payment milestones from all projects
+  const { data: allPaymentMilestones = [] } = useQuery<any[]>({
+    queryKey: ["/api/payment-milestones/all"],
+    enabled: batchType === 'milestone',
   });
 
   // Update discount values when settings are loaded
@@ -185,11 +192,24 @@ export default function Billing() {
       startDate: string; 
       endDate: string; 
       invoicingMode: 'client' | 'project';
-      batchType: 'services' | 'expenses' | 'mixed';
+      batchType: 'services' | 'expenses' | 'mixed' | 'milestone';
+      milestoneId?: string;
       discountPercent?: string; 
       discountAmount?: string 
     }) => {
-      // First create the batch
+      // Handle milestone invoice generation differently
+      if (data.batchType === 'milestone' && data.milestoneId) {
+        const response = await apiRequest(`/api/payment-milestones/${data.milestoneId}/generate-invoice`, {
+          method: 'POST',
+          body: JSON.stringify({
+            startDate: data.startDate,
+            endDate: data.endDate
+          })
+        });
+        return response;
+      }
+      
+      // Standard batch creation for services/expenses
       const batchResponse = await apiRequest('/api/invoice-batches', {
         method: 'POST',
         body: JSON.stringify(data)
@@ -216,9 +236,12 @@ export default function Billing() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
       queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
       
       const message = data.invoicesCreated 
         ? `Generated ${data.invoicesCreated} invoices. Billed ${data.timeEntriesBilled} time entries and ${data.expensesBilled} expenses for a total of $${Math.round(data.totalAmount).toLocaleString()}.`
+        : data.batch 
+        ? `Invoice created for payment milestone: ${data.milestone?.name || 'Unknown'}`
         : "Invoice batch created successfully.";
       
       toast({
@@ -228,6 +251,7 @@ export default function Billing() {
       setNewBatchOpen(false);
       setSelectedClients([]);
       setSelectedProjects([]);
+      setSelectedMilestone(null);
       setDiscountValue('');
     },
     onError: (error: any) => {
@@ -260,16 +284,27 @@ export default function Billing() {
     }
     
     // Validate selections
-    const hasSelections = (invoicingMode === 'client' && selectedClients.length > 0) ||
-                         (invoicingMode === 'project' && selectedProjects.length > 0);
-    
-    if (!hasSelections) {
-      toast({
-        title: "No selection made",
-        description: `Please select at least one ${invoicingMode}.`,
-        variant: "destructive",
-      });
-      return;
+    if (batchType === 'milestone') {
+      if (!selectedMilestone) {
+        toast({
+          title: "No milestone selected",
+          description: "Please select a payment milestone to invoice.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      const hasSelections = (invoicingMode === 'client' && selectedClients.length > 0) ||
+                           (invoicingMode === 'project' && selectedProjects.length > 0);
+      
+      if (!hasSelections) {
+        toast({
+          title: "No selection made",
+          description: `Please select at least one ${invoicingMode}.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     
     const batchId = `INV-${startDate.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
@@ -280,6 +315,7 @@ export default function Billing() {
       endDate,
       invoicingMode,
       batchType,
+      milestoneId: selectedMilestone || undefined,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
       discountAmount: discountType === 'amount' ? discountValue : undefined
     });
@@ -372,7 +408,7 @@ export default function Billing() {
                     <Label className="text-base font-medium">Invoice Type</Label>
                     <RadioGroup 
                       value={batchType} 
-                      onValueChange={(value: 'services' | 'expenses' | 'mixed') => setBatchType(value)}
+                      onValueChange={(value: 'services' | 'expenses' | 'mixed' | 'milestone') => setBatchType(value)}
                       className="space-y-3"
                       data-testid="radio-batch-type"
                     >
@@ -397,8 +433,39 @@ export default function Billing() {
                           Mixed (both services and expenses)
                         </Label>
                       </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="milestone" id="type-milestone" />
+                        <Label htmlFor="type-milestone" className="flex items-center cursor-pointer">
+                          <DollarSign className="w-4 h-4 mr-2" />
+                          Payment Milestone (fixed amount)
+                        </Label>
+                      </div>
                     </RadioGroup>
                   </div>
+
+                  {/* Payment Milestone Selection - only shown when milestone type is selected */}
+                  {batchType === 'milestone' && (
+                    <div className="space-y-2">
+                      <Label>Select Payment Milestone</Label>
+                      <Select value={selectedMilestone || undefined} onValueChange={setSelectedMilestone}>
+                        <SelectTrigger data-testid="select-payment-milestone">
+                          <SelectValue placeholder="Choose a payment milestone..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allPaymentMilestones
+                            .filter((pm: any) => pm.invoiceStatus === 'planned')
+                            .map((pm: any) => (
+                              <SelectItem key={pm.id} value={pm.id}>
+                                {pm.projectName} - {pm.name} (${Number(pm.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                              </SelectItem>
+                            ))}
+                          {allPaymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length === 0 && (
+                            <SelectItem value="none" disabled>No planned payment milestones available</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   {/* Batch ID */}
                   <div className="space-y-2">
@@ -410,8 +477,8 @@ export default function Billing() {
                     />
                   </div>
 
-                  {/* Client/Project Selection */}
-                  {invoicingMode === 'client' ? (
+                  {/* Client/Project Selection - hidden for milestone invoices */}
+                  {batchType !== 'milestone' && invoicingMode === 'client' ? (
                     <div className="space-y-2">
                       <Label>Select Clients</Label>
                       <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
@@ -444,7 +511,7 @@ export default function Billing() {
                         ))}
                       </div>
                     </div>
-                  ) : (
+                  ) : batchType !== 'milestone' && invoicingMode === 'project' ? (
                     <div className="space-y-2">
                       <Label>Select Projects</Label>
                       <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
@@ -472,7 +539,7 @@ export default function Billing() {
                         ))}
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   <div className="space-y-4">
                     <Label>Discount (Optional)</Label>

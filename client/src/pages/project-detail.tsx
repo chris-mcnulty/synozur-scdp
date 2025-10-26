@@ -4212,6 +4212,7 @@ export default function ProjectDetail() {
                     setShowPaymentMilestoneDialog(false);
                     setEditingPaymentMilestone(null);
                     await queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/payment-milestones`] });
+                    await queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
                   } catch (error: any) {
                     toast({
                       title: "Error",

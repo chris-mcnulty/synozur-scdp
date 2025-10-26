@@ -3534,6 +3534,35 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to fetch payment milestones" });
     }
   });
+
+  // Get all payment milestones across all projects (for billing page)
+  app.get("/api/payment-milestones/all", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      // Get all projects
+      const projects = await storage.getProjects();
+      
+      // Get payment milestones for all projects
+      const allPaymentMilestones = [];
+      for (const project of projects) {
+        const milestones = await storage.getProjectMilestones(project.id);
+        const paymentMilestones = milestones.filter((m: any) => m.isPaymentMilestone === true);
+        
+        // Add project name to each milestone for display
+        for (const milestone of paymentMilestones) {
+          allPaymentMilestones.push({
+            ...milestone,
+            projectName: project.name,
+            projectId: project.id
+          });
+        }
+      }
+      
+      res.json(allPaymentMilestones);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to fetch all payment milestones:", error);
+      res.status(500).json({ message: "Failed to fetch payment milestones" });
+    }
+  });
   
   // Generate invoice batch from payment milestone
   app.post("/api/payment-milestones/:milestoneId/generate-invoice", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
