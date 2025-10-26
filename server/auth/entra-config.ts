@@ -154,12 +154,20 @@ export const getSharePointContainerConfig = () => {
   // Environment-specific container IDs
   const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
   
+  // Check environment variables first, then fall back to hardcoded values
   const containerIds = {
-    development: "b!4-B8POhyAEuzqyfSZCOTAWPs9wy5VwdHhzpPKzPNOZpnsrftuTb_TqkUQRRk8U_L",
-    production: "b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr"
+    development: process.env.SHAREPOINT_CONTAINER_ID_DEV || "b!4-B8POhyAEuzqyfSZCOTAWPs9wy5VwdHhzpPKzPNOZpnsrftuTb_TqkUQRRk8U_L",
+    production: process.env.SHAREPOINT_CONTAINER_ID_PROD || "b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr"
   };
   
   const currentContainerId = isDevelopment ? containerIds.development : containerIds.production;
+  
+  console.log('[ENTRA-CONFIG] SharePoint Container Config:', {
+    isDevelopment,
+    containerTypeId,
+    containerId: currentContainerId,
+    fromEnvVar: isDevelopment ? !!process.env.SHAREPOINT_CONTAINER_ID_DEV : !!process.env.SHAREPOINT_CONTAINER_ID_PROD
+  });
   
   return {
     containerTypeId,
