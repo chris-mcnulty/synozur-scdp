@@ -617,23 +617,174 @@ export async function registerRoutes(app: Express): Promise<void> {
   
   // Initialize file storage services
   const sharePointFileStorage = new SharePointFileStorage();
-  const localFileStorage = new LocalFileStorage(); // Keep as fallback
+  const localFileStorage = new LocalFileStorage();
   
-  // Use SharePoint storage by default
-  const fileStorage = sharePointFileStorage;
+  // Create a smart storage router with document-type-based routing
+  const smartFileStorage = {
+    async storeFile(...args: Parameters<typeof sharePointFileStorage.storeFile>) {
+      const [buffer, originalName, contentType, metadata, uploadedBy, fileId] = args;
+      const documentType = metadata.documentType;
+      
+      // Business documents (receipts, invoices, contracts) go to LOCAL storage
+      // Other documents (SOWs, estimates, reports) go to SHAREPOINT for Microsoft troubleshooting
+      const businessDocTypes = ['receipt', 'invoice', 'contract'];
+      const useLocalStorage = businessDocTypes.includes(documentType);
+      
+      if (useLocalStorage) {
+        console.log(`[SMART_STORAGE] Routing ${documentType} to LOCAL storage for immediate business use`);
+        const result = await localFileStorage.storeFile(...args);
+        console.log('[SMART_STORAGE] ✅ Local storage upload successful');
+        // Mark file as stored locally for future migration
+        return {
+          ...result,
+          metadata: {
+            ...result.metadata,
+            tags: result.metadata.tags ? `${result.metadata.tags},LOCAL_STORAGE` : 'LOCAL_STORAGE'
+          }
+        };
+      } else {
+        console.log(`[SMART_STORAGE] Routing ${documentType} to SHAREPOINT for Microsoft troubleshooting`);
+        try {
+          const result = await sharePointFileStorage.storeFile(...args);
+          console.log('[SMART_STORAGE] ✅ SharePoint upload successful');
+          return result;
+        } catch (error) {
+          console.error('[SMART_STORAGE] ❌ SharePoint upload failed:', error instanceof Error ? error.message : error);
+          throw error; // Don't fall back for troubleshooting docs - let it fail
+        }
+      }
+    },
+    
+    async listFiles(filter?: any) {
+      // List from both storages and merge results
+      const localFiles = await localFileStorage.listFiles(filter).catch(() => []);
+      const sharePointFiles = await sharePointFileStorage.listFiles(filter).catch(() => []);
+      
+      // Merge and deduplicate by file ID
+      const allFiles = [...localFiles, ...sharePointFiles];
+      const uniqueFiles = Array.from(
+        new Map(allFiles.map(f => [f.id, f])).values()
+      );
+      
+      console.log(`[SMART_STORAGE] Listed ${localFiles.length} local + ${sharePointFiles.length} SharePoint = ${uniqueFiles.length} total files`);
+      return uniqueFiles;
+    },
+    
+    async getFileContent(fileId: string) {
+      // Try local first, then SharePoint
+      try {
+        return await localFileStorage.getFileContent(fileId);
+      } catch (error) {
+        console.log('[SMART_STORAGE] File not in local storage, trying SharePoint...');
+        return await sharePointFileStorage.getFileContent(fileId);
+      }
+    },
+    
+    async deleteFile(fileId: string) {
+      // Try both storages
+      const localSuccess = await localFileStorage.deleteFile(fileId).catch(() => false);
+      const sharePointSuccess = await sharePointFileStorage.deleteFile(fileId).catch(() => false);
+      
+      return localSuccess || sharePointSuccess;
+    },
+    
+    async updateMetadata(fileId: string, metadata: any) {
+      // Try local first, then SharePoint
+      try {
+        return await localFileStorage.updateMetadata(fileId, metadata);
+      } catch (error) {
+        return await sharePointFileStorage.updateMetadata(fileId, metadata);
+      }
+    },
+    
+    async getStorageStats() {
+      const localStats = await localFileStorage.getStorageStats().catch(() => ({
+        totalFiles: 0,
+        totalSize: 0,
+        byDocumentType: {} as Record<string, number>
+      }));
+      const sharePointStats = await sharePointFileStorage.getStorageStats().catch(() => ({
+        totalFiles: 0,
+        totalSize: 0,
+        byDocumentType: {} as Record<string, number>
+      }));
+      
+      // Merge document type stats
+      const byDocumentType: Record<string, number> = {};
+      const localByType = 'byDocumentType' in localStats ? localStats.byDocumentType : {};
+      const sharePointByType = 'byDocumentType' in sharePointStats ? sharePointStats.byDocumentType : {};
+      
+      for (const [type, count] of Object.entries(localByType)) {
+        byDocumentType[type] = (byDocumentType[type] || 0) + (typeof count === 'number' ? count : 0);
+      }
+      for (const [type, count] of Object.entries(sharePointByType)) {
+        byDocumentType[type] = (byDocumentType[type] || 0) + (typeof count === 'number' ? count : 0);
+      }
+      
+      // Merge stats
+      return {
+        totalFiles: localStats.totalFiles + sharePointStats.totalFiles,
+        totalSize: localStats.totalSize + sharePointStats.totalSize,
+        byDocumentType,
+        breakdown: {
+          local: localStats,
+          sharePoint: sharePointStats
+        }
+      };
+    }
+  };
+  
+  // Use smart storage with document-type-based routing
+  const fileStorage = smartFileStorage;
   
   // Diagnostic endpoint to check which storage is active
   app.get("/api/files/storage-info", requireAuth, requireRole(["admin"]), async (req, res) => {
-    const isSharePoint = fileStorage === sharePointFileStorage;
-    const localFiles = await localFileStorage.listFiles();
-    const sharePointFiles = await sharePointFileStorage.listFiles();
-    
-    res.json({
-      activeStorage: isSharePoint ? "SharePoint" : "Local",
-      localFileCount: localFiles.length,
-      sharePointFileCount: sharePointFiles.length,
-      containerIdConfigured: !!process.env.SHAREPOINT_CONTAINER_ID_DEV || !!process.env.SHAREPOINT_CONTAINER_ID_PROD
-    });
+    try {
+      const localFiles = await localFileStorage.listFiles().catch(() => []);
+      const sharePointFiles = await sharePointFileStorage.listFiles().catch(() => []);
+      
+      // Count files by type in each storage
+      const localByType = localFiles.reduce((acc, f) => {
+        const type = f.metadata?.documentType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      const sharePointByType = sharePointFiles.reduce((acc, f) => {
+        const type = f.metadata?.documentType || 'unknown';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      
+      // Count files awaiting migration (marked with LOCAL_STORAGE tag)
+      const filesAwaitingMigration = localFiles.filter(f => 
+        f.metadata?.tags?.includes('LOCAL_STORAGE')
+      ).length;
+      
+      res.json({
+        activeStorage: "Smart Routing (Business docs → Local, Debug docs → SharePoint)",
+        routingRules: {
+          localStorage: ["receipt", "invoice", "contract"],
+          sharePoint: ["statementOfWork", "estimate", "changeOrder", "report"]
+        },
+        localFileCount: localFiles.length,
+        sharePointFileCount: sharePointFiles.length,
+        localFilesByType: localByType,
+        sharePointFilesByType: sharePointByType,
+        filesAwaitingMigration,
+        containerIdConfigured: !!process.env.SHAREPOINT_CONTAINER_ID_DEV || !!process.env.SHAREPOINT_CONTAINER_ID_PROD,
+        notes: [
+          "Business documents (receipts, invoices, contracts) → Local storage for immediate use",
+          "Debug documents (SOWs, estimates, etc.) → SharePoint for Microsoft troubleshooting",
+          "All locally-stored files tagged with LOCAL_STORAGE for future migration"
+        ]
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to get storage info",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
   });
   
   // Validation schemas for file operations

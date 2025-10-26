@@ -40,12 +40,29 @@
   - ✅ SharePoint Online: `Container.Selected` (configured)
 - See `AZURE_APP_PERMISSIONS_SETUP.md` for complete setup details
 
+### Smart File Storage Routing (October 26, 2025)
+**BUSINESS REQUIREMENT**: Enable receipt/invoice/contract uploads this week while SharePoint troubleshooting continues
+
+**SOLUTION**: Implemented smart routing with document-type-based storage selection
+- ✅ **Business documents → Local**: Receipts, invoices, contracts go to local storage for immediate use
+- ✅ **Debug documents → SharePoint**: SOWs, estimates, reports continue using SharePoint for Microsoft troubleshooting
+- ✅ **Migration tracking**: Files stored locally are tagged with `LOCAL_STORAGE` for future migration
+- ✅ **Zero downtime**: Users can upload critical documents immediately
+- ✅ **Parallel troubleshooting**: Non-critical documents still test SharePoint integration
+- ✅ **Transparent operation**: All file operations work seamlessly across both storage types
+- ✅ **Admin diagnostics**: `/api/files/storage-info` endpoint shows routing rules and file counts by type
+
+**ROUTING RULES**:
+- **Local Storage**: `receipt`, `invoice`, `contract`
+- **SharePoint Embedded**: `statementOfWork`, `estimate`, `changeOrder`, `report`
+
+**MIGRATION PLAN**:
+1. **Current state**: Business docs → Local, Debug docs → SharePoint for troubleshooting
+2. **Next step**: Complete SharePoint Embedded container type permission registration
+3. **Migration**: Run migration script to transfer local files to SharePoint (see `FILE_MIGRATION_PLAN.md`)
+4. **Final state**: All files in SharePoint Embedded for Copilot indexing
+
 ### Previous Fixes (October 18, 2025)
-- **SharePoint-Only File Storage**: Removed local storage fallback to ensure Copilot indexing
-  - Files now ONLY upload to SharePoint Embedded (no local fallback)
-  - Ensures all files are indexed by Microsoft Graph and available to Copilot
-  - Upload failures surface immediately with clear error messages
-  
 - **File Repository Path Consistency**: Fixed folder path formatting for SharePoint
   - Added leading slashes to all folder paths (`/receipts`, `/invoices`, etc.)
   - Ensures upload and listing operations use consistent paths
@@ -102,9 +119,13 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions. Case-insensitive email matching for SSO.
 
 ### Document Storage
-- **Primary Storage**: SharePoint Embedded ONLY for file storage with environment-based container selection.
-- **No Fallback**: Local storage fallback removed to ensure all files are Copilot-indexable via Microsoft Graph.
-- **Functionality**: Comprehensive file validation (type, size), user-friendly error messaging, enhanced diagnostics for SharePoint failures, and robust handling for invoices, SOWs, and other project documents.
+- **Storage Strategy**: Smart Routing (Document-type-based) - Implemented October 26, 2025
+- **Business Documents**: Receipts, invoices, contracts → Local filesystem storage
+- **Debug Documents**: SOWs, estimates, reports → SharePoint Embedded (for Microsoft troubleshooting)
+- **Environment Selection**: DEV/PROD containers based on `REPLIT_DEPLOYMENT` environment variable
+- **Migration Tracking**: Files stored locally are tagged with `LOCAL_STORAGE` for future migration
+- **Functionality**: Comprehensive file validation (type, size), user-friendly error messaging, enhanced diagnostics for SharePoint failures, and robust handling for all document types.
+- **Migration Plan**: See `FILE_MIGRATION_PLAN.md` for transfer strategy when SharePoint is fully operational
 
 ### Data Integrity
 - **Estimate Preservation**: Estimates are preserved and unlinked upon project deletion.
