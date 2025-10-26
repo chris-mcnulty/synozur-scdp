@@ -142,6 +142,13 @@ Preferred communication style: Simple, everyday language.
 ### Project Structure
 - **Monorepo**: Structured into `/client` (React), `/server` (Express), and `/shared` (common types/schemas).
 
+### Development & Running
+- **Workflow Name**: "Dev Server" (use `restart_workflow` tool with this exact name)
+- **Start Command**: `npm run dev` (starts Express backend and Vite frontend on same port)
+- **Development Port**: Application runs on port 5000
+- **Auto-restart**: Workflow automatically restarts after package installations
+- **Development Login**: Always use local auth (admin@synozur.com / demo123), NEVER Azure SSO in Replit development environment
+
 ### Authentication & Authorization
 - **Production SSO**: Azure AD (Microsoft Entra ID) integration.
 - **Development Auth**: Local email/password authentication.
