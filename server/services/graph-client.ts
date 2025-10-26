@@ -722,9 +722,17 @@ export class GraphClient {
         driveItem = await this.uploadLargeFileWithRetry(containerId, uploadPath, fileBuffer);
       } else {
         // For small files, use simple upload with container endpoint
+        const uploadEndpoint = `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`;
+        console.log(`[GraphClient] Uploading file to SharePoint Embedded:`, {
+          containerId,
+          uploadPath,
+          fileName: sanitizedFileName,
+          endpoint: uploadEndpoint,
+          fileSize: fileBuffer.length
+        });
         driveItem = await this.makeGraphRequest<DriveItem>(
           'PUT',
-          `/storage/fileStorage/containers/${containerId}/drive/root:${uploadPath}:/content`,
+          uploadEndpoint,
           fileBuffer,
           { 'Content-Type': 'application/octet-stream' }
         );
