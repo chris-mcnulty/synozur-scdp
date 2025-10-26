@@ -34,6 +34,13 @@ export function AdminSharePoint() {
     enabled: isAdmin // Only query if user is admin
   });
 
+  // Get storage information
+  const { data: storageInfo, isLoading: storageLoading, refetch: refetchStorageInfo } = useQuery<any>({
+    queryKey: ['/api/files/storage-info'],
+    retry: false,
+    enabled: isAdmin // Only query if user is admin
+  });
+
   // Verify container access mutation
   const verifyAccessMutation = useMutation({
     mutationFn: async () => {
@@ -526,6 +533,134 @@ export function AdminSharePoint() {
                   </div>
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Storage Diagnostics */}
+        <Card className="border-green-200 bg-green-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-green-600" />
+              Storage Diagnostics
+            </CardTitle>
+            <CardDescription>
+              Smart routing status and file counts by storage type
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {storageLoading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Loading storage information...</span>
+              </div>
+            ) : storageInfo ? (
+              <div className="space-y-4">
+                {/* Active Storage Strategy */}
+                <div className="p-3 bg-green-100 border border-green-200 rounded-lg">
+                  <div className="font-semibold text-green-900 mb-2">Active Strategy:</div>
+                  <div className="text-green-800">{storageInfo.activeStorage}</div>
+                </div>
+
+                {/* Routing Rules */}
+                {storageInfo.routingRules && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="font-semibold text-blue-900 mb-2">→ Local Storage</div>
+                      <div className="space-y-1">
+                        {storageInfo.routingRules.localStorage?.map((type: string) => (
+                          <div key={type} className="text-sm text-blue-800 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-blue-600 rounded-full"></span>
+                            {type}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                      <div className="font-semibold text-purple-900 mb-2">→ SharePoint Embedded</div>
+                      <div className="space-y-1">
+                        {storageInfo.routingRules.sharePoint?.map((type: string) => (
+                          <div key={type} className="text-sm text-purple-800 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-purple-600 rounded-full"></span>
+                            {type}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* File Counts */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-2xl font-bold">{storageInfo.localFileCount || 0}</div>
+                    <div className="text-sm text-muted-foreground">Local Files</div>
+                    {storageInfo.localFilesByType && Object.keys(storageInfo.localFilesByType).length > 0 && (
+                      <div className="mt-2 text-xs space-y-1">
+                        {Object.entries(storageInfo.localFilesByType).map(([type, count]) => (
+                          <div key={type} className="flex justify-between">
+                            <span className="text-muted-foreground">{type}:</span>
+                            <span className="font-semibold">{count as number}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-3 bg-white border rounded-lg">
+                    <div className="text-2xl font-bold">{storageInfo.sharePointFileCount || 0}</div>
+                    <div className="text-sm text-muted-foreground">SharePoint Files</div>
+                    {storageInfo.sharePointFilesByType && Object.keys(storageInfo.sharePointFilesByType).length > 0 && (
+                      <div className="mt-2 text-xs space-y-1">
+                        {Object.entries(storageInfo.sharePointFilesByType).map(([type, count]) => (
+                          <div key={type} className="flex justify-between">
+                            <span className="text-muted-foreground">{type}:</span>
+                            <span className="font-semibold">{count as number}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-900">{storageInfo.filesAwaitingMigration || 0}</div>
+                    <div className="text-sm text-yellow-800">Awaiting Migration</div>
+                    <div className="text-xs text-yellow-700 mt-1">
+                      Tagged with LOCAL_STORAGE
+                    </div>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {storageInfo.notes && storageInfo.notes.length > 0 && (
+                  <div className="p-3 bg-muted rounded-lg">
+                    <div className="text-sm space-y-1">
+                      {storageInfo.notes.map((note: string, idx: number) => (
+                        <div key={idx} className="flex items-start gap-2">
+                          <span className="text-muted-foreground">•</span>
+                          <span className="text-muted-foreground">{note}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Refresh Button */}
+                <div className="flex justify-end">
+                  <Button
+                    onClick={() => refetchStorageInfo()}
+                    variant="outline"
+                    size="sm"
+                    data-testid="button-refresh-storage"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Refresh Storage Info
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-muted-foreground">Failed to load storage information</div>
             )}
           </CardContent>
         </Card>
