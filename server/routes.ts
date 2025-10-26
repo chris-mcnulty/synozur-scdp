@@ -10856,12 +10856,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Test SharePoint Embedded upload (admin diagnostics only)
   app.post("/api/admin/test-sharepoint-upload", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
+      console.log("=".repeat(80));
       console.log("[ADMIN_TEST] Testing SharePoint Embedded upload...");
       
       // Get SharePoint configuration
       const sharePointConfig = await getSharePointConfig();
+      console.log("[ADMIN_TEST] SharePoint Config:", {
+        configured: sharePointConfig.configured,
+        containerId: sharePointConfig.containerId,
+        environment: sharePointConfig.environment,
+        containerName: sharePointConfig.containerName
+      });
       
       if (!sharePointConfig.configured || !sharePointConfig.containerId) {
+        console.error("[ADMIN_TEST] SharePoint not configured!");
         return res.status(503).json({
           success: false,
           message: "SharePoint Embedded container not configured"
@@ -10873,6 +10881,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       const testBuffer = Buffer.from(testContent, 'utf-8');
       const testFileName = `test-${Date.now()}.txt`;
       
+      console.log("[ADMIN_TEST] Attempting upload:", {
+        fileName: testFileName,
+        fileSize: testBuffer.length,
+        containerId: sharePointConfig.containerId,
+        folderPath: '/diagnostics'
+      });
+      
       // Upload to SharePoint Embedded
       const uploadResult = await graphClient.uploadFile(
         sharePointConfig.containerId, // siteIdOrContainerId
@@ -10883,6 +10898,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       );
       
       console.log("[ADMIN_TEST] Upload successful:", uploadResult.id);
+      console.log("=".repeat(80));
       
       res.status(200).json({
         success: true,
@@ -10896,7 +10912,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       });
       
     } catch (error) {
-      console.error("[ADMIN_TEST] Upload test failed:", error);
+      console.error("=".repeat(80));
+      console.error("[ADMIN_TEST] Upload test FAILED!");
+      console.error("[ADMIN_TEST] Error:", error);
+      console.error("[ADMIN_TEST] Error message:", error instanceof Error ? error.message : "Unknown");
+      console.error("[ADMIN_TEST] Error stack:", error instanceof Error ? error.stack : "No stack");
+      console.error("=".repeat(80));
       res.status(500).json({
         success: false,
         message: error instanceof Error ? error.message : "Unknown error during upload test"
