@@ -3660,7 +3660,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         originalQuantity: "1"
       });
       
-      res.json({ batch, milestone });
+      // Update milestone status to 'invoiced'
+      console.log(`[MILESTONE] Updating status for milestone ${milestoneId} from '${milestone.invoiceStatus}' to 'invoiced'`);
+      const updatedMilestone = await storage.updateProjectMilestone(milestoneId, { 
+        invoiceStatus: 'invoiced' 
+      });
+      console.log(`[MILESTONE] Updated milestone status: ${updatedMilestone?.invoiceStatus}, projectId: ${updatedMilestone?.projectId}`);
+      
+      res.json({ batch, milestone: updatedMilestone });
     } catch (error: any) {
       console.error("[ERROR] Failed to generate invoice from milestone:", error);
       

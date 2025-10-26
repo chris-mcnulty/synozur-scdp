@@ -238,6 +238,12 @@ export default function Billing() {
       queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
       queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
       
+      // Also invalidate project-specific payment milestones if we generated from a milestone
+      if (data.milestone?.projectId) {
+        console.log(`[CACHE] Invalidating payment milestones cache for project ${data.milestone.projectId}, updated status: ${data.milestone.invoiceStatus}`);
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${data.milestone.projectId}/payment-milestones`] });
+      }
+      
       const message = data.invoicesCreated 
         ? `Generated ${data.invoicesCreated} invoices. Billed ${data.timeEntriesBilled} time entries and ${data.expensesBilled} expenses for a total of $${Math.round(data.totalAmount).toLocaleString()}.`
         : data.batch 
