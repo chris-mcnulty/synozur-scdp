@@ -155,7 +155,7 @@ export const getSharePointContainerConfig = () => {
   const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
   
   const containerIds = {
-    development: "b!eT6_M6f-dE2KVAvvc5_ZolEU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr",
+    development: "b!4-B8POhyAEuzqyfSZCOTAWPs9wy5VwdHhzpPKzPNOZpnsrftuTb_TqkUQRRk8U_L",
     production: "b!Dn9RVpKDtkeawSSr35Jea1EU3Bq5Bf9KgiCr13AQvtoeQVqbGPxASYjQtguiINfr"
   };
   
