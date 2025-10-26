@@ -46,6 +46,13 @@ export class ContainerRegistrationService {
     
     const configuredContainerId = this.getConfiguredContainerId();
     
+    console.log('[ContainerAccess] Container ID from environment:', {
+      containerId: configuredContainerId,
+      length: configuredContainerId?.length,
+      firstChars: configuredContainerId?.substring(0, 10),
+      lastChars: configuredContainerId?.substring(configuredContainerId.length - 10)
+    });
+    
     try {
       // If we have a configured container, check it directly
       // This avoids the buggy list containers endpoint
