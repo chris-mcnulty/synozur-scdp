@@ -1738,26 +1738,11 @@ export async function registerContainerTypePermissions(
       throw new Error('Failed to acquire access token');
     }
 
-    // First, get the tenant's root SharePoint site URL
-    const rootSiteResponse = await fetch(
-      'https://graph.microsoft.com/v1.0/sites/root',
-      {
-        headers: {
-          'Authorization': `Bearer ${tokenResponse.accessToken}`,
-          'Accept': 'application/json'
-        }
-      }
-    );
-
-    if (!rootSiteResponse.ok) {
-      const errorText = await rootSiteResponse.text();
-      throw new Error(`Failed to get root site: ${rootSiteResponse.status} - ${errorText}`);
-    }
-
-    const rootSite = await rootSiteResponse.json();
-    const rootSiteUrl = rootSite.webUrl; // e.g., https://synozur.sharepoint.com
+    // Construct the root SharePoint site URL from the tenant
+    // For Synozur tenant, this is https://synozur.sharepoint.com
+    const rootSiteUrl = 'https://synozur.sharepoint.com';
     
-    console.log('[GraphClient] Root SharePoint site URL:', rootSiteUrl);
+    console.log('[GraphClient] Using SharePoint root site URL:', rootSiteUrl);
 
     // Construct the SharePoint REST API v2.1 endpoint
     const registrationUrl = `${rootSiteUrl}/_api/v2.1/storageContainerTypes/${containerTypeId}/applicationPermissions`;
