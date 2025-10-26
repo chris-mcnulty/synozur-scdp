@@ -10898,12 +10898,30 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("[GRANT_PERMISSIONS] Failed:", errorText);
-        throw new Error(`Failed to grant permissions: HTTP ${response.status} - ${errorText}`);
+        console.error("[GRANT_PERMISSIONS] HTTP Error:", {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) {
+            errorMessage = errorData.error.message || errorMessage;
+          }
+        } catch {
+          errorMessage += `: ${errorText}`;
+        }
+        
+        throw new Error(`Failed to grant permissions: ${errorMessage}`);
       }
       
-      const permission = await response.json();
-      console.log("[GRANT_PERMISSIONS] Success:", permission.id);
+      const responseText = await response.text();
+      console.log("[GRANT_PERMISSIONS] Raw response:", responseText);
+      
+      const permission = responseText ? JSON.parse(responseText) : {};
+      console.log("[GRANT_PERMISSIONS] Success:", permission.id || 'granted');
       
       res.json({
         success: true,
