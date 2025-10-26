@@ -89,36 +89,15 @@ export function AdminSharePoint() {
   // Test file upload mutation
   const testUploadMutation = useMutation({
     mutationFn: async () => {
-      // Create a small test file
-      const testContent = `Test file created at ${new Date().toISOString()}`;
-      const blob = new Blob([testContent], { type: 'text/plain' });
-      const file = new File([blob], 'test-file.txt', { type: 'text/plain' });
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folderPath', '/test');
-      
-      const response = await fetch('/api/sharepoint/upload', {
+      return await apiRequest('/api/admin/test-sharepoint-upload', {
         method: 'POST',
-        body: formData,
-        credentials: 'include',
-        headers: {
-          'x-session-id': localStorage.getItem('sessionId') || ''
-        }
       });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Upload failed');
-      }
-      
-      return response.json();
     },
     onSuccess: (data) => {
       setTestResult({ success: true, data });
       toast({
         title: "Success",
-        description: "Test file uploaded successfully to SharePoint"
+        description: "Test file uploaded successfully to SharePoint Embedded"
       });
     },
     onError: (error: any) => {
@@ -420,9 +399,13 @@ export function AdminSharePoint() {
                     </div>
                     <div className="text-sm">
                       {testResult.success ? (
-                        <div>
-                          <div>File ID: {testResult.data.id}</div>
-                          <div>File: {testResult.data.fileName}</div>
+                        <div className="space-y-1">
+                          <div><strong>File ID:</strong> {testResult.data.file?.id}</div>
+                          <div><strong>File Name:</strong> {testResult.data.file?.name}</div>
+                          <div><strong>Size:</strong> {testResult.data.file?.size} bytes</div>
+                          {testResult.data.file?.webUrl && (
+                            <div><strong>URL:</strong> <a href={testResult.data.file.webUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View in SharePoint</a></div>
+                          )}
                         </div>
                       ) : (
                         <div className="text-red-700">{testResult.error}</div>

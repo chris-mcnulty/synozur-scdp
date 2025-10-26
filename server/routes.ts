@@ -10853,6 +10853,57 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Test SharePoint Embedded upload (admin diagnostics only)
+  app.post("/api/admin/test-sharepoint-upload", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      console.log("[ADMIN_TEST] Testing SharePoint Embedded upload...");
+      
+      // Get SharePoint configuration
+      const sharePointConfig = await getSharePointConfig();
+      
+      if (!sharePointConfig.configured || !sharePointConfig.containerId) {
+        return res.status(503).json({
+          success: false,
+          message: "SharePoint Embedded container not configured"
+        });
+      }
+      
+      // Create a small test file
+      const testContent = `SharePoint Embedded Test File\nCreated: ${new Date().toISOString()}\nUser: ${(req as any).user?.email || 'unknown'}`;
+      const testBuffer = Buffer.from(testContent, 'utf-8');
+      const testFileName = `test-${Date.now()}.txt`;
+      
+      // Upload to SharePoint Embedded
+      const uploadResult = await graphClient.uploadFile(
+        sharePointConfig.containerId, // siteIdOrContainerId
+        sharePointConfig.containerId, // driveIdOrContainerId
+        '/diagnostics', // folderPath
+        testFileName,
+        testBuffer
+      );
+      
+      console.log("[ADMIN_TEST] Upload successful:", uploadResult.id);
+      
+      res.status(200).json({
+        success: true,
+        message: "Test file uploaded successfully to SharePoint Embedded",
+        file: {
+          id: uploadResult.id,
+          name: uploadResult.name,
+          size: uploadResult.size,
+          webUrl: uploadResult.webUrl
+        }
+      });
+      
+    } catch (error) {
+      console.error("[ADMIN_TEST] Upload test failed:", error);
+      res.status(500).json({
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error during upload test"
+      });
+    }
+  });
+
   // TEMPORARY: Production Time Entry Recovery Endpoint
   // This endpoint can be removed after successful recovery
   app.post("/api/admin/recover-time-entries", requireAuth, requireRole(["admin"]), async (req, res) => {
