@@ -21,6 +21,18 @@
    - DELETE `/api/payment-milestones/:id` - Delete payment milestone
    - POST `/api/payment-milestones/:milestoneId/generate-invoice` - Generate invoice from milestone
 
+**CRITICAL FIXES** (October 26, 2025):
+1. **getProjectMilestones Query Fix**: Changed from INNER JOIN with projectEpics to direct projectId filtering
+   - Issue: INNER JOIN excluded payment milestones without epics (projectEpicId is optional for payment milestones)
+   - Fix: Query directly by projectId to return ALL milestones including standalone payment milestones
+   - Location: `server/storage.ts` lines 2178-2186
+2. **Invoice Status Update**: Backend now updates milestone.invoiceStatus to 'invoiced' after invoice generation
+   - Uses storage.updateProjectMilestone() method for consistency
+   - Location: `server/routes.ts` lines 3666-3673
+3. **Cache Invalidation**: Frontend invalidates project-specific payment milestone cache after invoice generation
+   - Invalidates both `/api/payment-milestones/all` and `/api/projects/${projectId}/payment-milestones`
+   - Location: `client/src/pages/billing.tsx` lines 244-248
+
 **USE CASE**: Enables milestone-based billing for fixed-price projects without requiring time entries for invoicing
 
 **ADMIN STORAGE DIAGNOSTICS**: Enhanced `/admin/sharepoint` page with storage information display
