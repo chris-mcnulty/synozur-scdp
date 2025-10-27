@@ -73,11 +73,13 @@ Preferred communication style: Simple, everyday language.
 - Status updates only occur during batch finalization (not during generation) to prevent validation errors
 - Cache invalidation after finalization ensures UI reflects status changes immediately
 
-**PDF Download & View Fixes**:
+**PDF & Receipt Upload Fixes**:
 - Invoice PDF endpoints now use smart routing (local storage) instead of SharePoint
 - Fixed "View PDF" authentication issue by downloading PDF first, then opening as blob URL
 - PDFs save to local filesystem (`uploads/invoices/`) for reliable access
-- Both download and view functions work correctly for all invoice types
+- **Receipt upload** now uses smart routing to local storage (`uploads/receipts/`)
+- Fixed "Receipt upload failed" error by routing to local storage instead of SharePoint
+- All business document uploads (receipts, invoices, contracts) now work reliably
 
 ## External Dependencies
 

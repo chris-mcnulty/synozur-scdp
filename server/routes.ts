@@ -7897,7 +7897,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           const project = await storage.getProject(expense.projectId);
           const projectCode = project?.code || 'unknown';
 
-          // Store file using local file storage
+          // Store file using smart storage router (receipts go to local storage)
+          console.log('[RECEIPT_UPLOAD] Starting receipt upload for expense:', expenseId);
+          console.log('[RECEIPT_UPLOAD] Project code:', projectCode);
+          
           const fileMetadata: DocumentMetadata = {
             documentType: 'receipt',
             clientId: project?.clientId,
@@ -7910,13 +7913,15 @@ export async function registerRoutes(app: Express): Promise<void> {
             tags: ('expense,' + projectCode + ',' + (expense.category || 'uncategorized')).toLowerCase()
           };
 
-          const uploadResult = await sharePointFileStorage.storeFile(
+          console.log('[RECEIPT_UPLOAD] Calling smartFileStorage.storeFile with documentType:', fileMetadata.documentType);
+          const uploadResult = await smartFileStorage.storeFile(
             req.file.buffer,
             req.file.originalname,
             req.file.mimetype,
             fileMetadata,
             userId
           );
+          console.log('[RECEIPT_UPLOAD] Upload successful, file ID:', uploadResult.id);
 
           // Save attachment metadata to database
           const attachmentData = {
@@ -7948,46 +7953,20 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
 
         } catch (error: any) {
-          console.error('[ATTACHMENT_UPLOAD] SharePoint upload error:', {
+          console.error('[ATTACHMENT_UPLOAD] File storage error:', {
             errorType: error?.constructor?.name,
             message: error?.message,
-            stack: error?.stack?.split('\n').slice(0, 5).join('\n'),
-            statusCode: error?.statusCode || error?.status,
-            code: error?.code,
-            response: error?.response?.data || error?.response,
-            containerId: process.env.SHAREPOINT_CONTAINER_ID_DEV ? 'configured' : 'missing'
+            stack: error?.stack?.split('\n').slice(0, 5).join('\n')
           });
           
-          // Provide setup guidance for SharePoint errors
-          let errorMessage = "Failed to upload attachment";
+          let errorMessage = "Failed to upload receipt attachment";
           const response: any = { 
-            message: errorMessage,
-            diagnostics: {
-              errorType: error?.constructor?.name,
-              containerConfigured: !!(process.env.SHAREPOINT_CONTAINER_ID_DEV || process.env.SHAREPOINT_CONTAINER_ID_PROD),
-              azureConfigured: !!(process.env.AZURE_CLIENT_ID && (process.env.AZURE_CLIENT_SECRET || process.env.AZURE_CERTIFICATE_PRIVATE_KEY))
-            }
+            message: errorMessage
           };
           
           if (error instanceof Error) {
-            // Add detailed error message to response
             response.errorDetails = error.message;
-            
-            if (error.message.includes('container may not be properly configured') || 
-                error.message.includes('Container.Selected') ||
-                error.message.includes('containerNotFound') ||
-                error.message.includes('403') || 
-                error.message.includes('401')) {
-              response.message = "Expense was created but receipt upload failed due to SharePoint configuration.";
-              response.setupHelp = "See AZURE_APP_PERMISSIONS_SETUP.md for SharePoint configuration details";
-              response.requiredAction = "Azure administrator must add SharePoint Online Container.Selected permissions and register container type";
-              response.checkEndpoint = "/api/admin/container-registration-status";
-            } else if (error.message.includes('SHAREPOINT_CONTAINER_ID not configured')) {
-              response.message = "Expense was created but receipt upload failed: SharePoint container not configured.";
-              response.requiredAction = "Set SHAREPOINT_CONTAINER_ID_DEV and SHAREPOINT_CONTAINER_ID_PROD environment variables";
-            } else {
-              response.message = `Expense was created but receipt upload failed: ${error.message}`;
-            }
+            response.message = `Receipt upload failed: ${error.message}`;
           }
           
           res.status(500).json(response);
