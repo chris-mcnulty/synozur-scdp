@@ -4265,7 +4265,7 @@ export default function ProjectDetail() {
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>Note</AlertTitle>
                 <AlertDescription>
-                  This will create an invoice batch for the selected date range. You'll need to generate invoice lines and adjust amounts to match the milestone amount before finalizing.
+                  This will automatically create an invoice batch with a single line item for the milestone amount (${Number(generatingInvoiceForMilestone?.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). No time entries are required.
                 </AlertDescription>
               </Alert>
             </div>
@@ -4303,11 +4303,14 @@ export default function ProjectDetail() {
                     
                     toast({
                       title: "Invoice batch created",
-                      description: `Invoice batch ${response.batch.batchId} created successfully`,
+                      description: `Invoice batch ${response.batch.batchId} created successfully with milestone amount of $${Number(generatingInvoiceForMilestone?.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. No time entries required.`,
                     });
                     
                     setShowMilestoneInvoiceDialog(false);
-                    refetchPaymentMilestones();
+                    
+                    // Invalidate both project-specific and global payment milestone caches
+                    await queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/payment-milestones`] });
+                    await queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
                     
                     // Navigate to invoice batch page using wouter
                     navigate(`/billing/batches/${response.batch.batchId}`);
