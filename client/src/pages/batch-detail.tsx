@@ -1102,12 +1102,53 @@ export default function BatchDetail() {
           </Button>
           
           <Button
-            onClick={() => window.open(`/api/invoice-batches/${batchId}/pdf/view`, '_blank')}
+            onClick={async () => {
+              if (!batchId) return;
+              try {
+                const sessionId = localStorage.getItem('sessionId');
+                if (!sessionId) {
+                  toast({
+                    title: "Authentication required",
+                    description: "Please log in to view PDFs.",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+
+                // Download PDF with authentication
+                const response = await fetch(`/api/invoice-batches/${batchId}/pdf`, {
+                  method: 'GET',
+                  headers: {
+                    'X-Session-Id': sessionId,
+                  },
+                });
+
+                if (!response.ok) {
+                  throw new Error(`Failed to load PDF: ${response.statusText}`);
+                }
+
+                const pdfBlob = await response.blob();
+                
+                // Create blob URL and open in new tab
+                const url = URL.createObjectURL(pdfBlob);
+                window.open(url, '_blank');
+                
+                // Clean up blob URL after a delay
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+              } catch (error: any) {
+                console.error("PDF view error:", error);
+                toast({
+                  title: "View failed",
+                  description: error.message || "Failed to view PDF. Please try again.",
+                  variant: "destructive"
+                });
+              }
+            }}
             variant="outline"
             data-testid="button-view-pdf-sharepoint"
           >
             <ExternalLink className="mr-2 h-4 w-4" />
-            View PDF (SharePoint)
+            View PDF
           </Button>
 
           {batchDetails?.status === 'finalized' && (

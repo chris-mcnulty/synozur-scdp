@@ -680,6 +680,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
     },
     
+    async getFileMetadata(fileId: string) {
+      // Try local first, then SharePoint
+      try {
+        return await localFileStorage.getFileMetadata(fileId);
+      } catch (error) {
+        console.log('[SMART_STORAGE] Metadata not in local storage, trying SharePoint...');
+        return await sharePointFileStorage.getFileMetadata(fileId);
+      }
+    },
+    
     async deleteFile(fileId: string) {
       // Try both storages
       const localSuccess = await localFileStorage.deleteFile(fileId).catch(() => false);
@@ -9513,22 +9523,22 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Delete any existing invoice PDF for this batch (if editing/regenerating)
       try {
-        const existingFile = await sharePointFileStorage.getFileMetadata(batchId);
+        const existingFile = await smartFileStorage.getFileMetadata(batchId);
         if (existingFile) {
-          await sharePointFileStorage.deleteFile(batchId);
+          await smartFileStorage.deleteFile(batchId);
           console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
         }
       } catch (error) {
         // File doesn't exist, that's fine
       }
 
-      // Save PDF to SharePoint Embedded
+      // Save PDF using smart storage router (invoices go to local storage)
       const fileName = `invoice-${batchId}.pdf`;
       const clientId = lines[0]?.client?.id || '';
       const clientName = lines[0]?.client?.name || 'Unknown Client';
       const totalAmount = parseFloat(batch.totalAmount || '0');
       
-      const savedFile = await sharePointFileStorage.storeFile(
+      const savedFile = await smartFileStorage.storeFile(
         pdfBuffer,
         fileName,
         'application/pdf',
@@ -9548,7 +9558,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         batchId // Use batchId as fileId for consistent lookup and replacement
       );
 
-      console.log(`[INVOICE] Saved invoice ${fileName} to SharePoint with ID: ${savedFile.id}`);
+      console.log(`[INVOICE] Saved invoice ${fileName} with ID: ${savedFile.id}`);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
@@ -9561,17 +9571,17 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // View Invoice PDF from SharePoint
+  // View Invoice PDF (smart routing: local storage for invoices)
   app.get("/api/invoice-batches/:batchId/pdf/view", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
 
-      // Try to get the invoice PDF from SharePoint using batchId as fileId
-      const fileData = await sharePointFileStorage.getFileContent(batchId);
+      // Try to get the invoice PDF using smart storage router
+      const fileData = await smartFileStorage.getFileContent(batchId);
       
       if (!fileData) {
         return res.status(404).json({ 
-          message: "Invoice PDF not found in SharePoint. Please regenerate the invoice." 
+          message: "Invoice PDF not found. Please regenerate the invoice." 
         });
       }
 
@@ -9587,12 +9597,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Check if Invoice PDF exists in SharePoint
+  // Check if Invoice PDF exists (smart routing: local storage for invoices)
   app.get("/api/invoice-batches/:batchId/pdf/exists", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
 
-      const fileMetadata = await sharePointFileStorage.getFileMetadata(batchId);
+      const fileMetadata = await smartFileStorage.getFileMetadata(batchId);
       
       res.json({ 
         exists: !!fileMetadata,
