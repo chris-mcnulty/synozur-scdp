@@ -3612,8 +3612,21 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
       
-      // Generate batch ID
-      const batchId = await storage.generateBatchId(startDate, endDate);
+      // Generate batch ID with INV prefix for payment milestone invoices
+      const date = new Date(startDate);
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const timestamp = Date.now().toString().slice(-4);
+      let batchId = `INV-${dateStr}-${timestamp}`;
+      
+      // Ensure uniqueness
+      const existing = await db.select({ batchId: invoiceBatches.batchId })
+        .from(invoiceBatches)
+        .where(eq(invoiceBatches.batchId, batchId));
+      
+      if (existing.length > 0) {
+        const uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        batchId = `${batchId}-${uniqueSuffix}`;
+      }
       
       // Normalize month to first day of start month
       const startDateObj = new Date(startDate);
@@ -3660,14 +3673,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         originalQuantity: "1"
       });
       
-      // Update milestone status to 'invoiced'
-      console.log(`[MILESTONE] Updating status for milestone ${milestoneId} from '${milestone.invoiceStatus}' to 'invoiced'`);
-      const updatedMilestone = await storage.updateProjectMilestone(milestoneId, { 
-        invoiceStatus: 'invoiced' 
-      });
-      console.log(`[MILESTONE] Updated milestone status: ${updatedMilestone?.invoiceStatus}, projectId: ${updatedMilestone?.projectId}`);
+      // NOTE: Milestone status will be updated to 'invoiced' when the batch is finalized
+      // Do not update it here to avoid validation errors during finalization
       
-      res.json({ batch, milestone: updatedMilestone });
+      res.json({ batch, milestone });
     } catch (error: any) {
       console.error("[ERROR] Failed to generate invoice from milestone:", error);
       

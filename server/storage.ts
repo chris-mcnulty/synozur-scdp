@@ -4507,9 +4507,9 @@ export class DatabaseStorage implements IStorage {
           throw new Error('Linked payment milestone not found');
         }
         
-        // Validate milestone is in 'planned' state
-        if (milestone.status !== 'planned') {
-          throw new Error(`Payment milestone must be in 'planned' state to invoice (current: ${milestone.status})`);
+        // Validate milestone is in 'planned' state (use invoiceStatus, not status)
+        if (milestone.invoiceStatus !== 'planned') {
+          throw new Error(`Payment milestone must be in 'planned' state to invoice (current: ${milestone.invoiceStatus})`);
         }
         
         // Enforce single-project batch when linked to milestone

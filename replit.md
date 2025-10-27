@@ -21,17 +21,30 @@
    - DELETE `/api/payment-milestones/:id` - Delete payment milestone
    - POST `/api/payment-milestones/:milestoneId/generate-invoice` - Generate invoice from milestone
 
-**CRITICAL FIXES** (October 26, 2025):
+**CRITICAL FIXES** (October 26-27, 2025):
 1. **getProjectMilestones Query Fix**: Changed from INNER JOIN with projectEpics to direct projectId filtering
    - Issue: INNER JOIN excluded payment milestones without epics (projectEpicId is optional for payment milestones)
    - Fix: Query directly by projectId to return ALL milestones including standalone payment milestones
-   - Location: `server/storage.ts` lines 2178-2186
-2. **Invoice Status Update**: Backend now updates milestone.invoiceStatus to 'invoiced' after invoice generation
-   - Uses storage.updateProjectMilestone() method for consistency
-   - Location: `server/routes.ts` lines 3666-3673
-3. **Cache Invalidation**: Frontend invalidates project-specific payment milestone cache after invoice generation
+   - Location: `server/storage.ts` lines 2181-2186
+
+2. **Invoice Batch ID Prefix**: Payment milestone invoices now use "INV" prefix instead of "BATCH"
+   - Format: INV-YYYY-MM-XXXX (e.g., INV-2025-10-1234)
+   - Location: `server/routes.ts` lines 3618-3632
+
+3. **Milestone Status Validation**: Fixed to check invoiceStatus instead of status field
+   - Issue: Was checking milestone.status (for delivery milestones: not-started, in-progress, completed)
+   - Fix: Now checks milestone.invoiceStatus (for payment milestones: planned, invoiced, paid)
+   - Location: `server/storage.ts` line 4514
+
+4. **Status Update Timing**: Removed premature status update from invoice generation endpoint
+   - Issue: Status updated to 'invoiced' during batch creation, causing finalization validation error
+   - Fix: Status now only updates during finalization (not during batch creation)
+   - Location: `server/routes.ts` lines 3679-3682
+
+5. **Cache Invalidation After Finalization**: finalizeMutation now invalidates payment milestone caches
    - Invalidates both `/api/payment-milestones/all` and `/api/projects/${projectId}/payment-milestones`
-   - Location: `client/src/pages/billing.tsx` lines 244-248
+   - Ensures frontend reflects status change after batch finalization
+   - Location: `client/src/pages/batch-detail.tsx` lines 691-697
 
 **USE CASE**: Enables milestone-based billing for fixed-price projects without requiring time entries for invoicing
 

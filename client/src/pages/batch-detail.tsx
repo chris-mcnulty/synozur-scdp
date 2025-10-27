@@ -684,6 +684,15 @@ export default function BatchDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      
+      // If this batch is linked to a payment milestone, invalidate milestone caches
+      if (batchDetails?.paymentMilestone) {
+        queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
+        if (batchDetails.paymentMilestone.projectId) {
+          queryClient.invalidateQueries({ queryKey: [`/api/projects/${batchDetails.paymentMilestone.projectId}/payment-milestones`] });
+        }
+      }
+      
       toast({
         title: "Batch finalized",
         description: "The invoice batch has been finalized and locked.",
