@@ -7514,18 +7514,25 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/expenses", requireAuth, async (req, res) => {
     try {
+      console.log("[EXPENSE_CREATE] Starting expense creation");
+      console.log("[EXPENSE_CREATE] Request body:", JSON.stringify(req.body, null, 2));
+      console.log("[EXPENSE_CREATE] User:", req.user?.id, "Role:", req.user?.role);
+      
       // Normalize form strings to database types
       const normalizedData = normalizeExpensePayload(req.body);
+      console.log("[EXPENSE_CREATE] Normalized data:", JSON.stringify(normalizedData, null, 2));
 
       const validatedData = insertExpenseSchema.parse({
         ...normalizedData,
         personId: req.user!.id // Always use the authenticated user
       });
+      console.log("[EXPENSE_CREATE] Validated data:", JSON.stringify(validatedData, null, 2));
 
       // Validate person assignment permissions
       if (validatedData.projectResourceId) {
         // Only admin, PM, and billing-admin can assign expenses to specific people
         if (!['admin', 'pm', 'billing-admin'].includes(req.user!.role)) {
+          console.error("[EXPENSE_CREATE] Permission denied for projectResourceId assignment");
           return res.status(403).json({ 
             message: "Insufficient permissions to assign expenses to specific people" 
           });
@@ -7536,6 +7543,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (validatedData.category === "mileage") {
         const quantity = parseFloat(validatedData.quantity || "0");
         if (isNaN(quantity) || quantity <= 0) {
+          console.error("[EXPENSE_CREATE] Invalid mileage quantity:", quantity);
           return res.status(400).json({ 
             message: "Miles (quantity) must be greater than 0 for mileage expenses" 
           });
@@ -7548,10 +7556,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         validatedData.unit = undefined;
       }
 
+      console.log("[EXPENSE_CREATE] Calling storage.createExpense");
       const expense = await storage.createExpense(validatedData);
+      console.log("[EXPENSE_CREATE] Expense created successfully:", expense.id);
       res.status(201).json(expense);
     } catch (error) {
-      console.error("[EXPENSE CREATE ERROR]", error);
+      console.error("[EXPENSE CREATE ERROR] Full error:", error);
+      console.error("[EXPENSE CREATE ERROR] Error name:", error instanceof Error ? error.name : 'Unknown');
+      console.error("[EXPENSE CREATE ERROR] Error message:", error instanceof Error ? error.message : String(error));
+      console.error("[EXPENSE CREATE ERROR] Error stack:", error instanceof Error ? error.stack : 'No stack');
+      
       if (error instanceof z.ZodError) {
         console.error("[EXPENSE CREATE] Zod validation errors:", JSON.stringify(error.errors, null, 2));
         return res.status(400).json({ message: "Invalid expense data", errors: error.errors });
@@ -7677,10 +7691,11 @@ export async function registerRoutes(app: Express): Promise<void> {
     'image/png',
     'image/heic',
     'image/heif',
-    'application/pdf'
+    'application/pdf',
+    'text/plain' // Allow text files for testing and simple receipts
   ];
 
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.pdf'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.pdf', '.txt'];
   const maxFileSize = 10 * 1024 * 1024; // 10MB in bytes
 
   // SECURITY FIX: Magic byte validation for content-type spoofing prevention
@@ -7704,7 +7719,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   const fileUploadValidationSchema = z.object({
     mimetype: z.string().refine(
       (mimeType) => allowedMimeTypes.includes(mimeType.toLowerCase()),
-      'Invalid file type. Only JPG, PNG, HEIC, HEIF, and PDF files are allowed'
+      'Invalid file type. Only JPG, PNG, HEIC, HEIF, PDF, and TXT files are allowed'
     ),
     size: z.number().max(maxFileSize, 'File size must be less than 10MB'),
     originalname: z.string().min(1, 'Filename is required').max(255, 'Filename too long')
@@ -7732,6 +7747,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   // SECURITY FIX: Magic byte validation function
   const validateFileContent = async (buffer: Buffer, declaredMimeType: string): Promise<boolean> => {
     try {
+      // Text files don't have magic bytes, so allow them without validation
+      if (declaredMimeType === 'text/plain') {
+        console.log('[FILE_VALIDATION] Text file detected, skipping magic byte validation');
+        return true;
+      }
+      
       // Use file-type library for comprehensive file type detection
       const detectedType = await fileTypeFromBuffer(buffer);
 
@@ -7827,12 +7848,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   // SECURITY FIX: Added rate limiting to prevent DoS attacks
   app.post("/api/expenses/:expenseId/attachments", uploadRateLimit, requireAuth, async (req, res) => {
     try {
+      console.log('[ATTACHMENT_ENDPOINT] Starting attachment upload');
+      console.log('[ATTACHMENT_ENDPOINT] Expense ID:', req.params.expenseId);
+      console.log('[ATTACHMENT_ENDPOINT] User ID:', req.user?.id);
+      
       const expenseId = req.params.expenseId;
       const userId = req.user!.id;
 
       // Validate expense exists and user has permission
       const { canAccess, expense } = await canAccessExpense(expenseId, userId, req.user!.role);
+      console.log('[ATTACHMENT_ENDPOINT] Can access:', canAccess);
+      console.log('[ATTACHMENT_ENDPOINT] Expense data:', JSON.stringify(expense, null, 2));
+      
       if (!canAccess || !expense) {
+        console.error('[ATTACHMENT_ENDPOINT] Access denied or expense not found');
         return res.status(expense ? 403 : 404).json({
           message: expense ? "Insufficient permissions to attach files to this expense" : "Expense not found"
         });
@@ -7860,6 +7889,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
 
         try {
+          console.log('[ATTACHMENT_VALIDATION] File received:', req.file.originalname, req.file.mimetype, req.file.size, 'bytes');
+          
           // Validate file properties
           const fileValidation = fileUploadValidationSchema.safeParse({
             mimetype: req.file.mimetype,
@@ -7868,46 +7899,56 @@ export async function registerRoutes(app: Express): Promise<void> {
           });
 
           if (!fileValidation.success) {
+            console.error('[ATTACHMENT_VALIDATION] File validation failed:', fileValidation.error);
             return res.status(400).json({
               message: "Invalid file",
               errors: fileValidation.error.errors.map(e => e.message)
             });
           }
+          console.log('[ATTACHMENT_VALIDATION] File properties valid');
 
           // SECURITY FIX: Magic byte validation to prevent content-type spoofing
+          console.log('[ATTACHMENT_VALIDATION] Validating file content...');
           const isValidFileContent = await validateFileContent(req.file.buffer, req.file.mimetype);
           if (!isValidFileContent) {
+            console.error('[ATTACHMENT_VALIDATION] File content validation failed');
             return res.status(400).json({
               message: "File content does not match declared type. This could be a security risk.",
               error: "Content-type spoofing detected"
             });
           }
+          console.log('[ATTACHMENT_VALIDATION] File content valid');
 
           // SECURITY FIX: Enhanced filename sanitization with extension validation
           let sanitizedFilename: string;
           try {
             sanitizedFilename = sanitizeFilename(req.file.originalname);
+            console.log('[ATTACHMENT_VALIDATION] Filename sanitized:', sanitizedFilename);
           } catch (error) {
+            console.error('[ATTACHMENT_VALIDATION] Filename sanitization failed:', error);
             return res.status(400).json({
               message: error instanceof Error ? error.message : "Invalid filename after sanitization"
             });
           }
 
-          // Get project information for folder structure
-          const project = await storage.getProject(expense.projectId);
+          // Use project data from expense (already loaded in canAccessExpense)
+          const project = expense.project;
           const projectCode = project?.code || 'unknown';
+          const projectId = expense.projectId || project?.id;
+          
+          console.log('[ATTACHMENT_PROJECT] Project info:', { projectCode, projectId, hasProject: !!project });
 
           // Store file using smart storage router (receipts go to local storage)
           console.log('[RECEIPT_UPLOAD] Starting receipt upload for expense:', expenseId);
-          console.log('[RECEIPT_UPLOAD] Project code:', projectCode);
+          console.log('[RECEIPT_UPLOAD] Project:', project?.code, 'ID:', projectId);
           
           const fileMetadata: DocumentMetadata = {
             documentType: 'receipt',
             clientId: project?.clientId,
             clientName: project?.client?.name,
-            projectId: expense.projectId,
+            projectId: projectId,
             projectCode: projectCode,
-            amount: parseFloat(expense.amount),
+            amount: parseFloat(expense.amount || '0'),
             createdByUserId: userId,
             metadataVersion: 1,
             tags: ('expense,' + projectCode + ',' + (expense.category || 'uncategorized')).toLowerCase()

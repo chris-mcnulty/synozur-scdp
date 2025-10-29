@@ -1,0 +1,53 @@
+react-dom.development.js:29895 Download the React DevTools for a better development experience: https://reactjs.org/link/react-devtools
+api/auth/user:1   Failed to load resource: the server responded with a status of 401 (Unauthorized)
+api/auth/user:1   Failed to load resource: the server responded with a status of 401 (Unauthorized)
+expenses.tsx:262 === CREATE EXPENSE SUBMIT ===
+expenses.tsx:263 Form data received: Object
+expenses.tsx:480 === TRANSFORM DATA v2 FIXED ===
+expenses.tsx:481 Input data: Object
+expenses.tsx:482 Current mileage rate (fixed): 0.7
+expenses.tsx:515 Non-mileage: cleared quantity and unit
+expenses.tsx:527 Final transformed data: Object
+expenses.tsx:528 === END TRANSFORM ===
+expenses.tsx:285 Data after transformation: Object
+expenses.tsx:289 Expense created: Object
+expenses.tsx:262 === CREATE EXPENSE SUBMIT ===
+expenses.tsx:263 Form data received: Object
+expenses.tsx:480 === TRANSFORM DATA v2 FIXED ===
+expenses.tsx:481 Input data: Object
+expenses.tsx:482 Current mileage rate (fixed): 0.7
+expenses.tsx:515 Non-mileage: cleared quantity and unit
+expenses.tsx:527 Final transformed data: Object
+expenses.tsx:528 === END TRANSFORM ===
+expenses.tsx:285 Data after transformation: Object
+api/expenses:1   Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+expenses.tsx:262 === CREATE EXPENSE SUBMIT ===
+expenses.tsx:263 Form data received: Object
+expenses.tsx:480 === TRANSFORM DATA v2 FIXED ===
+expenses.tsx:481 Input data: Object
+expenses.tsx:482 Current mileage rate (fixed): 0.7
+expenses.tsx:515 Non-mileage: cleared quantity and unit
+expenses.tsx:527 Final transformed data: Object
+expenses.tsx:528 === END TRANSFORM ===
+expenses.tsx:285 Data after transformation: Object
+expenses.tsx:289 Expense created: Object
+expenses.tsx:589 === START EDIT EXPENSE ===
+expenses.tsx:590 Editing expense: Object
+expenses.tsx:622 Formatted date: 2025-10-28
+expenses.tsx:655 Form data to be set: Object
+expenses.tsx:666 === END EDIT EXPENSE ===
+expenses.tsx:262 === CREATE EXPENSE SUBMIT ===
+expenses.tsx:263 Form data received: Object
+expenses.tsx:480 === TRANSFORM DATA v2 FIXED ===
+expenses.tsx:481 Input data: Object
+expenses.tsx:482 Current mileage rate (fixed): 0.7
+expenses.tsx:515 Non-mileage: cleared quantity and unit
+expenses.tsx:527 Final transformed data: Object
+expenses.tsx:528 === END TRANSFORM ===
+expenses.tsx:285 Data after transformation: Object
+api/expenses:1   Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
