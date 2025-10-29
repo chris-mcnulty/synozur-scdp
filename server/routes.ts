@@ -3112,7 +3112,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           workstreamId: projectAllocations.projectWorkstreamId,
           workstream: projectWorkstreams.name,
           epicId: projectAllocations.projectEpicId,
+          epicName: projectEpics.name,
           stageId: projectAllocations.projectStageId,
+          stageName: projectStages.name,
           roleId: projectAllocations.roleId,
           role: roles,
           hours: projectAllocations.hours,
@@ -3133,6 +3135,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         .innerJoin(projects, eq(projectAllocations.projectId, projects.id))
         .innerJoin(clients, eq(projects.clientId, clients.id))
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+        .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+        .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id));
 
       // Build filter conditions
@@ -3209,7 +3213,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           },
           workstream: row.workstream,
           epicId: row.epicId,
+          epicName: row.epicName,
           stageId: row.stageId,
+          stageName: row.stageName,
           role: row.role ? { id: row.role.id, name: row.role.name } : null,
           hours: row.hours,
           plannedStartDate: row.plannedStartDate,

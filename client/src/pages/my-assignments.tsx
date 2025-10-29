@@ -28,6 +28,9 @@ interface Assignment {
   hours: string;
   notes?: string;
   workstream?: string;
+  taskDescription?: string;
+  epicName?: string;
+  stageName?: string;
   project?: {
     id: string;
     name: string;
@@ -120,11 +123,17 @@ export function MyAssignments() {
         const clientName = assignment.project?.client?.name?.toLowerCase() || "";
         const workstreamName = assignment.workstream?.toLowerCase() || "";
         const notes = assignment.notes?.toLowerCase() || "";
+        const taskDesc = assignment.taskDescription?.toLowerCase() || "";
+        const epicName = assignment.epicName?.toLowerCase() || "";
+        const stageName = assignment.stageName?.toLowerCase() || "";
         
         if (!projectName.includes(search) && 
             !clientName.includes(search) && 
             !workstreamName.includes(search) &&
-            !notes.includes(search)) {
+            !notes.includes(search) &&
+            !taskDesc.includes(search) &&
+            !epicName.includes(search) &&
+            !stageName.includes(search)) {
           return false;
         }
       }
@@ -221,7 +230,23 @@ export function MyAssignments() {
           </div>
           
           {assignment.workstream && (
-            <p className="text-xs text-muted-foreground">{assignment.workstream}</p>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium">Workstream:</span> {assignment.workstream}
+            </p>
+          )}
+          
+          {assignment.taskDescription && (
+            <p className="text-xs font-medium text-foreground">
+              {assignment.taskDescription}
+            </p>
+          )}
+          
+          {(assignment.epicName || assignment.stageName) && (
+            <p className="text-xs text-muted-foreground">
+              {assignment.epicName && <span>{assignment.epicName}</span>}
+              {assignment.epicName && assignment.stageName && <span> • </span>}
+              {assignment.stageName && <span>{assignment.stageName}</span>}
+            </p>
           )}
           
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -346,6 +371,8 @@ export function MyAssignments() {
                   <TableRow>
                     <TableHead>Project</TableHead>
                     <TableHead>Client</TableHead>
+                    <TableHead>Task</TableHead>
+                    <TableHead>Epic/Stage</TableHead>
                     <TableHead>Workstream</TableHead>
                     <TableHead>Hours</TableHead>
                     <TableHead>Dates</TableHead>
@@ -356,7 +383,7 @@ export function MyAssignments() {
                 <TableBody>
                   {filteredAssignments.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         No assignments found
                       </TableCell>
                     </TableRow>
@@ -372,6 +399,21 @@ export function MyAssignments() {
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {assignment.project?.client?.name || "-"}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {assignment.taskDescription ? (
+                            <span className="font-medium">{assignment.taskDescription}</span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {assignment.epicName || assignment.stageName ? (
+                            <div className="space-y-0.5">
+                              {assignment.epicName && <div>{assignment.epicName}</div>}
+                              {assignment.stageName && <div className="text-xs">{assignment.stageName}</div>}
+                            </div>
+                          ) : "-"}
                         </TableCell>
                         <TableCell>{assignment.workstream || "-"}</TableCell>
                         <TableCell>{assignment.hours}</TableCell>

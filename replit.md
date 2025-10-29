@@ -88,6 +88,15 @@ Preferred communication style: Simple, everyday language.
 - All business document uploads (receipts, invoices, contracts) now work reliably
 - Detailed diagnostics logging added for troubleshooting upload issues
 
+**My Assignments Task Details (October 29, 2025)**:
+- Added task description display to both List and Kanban views
+- New "Task" column in list view showing taskDescription field
+- New "Epic/Stage" column displaying epic and stage names
+- Enhanced Kanban cards with task description prominently displayed
+- API enhanced to join epic and stage tables, returning epicName and stageName
+- Search functionality now includes task descriptions, epic names, and stage names
+- Task details help users quickly identify specific work items in their assignments
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).
