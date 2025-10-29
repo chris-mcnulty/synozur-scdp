@@ -44,10 +44,10 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage
-- **Storage Strategy**: Smart Routing (Document-type-based).
-- **Business Documents**: Receipts, invoices, contracts are stored in local filesystem.
-- **Debug Documents**: SOWs, estimates, reports use SharePoint Embedded.
-- **Environment Selection**: DEV/PROD containers based on `REPLIT_DEPLOYMENT` environment variable.
+- **Storage Strategy**: Smart Routing (Environment and Document-type-based).
+- **Production Storage**: ALL documents (including invoices, receipts, contracts) use SharePoint Embedded for persistent storage (local filesystem is not persistent in Replit production deployments).
+- **Development Storage**: Business documents (receipts, invoices, contracts) use local filesystem for immediate testing; SOWs, estimates, reports use SharePoint Embedded for Microsoft troubleshooting.
+- **Environment Detection**: Uses `REPLIT_DEPLOYMENT` and `NODE_ENV` environment variables to auto-detect production vs development.
 - **Authentication**: Certificate-based authentication for SharePoint.
 - **Functionality**: Comprehensive file validation, user-friendly error messaging, enhanced diagnostics for SharePoint failures.
 - **Admin Diagnostics**: `/admin/sharepoint` page shows active storage strategy, routing rules, file counts, and files awaiting migration.
@@ -96,6 +96,14 @@ Preferred communication style: Simple, everyday language.
 - API enhanced to join epic and stage tables, returning epicName and stageName
 - Search functionality now includes task descriptions, epic names, and stage names
 - Task details help users quickly identify specific work items in their assignments
+
+**Production Storage Fix (October 29, 2025)**:
+- **CRITICAL FIX**: Invoice PDFs now stored in SharePoint in production (not local filesystem)
+- Fixed issue where invoice PDFs downloaded fine in dev but failed in production
+- Root cause: Replit's local filesystem is NOT persistent in production deployments
+- Solution: Smart routing now detects environment and uses SharePoint for all documents in production
+- Development behavior unchanged: business documents still use local storage for fast testing
+- All existing production invoices must be regenerated to be stored in SharePoint
 
 ## External Dependencies
 

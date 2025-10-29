@@ -619,19 +619,24 @@ export async function registerRoutes(app: Express): Promise<void> {
   const sharePointFileStorage = new SharePointFileStorage();
   const localFileStorage = new LocalFileStorage();
   
+  // Detect production environment (Replit local filesystem is NOT persistent in production)
+  const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+  console.log(`[SMART_STORAGE] Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} (REPLIT_DEPLOYMENT=${process.env.REPLIT_DEPLOYMENT}, NODE_ENV=${process.env.NODE_ENV})`);
+  
   // Create a smart storage router with document-type-based routing
   const smartFileStorage = {
     async storeFile(...args: Parameters<typeof sharePointFileStorage.storeFile>) {
       const [buffer, originalName, contentType, metadata, uploadedBy, fileId] = args;
       const documentType = metadata.documentType;
       
-      // Business documents (receipts, invoices, contracts) go to LOCAL storage
-      // Other documents (SOWs, estimates, reports) go to SHAREPOINT for Microsoft troubleshooting
+      // PRODUCTION: All documents go to SharePoint (local filesystem is NOT persistent in production)
+      // DEVELOPMENT: Business documents (receipts, invoices, contracts) go to LOCAL storage for immediate testing
+      // Other documents (SOWs, estimates, reports) always go to SHAREPOINT for Microsoft troubleshooting
       const businessDocTypes = ['receipt', 'invoice', 'contract'];
-      const useLocalStorage = businessDocTypes.includes(documentType);
+      const useLocalStorage = !isProduction && businessDocTypes.includes(documentType);
       
       if (useLocalStorage) {
-        console.log(`[SMART_STORAGE] Routing ${documentType} to LOCAL storage for immediate business use`);
+        console.log(`[SMART_STORAGE] [DEV] Routing ${documentType} to LOCAL storage for immediate testing`);
         const result = await localFileStorage.storeFile(...args);
         console.log('[SMART_STORAGE] ✅ Local storage upload successful');
         // Mark file as stored locally for future migration
@@ -643,14 +648,22 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         };
       } else {
-        console.log(`[SMART_STORAGE] Routing ${documentType} to SHAREPOINT for Microsoft troubleshooting`);
+        const env = isProduction ? '[PROD]' : '[DEV]';
+        console.log(`[SMART_STORAGE] ${env} Routing ${documentType} to SHAREPOINT (persistent storage)`);
         try {
           const result = await sharePointFileStorage.storeFile(...args);
-          console.log('[SMART_STORAGE] ✅ SharePoint upload successful');
-          return result;
+          console.log(`[SMART_STORAGE] ${env} ✅ SharePoint upload successful - File ID: ${result.id}`);
+          // Mark file as stored in SharePoint for tracking
+          return {
+            ...result,
+            metadata: {
+              ...result.metadata,
+              tags: result.metadata.tags ? `${result.metadata.tags},SHAREPOINT_STORAGE` : 'SHAREPOINT_STORAGE'
+            }
+          };
         } catch (error) {
-          console.error('[SMART_STORAGE] ❌ SharePoint upload failed:', error instanceof Error ? error.message : error);
-          throw error; // Don't fall back for troubleshooting docs - let it fail
+          console.error(`[SMART_STORAGE] ${env} ❌ SharePoint upload failed:`, error instanceof Error ? error.message : error);
+          throw error; // Don't fall back - let it fail with clear error
         }
       }
     },
