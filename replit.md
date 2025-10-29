@@ -73,13 +73,20 @@ Preferred communication style: Simple, everyday language.
 - Status updates only occur during batch finalization (not during generation) to prevent validation errors
 - Cache invalidation after finalization ensures UI reflects status changes immediately
 
-**PDF & Receipt Upload Fixes**:
+**PDF & Receipt Upload Fixes (October 29, 2025)**:
 - Invoice PDF endpoints now use smart routing (local storage) instead of SharePoint
 - Fixed "View PDF" authentication issue by downloading PDF first, then opening as blob URL
 - PDFs save to local filesystem (`uploads/invoices/`) for reliable access
 - **Receipt upload** now uses smart routing to local storage (`uploads/receipts/`)
-- Fixed "Receipt upload failed" error by routing to local storage instead of SharePoint
+- Fixed "Receipt upload failed" error by:
+  - Using pre-loaded expense.project data instead of redundant storage.getProject() call
+  - Added text file (.txt) support for receipts (in addition to images and PDFs)
+  - Fixed amount parsing with fallback to prevent NaN errors
+  - Added comprehensive logging at each validation step
+  - Text files skip magic byte validation (no magic bytes to check)
+- Allowed receipt file types: JPEG, PNG, HEIC, HEIF, PDF, TXT
 - All business document uploads (receipts, invoices, contracts) now work reliably
+- Detailed diagnostics logging added for troubleshooting upload issues
 
 ## External Dependencies
 

@@ -7727,6 +7727,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // SECURITY FIX: Enhanced filename sanitization with extension validation and CR/LF stripping
   const sanitizeFilename = (filename: string): string => {
+    console.log('[SANITIZE] Original filename:', filename);
+    
     // Remove path traversal attempts, invalid characters, and CR/LF to prevent header injection
     const sanitized = filename
       .replace(/[\\/:*?"<>|\r\n\x00-\x1F\x7F]/g, '_') // Replace invalid chars, CR/LF, and control chars with underscore
@@ -7735,9 +7737,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       .replace(/[.\s]+$/, '') // Remove trailing dots and spaces
       .substring(0, 255); // Limit length
 
+    console.log('[SANITIZE] Sanitized filename:', sanitized);
+    
     // SECURITY FIX: Verify the sanitized filename still has an allowed extension
     const extension = sanitized.toLowerCase().substring(sanitized.lastIndexOf('.'));
+    console.log('[SANITIZE] Extracted extension:', extension);
+    console.log('[SANITIZE] Allowed extensions:', allowedExtensions);
+    console.log('[SANITIZE] Extension allowed?:', allowedExtensions.includes(extension));
+    
     if (!allowedExtensions.includes(extension)) {
+      console.error('[SANITIZE] Extension rejected:', extension);
       throw new Error('File extension \'' + extension + '\' not allowed after sanitization');
     }
 
