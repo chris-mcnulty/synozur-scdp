@@ -7987,6 +7987,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
           const attachment = await storage.addExpenseAttachment(expenseId, attachmentData);
 
+          // Update expense record with receipt URL
+          await storage.updateExpense(expenseId, {
+            receiptUrl: attachment.webUrl
+          });
+          console.log('[RECEIPT_LINK] Updated expense receipt_url:', attachment.webUrl);
+
           // File is already stored with metadata in local storage
           console.log('[RECEIPT_METADATA] File stored with metadata in local storage:', uploadResult.id);
 
