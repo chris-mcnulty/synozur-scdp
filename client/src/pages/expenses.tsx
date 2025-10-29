@@ -1236,6 +1236,20 @@ export default function Expenses() {
                             <span>{parseFloat(expense.quantity).toFixed(1)} miles @ ${(parseFloat(expense.amount) / parseFloat(expense.quantity)).toFixed(2)}/mile = ${parseFloat(expense.amount).toFixed(2)}</span>
                           </div>
                         )}
+                        {expense.receiptUrl && (
+                          <div className="text-sm mt-1 flex items-center gap-1">
+                            <Receipt className="w-3 h-3 text-green-600" />
+                            <a 
+                              href={expense.receiptUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-green-600 hover:underline"
+                              data-testid={`link-receipt-${expense.id}`}
+                            >
+                              View Receipt
+                            </a>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
