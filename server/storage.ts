@@ -46,6 +46,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
+import chromium from '@sparticuz/chromium';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
 
@@ -4318,9 +4319,30 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Invoice batch ${batchId} not found`);
     }
 
+    // Define fields that can be updated even on finalized batches (metadata/administrative fields)
+    const allowedFinalizedFields = [
+      'pdfFileId',           // PDF storage location
+      'paymentStatus',       // Payment tracking
+      'paymentDate',
+      'paymentAmount',
+      'paymentNotes',
+      'paymentUpdatedBy',
+      'paymentUpdatedAt'
+    ];
+
     // Check if batch is finalized
     if (batch.status === 'finalized') {
-      throw new Error(`Invoice batch ${batchId} is finalized and cannot be updated`);
+      // Check if only allowed fields are being updated
+      const updateKeys = Object.keys(updates);
+      const hasDisallowedFields = updateKeys.some(key => !allowedFinalizedFields.includes(key));
+      
+      if (hasDisallowedFields) {
+        const disallowedFields = updateKeys.filter(key => !allowedFinalizedFields.includes(key));
+        throw new Error(
+          `Invoice batch ${batchId} is finalized and cannot be updated. ` +
+          `Attempted to update restricted fields: ${disallowedFields.join(', ')}`
+        );
+      }
     }
 
     // Update the batch with the provided fields
@@ -8392,26 +8414,50 @@ export async function generateInvoicePDF(params: {
   // Generate PDF using Puppeteer
   let browser;
   try {
-    // Determine Chromium executable path with fallback chain
+    // Check if we're in production (Cloud Run deployment)
+    const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
+    
+    // Determine Chromium executable path
     let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     
     if (!executablePath) {
-      // Try to find chromium in PATH
-      try {
-        const { execSync } = await import('child_process');
-        executablePath = execSync('which chromium').toString().trim();
-      } catch {
-        // Fallback to common Nix path pattern (won't work everywhere but better than nothing)
-        executablePath = 'chromium';
+      if (isProduction) {
+        // Production: Use serverless Chromium (@sparticuz/chromium)
+        executablePath = await chromium.executablePath();
+        console.log('[PDF] Production mode: Using @sparticuz/chromium');
+      } else {
+        // Development: Try to find chromium in PATH
+        try {
+          const { execSync } = await import('child_process');
+          executablePath = execSync('which chromium').toString().trim();
+          console.log('[PDF] Development mode: Using system Chromium');
+        } catch {
+          // Fallback to common Nix path pattern
+          executablePath = 'chromium';
+          console.log('[PDF] Development mode: Using fallback chromium');
+        }
       }
     }
     
-    console.log('[PDF] Using Chromium executable:', executablePath);
+    console.log('[PDF] Chromium executable path:', executablePath);
+    
+    // Configure launch args - add extra args for production
+    const launchArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--single-process'
+    ];
+    
+    if (isProduction) {
+      // Additional args for serverless environments
+      launchArgs.push(...chromium.args);
+    }
     
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process'],
+      args: launchArgs,
       timeout: 120000 // 2 minutes for browser launch
     });
     
