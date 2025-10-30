@@ -102,7 +102,7 @@ export default function Billing() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: invoiceBatches = [], error: batchesError, isLoading: batchesLoading } = useQuery({
+  const { data: invoiceBatches = [], error: batchesError, isLoading: batchesLoading } = useQuery<InvoiceBatchData[]>({
     queryKey: ["/api/invoice-batches"],
   });
 

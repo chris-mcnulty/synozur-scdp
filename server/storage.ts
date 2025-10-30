@@ -4165,7 +4165,7 @@ export class DatabaseStorage implements IStorage {
         const clientData = await db
           .select({ name: clients.name })
           .from(clients)
-          .where(sql`${clients.id} = ANY(${uniqueClientIds})`);
+          .where(inArray(clients.id, uniqueClientIds));
         clientNames = clientData.map(c => c.name);
       }
       
@@ -4175,7 +4175,7 @@ export class DatabaseStorage implements IStorage {
         const projectData = await db
           .select({ name: projects.name })
           .from(projects)
-          .where(sql`${projects.id} = ANY(${uniqueProjectIds})`);
+          .where(inArray(projects.id, uniqueProjectIds));
         projectNames = projectData.map(p => p.name);
       }
       
