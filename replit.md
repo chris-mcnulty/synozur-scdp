@@ -114,6 +114,16 @@ Preferred communication style: Simple, everyday language.
 - All existing production invoices must be regenerated to be stored in Object Storage
 - Object Storage provides persistent, reliable storage without SharePoint permission bugs
 
+**Invoice Batch Display & PDF Generation Fixes (October 30, 2025)**:
+- **Fixed PostgreSQL array formatting error**: Replaced raw SQL `= ANY()` syntax with Drizzle's `inArray()` helper
+- Invoice batches now display correctly in production (all 13 batches visible)
+- **Fixed PDF generation in production**: Installed Chromium as system package for Puppeteer
+- PDF generation was completely failing due to missing Chromium in production environment
+- Added Chromium to system dependencies to ensure availability in both dev and production
+- Puppeteer automatically finds Chromium using `which chromium` command
+- Enhanced error logging with [INVOICE-BATCHES] prefix for easier troubleshooting
+- All invoice data remains safe in database - these were display/generation issues only
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).
@@ -121,6 +131,7 @@ Preferred communication style: Simple, everyday language.
 - **UI Libraries**: Radix UI, Lucide React (icons), Tailwind CSS.
 - **Data Management**: TanStack Query, React Hook Form, Date-fns.
 - **Build & Runtime**: ESBuild, PostCSS, WS (WebSockets).
+- **PDF Generation**: Puppeteer + Chromium (system package required for invoice PDFs).
 - **Document Storage**: 
   - Replit Object Storage (invoice PDFs, business documents in production)
   - Microsoft SharePoint Embedded (debug documents for Microsoft troubleshooting)
