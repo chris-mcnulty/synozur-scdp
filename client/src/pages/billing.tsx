@@ -102,7 +102,7 @@ export default function Billing() {
     queryKey: ["/api/clients"],
   });
 
-  const { data: invoiceBatches = [] } = useQuery({
+  const { data: invoiceBatches = [], error: batchesError, isLoading: batchesLoading } = useQuery({
     queryKey: ["/api/invoice-batches"],
   });
 
@@ -667,6 +667,32 @@ export default function Billing() {
                 </div>
               </CardHeader>
               <CardContent>
+                {batchesError && (
+                  <div className="p-4 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <div className="flex items-start space-x-3">
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-red-800 dark:text-red-200">Error loading invoice batches</p>
+                        <p className="text-sm text-red-600 dark:text-red-300 mt-1">
+                          Unable to fetch invoice batches from the server. Please check the browser console and server logs for details.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {batchesLoading && (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">Loading invoice batches...</p>
+                  </div>
+                )}
+                {!batchesLoading && !batchesError && invoiceBatches.length === 0 && (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 mx-auto text-muted-foreground opacity-50 mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No invoice batches yet</h3>
+                    <p className="text-muted-foreground">Create your first invoice batch to get started.</p>
+                  </div>
+                )}
+                {!batchesLoading && !batchesError && invoiceBatches.length > 0 && (
                 <div className="space-y-6">
                   {(() => {
                     // Group batches by client
@@ -789,6 +815,7 @@ export default function Billing() {
                     ));
                   })()}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

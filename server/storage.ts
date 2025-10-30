@@ -4161,21 +4161,21 @@ export class DatabaseStorage implements IStorage {
       
       // Get client names if there are 3 or fewer
       let clientNames: string[] = [];
-      if (uniqueClientIds.length <= 3) {
+      if (uniqueClientIds.length > 0 && uniqueClientIds.length <= 3) {
         const clientData = await db
           .select({ name: clients.name })
           .from(clients)
-          .where(sql`${clients.id} IN ${uniqueClientIds}`);
+          .where(sql`${clients.id} = ANY(${uniqueClientIds})`);
         clientNames = clientData.map(c => c.name);
       }
       
       // Get project names if there are 3 or fewer
       let projectNames: string[] = [];
-      if (uniqueProjectIds.length <= 3) {
+      if (uniqueProjectIds.length > 0 && uniqueProjectIds.length <= 3) {
         const projectData = await db
           .select({ name: projects.name })
           .from(projects)
-          .where(sql`${projects.id} IN ${uniqueProjectIds}`);
+          .where(sql`${projects.id} = ANY(${uniqueProjectIds})`);
         projectNames = projectData.map(p => p.name);
       }
       

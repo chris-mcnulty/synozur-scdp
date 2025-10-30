@@ -9235,9 +9235,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      console.log("[INVOICE-BATCHES] Fetching invoice batches...");
       const batches = await storage.getInvoiceBatches();
+      console.log(`[INVOICE-BATCHES] Successfully fetched ${batches.length} batches`);
       res.json(batches);
     } catch (error) {
+      console.error("[INVOICE-BATCHES] Error fetching invoice batches:", error);
       res.status(500).json({ message: "Failed to fetch invoice batches" });
     }
   });
