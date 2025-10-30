@@ -9578,8 +9578,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Delete any existing invoice PDF for this batch (if editing/regenerating)
       try {
-        await invoicePDFStorage.deleteInvoicePDF(batchId);
-        console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
+        const existingBatch = await storage.getInvoiceBatchDetails(batchId);
+        if (existingBatch && existingBatch.pdfFileId) {
+          await invoicePDFStorage.deleteInvoicePDF(existingBatch.pdfFileId);
+          console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
+        }
       } catch (error) {
         // File doesn't exist, that's fine
       }
@@ -9587,6 +9590,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Save PDF using invoice PDF storage (Object Storage in production, local filesystem in dev)
       const fileId = await invoicePDFStorage.storeInvoicePDF(pdfBuffer, batchId);
       console.log(`[INVOICE] Saved invoice for batch ${batchId}, file ID: ${fileId}`);
+
+      // Store the PDF file ID in the database
+      await storage.updateInvoiceBatch(batchId, { pdfFileId: fileId });
 
       const fileName = `invoice-${batchId}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
@@ -9605,8 +9611,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { batchId } = req.params;
 
-      // Get the invoice PDF using invoice PDF storage
-      const pdfBuffer = await invoicePDFStorage.getInvoicePDF(batchId);
+      // Get the batch details to retrieve the PDF file ID
+      const batch = await storage.getInvoiceBatchDetails(batchId);
+      if (!batch || !batch.pdfFileId) {
+        return res.status(404).json({ 
+          message: "Invoice PDF not found. Please regenerate the invoice." 
+        });
+      }
+
+      // Get the invoice PDF using the stored file ID
+      const pdfBuffer = await invoicePDFStorage.getInvoicePDF(batch.pdfFileId);
       
       if (!pdfBuffer) {
         return res.status(404).json({ 
@@ -9631,8 +9645,14 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { batchId } = req.params;
 
-      // Try to get the invoice PDF
-      await invoicePDFStorage.getInvoicePDF(batchId);
+      // Get the batch details to check if PDF file ID exists
+      const batch = await storage.getInvoiceBatchDetails(batchId);
+      if (!batch || !batch.pdfFileId) {
+        return res.json({ exists: false });
+      }
+
+      // Try to get the invoice PDF using the stored file ID
+      await invoicePDFStorage.getInvoicePDF(batch.pdfFileId);
       
       res.json({ 
         exists: true,

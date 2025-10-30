@@ -598,6 +598,8 @@ export const invoiceBatches = pgTable("invoice_batches", {
   notes: text("notes"), // For review comments
   exportedToQBO: boolean("exported_to_qbo").notNull().default(false),
   exportedAt: timestamp("exported_at"),
+  // Invoice PDF storage
+  pdfFileId: text("pdf_file_id"), // Object Storage file ID or local filesystem path
   // Payment tracking
   paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid, partial, paid
   paymentDate: date("payment_date"), // Date payment was received

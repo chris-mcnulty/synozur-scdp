@@ -44,12 +44,17 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage
-- **Storage Strategy**: Smart Routing (Environment and Document-type-based).
-- **Production Storage**: ALL documents (including invoices, receipts, contracts) use SharePoint Embedded for persistent storage (local filesystem is not persistent in Replit production deployments).
-- **Development Storage**: Business documents (receipts, invoices, contracts) use local filesystem for immediate testing; SOWs, estimates, reports use SharePoint Embedded for Microsoft troubleshooting.
+- **Storage Strategy**: Hybrid approach optimized for document type and environment.
+- **Invoice PDFs**: 
+  - Production: Replit Object Storage (persistent, reliable, no permission bugs)
+  - Development: Local filesystem (`uploads/invoices/`) for fast testing
+- **Business Documents** (receipts, contracts):
+  - Production: Replit Object Storage (SharePoint has known permission bugs, avoided for business-critical documents)
+  - Development: Local filesystem for immediate testing
+- **Debug Documents** (SOWs, estimates, reports): SharePoint Embedded for Microsoft troubleshooting
 - **Environment Detection**: Uses `REPLIT_DEPLOYMENT` and `NODE_ENV` environment variables to auto-detect production vs development.
-- **Authentication**: Certificate-based authentication for SharePoint.
-- **Functionality**: Comprehensive file validation, user-friendly error messaging, enhanced diagnostics for SharePoint failures.
+- **Authentication**: Certificate-based authentication for SharePoint; Replit sidecar for Object Storage.
+- **Functionality**: Comprehensive file validation, user-friendly error messaging, enhanced diagnostics for failures.
 - **Admin Diagnostics**: `/admin/sharepoint` page shows active storage strategy, routing rules, file counts, and files awaiting migration.
 
 ### Data Integrity
@@ -97,13 +102,16 @@ Preferred communication style: Simple, everyday language.
 - Search functionality now includes task descriptions, epic names, and stage names
 - Task details help users quickly identify specific work items in their assignments
 
-**Production Storage Fix (October 29, 2025)**:
-- **CRITICAL FIX**: Invoice PDFs now stored in SharePoint in production (not local filesystem)
+**Production Storage Fix - Replit Object Storage (October 30, 2025)**:
+- **CRITICAL FIX**: Invoice PDFs now stored in Replit Object Storage in production (not local filesystem or SharePoint)
 - Fixed issue where invoice PDFs downloaded fine in dev but failed in production
 - Root cause: Replit's local filesystem is NOT persistent in production deployments
-- Solution: Smart routing now detects environment and uses SharePoint for all documents in production
+- SharePoint Embedded has known permission bugs - AVOIDED for business-critical documents (invoices, receipts, contracts)
+- Solution: Created InvoicePDFStorage service using Replit Object Storage for production, local filesystem for dev
+- New storage service automatically detects environment and routes appropriately
 - Development behavior unchanged: business documents still use local storage for fast testing
-- All existing production invoices must be regenerated to be stored in SharePoint
+- All existing production invoices must be regenerated to be stored in Object Storage
+- Object Storage provides persistent, reliable storage without SharePoint permission bugs
 
 ## External Dependencies
 
@@ -112,4 +120,7 @@ Preferred communication style: Simple, everyday language.
 - **UI Libraries**: Radix UI, Lucide React (icons), Tailwind CSS.
 - **Data Management**: TanStack Query, React Hook Form, Date-fns.
 - **Build & Runtime**: ESBuild, PostCSS, WS (WebSockets).
-- **Document Storage**: Microsoft SharePoint Embedded.
+- **Document Storage**: 
+  - Replit Object Storage (invoice PDFs, business documents in production)
+  - Microsoft SharePoint Embedded (debug documents for Microsoft troubleshooting)
+  - Local filesystem (development environment only)
