@@ -150,6 +150,7 @@ import { graphClient, registerContainerTypePermissions } from "./services/graph-
 import type { InsertPendingReceipt } from "@shared/schema";
 import { toPendingReceiptInsert, fromStorageToRuntimeTypes, toDateString, toDecimalString, toExpenseInsert } from "./utils/storageMappers.js";
 import { localFileStorage, type DocumentMetadata } from "./services/local-file-storage.js";
+import { invoicePDFStorage } from "./services/invoice-pdf-storage.js";
 
 // User type is now defined in session-store.ts with SSO properties
 
@@ -9577,43 +9578,17 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Delete any existing invoice PDF for this batch (if editing/regenerating)
       try {
-        const existingFile = await smartFileStorage.getFileMetadata(batchId);
-        if (existingFile) {
-          await smartFileStorage.deleteFile(batchId);
-          console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
-        }
+        await invoicePDFStorage.deleteInvoicePDF(batchId);
+        console.log(`[INVOICE] Deleted previous invoice for batch ${batchId}`);
       } catch (error) {
         // File doesn't exist, that's fine
       }
 
-      // Save PDF using smart storage router (invoices go to local storage)
+      // Save PDF using invoice PDF storage (Object Storage in production, local filesystem in dev)
+      const fileId = await invoicePDFStorage.storeInvoicePDF(pdfBuffer, batchId);
+      console.log(`[INVOICE] Saved invoice for batch ${batchId}, file ID: ${fileId}`);
+
       const fileName = `invoice-${batchId}.pdf`;
-      const clientId = lines[0]?.client?.id || '';
-      const clientName = lines[0]?.client?.name || 'Unknown Client';
-      const totalAmount = parseFloat(batch.totalAmount || '0');
-      
-      const savedFile = await smartFileStorage.storeFile(
-        pdfBuffer,
-        fileName,
-        'application/pdf',
-        {
-          documentType: 'invoice',
-          clientId,
-          clientName,
-          projectId: lines[0]?.project?.id,
-          projectCode: lines[0]?.project?.code,
-          amount: totalAmount,
-          effectiveDate: new Date(batch.createdAt),
-          createdByUserId: req.user!.id,
-          metadataVersion: 1,
-          tags: `invoice,batch-${batchId},${clientName.toLowerCase().replace(/\s+/g, '-')}`
-        },
-        req.user!.email,
-        batchId // Use batchId as fileId for consistent lookup and replacement
-      );
-
-      console.log(`[INVOICE] Saved invoice ${fileName} with ID: ${savedFile.id}`);
-
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
       res.send(pdfBuffer);
@@ -9625,15 +9600,15 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // View Invoice PDF (smart routing: local storage for invoices)
+  // View Invoice PDF (uses Object Storage in production, local filesystem in dev)
   app.get("/api/invoice-batches/:batchId/pdf/view", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
 
-      // Try to get the invoice PDF using smart storage router
-      const fileData = await smartFileStorage.getFileContent(batchId);
+      // Get the invoice PDF using invoice PDF storage
+      const pdfBuffer = await invoicePDFStorage.getInvoicePDF(batchId);
       
-      if (!fileData) {
+      if (!pdfBuffer) {
         return res.status(404).json({ 
           message: "Invoice PDF not found. Please regenerate the invoice." 
         });
@@ -9642,26 +9617,26 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Return the PDF for viewing (inline, not download)
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="invoice-${batchId}.pdf"`);
-      res.send(fileData.buffer);
+      res.send(pdfBuffer);
     } catch (error: any) {
-      console.error("Failed to retrieve PDF from SharePoint:", error);
+      console.error("Failed to retrieve invoice PDF:", error);
       res.status(500).json({ 
-        message: error.message || "Failed to retrieve PDF from SharePoint" 
+        message: error.message || "Failed to retrieve invoice PDF" 
       });
     }
   });
 
-  // Check if Invoice PDF exists (smart routing: local storage for invoices)
+  // Check if Invoice PDF exists (uses Object Storage in production, local filesystem in dev)
   app.get("/api/invoice-batches/:batchId/pdf/exists", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
 
-      const fileMetadata = await smartFileStorage.getFileMetadata(batchId);
+      // Try to get the invoice PDF
+      await invoicePDFStorage.getInvoicePDF(batchId);
       
       res.json({ 
-        exists: !!fileMetadata,
-        fileName: fileMetadata?.fileName,
-        size: fileMetadata?.size
+        exists: true,
+        fileName: `invoice-${batchId}.pdf`
       });
     } catch (error: any) {
       // File doesn't exist
