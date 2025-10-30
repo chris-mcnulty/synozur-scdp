@@ -631,10 +631,48 @@ export async function registerRoutes(app: Express): Promise<void> {
       const [buffer, originalName, contentType, metadata, uploadedBy, fileId] = args;
       const documentType = metadata.documentType;
       
-      // PRODUCTION: All documents go to SharePoint (local filesystem is NOT persistent in production)
-      // DEVELOPMENT: Business documents (receipts, invoices, contracts) go to LOCAL storage for immediate testing
+      // RECEIPTS: Use ReceiptStorage (Replit Object Storage in prod, local in dev)
+      // Avoids SharePoint permission bugs for business-critical documents
+      if (documentType === 'receipt') {
+        console.log(`[SMART_STORAGE] Routing receipt to ReceiptStorage (Object Storage in prod, local in dev)`);
+        const storedReceipt = await receiptStorage.storeReceipt(
+          buffer,
+          originalName,
+          contentType,
+          {
+            documentType: 'receipt',
+            projectId: metadata.projectId,
+            effectiveDate: metadata.effectiveDate,
+            amount: metadata.amount,
+            tags: metadata.tags,
+            createdByUserId: metadata.createdByUserId,
+            metadataVersion: metadata.metadataVersion || 1
+          }
+        );
+        console.log('[SMART_STORAGE] ✅ Receipt storage successful - File ID:', storedReceipt.fileId);
+        // Return in same format as other storage services
+        // Use 'receipt-storage' as driveId to indicate ReceiptStorage routing
+        return {
+          id: storedReceipt.fileId,
+          fileName: storedReceipt.fileName,
+          originalName: storedReceipt.originalName,
+          size: storedReceipt.size,
+          contentType: storedReceipt.contentType,
+          filePath: storedReceipt.fileId,
+          metadata: {
+            ...storedReceipt.metadata,
+            driveId: 'receipt-storage', // Mark as ReceiptStorage for download routing
+            tags: storedReceipt.metadata.tags ? `${storedReceipt.metadata.tags},RECEIPT_STORAGE` : 'RECEIPT_STORAGE'
+          },
+          uploadedAt: new Date(),
+          uploadedBy: uploadedBy
+        };
+      }
+      
+      // OTHER DOCUMENTS: Use SharePoint or local storage based on environment
+      // DEVELOPMENT: Business documents (invoices, contracts) go to LOCAL storage for immediate testing
       // Other documents (SOWs, estimates, reports) always go to SHAREPOINT for Microsoft troubleshooting
-      const businessDocTypes = ['receipt', 'invoice', 'contract'];
+      const businessDocTypes = ['invoice', 'contract'];
       const useLocalStorage = !isProduction && businessDocTypes.includes(documentType);
       
       if (useLocalStorage) {
@@ -686,12 +724,18 @@ export async function registerRoutes(app: Express): Promise<void> {
     },
     
     async getFileContent(fileId: string) {
-      // Try local first, then SharePoint
+      // Try receipt storage first (handles both Object Storage and local filesystem)
       try {
-        return await localFileStorage.getFileContent(fileId);
+        const buffer = await receiptStorage.getReceipt(fileId);
+        return { buffer, metadata: {} };
       } catch (error) {
-        console.log('[SMART_STORAGE] File not in local storage, trying SharePoint...');
-        return await sharePointFileStorage.getFileContent(fileId);
+        // Not a receipt file, try local storage
+        try {
+          return await localFileStorage.getFileContent(fileId);
+        } catch (error) {
+          console.log('[SMART_STORAGE] File not in local or receipt storage, trying SharePoint...');
+          return await sharePointFileStorage.getFileContent(fileId);
+        }
       }
     },
     
@@ -7997,7 +8041,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Save attachment metadata to database
           const attachmentData = {
             expenseId: expenseId,
-            driveId: 'local-storage', // Use local storage identifier
+            driveId: 'receipt-storage', // Use receipt storage identifier (routes to ReceiptStorage)
             itemId: uploadResult.id,
             webUrl: '/api/expenses/' + expenseId + '/attachments/' + uploadResult.id + '/content',
             fileName: uploadResult.fileName,
@@ -8108,12 +8152,26 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       try {
-        // Get file content from SharePoint using the tenant-specific container
-        // The attachment.driveId contains the tenant-specific container ID
-        const downloadResult = await graphClient.downloadFile(
-          attachment.driveId, // Use the stored tenant-specific container ID
-          attachment.itemId
-        );
+        let downloadBuffer: Buffer;
+        
+        // Check if file is stored in local/receipt storage or SharePoint
+        if (attachment.driveId === 'receipt-storage' || attachment.driveId === 'local-storage') {
+          console.log('[ATTACHMENT_DOWNLOAD] Fetching from receipt/local storage:', attachment.itemId);
+          // Get file from smart storage (handles ReceiptStorage and LocalFileStorage)
+          const fileContent = await smartFileStorage.getFileContent(attachment.itemId);
+          if (!fileContent || !fileContent.buffer) {
+            throw new Error('File content not found');
+          }
+          downloadBuffer = fileContent.buffer;
+        } else {
+          console.log('[ATTACHMENT_DOWNLOAD] Fetching from SharePoint:', attachment.driveId, attachment.itemId);
+          // Get file content from SharePoint using the tenant-specific container
+          const downloadResult = await graphClient.downloadFile(
+            attachment.driveId, // Use the stored tenant-specific container ID
+            attachment.itemId
+          );
+          downloadBuffer = downloadResult.buffer;
+        }
 
         // SECURITY FIX: Set secure headers for download to prevent XSS and header injection
         // Use conservative Content-Type and force download
@@ -8125,7 +8183,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         res.setHeader('Content-Type', safeContentType);
         res.setHeader('Content-Disposition', 'attachment; filename="' + safeFilename + '"'); 
-        res.setHeader('Content-Length', attachment.size.toString());
+        res.setHeader('Content-Length', downloadBuffer.length.toString());
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('X-Frame-Options', 'DENY');
         res.setHeader('X-XSS-Protection', '1; mode=block');
@@ -8134,7 +8192,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         res.setHeader('Expires', '0');
 
         // Send file content
-        res.send(downloadResult.buffer);
+        res.send(downloadBuffer);
       } catch (error: any) {
         console.error('[ATTACHMENT_DOWNLOAD] SharePoint download error:', error);
 
@@ -8177,29 +8235,40 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       try {
-        // Delete file from SharePoint using the tenant-specific container
-        // The attachment.driveId contains the tenant-specific container ID
-        await graphClient.deleteFile(
-          attachment.driveId, // Use the stored tenant-specific container ID
-          attachment.itemId
-        );
+        // Delete file from appropriate storage (ReceiptStorage or SharePoint)
+        if (attachment.driveId === 'receipt-storage' || attachment.driveId === 'local-storage') {
+          console.log('[ATTACHMENT_DELETE] Deleting from receipt/local storage:', attachment.itemId);
+          // Delete from ReceiptStorage (handles both Object Storage and local filesystem)
+          try {
+            await receiptStorage.deleteReceipt(attachment.itemId);
+          } catch (error) {
+            console.warn('[ATTACHMENT_DELETE] File not found in receipt storage, cleaning up database record');
+          }
+        } else {
+          console.log('[ATTACHMENT_DELETE] Deleting from SharePoint:', attachment.driveId, attachment.itemId);
+          // Delete file from SharePoint using the tenant-specific container
+          await graphClient.deleteFile(
+            attachment.driveId, // Use the stored tenant-specific container ID
+            attachment.itemId
+          );
+        }
 
         // Delete attachment record from database
         await storage.deleteExpenseAttachment(attachmentId);
 
         res.status(204).send();
       } catch (error: any) {
-        console.error('[ATTACHMENT_DELETE] SharePoint delete error:', error);
+        console.error('[ATTACHMENT_DELETE] Delete error:', error);
 
-        // Even if SharePoint deletion fails, we should clean up the database record
+        // Even if storage deletion fails, we should clean up the database record
         // to avoid orphaned records
         if (error.status === 404) {
-          console.warn('[ATTACHMENT_DELETE] File not found in SharePoint, cleaning up database record');
+          console.warn('[ATTACHMENT_DELETE] File not found in storage, cleaning up database record');
           await storage.deleteExpenseAttachment(attachmentId);
           return res.status(204).send();
         }
 
-        res.status(503).json({ message: "SharePoint service temporarily unavailable" });
+        res.status(503).json({ message: "File storage service temporarily unavailable" });
       }
     } catch (error: any) {
       console.error('[ATTACHMENT_DELETE] Route error:', error);
