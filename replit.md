@@ -11,6 +11,7 @@ Preferred communication style: Simple, everyday language.
 ### Frontend
 - **Framework**: React 18 with TypeScript and Vite.
 - **UI**: Radix UI components with shadcn/ui design system, styled using Tailwind CSS.
+- **Typography**: Avenir Next LT Pro font family with 6 weights (Light 300, Regular 400, Italic 400, Demi 600, Bold 700, Bold Italic 700).
 - **Routing**: Wouter.
 - **State Management**: TanStack Query for server state.
 - **Form Handling**: React Hook Form with Zod validation.
