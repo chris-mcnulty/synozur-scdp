@@ -46,7 +46,6 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
-import chromium from '@sparticuz/chromium';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
 
@@ -8414,46 +8413,46 @@ export async function generateInvoicePDF(params: {
   // Generate PDF using Puppeteer
   let browser;
   try {
-    // Check if we're in production (Cloud Run deployment)
-    const isProduction = process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production';
-    
     // Determine Chromium executable path
+    // Use environment variable if set, otherwise find system Chromium
     let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     
     if (!executablePath) {
-      if (isProduction) {
-        // Production: Use serverless Chromium (@sparticuz/chromium)
-        executablePath = await chromium.executablePath();
-        console.log('[PDF] Production mode: Using @sparticuz/chromium');
-      } else {
-        // Development: Try to find chromium in PATH
-        try {
-          const { execSync } = await import('child_process');
-          executablePath = execSync('which chromium').toString().trim();
-          console.log('[PDF] Development mode: Using system Chromium');
-        } catch {
-          // Fallback to common Nix path pattern
-          executablePath = 'chromium';
-          console.log('[PDF] Development mode: Using fallback chromium');
-        }
+      // Try to find chromium in PATH
+      try {
+        const { execSync } = await import('child_process');
+        executablePath = execSync('which chromium').toString().trim();
+        console.log('[PDF] Using system Chromium:', executablePath);
+      } catch {
+        // Fallback to common path
+        executablePath = 'chromium';
+        console.log('[PDF] Using fallback chromium path');
       }
+    } else {
+      console.log('[PDF] Using Chromium from environment variable:', executablePath);
     }
     
-    console.log('[PDF] Chromium executable path:', executablePath);
-    
-    // Configure launch args - add extra args for production
+    // Configure launch args for serverless/containerized environments
     const launchArgs = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--single-process'
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--single-process',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--no-first-run',
+      '--safebrowsing-disable-auto-update'
     ];
     
-    if (isProduction) {
-      // Additional args for serverless environments
-      launchArgs.push(...chromium.args);
-    }
-    
+    console.log('[PDF] Launching Chromium for PDF generation...');
     browser = await puppeteer.launch({
       headless: true,
       executablePath,
