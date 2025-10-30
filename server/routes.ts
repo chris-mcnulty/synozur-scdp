@@ -8,6 +8,7 @@ import multer from "multer";
 import { LocalFileStorage } from "./services/local-file-storage.js";
 import { SharePointFileStorage } from "./services/sharepoint-file-storage.js";
 import { containerRegistration } from "./services/container-registration.js";
+import { receiptStorage } from "./services/receipt-storage.js";
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -8395,20 +8396,27 @@ export async function registerRoutes(app: Express): Promise<void> {
 
             const createdReceipt = await storage.createPendingReceipt(receiptData);
 
-            // Now store the file using the receipt ID
-            const storedFile = await sharePointFileStorage.storeFile(
+            // Store file using smart routing (Object Storage in prod, local in dev)
+            console.log('[BULK_UPLOAD] Storing receipt file...');
+            const storedFile = await receiptStorage.storeReceipt(
               file.buffer,
               file.originalname,
               file.mimetype,
-              documentMetadata,
-              userId,
-              createdReceipt.id  // Use receipt ID as file ID
+              {
+                documentType: 'receipt',
+                projectId: documentMetadata.projectId,
+                effectiveDate: documentMetadata.effectiveDate,
+                amount: documentMetadata.amount,
+                tags: documentMetadata.tags,
+                createdByUserId: documentMetadata.createdByUserId,
+                metadataVersion: documentMetadata.metadataVersion
+              }
             );
 
             // Update the receipt with the correct file information
             const updatedReceipt = await storage.updatePendingReceipt(createdReceipt.id, {
               fileName: storedFile.fileName,
-              filePath: storedFile.filePath
+              filePath: storedFile.fileId
             });
 
           successful.push({
@@ -8673,22 +8681,23 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Get file from local file storage
-      const fileContent = await localFileStorage.getFileContent(receipt.id);
-      if (!fileContent) {
+      // Get file using smart routing (Object Storage in prod, local in dev)
+      console.log('[RECEIPT_DOWNLOAD] Retrieving receipt file:', receipt.filePath);
+      const fileBuffer = await receiptStorage.getReceipt(receipt.filePath);
+      if (!fileBuffer) {
         return res.status(404).json({ 
           message: "File not found",
-          details: "Receipt file could not be retrieved from local storage"
+          details: "Receipt file could not be retrieved from storage"
         });
       }
 
       // Set appropriate headers
       res.setHeader('Content-Type', receipt.contentType);
-      res.setHeader('Content-Length', receipt.size);
+      res.setHeader('Content-Length', fileBuffer.length);
       res.setHeader('Content-Disposition', 'attachment; filename="' + receipt.originalName.replace(/"/g, '\"') + '"');
 
       // Send file data
-      res.send(fileContent.buffer);
+      res.send(fileBuffer);
 
     } catch (error: any) {
       console.error('[PENDING_RECEIPT_DOWNLOAD] Error:', error);

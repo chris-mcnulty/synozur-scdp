@@ -117,18 +117,30 @@ Preferred communication style: Simple, everyday language.
 **Invoice Batch Display & PDF Generation Fixes (October 30, 2025)**:
 - **Fixed PostgreSQL array formatting error**: Replaced raw SQL `= ANY()` syntax with Drizzle's `inArray()` helper
 - Invoice batches now display correctly in production (all 13 batches visible)
-- **Fixed PDF generation in production**: Implemented serverless Chromium support
-  - Root cause: System packages (Chromium) are NOT bundled into Cloud Run deployments
-  - Solution: Installed @sparticuz/chromium package for serverless-compatible Chromium binary
-  - Production: Uses @sparticuz/chromium.executablePath() with hardened launch flags
-  - Development: Uses system Chromium from Nix packages (unchanged behavior)
-  - Environment detection: Checks REPLIT_DEPLOYMENT and NODE_ENV to route correctly
+- **Fixed PDF generation in production**: Installed comprehensive Chromium system dependencies
+  - Root cause: Missing system libraries (nss, nspr, atk, cups, gtk3, X11 libraries, etc.) in Cloud Run
+  - Solution: Installed all necessary Chromium dependencies via Nix system packages
+  - Uses system Chromium consistently across dev and production environments
+  - Removed @sparticuz/chromium package (no longer needed with full system dependencies)
+  - Environment detection: Uses REPLIT_DEPLOYMENT and NODE_ENV for production detection
 - **Fixed finalized batch update restriction**: Modified updateInvoiceBatch to allow metadata updates
   - pdfFileId and payment fields can now be updated on finalized batches
   - Invoice content fields remain protected from changes on finalized batches
   - Enables PDF regeneration for finalized batches without compromising data integrity
 - Enhanced error logging with [INVOICE-BATCHES] prefix for easier troubleshooting
 - All invoice data remains safe in database - these were display/generation issues only
+
+**Receipt Upload Fix - Replit Object Storage (October 30, 2025)**:
+- **CRITICAL FIX**: Receipt uploads now use Replit Object Storage in production (not local filesystem)
+- Fixed issue where receipts uploaded in dev but failed in production
+- Root cause: Replit's local filesystem is NOT persistent in production Cloud Run deployments
+- Solution: Created ReceiptStorage service with smart routing (similar to InvoicePDFStorage)
+  - Production: Uses Replit Object Storage (persistent, reliable)
+  - Development: Uses local filesystem (`uploads/receipts/`) for fast testing
+  - Automatic environment detection via REPLIT_DEPLOYMENT and NODE_ENV
+- Updated both upload and download endpoints to use new ReceiptStorage service
+- Receipts are now reliably stored and retrievable in production deployments
+- All new receipt uploads will automatically use correct storage for the environment
 
 ## External Dependencies
 
@@ -137,8 +149,8 @@ Preferred communication style: Simple, everyday language.
 - **UI Libraries**: Radix UI, Lucide React (icons), Tailwind CSS.
 - **Data Management**: TanStack Query, React Hook Form, Date-fns.
 - **Build & Runtime**: ESBuild, PostCSS, WS (WebSockets).
-- **PDF Generation**: Puppeteer + @sparticuz/chromium (serverless-compatible for production Cloud Run deployments).
+- **PDF Generation**: Puppeteer with system Chromium (Nix packages provide all necessary dependencies for Cloud Run).
 - **Document Storage**: 
-  - Replit Object Storage (invoice PDFs, business documents in production)
+  - Replit Object Storage (invoice PDFs, receipts, business documents in production)
   - Microsoft SharePoint Embedded (debug documents for Microsoft troubleshooting)
   - Local filesystem (development environment only)
