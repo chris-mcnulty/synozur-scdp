@@ -9,6 +9,7 @@ import { LocalFileStorage } from "./services/local-file-storage.js";
 import { SharePointFileStorage } from "./services/sharepoint-file-storage.js";
 import { containerRegistration } from "./services/container-registration.js";
 import { receiptStorage } from "./services/receipt-storage.js";
+import { emailService } from "./services/email-notification.js";
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -8413,7 +8414,33 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const submitted = await storage.submitExpenseReport(req.params.id, req.user!.id);
       
-      // TODO: Send email notification to approvers
+      // Send email notification to submitter
+      const submitter = await storage.getUser(submitted.submitterId);
+      if (submitter) {
+        await emailService.notifyExpenseReportSubmitted(
+          { email: submitter.email, name: submitter.name },
+          submitted.reportNumber,
+          submitted.title
+        );
+        
+        // Send email notification to admins/approvers
+        // Get all users with approval permissions (admin, executive, billing-admin)
+        const allUsers = await storage.getUsers();
+        const approvers = allUsers.filter(u => 
+          ['admin', 'executive', 'billing-admin'].includes(u.role)
+        );
+        
+        for (const approver of approvers) {
+          await emailService.notifyExpenseReportNeedsApproval(
+            { email: approver.email, name: approver.name },
+            { email: submitter.email, name: submitter.name },
+            submitted.reportNumber,
+            submitted.title,
+            submitted.totalAmount,
+            submitted.currency
+          );
+        }
+      }
       
       res.json(submitted);
     } catch (error: any) {
@@ -8432,7 +8459,16 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const approved = await storage.approveExpenseReport(req.params.id, req.user!.id);
       
-      // TODO: Send email notification to submitter
+      // Send email notification to submitter
+      const submitter = await storage.getUser(approved.submitterId);
+      if (submitter) {
+        await emailService.notifyExpenseReportApproved(
+          { email: submitter.email, name: submitter.name },
+          { email: req.user!.email, name: req.user!.name },
+          approved.reportNumber,
+          approved.title
+        );
+      }
       
       res.json(approved);
     } catch (error: any) {
@@ -8456,7 +8492,17 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const rejected = await storage.rejectExpenseReport(req.params.id, req.user!.id, rejectionNote);
       
-      // TODO: Send email notification to submitter
+      // Send email notification to submitter
+      const submitter = await storage.getUser(rejected.submitterId);
+      if (submitter) {
+        await emailService.notifyExpenseReportRejected(
+          { email: submitter.email, name: submitter.name },
+          { email: req.user!.email, name: req.user!.name },
+          rejected.reportNumber,
+          rejected.title,
+          rejected.rejectionNote ?? undefined
+        );
+      }
       
       res.json(rejected);
     } catch (error: any) {
