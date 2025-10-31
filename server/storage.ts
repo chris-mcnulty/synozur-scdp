@@ -3539,8 +3539,8 @@ export class DatabaseStorage implements IStorage {
     return results.map(row => ({
       ...row.expense_reports,
       submitter: row.users!,
-      approver: row.usersApprover || undefined,
-      rejecter: row.usersRejecter || undefined,
+      approver: row.users_approver || undefined,
+      rejecter: row.users_rejecter || undefined,
     }));
   }
 
@@ -3596,60 +3596,62 @@ export class DatabaseStorage implements IStorage {
     return {
       ...report.expense_reports,
       submitter: report.users!,
-      approver: report.usersApprover || undefined,
-      rejecter: report.usersRejecter || undefined,
+      approver: report.users_approver || undefined,
+      rejecter: report.users_rejecter || undefined,
       items: formattedItems,
     };
   }
 
   async createExpenseReport(report: InsertExpenseReport, expenseIds: string[]): Promise<ExpenseReport> {
-    // Generate unique report number
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    
-    const existingReports = await db.select()
-      .from(expenseReports)
-      .where(like(expenseReports.reportNumber, `EXP-${year}-${month}-%`))
-      .orderBy(desc(expenseReports.reportNumber));
-    
-    const nextNum = existingReports.length > 0 
-      ? parseInt(existingReports[0].reportNumber.split('-')[3]) + 1 
-      : 1;
-    const reportNumber = `EXP-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
+    return await db.transaction(async (tx) => {
+      // Generate unique report number
+      const year = new Date().getFullYear();
+      const month = String(new Date().getMonth() + 1).padStart(2, '0');
+      
+      const existingReports = await tx.select()
+        .from(expenseReports)
+        .where(like(expenseReports.reportNumber, `EXP-${year}-${month}-%`))
+        .orderBy(desc(expenseReports.reportNumber));
+      
+      const nextNum = existingReports.length > 0 
+        ? parseInt(existingReports[0].reportNumber.split('-')[3]) + 1 
+        : 1;
+      const reportNumber = `EXP-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
 
-    // Calculate total amount from expenses
-    const expenseList = expenseIds.length > 0
-      ? await db.select().from(expenses).where(inArray(expenses.id, expenseIds))
-      : [];
-    
-    const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      // Calculate total amount from expenses
+      const expenseList = expenseIds.length > 0
+        ? await tx.select().from(expenses).where(inArray(expenses.id, expenseIds))
+        : [];
+      
+      const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
 
-    // Create the expense report
-    const [created] = await db.insert(expenseReports).values({
-      ...report,
-      reportNumber,
-      totalAmount: totalAmount.toFixed(2),
-    }).returning();
+      // Create the expense report
+      const [created] = await tx.insert(expenseReports).values({
+        ...report,
+        reportNumber,
+        totalAmount: totalAmount.toFixed(2),
+      }).returning();
 
-    // Add expenses to the report
-    if (expenseIds.length > 0) {
-      await db.insert(expenseReportItems).values(
-        expenseIds.map(expenseId => ({
-          reportId: created.id,
-          expenseId,
-        }))
-      );
+      // Add expenses to the report
+      if (expenseIds.length > 0) {
+        await tx.insert(expenseReportItems).values(
+          expenseIds.map(expenseId => ({
+            reportId: created.id,
+            expenseId,
+          }))
+        );
 
-      // Update expense approval status to 'draft' if not already set
-      await db.update(expenses)
-        .set({ approvalStatus: 'draft' })
-        .where(and(
-          inArray(expenses.id, expenseIds),
-          eq(expenses.approvalStatus, 'draft')
-        ));
-    }
+        // Update expense approval status to 'draft' if not already set
+        await tx.update(expenses)
+          .set({ approvalStatus: 'draft' })
+          .where(and(
+            inArray(expenses.id, expenseIds),
+            eq(expenses.approvalStatus, 'draft')
+          ));
+      }
 
-    return created;
+      return created;
+    });
   }
 
   async updateExpenseReport(id: string, report: Partial<InsertExpenseReport>): Promise<ExpenseReport> {
@@ -3669,178 +3671,188 @@ export class DatabaseStorage implements IStorage {
   }
 
   async submitExpenseReport(id: string, userId: string): Promise<ExpenseReport> {
-    // Get the report with its items
-    const report = await this.getExpenseReport(id);
-    if (!report) {
-      throw new Error('Expense report not found');
-    }
+    return await db.transaction(async (tx) => {
+      // Get the report with its items
+      const report = await this.getExpenseReport(id);
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
 
-    if (report.status !== 'draft') {
-      throw new Error('Only draft reports can be submitted');
-    }
+      if (report.status !== 'draft') {
+        throw new Error('Only draft reports can be submitted');
+      }
 
-    if (report.items.length === 0) {
-      throw new Error('Cannot submit an empty expense report');
-    }
+      if (report.items.length === 0) {
+        throw new Error('Cannot submit an empty expense report');
+      }
 
-    // Update report status
-    const [updated] = await db.update(expenseReports)
-      .set({
-        status: 'submitted',
-        submittedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseReports.id, id))
-      .returning();
+      // Update report status
+      const [updated] = await tx.update(expenseReports)
+        .set({
+          status: 'submitted',
+          submittedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, id))
+        .returning();
 
-    // Update all associated expenses to 'submitted'
-    const expenseIds = report.items.map(item => item.expenseId);
-    await db.update(expenses)
-      .set({
-        approvalStatus: 'submitted',
-        submittedAt: new Date(),
-      })
-      .where(inArray(expenses.id, expenseIds));
+      // Update all associated expenses to 'submitted'
+      const expenseIds = report.items.map(item => item.expenseId);
+      await tx.update(expenses)
+        .set({
+          approvalStatus: 'submitted',
+          submittedAt: new Date(),
+        })
+        .where(inArray(expenses.id, expenseIds));
 
-    return updated;
+      return updated;
+    });
   }
 
   async approveExpenseReport(id: string, userId: string): Promise<ExpenseReport> {
-    const report = await this.getExpenseReport(id);
-    if (!report) {
-      throw new Error('Expense report not found');
-    }
+    return await db.transaction(async (tx) => {
+      const report = await this.getExpenseReport(id);
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
 
-    if (report.status !== 'submitted') {
-      throw new Error('Only submitted reports can be approved');
-    }
+      if (report.status !== 'submitted') {
+        throw new Error('Only submitted reports can be approved');
+      }
 
-    // Update report status
-    const [updated] = await db.update(expenseReports)
-      .set({
-        status: 'approved',
-        approvedAt: new Date(),
-        approvedBy: userId,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseReports.id, id))
-      .returning();
+      // Update report status
+      const [updated] = await tx.update(expenseReports)
+        .set({
+          status: 'approved',
+          approvedAt: new Date(),
+          approvedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, id))
+        .returning();
 
-    // Update all associated expenses to 'approved'
-    const expenseIds = report.items.map(item => item.expenseId);
-    await db.update(expenses)
-      .set({
-        approvalStatus: 'approved',
-        approvedAt: new Date(),
-        approvedBy: userId,
-      })
-      .where(inArray(expenses.id, expenseIds));
+      // Update all associated expenses to 'approved'
+      const expenseIds = report.items.map(item => item.expenseId);
+      await tx.update(expenses)
+        .set({
+          approvalStatus: 'approved',
+          approvedAt: new Date(),
+          approvedBy: userId,
+        })
+        .where(inArray(expenses.id, expenseIds));
 
-    return updated;
+      return updated;
+    });
   }
 
   async rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport> {
-    const report = await this.getExpenseReport(id);
-    if (!report) {
-      throw new Error('Expense report not found');
-    }
+    return await db.transaction(async (tx) => {
+      const report = await this.getExpenseReport(id);
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
 
-    if (report.status !== 'submitted') {
-      throw new Error('Only submitted reports can be rejected');
-    }
+      if (report.status !== 'submitted') {
+        throw new Error('Only submitted reports can be rejected');
+      }
 
-    // Update report status
-    const [updated] = await db.update(expenseReports)
-      .set({
-        status: 'rejected',
-        rejectedAt: new Date(),
-        rejectedBy: userId,
-        rejectionNote,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseReports.id, id))
-      .returning();
+      // Update report status
+      const [updated] = await tx.update(expenseReports)
+        .set({
+          status: 'rejected',
+          rejectedAt: new Date(),
+          rejectedBy: userId,
+          rejectionNote,
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, id))
+        .returning();
 
-    // Update all associated expenses to 'rejected' with the note
-    const expenseIds = report.items.map(item => item.expenseId);
-    await db.update(expenses)
-      .set({
-        approvalStatus: 'rejected',
-        rejectedAt: new Date(),
-        rejectedBy: userId,
-        rejectionNote,
-      })
-      .where(inArray(expenses.id, expenseIds));
+      // Update all associated expenses to 'rejected' with the note
+      const expenseIds = report.items.map(item => item.expenseId);
+      await tx.update(expenses)
+        .set({
+          approvalStatus: 'rejected',
+          rejectedAt: new Date(),
+          rejectedBy: userId,
+          rejectionNote,
+        })
+        .where(inArray(expenses.id, expenseIds));
 
-    return updated;
+      return updated;
+    });
   }
 
   async addExpensesToReport(reportId: string, expenseIds: string[]): Promise<void> {
     if (expenseIds.length === 0) return;
 
-    // Verify report exists and is in draft status
-    const [report] = await db.select().from(expenseReports).where(eq(expenseReports.id, reportId));
-    if (!report) {
-      throw new Error('Expense report not found');
-    }
-    if (report.status !== 'draft') {
-      throw new Error('Can only add expenses to draft reports');
-    }
+    await db.transaction(async (tx) => {
+      // Verify report exists and is in draft status
+      const [report] = await tx.select().from(expenseReports).where(eq(expenseReports.id, reportId));
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
+      if (report.status !== 'draft') {
+        throw new Error('Can only add expenses to draft reports');
+      }
 
-    // Add expense items
-    await db.insert(expenseReportItems).values(
-      expenseIds.map(expenseId => ({
-        reportId,
-        expenseId,
-      }))
-    );
+      // Add expense items
+      await tx.insert(expenseReportItems).values(
+        expenseIds.map(expenseId => ({
+          reportId,
+          expenseId,
+        }))
+      );
 
-    // Recalculate total amount
-    const expenses = await db.select()
-      .from(expenseReportItems)
-      .innerJoin(expenses as any, eq(expenseReportItems.expenseId, (expenses as any).id))
-      .where(eq(expenseReportItems.reportId, reportId));
+      // Recalculate total amount
+      const expenseItems = await tx.select()
+        .from(expenseReportItems)
+        .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
+        .where(eq(expenseReportItems.reportId, reportId));
 
-    const totalAmount = expenses.reduce((sum, item) => sum + parseFloat((item.expenses as any).amount), 0);
+      const totalAmount = expenseItems.reduce((sum: number, item: any) => sum + parseFloat(item.expenses.amount), 0);
 
-    await db.update(expenseReports)
-      .set({
-        totalAmount: totalAmount.toFixed(2),
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseReports.id, reportId));
+      await tx.update(expenseReports)
+        .set({
+          totalAmount: totalAmount.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, reportId));
+    });
   }
 
   async removeExpenseFromReport(reportId: string, expenseId: string): Promise<void> {
-    // Verify report is in draft status
-    const [report] = await db.select().from(expenseReports).where(eq(expenseReports.id, reportId));
-    if (!report) {
-      throw new Error('Expense report not found');
-    }
-    if (report.status !== 'draft') {
-      throw new Error('Can only remove expenses from draft reports');
-    }
+    await db.transaction(async (tx) => {
+      // Verify report is in draft status
+      const [report] = await tx.select().from(expenseReports).where(eq(expenseReports.id, reportId));
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
+      if (report.status !== 'draft') {
+        throw new Error('Can only remove expenses from draft reports');
+      }
 
-    await db.delete(expenseReportItems)
-      .where(and(
-        eq(expenseReportItems.reportId, reportId),
-        eq(expenseReportItems.expenseId, expenseId)
-      ));
+      await tx.delete(expenseReportItems)
+        .where(and(
+          eq(expenseReportItems.reportId, reportId),
+          eq(expenseReportItems.expenseId, expenseId)
+        ));
 
-    // Recalculate total amount
-    const remainingExpenses = await db.select()
-      .from(expenseReportItems)
-      .innerJoin(expenses as any, eq(expenseReportItems.expenseId, (expenses as any).id))
-      .where(eq(expenseReportItems.reportId, reportId));
+      // Recalculate total amount
+      const remainingExpenseItems = await tx.select()
+        .from(expenseReportItems)
+        .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
+        .where(eq(expenseReportItems.reportId, reportId));
 
-    const totalAmount = remainingExpenses.reduce((sum, item) => sum + parseFloat((item.expenses as any).amount), 0);
+      const totalAmount = remainingExpenseItems.reduce((sum: number, item: any) => sum + parseFloat(item.expenses.amount), 0);
 
-    await db.update(expenseReports)
-      .set({
-        totalAmount: totalAmount.toFixed(2),
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseReports.id, reportId));
+      await tx.update(expenseReports)
+        .set({
+          totalAmount: totalAmount.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, reportId));
+    });
   }
 
   // Reimbursement Batches
@@ -3870,8 +3882,8 @@ export class DatabaseStorage implements IStorage {
 
     return results.map(row => ({
       ...row.reimbursement_batches,
-      approver: row.usersApprover || undefined,
-      processor: row.usersProcessor || undefined,
+      approver: row.users_approver || undefined,
+      processor: row.users_processor || undefined,
     }));
   }
 
@@ -3898,8 +3910,8 @@ export class DatabaseStorage implements IStorage {
 
     return {
       ...batch.reimbursement_batches,
-      approver: batch.usersApprover || undefined,
-      processor: batch.usersProcessor || undefined,
+      approver: batch.users_approver || undefined,
+      processor: batch.users_processor || undefined,
       expenses: batchExpenses.map(row => ({
         ...row.expenses,
         person: row.users,
@@ -3912,42 +3924,44 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch> {
-    // Generate unique batch number
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    
-    const existingBatches = await db.select()
-      .from(reimbursementBatches)
-      .where(like(reimbursementBatches.batchNumber, `REIMB-${year}-${month}-%`))
-      .orderBy(desc(reimbursementBatches.batchNumber));
-    
-    const nextNum = existingBatches.length > 0 
-      ? parseInt(existingBatches[0].batchNumber.split('-')[3]) + 1 
-      : 1;
-    const batchNumber = `REIMB-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
+    return await db.transaction(async (tx) => {
+      // Generate unique batch number
+      const year = new Date().getFullYear();
+      const month = String(new Date().getMonth() + 1).padStart(2, '0');
+      
+      const existingBatches = await tx.select()
+        .from(reimbursementBatches)
+        .where(like(reimbursementBatches.batchNumber, `REIMB-${year}-${month}-%`))
+        .orderBy(desc(reimbursementBatches.batchNumber));
+      
+      const nextNum = existingBatches.length > 0 
+        ? parseInt(existingBatches[0].batchNumber.split('-')[3]) + 1 
+        : 1;
+      const batchNumber = `REIMB-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
 
-    // Calculate total amount from expenses
-    const expenseList = expenseIds.length > 0
-      ? await db.select().from(expenses).where(inArray(expenses.id, expenseIds))
-      : [];
-    
-    const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      // Calculate total amount from expenses
+      const expenseList = expenseIds.length > 0
+        ? await tx.select().from(expenses).where(inArray(expenses.id, expenseIds))
+        : [];
+      
+      const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
 
-    // Create the reimbursement batch
-    const [created] = await db.insert(reimbursementBatches).values({
-      ...batch,
-      batchNumber,
-      totalAmount: totalAmount.toFixed(2),
-    }).returning();
+      // Create the reimbursement batch
+      const [created] = await tx.insert(reimbursementBatches).values({
+        ...batch,
+        batchNumber,
+        totalAmount: totalAmount.toFixed(2),
+      }).returning();
 
-    // Link expenses to this batch
-    if (expenseIds.length > 0) {
-      await db.update(expenses)
-        .set({ reimbursementBatchId: created.id })
-        .where(inArray(expenses.id, expenseIds));
-    }
+      // Link expenses to this batch
+      if (expenseIds.length > 0) {
+        await tx.update(expenses)
+          .set({ reimbursementBatchId: created.id })
+          .where(inArray(expenses.id, expenseIds));
+      }
 
-    return created;
+      return created;
+    });
   }
 
   async updateReimbursementBatch(id: string, batch: Partial<InsertReimbursementBatch>): Promise<ReimbursementBatch> {
@@ -3985,35 +3999,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async processReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
-    const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
-    if (!batch) {
-      throw new Error('Reimbursement batch not found');
-    }
+    return await db.transaction(async (tx) => {
+      const [batch] = await tx.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
+      if (!batch) {
+        throw new Error('Reimbursement batch not found');
+      }
 
-    if (batch.status !== 'approved') {
-      throw new Error('Only approved batches can be processed');
-    }
+      if (batch.status !== 'approved') {
+        throw new Error('Only approved batches can be processed');
+      }
 
-    // Update batch status
-    const [updated] = await db.update(reimbursementBatches)
-      .set({
-        status: 'processed',
-        processedAt: new Date(),
-        processedBy: userId,
-        updatedAt: new Date(),
-      })
-      .where(eq(reimbursementBatches.id, id))
-      .returning();
+      // Update batch status
+      const [updated] = await tx.update(reimbursementBatches)
+        .set({
+          status: 'processed',
+          processedAt: new Date(),
+          processedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(reimbursementBatches.id, id))
+        .returning();
 
-    // Update all expenses in this batch to 'reimbursed'
-    await db.update(expenses)
-      .set({
-        approvalStatus: 'reimbursed',
-        reimbursedAt: new Date(),
-      })
-      .where(eq(expenses.reimbursementBatchId, id));
+      // Update all expenses in this batch to 'reimbursed'
+      await tx.update(expenses)
+        .set({
+          approvalStatus: 'reimbursed',
+          reimbursedAt: new Date(),
+        })
+        .where(eq(expenses.reimbursementBatchId, id));
 
-    return updated;
+      return updated;
+    });
   }
 
   async getAvailableReimbursableExpenses(): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
