@@ -3975,6 +3975,25 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async deleteReimbursementBatch(id: string): Promise<void> {
+    const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
+    if (!batch) {
+      throw new Error('Reimbursement batch not found');
+    }
+
+    if (batch.status !== 'draft') {
+      throw new Error('Only draft batches can be deleted');
+    }
+
+    // Unlink expenses from this batch
+    await db.update(expenses)
+      .set({ reimbursementBatchId: null })
+      .where(eq(expenses.reimbursementBatchId, id));
+
+    // Delete the batch
+    await db.delete(reimbursementBatches).where(eq(reimbursementBatches.id, id));
+  }
+
   async approveReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
     const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
     if (!batch) {
@@ -5470,13 +5489,14 @@ export class DatabaseStorage implements IStorage {
       lte(timeEntries.date, endDate)
     ));
 
-    // Get unbilled expenses for this project
+    // Get unbilled expenses for this project (only approved expenses)
     const unbilledExpenses = await tx.select()
       .from(expenses)
       .where(and(
         eq(expenses.projectId, projectId),
         eq(expenses.billable, true),
         eq(expenses.billedFlag, false),
+        eq(expenses.approvalStatus, 'approved'), // Only approved expenses
         gte(expenses.date, startDate),
         lte(expenses.date, endDate)
       ));
@@ -7634,10 +7654,10 @@ export class DatabaseStorage implements IStorage {
     const unbilledTimeEntries = (await this.getTimeEntries(timeEntryFilters))
       .filter(entry => entry.billable && !entry.billedFlag && !entry.locked);
 
-    // Get unbilled expenses
+    // Get unbilled expenses (only approved expenses)
     const expenseFilters = { ...filters };
     const unbilledExpenses = (await this.getExpenses(expenseFilters))
-      .filter(expense => expense.billable && !expense.billedFlag);
+      .filter(expense => expense.billable && !expense.billedFlag && expense.approvalStatus === 'approved');
 
     // Calculate amounts and identify rate issues
     let totalTimeHours = 0;

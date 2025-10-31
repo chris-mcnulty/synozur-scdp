@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -8273,6 +8273,345 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error('[ATTACHMENT_DELETE] Route error:', error);
       res.status(500).json({ message: "Failed to delete attachment" });
+    }
+  });
+
+  // ========== EXPENSE REPORTS API ==========
+
+  // GET /api/expense-reports - List expense reports
+  app.get("/api/expense-reports", requireAuth, async (req, res) => {
+    try {
+      const { status, submitterId, startDate, endDate } = req.query as Record<string, string>;
+
+      const filters: any = {};
+      
+      // Non-admin users can only see their own expense reports
+      if (!['admin', 'executive', 'billing-admin'].includes(req.user!.role)) {
+        filters.submitterId = req.user!.id;
+      } else if (submitterId) {
+        filters.submitterId = submitterId;
+      }
+
+      if (status) filters.status = status;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+
+      const reports = await storage.getExpenseReports(filters);
+      res.json(reports);
+    } catch (error) {
+      console.error("[EXPENSE_REPORTS] Failed to fetch expense reports:", error);
+      res.status(500).json({ message: "Failed to fetch expense reports" });
+    }
+  });
+
+  // GET /api/expense-reports/:id - Get single expense report
+  app.get("/api/expense-reports/:id", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Permission check: only owner, admin, executive, or billing-admin can view
+      if (
+        report.submitterId !== req.user!.id &&
+        !['admin', 'executive', 'billing-admin'].includes(req.user!.role)
+      ) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      res.json(report);
+    } catch (error) {
+      console.error("[EXPENSE_REPORTS] Failed to fetch expense report:", error);
+      res.status(500).json({ message: "Failed to fetch expense report" });
+    }
+  });
+
+  // POST /api/expense-reports - Create expense report
+  app.post("/api/expense-reports", requireAuth, async (req, res) => {
+    try {
+      const { expenseIds, ...reportData } = req.body;
+      
+      const validatedData = insertExpenseReportSchema.parse({
+        ...reportData,
+        submitterId: req.user!.id, // Always use the authenticated user
+      });
+
+      const report = await storage.createExpenseReport(validatedData, expenseIds || []);
+      res.status(201).json(report);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("[EXPENSE_REPORTS] Failed to create expense report:", error);
+      res.status(500).json({ message: "Failed to create expense report" });
+    }
+  });
+
+  // PATCH /api/expense-reports/:id - Update expense report
+  app.patch("/api/expense-reports/:id", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can update draft reports
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      if (report.status !== 'draft') {
+        return res.status(400).json({ message: "Only draft reports can be updated" });
+      }
+
+      const updated = await storage.updateExpenseReport(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("[EXPENSE_REPORTS] Failed to update expense report:", error);
+      res.status(500).json({ message: "Failed to update expense report" });
+    }
+  });
+
+  // DELETE /api/expense-reports/:id - Delete expense report
+  app.delete("/api/expense-reports/:id", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can delete draft reports
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      if (report.status !== 'draft') {
+        return res.status(400).json({ message: "Only draft reports can be deleted" });
+      }
+
+      await storage.deleteExpenseReport(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("[EXPENSE_REPORTS] Failed to delete expense report:", error);
+      res.status(500).json({ message: "Failed to delete expense report" });
+    }
+  });
+
+  // POST /api/expense-reports/:id/submit - Submit report for approval
+  app.post("/api/expense-reports/:id/submit", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can submit
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const submitted = await storage.submitExpenseReport(req.params.id, req.user!.id);
+      
+      // TODO: Send email notification to approvers
+      
+      res.json(submitted);
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to submit expense report:", error);
+      res.status(400).json({ message: error.message || "Failed to submit expense report" });
+    }
+  });
+
+  // POST /api/expense-reports/:id/approve - Approve report
+  app.post("/api/expense-reports/:id/approve", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      const approved = await storage.approveExpenseReport(req.params.id, req.user!.id);
+      
+      // TODO: Send email notification to submitter
+      
+      res.json(approved);
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to approve expense report:", error);
+      res.status(400).json({ message: error.message || "Failed to approve expense report" });
+    }
+  });
+
+  // POST /api/expense-reports/:id/reject - Reject report
+  app.post("/api/expense-reports/:id/reject", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      const { rejectionNote } = req.body;
+      if (!rejectionNote || rejectionNote.trim() === '') {
+        return res.status(400).json({ message: "Rejection note is required" });
+      }
+
+      const rejected = await storage.rejectExpenseReport(req.params.id, req.user!.id, rejectionNote);
+      
+      // TODO: Send email notification to submitter
+      
+      res.json(rejected);
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to reject expense report:", error);
+      res.status(400).json({ message: error.message || "Failed to reject expense report" });
+    }
+  });
+
+  // POST /api/expense-reports/:id/expenses - Add expenses to report
+  app.post("/api/expense-reports/:id/expenses", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can add expenses to draft reports
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const { expenseIds } = req.body;
+      if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
+        return res.status(400).json({ message: "expenseIds array is required" });
+      }
+
+      await storage.addExpensesToReport(req.params.id, expenseIds);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to add expenses:", error);
+      res.status(400).json({ message: error.message || "Failed to add expenses to report" });
+    }
+  });
+
+  // DELETE /api/expense-reports/:id/expenses/:expenseId - Remove expense from report
+  app.delete("/api/expense-reports/:id/expenses/:expenseId", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can remove expenses from draft reports
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      await storage.removeExpenseFromReport(req.params.id, req.params.expenseId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to remove expense:", error);
+      res.status(400).json({ message: error.message || "Failed to remove expense from report" });
+    }
+  });
+
+  // ========== REIMBURSEMENT BATCHES API ==========
+
+  // GET /api/reimbursement-batches - List reimbursement batches
+  app.get("/api/reimbursement-batches", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+    try {
+      const { status, startDate, endDate } = req.query as Record<string, string>;
+
+      const filters: any = {};
+      if (status) filters.status = status;
+      if (startDate) filters.startDate = startDate;
+      if (endDate) filters.endDate = endDate;
+
+      const batches = await storage.getReimbursementBatches(filters);
+      res.json(batches);
+    } catch (error) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to fetch batches:", error);
+      res.status(500).json({ message: "Failed to fetch reimbursement batches" });
+    }
+  });
+
+  // GET /api/reimbursement-batches/:id - Get single batch
+  app.get("/api/reimbursement-batches/:id", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+    try {
+      const batch = await storage.getReimbursementBatch(req.params.id);
+      if (!batch) {
+        return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      res.json(batch);
+    } catch (error) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to fetch batch:", error);
+      res.status(500).json({ message: "Failed to fetch reimbursement batch" });
+    }
+  });
+
+  // POST /api/reimbursement-batches - Create reimbursement batch
+  app.post("/api/reimbursement-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { expenseIds, ...batchData } = req.body;
+      
+      const validatedData = insertReimbursementBatchSchema.parse({
+        ...batchData,
+        createdBy: req.user!.id,
+      });
+
+      if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
+        return res.status(400).json({ message: "At least one expense is required" });
+      }
+
+      const batch = await storage.createReimbursementBatch(validatedData, expenseIds);
+      res.status(201).json(batch);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      console.error("[REIMBURSEMENT_BATCHES] Failed to create batch:", error);
+      res.status(500).json({ message: "Failed to create reimbursement batch" });
+    }
+  });
+
+  // PATCH /api/reimbursement-batches/:id - Update batch
+  app.patch("/api/reimbursement-batches/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const updated = await storage.updateReimbursementBatch(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to update batch:", error);
+      res.status(400).json({ message: error.message || "Failed to update reimbursement batch" });
+    }
+  });
+
+  // DELETE /api/reimbursement-batches/:id - Delete batch
+  app.delete("/api/reimbursement-batches/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      await storage.deleteReimbursementBatch(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to delete batch:", error);
+      res.status(400).json({ message: error.message || "Failed to delete reimbursement batch" });
+    }
+  });
+
+  // POST /api/reimbursement-batches/:id/process - Process batch (mark as paid)
+  app.post("/api/reimbursement-batches/:id/process", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const processed = await storage.processReimbursementBatch(req.params.id, req.user!.id);
+      res.json(processed);
+    } catch (error: any) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to process batch:", error);
+      res.status(400).json({ message: error.message || "Failed to process reimbursement batch" });
+    }
+  });
+
+  // GET /api/expenses/available-for-reimbursement - Get reimbursable expenses
+  app.get("/api/expenses/available-for-reimbursement", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const expenses = await storage.getAvailableReimbursableExpenses();
+      res.json(expenses);
+    } catch (error) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to fetch reimbursable expenses:", error);
+      res.status(500).json({ message: "Failed to fetch reimbursable expenses" });
     }
   });
 

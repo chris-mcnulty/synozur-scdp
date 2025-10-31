@@ -13,6 +13,9 @@ import EstimateDetail from "@/pages/estimate-detail";
 import TimeTracking from "@/pages/time-tracking";
 import Expenses from "@/pages/expenses";
 import ExpenseManagement from "@/pages/expense-management";
+import ExpenseReports from "@/pages/expense-reports";
+import ExpenseApproval from "@/pages/expense-approval";
+import ReimbursementBatches from "@/pages/reimbursement-batches";
 import Billing from "@/pages/billing";
 import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
@@ -32,7 +35,19 @@ import { Redirect, useLocation } from "wouter";
 import { useEffect, useState } from "react";
 import { setSessionId } from "@/lib/queryClient";
 import { useSessionRecovery } from "@/hooks/use-session-recovery";
+import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
+
+// Permission wrapper component
+function PermissionGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
+  const { hasAnyRole } = useAuth();
+  
+  if (!hasAnyRole(allowedRoles)) {
+    return <Redirect to="/dashboard" />;
+  }
+  
+  return <>{children}</>;
+}
 
 function Router() {
   const [processingSession, setProcessingSession] = useState(true);
@@ -147,6 +162,23 @@ function Router() {
       </Route>
       <Route path="/expense-management">
         {user ? <ExpenseManagement /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/expense-reports">
+        {user ? <ExpenseReports /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/expense-approval">
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'executive', 'billing-admin']}>
+            <ExpenseApproval />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/reimbursement-batches">
+        {user ? (
+          <PermissionGuard allowedRoles={['admin', 'billing-admin']}>
+            <ReimbursementBatches />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}
