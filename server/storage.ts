@@ -6,6 +6,7 @@ import {
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   vocabularyCatalog, organizationVocabulary,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
+  expenseReports, expenseReportItems, reimbursementBatches,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem, type EstimateLineItemWithJoins,
@@ -36,10 +37,13 @@ import {
   type ContainerColumn, type InsertContainerColumn,
   type MetadataTemplate, type InsertMetadataTemplate,
   type DocumentMetadata, type InsertDocumentMetadata,
+  type ExpenseReport, type InsertExpenseReport,
+  type ExpenseReportItem, type InsertExpenseReportItem,
+  type ReimbursementBatch, type InsertReimbursementBatch,
   type VocabularyTerms, DEFAULT_VOCABULARY
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull, inArray } from "drizzle-orm";
+import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -50,6 +54,11 @@ import { receiptStorage } from './services/receipt-storage.js';
 import { normalizeReceiptBatch, type NormalizedReceipt } from './services/receipt-normalizer.js';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
+
+// Table aliases for complex joins
+const usersApprover = alias(users, 'users_approver');
+const usersRejecter = alias(users, 'users_rejecter');
+const usersProcessor = alias(users, 'users_processor');
 
 // Numeric utility functions for safe operations
 function normalizeAmount(value: any): number {
@@ -336,6 +345,45 @@ export interface IStorage {
     expense: Expense;
     receipt: PendingReceipt;
   }>;
+  
+  // Expense Reports
+  getExpenseReports(filters: {
+    submitterId?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User })[]>;
+  getExpenseReport(id: string): Promise<(ExpenseReport & { 
+    submitter: User; 
+    approver?: User; 
+    rejecter?: User;
+    items: (ExpenseReportItem & { expense: Expense & { project: Project & { client: Client }; attachments: ExpenseAttachment[] } })[];
+  }) | undefined>;
+  createExpenseReport(report: InsertExpenseReport, expenseIds: string[]): Promise<ExpenseReport>;
+  updateExpenseReport(id: string, report: Partial<InsertExpenseReport>): Promise<ExpenseReport>;
+  deleteExpenseReport(id: string): Promise<void>;
+  submitExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
+  approveExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
+  rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport>;
+  addExpensesToReport(reportId: string, expenseIds: string[]): Promise<void>;
+  removeExpenseFromReport(reportId: string, expenseId: string): Promise<void>;
+  
+  // Reimbursement Batches
+  getReimbursementBatches(filters?: {
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User })[]>;
+  getReimbursementBatch(id: string): Promise<(ReimbursementBatch & { 
+    approver?: User; 
+    processor?: User;
+    expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+  }) | undefined>;
+  createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch>;
+  updateReimbursementBatch(id: string, batch: Partial<InsertReimbursementBatch>): Promise<ReimbursementBatch>;
+  approveReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch>;
+  processReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch>;
+  getAvailableReimbursableExpenses(): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
   
   // Change Orders
   getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
@@ -3456,6 +3504,540 @@ export class DatabaseStorage implements IStorage {
       expense,
       receipt: updatedReceipt
     };
+  }
+
+  // Expense Reports
+  async getExpenseReports(filters: {
+    submitterId?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User })[]> {
+    const conditions = [];
+    
+    if (filters.submitterId) {
+      conditions.push(eq(expenseReports.submitterId, filters.submitterId));
+    }
+    if (filters.status) {
+      conditions.push(eq(expenseReports.status, filters.status));
+    }
+    if (filters.startDate) {
+      conditions.push(gte(expenseReports.createdAt, new Date(filters.startDate)));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(expenseReports.createdAt, new Date(filters.endDate)));
+    }
+
+    const results = await db.select()
+      .from(expenseReports)
+      .leftJoin(users, eq(expenseReports.submitterId, users.id))
+      .leftJoin(usersApprover, eq(expenseReports.approvedBy, usersApprover.id))
+      .leftJoin(usersRejecter, eq(expenseReports.rejectedBy, usersRejecter.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(expenseReports.createdAt));
+
+    return results.map(row => ({
+      ...row.expense_reports,
+      submitter: row.users!,
+      approver: row.usersApprover || undefined,
+      rejecter: row.usersRejecter || undefined,
+    }));
+  }
+
+  async getExpenseReport(id: string): Promise<(ExpenseReport & { 
+    submitter: User; 
+    approver?: User; 
+    rejecter?: User;
+    items: (ExpenseReportItem & { expense: Expense & { project: Project & { client: Client }; attachments: ExpenseAttachment[] } })[];
+  }) | undefined> {
+    const [report] = await db.select()
+      .from(expenseReports)
+      .leftJoin(users, eq(expenseReports.submitterId, users.id))
+      .leftJoin(usersApprover, eq(expenseReports.approvedBy, usersApprover.id))
+      .leftJoin(usersRejecter, eq(expenseReports.rejectedBy, usersRejecter.id))
+      .where(eq(expenseReports.id, id));
+
+    if (!report) return undefined;
+
+    // Get expense report items with full expense details
+    const items = await db.select()
+      .from(expenseReportItems)
+      .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
+      .innerJoin(projects, eq(expenses.projectId, projects.id))
+      .innerJoin(clients, eq(projects.clientId, clients.id))
+      .where(eq(expenseReportItems.reportId, id));
+
+    // Get attachments for each expense
+    const expenseIds = items.map(item => item.expenses.id);
+    const attachments = expenseIds.length > 0 
+      ? await db.select()
+          .from(expenseAttachments)
+          .where(inArray(expenseAttachments.expenseId, expenseIds))
+      : [];
+
+    const attachmentsByExpense = attachments.reduce((acc, att) => {
+      if (!acc[att.expenseId]) acc[att.expenseId] = [];
+      acc[att.expenseId].push(att);
+      return acc;
+    }, {} as Record<string, ExpenseAttachment[]>);
+
+    const formattedItems = items.map(item => ({
+      ...item.expense_report_items,
+      expense: {
+        ...item.expenses,
+        project: {
+          ...item.projects,
+          client: item.clients,
+        },
+        attachments: attachmentsByExpense[item.expenses.id] || [],
+      },
+    }));
+
+    return {
+      ...report.expense_reports,
+      submitter: report.users!,
+      approver: report.usersApprover || undefined,
+      rejecter: report.usersRejecter || undefined,
+      items: formattedItems,
+    };
+  }
+
+  async createExpenseReport(report: InsertExpenseReport, expenseIds: string[]): Promise<ExpenseReport> {
+    // Generate unique report number
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    
+    const existingReports = await db.select()
+      .from(expenseReports)
+      .where(like(expenseReports.reportNumber, `EXP-${year}-${month}-%`))
+      .orderBy(desc(expenseReports.reportNumber));
+    
+    const nextNum = existingReports.length > 0 
+      ? parseInt(existingReports[0].reportNumber.split('-')[3]) + 1 
+      : 1;
+    const reportNumber = `EXP-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
+
+    // Calculate total amount from expenses
+    const expenseList = expenseIds.length > 0
+      ? await db.select().from(expenses).where(inArray(expenses.id, expenseIds))
+      : [];
+    
+    const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+
+    // Create the expense report
+    const [created] = await db.insert(expenseReports).values({
+      ...report,
+      reportNumber,
+      totalAmount: totalAmount.toFixed(2),
+    }).returning();
+
+    // Add expenses to the report
+    if (expenseIds.length > 0) {
+      await db.insert(expenseReportItems).values(
+        expenseIds.map(expenseId => ({
+          reportId: created.id,
+          expenseId,
+        }))
+      );
+
+      // Update expense approval status to 'draft' if not already set
+      await db.update(expenses)
+        .set({ approvalStatus: 'draft' })
+        .where(and(
+          inArray(expenses.id, expenseIds),
+          eq(expenses.approvalStatus, 'draft')
+        ));
+    }
+
+    return created;
+  }
+
+  async updateExpenseReport(id: string, report: Partial<InsertExpenseReport>): Promise<ExpenseReport> {
+    const [updated] = await db.update(expenseReports)
+      .set({
+        ...report,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteExpenseReport(id: string): Promise<void> {
+    // Items will be cascade deleted due to foreign key constraint
+    await db.delete(expenseReports).where(eq(expenseReports.id, id));
+  }
+
+  async submitExpenseReport(id: string, userId: string): Promise<ExpenseReport> {
+    // Get the report with its items
+    const report = await this.getExpenseReport(id);
+    if (!report) {
+      throw new Error('Expense report not found');
+    }
+
+    if (report.status !== 'draft') {
+      throw new Error('Only draft reports can be submitted');
+    }
+
+    if (report.items.length === 0) {
+      throw new Error('Cannot submit an empty expense report');
+    }
+
+    // Update report status
+    const [updated] = await db.update(expenseReports)
+      .set({
+        status: 'submitted',
+        submittedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, id))
+      .returning();
+
+    // Update all associated expenses to 'submitted'
+    const expenseIds = report.items.map(item => item.expenseId);
+    await db.update(expenses)
+      .set({
+        approvalStatus: 'submitted',
+        submittedAt: new Date(),
+      })
+      .where(inArray(expenses.id, expenseIds));
+
+    return updated;
+  }
+
+  async approveExpenseReport(id: string, userId: string): Promise<ExpenseReport> {
+    const report = await this.getExpenseReport(id);
+    if (!report) {
+      throw new Error('Expense report not found');
+    }
+
+    if (report.status !== 'submitted') {
+      throw new Error('Only submitted reports can be approved');
+    }
+
+    // Update report status
+    const [updated] = await db.update(expenseReports)
+      .set({
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, id))
+      .returning();
+
+    // Update all associated expenses to 'approved'
+    const expenseIds = report.items.map(item => item.expenseId);
+    await db.update(expenses)
+      .set({
+        approvalStatus: 'approved',
+        approvedAt: new Date(),
+        approvedBy: userId,
+      })
+      .where(inArray(expenses.id, expenseIds));
+
+    return updated;
+  }
+
+  async rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport> {
+    const report = await this.getExpenseReport(id);
+    if (!report) {
+      throw new Error('Expense report not found');
+    }
+
+    if (report.status !== 'submitted') {
+      throw new Error('Only submitted reports can be rejected');
+    }
+
+    // Update report status
+    const [updated] = await db.update(expenseReports)
+      .set({
+        status: 'rejected',
+        rejectedAt: new Date(),
+        rejectedBy: userId,
+        rejectionNote,
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, id))
+      .returning();
+
+    // Update all associated expenses to 'rejected' with the note
+    const expenseIds = report.items.map(item => item.expenseId);
+    await db.update(expenses)
+      .set({
+        approvalStatus: 'rejected',
+        rejectedAt: new Date(),
+        rejectedBy: userId,
+        rejectionNote,
+      })
+      .where(inArray(expenses.id, expenseIds));
+
+    return updated;
+  }
+
+  async addExpensesToReport(reportId: string, expenseIds: string[]): Promise<void> {
+    if (expenseIds.length === 0) return;
+
+    // Verify report exists and is in draft status
+    const [report] = await db.select().from(expenseReports).where(eq(expenseReports.id, reportId));
+    if (!report) {
+      throw new Error('Expense report not found');
+    }
+    if (report.status !== 'draft') {
+      throw new Error('Can only add expenses to draft reports');
+    }
+
+    // Add expense items
+    await db.insert(expenseReportItems).values(
+      expenseIds.map(expenseId => ({
+        reportId,
+        expenseId,
+      }))
+    );
+
+    // Recalculate total amount
+    const expenses = await db.select()
+      .from(expenseReportItems)
+      .innerJoin(expenses as any, eq(expenseReportItems.expenseId, (expenses as any).id))
+      .where(eq(expenseReportItems.reportId, reportId));
+
+    const totalAmount = expenses.reduce((sum, item) => sum + parseFloat((item.expenses as any).amount), 0);
+
+    await db.update(expenseReports)
+      .set({
+        totalAmount: totalAmount.toFixed(2),
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, reportId));
+  }
+
+  async removeExpenseFromReport(reportId: string, expenseId: string): Promise<void> {
+    // Verify report is in draft status
+    const [report] = await db.select().from(expenseReports).where(eq(expenseReports.id, reportId));
+    if (!report) {
+      throw new Error('Expense report not found');
+    }
+    if (report.status !== 'draft') {
+      throw new Error('Can only remove expenses from draft reports');
+    }
+
+    await db.delete(expenseReportItems)
+      .where(and(
+        eq(expenseReportItems.reportId, reportId),
+        eq(expenseReportItems.expenseId, expenseId)
+      ));
+
+    // Recalculate total amount
+    const remainingExpenses = await db.select()
+      .from(expenseReportItems)
+      .innerJoin(expenses as any, eq(expenseReportItems.expenseId, (expenses as any).id))
+      .where(eq(expenseReportItems.reportId, reportId));
+
+    const totalAmount = remainingExpenses.reduce((sum, item) => sum + parseFloat((item.expenses as any).amount), 0);
+
+    await db.update(expenseReports)
+      .set({
+        totalAmount: totalAmount.toFixed(2),
+        updatedAt: new Date(),
+      })
+      .where(eq(expenseReports.id, reportId));
+  }
+
+  // Reimbursement Batches
+  async getReimbursementBatches(filters?: {
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User })[]> {
+    const conditions = [];
+    
+    if (filters?.status) {
+      conditions.push(eq(reimbursementBatches.status, filters.status));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(reimbursementBatches.createdAt, new Date(filters.startDate)));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(reimbursementBatches.createdAt, new Date(filters.endDate)));
+    }
+
+    const results = await db.select()
+      .from(reimbursementBatches)
+      .leftJoin(usersApprover, eq(reimbursementBatches.approvedBy, usersApprover.id))
+      .leftJoin(usersProcessor, eq(reimbursementBatches.processedBy, usersProcessor.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(reimbursementBatches.createdAt));
+
+    return results.map(row => ({
+      ...row.reimbursement_batches,
+      approver: row.usersApprover || undefined,
+      processor: row.usersProcessor || undefined,
+    }));
+  }
+
+  async getReimbursementBatch(id: string): Promise<(ReimbursementBatch & { 
+    approver?: User; 
+    processor?: User;
+    expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+  }) | undefined> {
+    const [batch] = await db.select()
+      .from(reimbursementBatches)
+      .leftJoin(usersApprover, eq(reimbursementBatches.approvedBy, usersApprover.id))
+      .leftJoin(usersProcessor, eq(reimbursementBatches.processedBy, usersProcessor.id))
+      .where(eq(reimbursementBatches.id, id));
+
+    if (!batch) return undefined;
+
+    // Get expenses in this batch
+    const batchExpenses = await db.select()
+      .from(expenses)
+      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(projects, eq(expenses.projectId, projects.id))
+      .innerJoin(clients, eq(projects.clientId, clients.id))
+      .where(eq(expenses.reimbursementBatchId, id));
+
+    return {
+      ...batch.reimbursement_batches,
+      approver: batch.usersApprover || undefined,
+      processor: batch.usersProcessor || undefined,
+      expenses: batchExpenses.map(row => ({
+        ...row.expenses,
+        person: row.users,
+        project: {
+          ...row.projects,
+          client: row.clients,
+        },
+      })),
+    };
+  }
+
+  async createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch> {
+    // Generate unique batch number
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    
+    const existingBatches = await db.select()
+      .from(reimbursementBatches)
+      .where(like(reimbursementBatches.batchNumber, `REIMB-${year}-${month}-%`))
+      .orderBy(desc(reimbursementBatches.batchNumber));
+    
+    const nextNum = existingBatches.length > 0 
+      ? parseInt(existingBatches[0].batchNumber.split('-')[3]) + 1 
+      : 1;
+    const batchNumber = `REIMB-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
+
+    // Calculate total amount from expenses
+    const expenseList = expenseIds.length > 0
+      ? await db.select().from(expenses).where(inArray(expenses.id, expenseIds))
+      : [];
+    
+    const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+
+    // Create the reimbursement batch
+    const [created] = await db.insert(reimbursementBatches).values({
+      ...batch,
+      batchNumber,
+      totalAmount: totalAmount.toFixed(2),
+    }).returning();
+
+    // Link expenses to this batch
+    if (expenseIds.length > 0) {
+      await db.update(expenses)
+        .set({ reimbursementBatchId: created.id })
+        .where(inArray(expenses.id, expenseIds));
+    }
+
+    return created;
+  }
+
+  async updateReimbursementBatch(id: string, batch: Partial<InsertReimbursementBatch>): Promise<ReimbursementBatch> {
+    const [updated] = await db.update(reimbursementBatches)
+      .set({
+        ...batch,
+        updatedAt: new Date(),
+      })
+      .where(eq(reimbursementBatches.id, id))
+      .returning();
+    return updated;
+  }
+
+  async approveReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
+    const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
+    if (!batch) {
+      throw new Error('Reimbursement batch not found');
+    }
+
+    if (batch.status !== 'draft') {
+      throw new Error('Only draft batches can be approved');
+    }
+
+    const [updated] = await db.update(reimbursementBatches)
+      .set({
+        status: 'approved',
+        approvedAt: new Date(),
+        approvedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(reimbursementBatches.id, id))
+      .returning();
+
+    return updated;
+  }
+
+  async processReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
+    const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
+    if (!batch) {
+      throw new Error('Reimbursement batch not found');
+    }
+
+    if (batch.status !== 'approved') {
+      throw new Error('Only approved batches can be processed');
+    }
+
+    // Update batch status
+    const [updated] = await db.update(reimbursementBatches)
+      .set({
+        status: 'processed',
+        processedAt: new Date(),
+        processedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(reimbursementBatches.id, id))
+      .returning();
+
+    // Update all expenses in this batch to 'reimbursed'
+    await db.update(expenses)
+      .set({
+        approvalStatus: 'reimbursed',
+        reimbursedAt: new Date(),
+      })
+      .where(eq(expenses.reimbursementBatchId, id));
+
+    return updated;
+  }
+
+  async getAvailableReimbursableExpenses(): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
+    // Get approved, reimbursable expenses that aren't already in a reimbursement batch
+    const results = await db.select()
+      .from(expenses)
+      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(projects, eq(expenses.projectId, projects.id))
+      .innerJoin(clients, eq(projects.clientId, clients.id))
+      .where(and(
+        eq(expenses.reimbursable, true),
+        eq(expenses.approvalStatus, 'approved'),
+        isNull(expenses.reimbursementBatchId)
+      ))
+      .orderBy(desc(expenses.date));
+
+    return results.map(row => ({
+      ...row.expenses,
+      person: row.users,
+      project: {
+        ...row.projects,
+        client: row.clients,
+      },
+    }));
   }
 
   // Change Orders
