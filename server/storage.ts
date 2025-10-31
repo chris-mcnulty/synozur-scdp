@@ -8357,6 +8357,9 @@ export async function generateInvoicePDF(params: {
   // Fetch receipt attachments for expense lines
   console.log('[PDF] Fetching receipt attachments for invoice...');
   const receiptImages: NormalizedReceipt[] = [];
+  const MAX_RECEIPTS_PER_INVOICE = 50; // Limit to prevent oversized PDFs
+  let receiptsLimitExceeded = false;
+  let totalReceiptsFound = 0;
   
   try {
     // Get all expense lines from the invoice
@@ -8368,18 +8371,20 @@ export async function generateInvoicePDF(params: {
       // Get unique project IDs from the invoice
       const projectIds = Array.from(new Set(lines.map(l => l.project.id)));
       
-      // Fetch all expenses for these projects within the batch date range
+      // Fetch only BILLED expenses for these projects within the batch date range
+      // This ensures we only include receipts for expenses actually invoiced
       const invoiceExpenses = await db.select()
         .from(expenses)
         .where(
           and(
             inArray(expenses.projectId, projectIds),
             gte(expenses.date, batch.startDate),
-            lte(expenses.date, batch.endDate)
+            lte(expenses.date, batch.endDate),
+            eq(expenses.billedFlag, true) // Only include billed expenses
           )
         );
       
-      console.log(`[PDF] Found ${invoiceExpenses.length} expense(s) in batch date range`);
+      console.log(`[PDF] Found ${invoiceExpenses.length} billed expense(s) in batch date range`);
       
       if (invoiceExpenses.length > 0) {
         // Fetch all attachments for these expenses
@@ -8389,11 +8394,19 @@ export async function generateInvoicePDF(params: {
           .where(inArray(expenseAttachments.expenseId, expenseIds));
         
         console.log(`[PDF] Found ${attachments.length} receipt attachment(s)`);
+        totalReceiptsFound = attachments.length;
+        
+        // Apply limit to prevent oversized PDFs
+        const attachmentsToInclude = attachments.slice(0, MAX_RECEIPTS_PER_INVOICE);
+        if (attachments.length > MAX_RECEIPTS_PER_INVOICE) {
+          receiptsLimitExceeded = true;
+          console.warn(`[PDF] Receipt limit exceeded: ${attachments.length} found, including first ${MAX_RECEIPTS_PER_INVOICE}`);
+        }
         
         // Download and normalize each receipt
-        if (attachments.length > 0) {
+        if (attachmentsToInclude.length > 0) {
           const receiptsToNormalize = await Promise.all(
-            attachments.map(async (attachment) => {
+            attachmentsToInclude.map(async (attachment) => {
               try {
                 // Download receipt from storage
                 const receiptBuffer = await receiptStorage.getReceipt(attachment.itemId);
@@ -8486,7 +8499,10 @@ export async function generateInvoicePDF(params: {
     
     // Receipt images
     receiptImages,
-    hasReceipts: receiptImages.length > 0
+    hasReceipts: receiptImages.length > 0,
+    receiptsLimitExceeded,
+    totalReceiptsFound,
+    maxReceiptsPerInvoice: MAX_RECEIPTS_PER_INVOICE
   };
 
   // Load template

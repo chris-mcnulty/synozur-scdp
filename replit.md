@@ -142,6 +142,22 @@ Preferred communication style: Simple, everyday language.
 - Receipts are now reliably stored and retrievable in production deployments
 - All new receipt uploads will automatically use correct storage for the environment
 
+**Invoice Receipt Images Feature (October 31, 2025)**:
+- **NEW FEATURE**: Invoice PDFs now automatically include receipt images at the end
+- Receipt images appear on separate pages after invoice summary
+- Supports multiple image formats: JPEG, PNG, HEIC, HEIF, PDF, and text files
+- Receipt Normalizer service converts all formats to embeddable images:
+  - JPEG/PNG/HEIC/HEIF: Converted to optimized JPEG (max 1600px, 85% quality)
+  - PDF receipts: Placeholder page (future enhancement: extract first page)
+  - Text receipts: Rendered as formatted SVG images
+  - Unsupported formats: Warning placeholder with file details
+- Only includes receipts for billed expenses (billedFlag = true) in the invoice date range
+- Maximum 50 receipts per invoice to prevent oversized PDFs and performance issues
+- Displays warning note if receipt limit exceeded
+- Each receipt page shows filename and any conversion notes
+- Uses data URLs for embedding, no external file dependencies
+- Graceful error handling - PDF generation continues even if receipt fetching fails
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).

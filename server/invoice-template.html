@@ -418,7 +418,7 @@
   {{#if hasReceipts}}
   {{#each receiptImages}}
   <div class="receipt-page">
-    <div class="receipt-heading">Receipt Attachment {{@index}}</div>
+    <div class="receipt-heading">Receipt Attachment</div>
     <div class="receipt-image-container">
       <img src="{{this.dataUrl}}" alt="Receipt: {{this.originalName}}" class="receipt-image">
     </div>
@@ -428,6 +428,15 @@
     {{/if}}
   </div>
   {{/each}}
+  {{#if ../receiptsLimitExceeded}}
+  <div class="receipt-page">
+    <div class="adjustment-note" style="margin-top: 100px;">
+      <strong>Note:</strong> This invoice includes {{../receiptImages.length}} of {{../totalReceiptsFound}} receipt attachments.
+      The maximum limit is {{../maxReceiptsPerInvoice}} receipts per invoice to ensure optimal PDF size and performance.
+      Please contact billing for additional receipt images if needed.
+    </div>
+  </div>
+  {{/if}}
   {{/if}}
 </body>
 </html>
