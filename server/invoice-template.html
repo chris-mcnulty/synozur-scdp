@@ -211,6 +211,51 @@
       color: #92400e;
     }
 
+    .receipt-page {
+      page-break-before: always;
+      padding: 0.5in;
+      text-align: center;
+    }
+
+    .receipt-heading {
+      font-size: 18px;
+      font-weight: bold;
+      color: #374151;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .receipt-image-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 600px;
+      margin: 20px 0;
+    }
+
+    .receipt-image {
+      max-width: 100%;
+      max-height: 8.5in;
+      object-fit: contain;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .receipt-filename {
+      font-size: 10px;
+      color: #6b7280;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    .receipt-note {
+      font-size: 9px;
+      color: #9ca3af;
+      margin-top: 5px;
+      font-style: italic;
+      text-align: center;
+    }
+
     @media print {
       body {
         print-color-adjust: exact;
@@ -223,6 +268,10 @@
       }
 
       .page-break {
+        page-break-before: always;
+      }
+
+      .receipt-page {
         page-break-before: always;
       }
     }
@@ -364,5 +413,21 @@
       <p>Generated on {{generatedDate}}</p>
     </div>
   </div>
+
+  <!-- Receipt Images Section -->
+  {{#if hasReceipts}}
+  {{#each receiptImages}}
+  <div class="receipt-page">
+    <div class="receipt-heading">Receipt Attachment {{@index}}</div>
+    <div class="receipt-image-container">
+      <img src="{{this.dataUrl}}" alt="Receipt: {{this.originalName}}" class="receipt-image">
+    </div>
+    <div class="receipt-filename">{{this.originalName}}</div>
+    {{#if this.conversionNote}}
+    <div class="receipt-note">{{this.conversionNote}}</div>
+    {{/if}}
+  </div>
+  {{/each}}
+  {{/if}}
 </body>
 </html>
