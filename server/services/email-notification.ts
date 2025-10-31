@@ -5,6 +5,21 @@ interface EmailRecipient {
   name: string;
 }
 
+/**
+ * Escape HTML to prevent injection in email templates
+ */
+function escapeHtml(text: string): string {
+  const htmlEscapeMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;'
+  };
+  return text.replace(/[&<>"'\/]/g, (char) => htmlEscapeMap[char] || char);
+}
+
 interface SendEmailOptions {
   to: EmailRecipient;
   subject: string;
@@ -54,11 +69,11 @@ export class EmailNotificationService {
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #7C3AED;">Expense Report Submitted</h2>
-          <p>Hi ${submitter.name},</p>
+          <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Your expense report has been successfully submitted for approval:</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
-            <strong>Report Number:</strong> ${reportNumber}<br>
-            <strong>Title:</strong> ${reportTitle}
+            <strong>Report Number:</strong> ${escapeHtml(reportNumber)}<br>
+            <strong>Title:</strong> ${escapeHtml(reportTitle)}
           </div>
           <p>You'll receive a notification once your report has been reviewed.</p>
           <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
@@ -78,13 +93,13 @@ export class EmailNotificationService {
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #7C3AED;">Expense Report Awaiting Your Approval</h2>
-          <p>Hi ${approver.name},</p>
+          <p>Hi ${escapeHtml(approver.name)},</p>
           <p>A new expense report has been submitted and requires your approval:</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
-            <strong>Report Number:</strong> ${reportNumber}<br>
-            <strong>Title:</strong> ${reportTitle}<br>
-            <strong>Submitted By:</strong> ${submitter.name} (${submitter.email})<br>
-            <strong>Total Amount:</strong> ${currency} ${totalAmount}
+            <strong>Report Number:</strong> ${escapeHtml(reportNumber)}<br>
+            <strong>Title:</strong> ${escapeHtml(reportTitle)}<br>
+            <strong>Submitted By:</strong> ${escapeHtml(submitter.name)} (${escapeHtml(submitter.email)})<br>
+            <strong>Total Amount:</strong> ${escapeHtml(currency)} ${escapeHtml(totalAmount)}
           </div>
           <p>Please review this report at your earliest convenience.</p>
           <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
@@ -100,17 +115,18 @@ export class EmailNotificationService {
    */
   async notifyExpenseReportApproved(submitter: EmailRecipient, approver: EmailRecipient, reportNumber: string, reportTitle: string, approverNote?: string): Promise<void> {
     const subject = `Expense Report ${reportNumber} Approved`;
+    const escapedNote = approverNote ? escapeHtml(approverNote) : '';
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #22C55E;">Expense Report Approved</h2>
-          <p>Hi ${submitter.name},</p>
+          <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Great news! Your expense report has been approved:</p>
           <div style="background-color: #f0fdf4; padding: 15px; border-left: 4px solid #22C55E; margin: 20px 0;">
-            <strong>Report Number:</strong> ${reportNumber}<br>
-            <strong>Title:</strong> ${reportTitle}<br>
-            <strong>Approved By:</strong> ${approver.name}
-            ${approverNote ? `<br><strong>Note:</strong> ${approverNote}` : ''}
+            <strong>Report Number:</strong> ${escapeHtml(reportNumber)}<br>
+            <strong>Title:</strong> ${escapeHtml(reportTitle)}<br>
+            <strong>Approved By:</strong> ${escapeHtml(approver.name)}
+            ${escapedNote ? `<br><strong>Note:</strong> ${escapedNote}` : ''}
           </div>
           <p>Your expenses will be processed for reimbursement shortly.</p>
           <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
@@ -126,17 +142,18 @@ export class EmailNotificationService {
    */
   async notifyExpenseReportRejected(submitter: EmailRecipient, rejecter: EmailRecipient, reportNumber: string, reportTitle: string, rejectionNote?: string): Promise<void> {
     const subject = `Expense Report ${reportNumber} Requires Revision`;
+    const escapedNote = rejectionNote ? escapeHtml(rejectionNote) : '';
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #EF4444;">Expense Report Requires Revision</h2>
-          <p>Hi ${submitter.name},</p>
+          <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Your expense report has been reviewed and requires some changes:</p>
           <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #EF4444; margin: 20px 0;">
-            <strong>Report Number:</strong> ${reportNumber}<br>
-            <strong>Title:</strong> ${reportTitle}<br>
-            <strong>Reviewed By:</strong> ${rejecter.name}
-            ${rejectionNote ? `<br><br><strong>Reason:</strong><br>${rejectionNote}` : ''}
+            <strong>Report Number:</strong> ${escapeHtml(reportNumber)}<br>
+            <strong>Title:</strong> ${escapeHtml(reportTitle)}<br>
+            <strong>Reviewed By:</strong> ${escapeHtml(rejecter.name)}
+            ${escapedNote ? `<br><br><strong>Reason:</strong><br>${escapedNote.replace(/\n/g, '<br>')}` : ''}
           </div>
           <p>Please review the feedback and resubmit your report with the necessary corrections.</p>
           <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
@@ -156,11 +173,11 @@ export class EmailNotificationService {
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h2 style="color: #7C3AED;">Reimbursement Batch Processed</h2>
-          <p>Hi ${employee.name},</p>
+          <p>Hi ${escapeHtml(employee.name)},</p>
           <p>Your approved expenses have been included in a reimbursement batch and are being processed for payment:</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
-            <strong>Batch Number:</strong> ${batchNumber}<br>
-            <strong>Total Amount:</strong> ${currency} ${totalAmount}<br>
+            <strong>Batch Number:</strong> ${escapeHtml(batchNumber)}<br>
+            <strong>Total Amount:</strong> ${escapeHtml(currency)} ${escapeHtml(totalAmount)}<br>
             <strong>Number of Expenses:</strong> ${expenseCount}
           </div>
           <p>You can expect payment according to your organization's reimbursement schedule.</p>
