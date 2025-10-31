@@ -46,6 +46,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
+import { receiptStorage } from './services/receipt-storage.js';
+import { normalizeReceiptBatch, type NormalizedReceipt } from './services/receipt-normalizer.js';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
 
@@ -8352,6 +8354,90 @@ export async function generateInvoicePDF(params: {
 
   const hasAdjustments = adjustments.length > 0 || lines.some(l => l.billedAmount && l.billedAmount !== l.amount);
 
+  // Fetch receipt attachments for expense lines
+  console.log('[PDF] Fetching receipt attachments for invoice...');
+  const receiptImages: NormalizedReceipt[] = [];
+  
+  try {
+    // Get all expense lines from the invoice
+    const expenseLines = lines.filter(line => line.type === 'expense');
+    
+    if (expenseLines.length > 0) {
+      console.log(`[PDF] Found ${expenseLines.length} expense line(s) in invoice`);
+      
+      // Get unique project IDs from the invoice
+      const projectIds = Array.from(new Set(lines.map(l => l.project.id)));
+      
+      // Fetch all expenses for these projects within the batch date range
+      const invoiceExpenses = await db.select()
+        .from(expenses)
+        .where(
+          and(
+            inArray(expenses.projectId, projectIds),
+            gte(expenses.date, batch.startDate),
+            lte(expenses.date, batch.endDate)
+          )
+        );
+      
+      console.log(`[PDF] Found ${invoiceExpenses.length} expense(s) in batch date range`);
+      
+      if (invoiceExpenses.length > 0) {
+        // Fetch all attachments for these expenses
+        const expenseIds = invoiceExpenses.map(e => e.id);
+        const attachments = await db.select()
+          .from(expenseAttachments)
+          .where(inArray(expenseAttachments.expenseId, expenseIds));
+        
+        console.log(`[PDF] Found ${attachments.length} receipt attachment(s)`);
+        
+        // Download and normalize each receipt
+        if (attachments.length > 0) {
+          const receiptsToNormalize = await Promise.all(
+            attachments.map(async (attachment) => {
+              try {
+                // Download receipt from storage
+                const receiptBuffer = await receiptStorage.getReceipt(attachment.itemId);
+                return {
+                  buffer: receiptBuffer,
+                  contentType: attachment.contentType,
+                  originalName: attachment.fileName
+                };
+              } catch (error) {
+                console.error(`[PDF] Failed to download receipt ${attachment.fileName}:`, error);
+                return null;
+              }
+            })
+          );
+          
+          // Filter out failed downloads
+          const validReceipts = receiptsToNormalize.filter(r => r !== null) as Array<{ 
+            buffer: Buffer; 
+            contentType: string; 
+            originalName: string 
+          }>;
+          
+          // Normalize all valid receipts
+          if (validReceipts.length > 0) {
+            console.log(`[PDF] Normalizing ${validReceipts.length} receipt(s)...`);
+            const normalizedReceipts = await normalizeReceiptBatch(validReceipts);
+            
+            // Add successfully normalized receipts to the array
+            normalizedReceipts.forEach(receipt => {
+              if (receipt) {
+                receiptImages.push(receipt);
+              }
+            });
+            
+            console.log(`[PDF] Successfully normalized ${receiptImages.length} receipt(s)`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[PDF] Error fetching receipt attachments:', error);
+    // Continue with PDF generation even if receipt fetching fails
+  }
+
   // Prepare template data
   const templateData = {
     // Company info
@@ -8396,7 +8482,11 @@ export async function generateInvoicePDF(params: {
     originalTotal: originalTotal.toFixed(2),
     totalAdjustments: totalAdjustments.toFixed(2),
     totalAdjustmentIsPositive: totalAdjustments >= 0,
-    total: total.toFixed(2)
+    total: total.toFixed(2),
+    
+    // Receipt images
+    receiptImages,
+    hasReceipts: receiptImages.length > 0
   };
 
   // Load template
