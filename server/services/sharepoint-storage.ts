@@ -1,5 +1,6 @@
 import { getUncachableSharePointClient } from './sharepoint-client.js';
 import { Readable } from 'stream';
+import type { IStorage } from '../storage.js';
 
 export type FileType = 'receipts' | 'invoices' | 'sows' | 'changeorders';
 
@@ -13,6 +14,17 @@ interface SharePointConfig {
  * Manages document storage in SharePoint with automatic folder organization
  */
 export class SharePointStorageService {
+  private storage: IStorage | null = null;
+
+  constructor() {}
+
+  /**
+   * Set the storage instance for database access
+   */
+  setStorage(storage: IStorage): void {
+    this.storage = storage;
+  }
+
   private getSiteId(siteUrl: string): string {
     // Extract site name from URL like https://synozur.sharepoint.com/sites/RevOps/
     const match = siteUrl.match(/sharepoint\.com\/sites\/([^\/]+)/);
@@ -23,16 +35,37 @@ export class SharePointStorageService {
   }
 
   /**
-   * Get SharePoint configuration based on environment
+   * Get SharePoint configuration from system settings or environment defaults
    */
-  private getConfig(): SharePointConfig {
+  private async getConfig(): Promise<SharePointConfig> {
     const isDevelopment = !process.env.REPLIT_DEPLOYMENT || process.env.NODE_ENV === 'development';
     
+    // Default fallback values
+    const defaultSiteUrl = 'https://synozur.sharepoint.com/sites/RevOps/';
+    const defaultLibraryDev = 'SCDP-Dev';
+    const defaultLibraryProd = 'SCDP-Prod';
+
+    // Try to get from system settings if storage is available
+    if (this.storage) {
+      try {
+        const siteUrl = isDevelopment
+          ? await this.storage.getSystemSettingValue('SHAREPOINT_SITE_URL_DEV', defaultSiteUrl)
+          : await this.storage.getSystemSettingValue('SHAREPOINT_SITE_URL_PROD', defaultSiteUrl);
+        
+        const libraryName = isDevelopment
+          ? await this.storage.getSystemSettingValue('SHAREPOINT_LIBRARY_DEV', defaultLibraryDev)
+          : await this.storage.getSystemSettingValue('SHAREPOINT_LIBRARY_PROD', defaultLibraryProd);
+
+        return { siteUrl, libraryName };
+      } catch (error) {
+        console.warn('Failed to get SharePoint settings from database, using defaults:', error);
+      }
+    }
+
+    // Fallback to defaults
     return {
-      siteUrl: isDevelopment 
-        ? 'https://synozur.sharepoint.com/sites/RevOps/'
-        : 'https://synozur.sharepoint.com/sites/RevOps/',
-      libraryName: isDevelopment ? 'SCDP-Dev' : 'SCDP-Prod'
+      siteUrl: defaultSiteUrl,
+      libraryName: isDevelopment ? defaultLibraryDev : defaultLibraryProd
     };
   }
 
@@ -40,7 +73,7 @@ export class SharePointStorageService {
    * Ensure a folder exists in the document library, create if needed
    */
   private async ensureFolder(folderName: string): Promise<void> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -88,7 +121,7 @@ export class SharePointStorageService {
     fileBuffer: Buffer,
     contentType: string = 'application/octet-stream'
   ): Promise<string> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -122,7 +155,7 @@ export class SharePointStorageService {
    * Download a file from SharePoint
    */
   async downloadFile(fileType: FileType, fileName: string): Promise<Buffer> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -154,7 +187,7 @@ export class SharePointStorageService {
    * Delete a file from SharePoint
    */
   async deleteFile(fileType: FileType, fileName: string): Promise<void> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -178,7 +211,7 @@ export class SharePointStorageService {
    * Get file URL without downloading
    */
   async getFileUrl(fileType: FileType, fileName: string): Promise<string> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -203,7 +236,7 @@ export class SharePointStorageService {
    * List all files in a folder
    */
   async listFiles(fileType: FileType): Promise<Array<{ name: string; url: string; size: number; modifiedAt: string }>> {
-    const config = this.getConfig();
+    const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
     const siteName = this.getSiteId(config.siteUrl);
 
@@ -236,4 +269,10 @@ export class SharePointStorageService {
   }
 }
 
+// Export singleton instance - will be initialized with storage after import
 export const sharepointStorage = new SharePointStorageService();
+
+// Initialize with storage instance after export (called from routes.ts)
+export function initSharePointStorage(storage: IStorage): void {
+  sharepointStorage.setStorage(storage);
+}
