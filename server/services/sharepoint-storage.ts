@@ -15,6 +15,7 @@ interface SharePointConfig {
  */
 export class SharePointStorageService {
   private storage: IStorage | null = null;
+  private driveCache: Map<string, string> = new Map(); // Cache drive IDs per config key
 
   constructor() {}
 
@@ -25,13 +26,45 @@ export class SharePointStorageService {
     this.storage = storage;
   }
 
-  private getSiteId(siteUrl: string): string {
-    // Extract site name from URL like https://synozur.sharepoint.com/sites/RevOps/
-    const match = siteUrl.match(/sharepoint\.com\/sites\/([^\/]+)/);
-    if (!match) {
-      throw new Error(`Invalid SharePoint site URL: ${siteUrl}`);
+  /**
+   * Parse SharePoint site URL to extract hostname and server-relative path
+   * Supports root sites, sites collection, and multi-level paths
+   */
+  private parseSiteUrl(siteUrl: string): { hostname: string; serverRelativePath: string } {
+    try {
+      const url = new URL(siteUrl);
+      const hostname = url.hostname;
+      let serverRelativePath = url.pathname;
+      
+      // Remove trailing slashes
+      if (serverRelativePath.endsWith('/')) {
+        serverRelativePath = serverRelativePath.slice(0, -1);
+      }
+      
+      // Root site case: empty path or just /
+      if (!serverRelativePath || serverRelativePath === '/') {
+        serverRelativePath = '/';
+      }
+      
+      return { hostname, serverRelativePath };
+    } catch (error) {
+      throw new Error(`Invalid SharePoint site URL: ${siteUrl}. Must be a valid HTTPS URL.`);
     }
-    return match[1];
+  }
+
+  /**
+   * Build the Graph API path for accessing a site
+   */
+  private getSiteApiPath(siteUrl: string): string {
+    const { hostname, serverRelativePath } = this.parseSiteUrl(siteUrl);
+    
+    // For root site collection (no trailing colon/slash to avoid malformed paths like /sites/host://drives)
+    if (serverRelativePath === '/') {
+      return `/sites/${hostname}`;
+    }
+    
+    // For sites collection or deeper paths
+    return `/sites/${hostname}:${serverRelativePath}`;
   }
 
   /**
@@ -70,42 +103,63 @@ export class SharePointStorageService {
   }
 
   /**
+   * Get or resolve the drive ID for the configured library
+   * Caches the result to avoid repeated API calls
+   */
+  private async getDriveId(config: SharePointConfig): Promise<string> {
+    const cacheKey = `${config.siteUrl}:${config.libraryName}`;
+    
+    // Return cached drive ID if available
+    if (this.driveCache.has(cacheKey)) {
+      return this.driveCache.get(cacheKey)!;
+    }
+
+    const client = await getUncachableSharePointClient();
+    const siteApiPath = this.getSiteApiPath(config.siteUrl);
+
+    try {
+      const drives = await client.api(`${siteApiPath}/drives`).get();
+      const drive = drives.value.find((d: any) => d.name === config.libraryName);
+      
+      if (!drive) {
+        throw new Error(`Document library '${config.libraryName}' not found at ${config.siteUrl}. Available libraries: ${drives.value.map((d: any) => d.name).join(', ')}`);
+      }
+
+      // Cache the drive ID
+      this.driveCache.set(cacheKey, drive.id);
+      return drive.id;
+    } catch (error) {
+      console.error(`Error resolving drive ID for ${config.libraryName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Ensure a folder exists in the document library, create if needed
    */
   private async ensureFolder(folderName: string): Promise<void> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     try {
-      // Try to get the folder first
-      await client
-        .api(`/sites/root:/sites/${siteName}:/drives`)
-        .get()
-        .then(async (drives: any) => {
-          const drive = drives.value.find((d: any) => d.name === config.libraryName);
-          if (!drive) {
-            throw new Error(`Document library '${config.libraryName}' not found`);
-          }
-
-          // Check if folder exists
-          try {
-            await client.api(`/drives/${drive.id}/root:/${folderName}`).get();
-          } catch (err: any) {
-            // Folder doesn't exist, create it
-            if (err.statusCode === 404) {
-              await client
-                .api(`/drives/${drive.id}/root/children`)
-                .post({
-                  name: folderName,
-                  folder: {},
-                  '@microsoft.graph.conflictBehavior': 'rename'
-                });
-            } else {
-              throw err;
-            }
-          }
-        });
+      // Check if folder exists
+      try {
+        await client.api(`/drives/${driveId}/root:/${folderName}`).get();
+      } catch (err: any) {
+        // Folder doesn't exist, create it
+        if (err.statusCode === 404) {
+          await client
+            .api(`/drives/${driveId}/root/children`)
+            .post({
+              name: folderName,
+              folder: {}
+              // Removed '@microsoft.graph.conflictBehavior': 'rename' to make it idempotent
+            });
+        } else {
+          throw err;
+        }
+      }
     } catch (error) {
       console.error(`Error ensuring folder ${folderName}:`, error);
       throw error;
@@ -123,24 +177,16 @@ export class SharePointStorageService {
   ): Promise<string> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     // Ensure the folder exists
     await this.ensureFolder(fileType);
 
     try {
-      // Get the drive ID
-      const drives = await client.api(`/sites/root:/sites/${siteName}:/drives`).get();
-      const drive = drives.value.find((d: any) => d.name === config.libraryName);
-      
-      if (!drive) {
-        throw new Error(`Document library '${config.libraryName}' not found`);
-      }
-
       // Upload the file
       const filePath = `${fileType}/${fileName}`;
       const uploadResult = await client
-        .api(`/drives/${drive.id}/root:/${filePath}:/content`)
+        .api(`/drives/${driveId}/root:/${filePath}:/content`)
         .putStream(Readable.from(fileBuffer));
 
       // Return the SharePoint URL
@@ -157,19 +203,12 @@ export class SharePointStorageService {
   async downloadFile(fileType: FileType, fileName: string): Promise<Buffer> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     try {
-      const drives = await client.api(`/sites/root:/sites/${siteName}:/drives`).get();
-      const drive = drives.value.find((d: any) => d.name === config.libraryName);
-      
-      if (!drive) {
-        throw new Error(`Document library '${config.libraryName}' not found`);
-      }
-
       const filePath = `${fileType}/${fileName}`;
       const downloadUrl = await client
-        .api(`/drives/${drive.id}/root:/${filePath}`)
+        .api(`/drives/${driveId}/root:/${filePath}`)
         .get()
         .then((file: any) => file['@microsoft.graph.downloadUrl']);
 
@@ -189,18 +228,11 @@ export class SharePointStorageService {
   async deleteFile(fileType: FileType, fileName: string): Promise<void> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     try {
-      const drives = await client.api(`/sites/root:/sites/${siteName}:/drives`).get();
-      const drive = drives.value.find((d: any) => d.name === config.libraryName);
-      
-      if (!drive) {
-        throw new Error(`Document library '${config.libraryName}' not found`);
-      }
-
       const filePath = `${fileType}/${fileName}`;
-      await client.api(`/drives/${drive.id}/root:/${filePath}`).delete();
+      await client.api(`/drives/${driveId}/root:/${filePath}`).delete();
     } catch (error) {
       console.error(`Error deleting file from SharePoint:`, error);
       throw error;
@@ -213,18 +245,11 @@ export class SharePointStorageService {
   async getFileUrl(fileType: FileType, fileName: string): Promise<string> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     try {
-      const drives = await client.api(`/sites/root:/sites/${siteName}:/drives`).get();
-      const drive = drives.value.find((d: any) => d.name === config.libraryName);
-      
-      if (!drive) {
-        throw new Error(`Document library '${config.libraryName}' not found`);
-      }
-
       const filePath = `${fileType}/${fileName}`;
-      const file = await client.api(`/drives/${drive.id}/root:/${filePath}`).get();
+      const file = await client.api(`/drives/${driveId}/root:/${filePath}`).get();
       return file.webUrl;
     } catch (error) {
       console.error(`Error getting file URL from SharePoint:`, error);
@@ -238,18 +263,11 @@ export class SharePointStorageService {
   async listFiles(fileType: FileType): Promise<Array<{ name: string; url: string; size: number; modifiedAt: string }>> {
     const config = await this.getConfig();
     const client = await getUncachableSharePointClient();
-    const siteName = this.getSiteId(config.siteUrl);
+    const driveId = await this.getDriveId(config);
 
     try {
-      const drives = await client.api(`/sites/root:/sites/${siteName}:/drives`).get();
-      const drive = drives.value.find((d: any) => d.name === config.libraryName);
-      
-      if (!drive) {
-        throw new Error(`Document library '${config.libraryName}' not found`);
-      }
-
       const folderContents = await client
-        .api(`/drives/${drive.id}/root:/${fileType}:/children`)
+        .api(`/drives/${driveId}/root:/${fileType}:/children`)
         .get();
 
       return folderContents.value.map((file: any) => ({

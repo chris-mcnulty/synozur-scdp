@@ -10,6 +10,10 @@ import { SharePointFileStorage } from "./services/sharepoint-file-storage.js";
 import { containerRegistration } from "./services/container-registration.js";
 import { receiptStorage } from "./services/receipt-storage.js";
 import { emailService } from "./services/email-notification.js";
+import { sharepointStorage, initSharePointStorage } from "./services/sharepoint-storage.js";
+
+// Initialize SharePoint storage with database access
+initSharePointStorage(storage);
 
 // SharePoint functionality restored - using real GraphClient implementation
 

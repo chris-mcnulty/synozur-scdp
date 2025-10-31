@@ -39,9 +39,17 @@ Preferred communication style: Simple, everyday language.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage
-- **Storage Strategy**: Hybrid approach using Replit Object Storage for production (invoices, receipts, business documents), local filesystem for development. Microsoft SharePoint Embedded is used for debug documents.
+- **Storage Strategy**: Multi-tier approach with SharePoint Online as primary storage for business documents
+  - **SharePoint Online (NEW)**: Primary storage for receipts, invoices, SOWs, change orders using SharePoint Sites and Document Libraries
+    - Environment-specific sites and libraries (configurable via admin settings)
+    - Automatic folder organization by document type (receipts/, invoices/, sows/, changeorders/)
+    - Integrated with Microsoft Graph API via Replit SharePoint connector
+    - Default configuration: https://synozur.sharepoint.com/sites/RevOps/ with SCDP-Dev (dev) and SCDP-Prod (prod) libraries
+  - **Replit Object Storage**: Legacy storage for production invoices and receipts (being migrated)
+  - **SharePoint Embedded**: Debug/development containers (legacy)
+  - **Local Filesystem**: Development fallback
 - **Environment Detection**: Uses `REPLIT_DEPLOYMENT` and `NODE_ENV`.
-- **Authentication**: Certificate-based for SharePoint; Replit sidecar for Object Storage.
+- **Authentication**: OAuth-based for SharePoint Online (Replit connector); Certificate-based for SharePoint Embedded; Replit sidecar for Object Storage.
 
 ### Data Integrity
 - **Estimate Preservation**: Estimates are preserved and unlinked upon project deletion.
