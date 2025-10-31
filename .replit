@@ -156,4 +156,4 @@ task = "shell.exec"
 args = "nodemon index.js"
 
 [agent]
-integrations = ["javascript_object_storage:1.0.0", "outlook:1.0.0"]
+integrations = ["javascript_object_storage:1.0.0", "outlook:1.0.0", "sharepoint:1.0.0"]
