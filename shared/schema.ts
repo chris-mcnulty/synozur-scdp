@@ -8,6 +8,10 @@ import { z } from "zod";
 export const estimateStatusEnum = z.enum(['draft', 'final', 'sent', 'approved', 'rejected']);
 export type EstimateStatus = z.infer<typeof estimateStatusEnum>;
 
+// Expense approval status enum
+export const expenseApprovalStatusEnum = z.enum(['draft', 'submitted', 'approved', 'rejected', 'reimbursed']);
+export type ExpenseApprovalStatus = z.infer<typeof expenseApprovalStatusEnum>;
+
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -455,6 +459,16 @@ export const expenses = pgTable("expenses", {
   vendor: text("vendor"), // Merchant/vendor name (e.g., Alaska Airlines, Starbucks, Hyatt)
   receiptUrl: text("receipt_url"),
   billedFlag: boolean("billed_flag").notNull().default(false),
+  // Approval workflow fields
+  approvalStatus: text("approval_status").notNull().default("draft"), // draft, submitted, approved, rejected, reimbursed
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectedBy: varchar("rejected_by").references(() => users.id),
+  rejectionNote: text("rejection_note"),
+  reimbursedAt: timestamp("reimbursed_at"),
+  reimbursementBatchId: varchar("reimbursement_batch_id"), // Will reference reimbursementBatches
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -506,6 +520,63 @@ export const pendingReceipts = pgTable("pending_receipts", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
+
+// Expense Reports - For grouping expenses into submission batches for approval
+export const expenseReports = pgTable("expense_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reportNumber: text("report_number").notNull().unique(), // Auto-generated report number (e.g., EXP-2025-10-001)
+  submitterId: varchar("submitter_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("draft"), // draft, submitted, approved, rejected
+  title: text("title").notNull(), // User-provided title for the report
+  description: text("description"), // Optional description
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  currency: text("currency").notNull().default("USD"),
+  // Workflow tracking
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectedBy: varchar("rejected_by").references(() => users.id),
+  rejectionNote: text("rejection_note"), // Admin's explanation for rejection
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  submitterIdx: index("expense_reports_submitter_idx").on(table.submitterId),
+  statusIdx: index("expense_reports_status_idx").on(table.status),
+}));
+
+// Expense Report Items - Links individual expenses to expense reports
+export const expenseReportItems = pgTable("expense_report_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reportId: varchar("report_id").notNull().references(() => expenseReports.id, { onDelete: 'cascade' }),
+  expenseId: varchar("expense_id").notNull().references(() => expenses.id, { onDelete: 'cascade' }),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  reportIdx: index("expense_report_items_report_idx").on(table.reportId),
+  expenseIdx: index("expense_report_items_expense_idx").on(table.expenseId),
+  uniqueExpensePerReport: uniqueIndex("unique_expense_per_report").on(table.reportId, table.expenseId),
+}));
+
+// Reimbursement Batches - For processing approved expenses for reimbursement
+export const reimbursementBatches = pgTable("reimbursement_batches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  batchNumber: text("batch_number").notNull().unique(), // Auto-generated batch number (e.g., REIMB-2025-10-001)
+  status: text("status").notNull().default("draft"), // draft, approved, processed
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  currency: text("currency").notNull().default("USD"),
+  description: text("description"),
+  // Approval tracking
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  processedAt: timestamp("processed_at"), // When reimbursement was actually processed/paid
+  processedBy: varchar("processed_by").references(() => users.id),
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  statusIdx: index("reimbursement_batches_status_idx").on(table.status),
+}));
 
 // Add unique constraint for project rate overrides
 export const projectRateOverridesUniqueConstraint = sql`
@@ -819,6 +890,17 @@ export const expensesRelations = relations(expenses, ({ one, many }) => ({
     references: [projects.id],
   }),
   attachments: many(expenseAttachments),
+  reportItems: many(expenseReportItems),
+  approver: one(users, {
+    fields: [expenses.approvedBy],
+    references: [users.id],
+    relationName: "expenseApprovals",
+  }),
+  rejecter: one(users, {
+    fields: [expenses.rejectedBy],
+    references: [users.id],
+    relationName: "expenseRejections",
+  }),
 }));
 
 export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one }) => ({
@@ -829,6 +911,48 @@ export const expenseAttachmentsRelations = relations(expenseAttachments, ({ one 
   createdByUser: one(users, {
     fields: [expenseAttachments.createdByUserId],
     references: [users.id],
+  }),
+}));
+
+export const expenseReportsRelations = relations(expenseReports, ({ one, many }) => ({
+  submitter: one(users, {
+    fields: [expenseReports.submitterId],
+    references: [users.id],
+  }),
+  approver: one(users, {
+    fields: [expenseReports.approvedBy],
+    references: [users.id],
+    relationName: "expenseReportApprovals",
+  }),
+  rejecter: one(users, {
+    fields: [expenseReports.rejectedBy],
+    references: [users.id],
+    relationName: "expenseReportRejections",
+  }),
+  items: many(expenseReportItems),
+}));
+
+export const expenseReportItemsRelations = relations(expenseReportItems, ({ one }) => ({
+  report: one(expenseReports, {
+    fields: [expenseReportItems.reportId],
+    references: [expenseReports.id],
+  }),
+  expense: one(expenses, {
+    fields: [expenseReportItems.expenseId],
+    references: [expenses.id],
+  }),
+}));
+
+export const reimbursementBatchesRelations = relations(reimbursementBatches, ({ one }) => ({
+  approver: one(users, {
+    fields: [reimbursementBatches.approvedBy],
+    references: [users.id],
+    relationName: "reimbursementBatchApprovals",
+  }),
+  processor: one(users, {
+    fields: [reimbursementBatches.processedBy],
+    references: [users.id],
+    relationName: "reimbursementBatchProcessors",
   }),
 }));
 
@@ -1060,6 +1184,13 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
 export const insertExpenseSchema = createInsertSchema(expenses).omit({
   id: true,
   createdAt: true,
+  submittedAt: true,
+  approvedAt: true,
+  approvedBy: true,
+  rejectedAt: true,
+  rejectedBy: true,
+  reimbursedAt: true,
+  reimbursementBatchId: true,
 });
 
 export const insertExpenseAttachmentSchema = createInsertSchema(expenseAttachments).omit({
@@ -1071,6 +1202,32 @@ export const insertPendingReceiptSchema = createInsertSchema(pendingReceipts).om
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertExpenseReportSchema = createInsertSchema(expenseReports).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+  approvedAt: true,
+  approvedBy: true,
+  rejectedAt: true,
+  rejectedBy: true,
+});
+
+export const insertExpenseReportItemSchema = createInsertSchema(expenseReportItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertReimbursementBatchSchema = createInsertSchema(reimbursementBatches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+  approvedBy: true,
+  processedAt: true,
+  processedBy: true,
 });
 
 export const insertSowSchema = createInsertSchema(sows).omit({
@@ -1166,6 +1323,15 @@ export type InsertExpenseAttachment = z.infer<typeof insertExpenseAttachmentSche
 
 export type PendingReceipt = typeof pendingReceipts.$inferSelect;
 export type InsertPendingReceipt = z.infer<typeof insertPendingReceiptSchema>;
+
+export type ExpenseReport = typeof expenseReports.$inferSelect;
+export type InsertExpenseReport = z.infer<typeof insertExpenseReportSchema>;
+
+export type ExpenseReportItem = typeof expenseReportItems.$inferSelect;
+export type InsertExpenseReportItem = z.infer<typeof insertExpenseReportItemSchema>;
+
+export type ReimbursementBatch = typeof reimbursementBatches.$inferSelect;
+export type InsertReimbursementBatch = z.infer<typeof insertReimbursementBatchSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
