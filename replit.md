@@ -58,12 +58,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **Estimate Management**: Excel/CSV import/export, AI-driven text export, status-based locking, optional resource assignment copying, inline editing.
-- **Invoice & Document Management**: Automated invoice generation, PDF viewing/replacement, SOW/Change Order document handling. Milestone-based invoice generation with "INV" prefix. Invoice PDFs automatically include expense receipt images.
+- **Invoice & Document Management**: Automated invoice generation, PDF viewing/replacement, SOW/Change Order document handling. Milestone-based invoice generation with "INV" prefix. Invoice PDFs automatically include expense receipt images. Tax rates applied at batch level (default 9.3%) with automatic calculation on subtotal after discount.
 - **Expense Approval Workflow**: Comprehensive approval system with finite state machine (draft → submitted → approved/rejected → reimbursed) using `expense_reports`, `expense_report_items`, and `reimbursement_batches` tables. Role-based access control for approval and processing. Only approved expenses are eligible for invoicing. Email notifications via Outlook/Microsoft Graph API for all workflow transitions.
 - **Resource Management & Capacity Planning**: Dual List and Timeline views, capacity summary dashboard, color-coded utilization, conflict detection, enhanced filtering, cross-project resource dashboard, and "My Assignments" for employees.
 - **Budget & SOW Management**: Project budgets tied to explicit SOW uploads.
 - **Time Tracking**: Enhanced with assignment/allocation linking and mobile optimizations.
 - **Vocabulary Management**: Hierarchical terminology management.
+- **Tax Management**: Configurable tax rates per invoice batch (default 9.3%). Tax calculated as: taxAmount = (totalAmount - discountAmount) * (taxRate / 100). Automatically recalculated during invoice generation, aggregate adjustments, and adjustment removals.
 
 ## External Dependencies
 
