@@ -977,7 +977,10 @@ export default function BatchDetail() {
 
   const grandTotal = calculateGrandTotal();
   const discountAmount = parseFloat(batchDetails.discountAmount || "0");
-  const netTotal = grandTotal - discountAmount;
+  const subtotalAfterDiscount = grandTotal - discountAmount;
+  const taxRate = parseFloat((batchDetails as any).taxRate || "0");
+  const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+  const netTotal = subtotalAfterDiscount + taxAmount;
 
   return (
     <Layout>
@@ -1571,7 +1574,7 @@ export default function BatchDetail() {
 
             <Separator className="my-4" />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-1">
                 <div className="flex items-center text-sm text-muted-foreground">
                   <DollarSign className="mr-1 h-3 w-3" />
@@ -1591,8 +1594,17 @@ export default function BatchDetail() {
                 </div>
               )}
               
+              {taxAmount > 0 && (
+                <div className="space-y-1">
+                  <div className="text-sm text-muted-foreground">Tax ({taxRate}%)</div>
+                  <p className="text-xl font-semibold text-blue-600 dark:text-blue-400" data-testid="text-tax">
+                    ${taxAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              )}
+              
               <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Net Total</div>
+                <div className="text-sm text-muted-foreground">Total</div>
                 <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-net-total">
                   ${netTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
