@@ -9535,9 +9535,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, invoicingMode, batchType } = req.body;
+      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, taxRate, invoicingMode, batchType } = req.body;
 
-      console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode });
+      console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode, taxRate });
 
       // Handle backward compatibility with month parameter
       let finalStartDate = startDate;
@@ -9575,6 +9575,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         pricingSnapshotDate: new Date().toISOString().split('T')[0],
         discountPercent: discountPercent || null,
         discountAmount: discountAmount || null,
+        taxRate: taxRate !== undefined ? taxRate : "9.3", // Default to 9.3% if not provided
         totalAmount: "0", // Will be updated after generating invoices
         invoicingMode: invoicingMode || "client",
         batchType: batchType || "mixed", // Default to mixed for backward compatibility
@@ -10458,6 +10459,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms: z.string().optional(),
         discountPercent: z.coerce.number().optional().transform(val => val?.toString()),
         discountAmount: z.coerce.number().optional().transform(val => val?.toString()),
+        taxRate: z.coerce.number().optional().transform(val => val?.toString()),
         invoicingMode: z.enum(["client", "project"]).optional(),
         notes: z.string().optional()
       }).strict(); // strict ensures no extra fields are accepted

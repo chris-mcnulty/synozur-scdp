@@ -396,6 +396,16 @@
           <td>Discount {{#if discountPercent}}({{discountPercent}}%){{/if}}:</td>
           <td class="text-right font-mono">-${{discountAmount}}</td>
         </tr>
+        <tr>
+          <td>Subtotal after Discount:</td>
+          <td class="text-right font-mono">${{subtotalAfterDiscount}}</td>
+        </tr>
+        {{/if}}
+        {{#if taxAmount}}
+        <tr>
+          <td>Tax {{#if taxRate}}({{taxRate}}%){{/if}}:</td>
+          <td class="text-right font-mono">${{taxAmount}}</td>
+        </tr>
         {{/if}}
         <tr class="total-row">
           <td><strong>Total Amount:</strong></td>

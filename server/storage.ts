@@ -8963,7 +8963,13 @@ export async function generateInvoicePDF(params: {
   const discountAmount = batch.discountAmount ? parseFloat(batch.discountAmount) : 0;
   const originalTotal = lines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount || '0'), 0);
   const totalAdjustments = subtotal - originalTotal;
-  const total = subtotal - discountAmount;
+  const subtotalAfterDiscount = subtotal - discountAmount;
+  
+  // Calculate tax (applied at batch level, not individual services/expenses)
+  const taxRate = batch.taxRate ? parseFloat(batch.taxRate) : 0;
+  const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+  
+  const total = subtotalAfterDiscount + taxAmount;
 
   // Get unique clients
   const uniqueClients = Array.from(new Set(lines.map(l => l.client.id))).map(clientId => {
@@ -9110,6 +9116,9 @@ export async function generateInvoicePDF(params: {
     subtotal: subtotal.toFixed(2),
     discountAmount: discountAmount > 0 ? discountAmount.toFixed(2) : null,
     discountPercent: batch.discountPercent ? parseFloat(batch.discountPercent).toFixed(1) : null,
+    subtotalAfterDiscount: subtotalAfterDiscount.toFixed(2),
+    taxRate: taxRate > 0 ? taxRate.toFixed(2) : null,
+    taxAmount: taxAmount > 0 ? taxAmount.toFixed(2) : null,
     originalTotal: originalTotal.toFixed(2),
     totalAdjustments: totalAdjustments.toFixed(2),
     totalAdjustmentIsPositive: totalAdjustments >= 0,
