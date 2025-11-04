@@ -653,6 +653,9 @@ export const invoiceBatches = pgTable("invoice_batches", {
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
   aggregateAdjustmentTotal: decimal("aggregate_adjustment_total", { precision: 12, scale: 2 }), // Total of all aggregate adjustments
+  // Tax fields (applied at batch level, not individual services/expenses)
+  taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default('9.3'), // Tax rate percentage (default 9.3%)
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }), // Calculated tax amount
   invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
   batchType: text("batch_type").notNull().default("mixed"), // "services", "expenses", or "mixed"
   paymentTerms: text("payment_terms"), // Optional payment terms override for this batch
