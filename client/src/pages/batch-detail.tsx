@@ -109,6 +109,8 @@ interface InvoiceBatchDetails {
   pricingSnapshotDate: string;
   discountPercent?: string;
   discountAmount?: string;
+  taxRate?: string;
+  taxAmount?: string;
   totalAmount?: string;
   invoicingMode: string;
   status: string;
@@ -978,7 +980,7 @@ export default function BatchDetail() {
   const grandTotal = calculateGrandTotal();
   const discountAmount = parseFloat(batchDetails.discountAmount || "0");
   const subtotalAfterDiscount = grandTotal - discountAmount;
-  const taxRate = parseFloat((batchDetails as any).taxRate || "0");
+  const taxRate = parseFloat(batchDetails.taxRate || "0");
   const taxAmount = subtotalAfterDiscount * (taxRate / 100);
   const netTotal = subtotalAfterDiscount + taxAmount;
 

@@ -5096,9 +5096,18 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // Update batch total amount
+      // Calculate tax amount based on subtotal after discount
+      const discountAmount = normalizeAmount(batch.discountAmount);
+      const taxRate = normalizeAmount(batch.taxRate);
+      const subtotalAfterDiscount = totalAmount - discountAmount;
+      const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+      
+      // Update batch total amount and tax amount
       await tx.update(invoiceBatches)
-        .set({ totalAmount: totalAmount.toString() })
+        .set({ 
+          totalAmount: totalAmount.toString(),
+          taxAmount: round2(taxAmount).toString()
+        })
         .where(eq(invoiceBatches.batchId, batchId));
 
       return {
@@ -6209,11 +6218,21 @@ export class DatabaseStorage implements IStorage {
       return sum + amount;
     }, 0);
     
+    // Get batch details for tax calculation
+    const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, params.batchId));
+    
+    // Calculate tax amount based on subtotal after discount
+    const discountAmount = batch ? normalizeAmount(batch.discountAmount) : 0;
+    const taxRate = batch ? normalizeAmount(batch.taxRate) : 0;
+    const subtotalAfterDiscount = batchTotal - discountAmount;
+    const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+    
     // Update batch with new totals
     await db.update(invoiceBatches)
       .set({
         totalAmount: round2(batchTotal).toString(),
-        aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString()
+        aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString(),
+        taxAmount: round2(taxAmount).toString()
       })
       .where(eq(invoiceBatches.batchId, params.batchId));
     
@@ -6264,6 +6283,37 @@ export class DatabaseStorage implements IStorage {
     // Delete the adjustment record
     await db.delete(invoiceAdjustments)
       .where(eq(invoiceAdjustments.id, adjustmentId));
+    
+    // Recalculate batch totals after removing adjustment
+    const allBatchLines = await db.select()
+      .from(invoiceLines)
+      .where(eq(invoiceLines.batchId, adjustment.batchId));
+    
+    const batchTotal = allBatchLines.reduce((sum, line) => {
+      const amount = normalizeAmount(line.billedAmount || line.amount);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate aggregate adjustment total for the batch
+    const aggregateAdjustmentTotal = batchTotal - allBatchLines.reduce((sum, line) => {
+      const amount = normalizeAmount(line.originalAmount || line.amount);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate tax amount based on subtotal after discount
+    const discountAmount = batch ? normalizeAmount(batch.discountAmount) : 0;
+    const taxRate = batch ? normalizeAmount(batch.taxRate) : 0;
+    const subtotalAfterDiscount = batchTotal - discountAmount;
+    const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+    
+    // Update batch with recalculated totals
+    await db.update(invoiceBatches)
+      .set({
+        totalAmount: round2(batchTotal).toString(),
+        aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString(),
+        taxAmount: round2(taxAmount).toString()
+      })
+      .where(eq(invoiceBatches.batchId, adjustment.batchId));
   }
 
   async getInvoiceAdjustments(batchId: string): Promise<InvoiceAdjustment[]> {
