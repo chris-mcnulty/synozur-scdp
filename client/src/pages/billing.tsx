@@ -88,6 +88,7 @@ export default function Billing() {
   const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
   const [discountType, setDiscountType] = useState<'percent' | 'amount'>('percent');
   const [discountValue, setDiscountValue] = useState('');
+  const [taxRate, setTaxRate] = useState('9.3'); // Default tax rate of 9.3%
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<InvoiceBatchData | null>(null);
   
@@ -195,7 +196,8 @@ export default function Billing() {
       batchType: 'services' | 'expenses' | 'mixed' | 'milestone';
       milestoneId?: string;
       discountPercent?: string; 
-      discountAmount?: string 
+      discountAmount?: string;
+      taxRate?: string;
     }) => {
       // Handle milestone invoice generation differently
       if (data.batchType === 'milestone' && data.milestoneId) {
@@ -323,7 +325,8 @@ export default function Billing() {
       batchType,
       milestoneId: selectedMilestone || undefined,
       discountPercent: discountType === 'percent' ? discountValue : undefined,
-      discountAmount: discountType === 'amount' ? discountValue : undefined
+      discountAmount: discountType === 'amount' ? discountValue : undefined,
+      taxRate: taxRate || '9.3' // Default to 9.3% if not provided
     });
   };
 
@@ -567,6 +570,19 @@ export default function Billing() {
                         data-testid="input-discount-value"
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Label>Tax Rate (%)</Label>
+                    <Input
+                      type="number"
+                      placeholder="9.3"
+                      value={taxRate}
+                      onChange={(e) => setTaxRate(e.target.value)}
+                      data-testid="input-tax-rate"
+                      step="0.1"
+                    />
+                    <p className="text-sm text-muted-foreground">Tax is applied at the batch level to the total invoice amount (default: 9.3%)</p>
                   </div>
 
                   <div className="flex justify-end space-x-3">
