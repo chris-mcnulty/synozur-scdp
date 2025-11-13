@@ -208,7 +208,24 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   margin: decimal("margin", { precision: 10, scale: 2 }), // totalAmount - totalCost
   marginPercent: decimal("margin_percent", { precision: 5, scale: 2 }), // (margin / totalAmount) * 100
   comments: text("comments"), // Optional comments
+  hasManualRateOverride: boolean("has_manual_rate_override").notNull().default(false), // Track manually edited rates
   sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Estimate Rate Overrides - Custom rates for specific resources within an estimate
+export const estimateRateOverrides = pgTable("estimate_rate_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  lineItemIds: varchar("line_item_ids").array(), // Optional: specific line items this override applies to
+  subjectType: text("subject_type").notNull(), // 'role' or 'person'
+  subjectId: varchar("subject_id").notNull(), // roleId or userId
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Override billing rate
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Override cost rate
+  effectiveStart: date("effective_start").notNull().default(sql`CURRENT_DATE`),
+  effectiveEnd: date("effective_end"), // null means ongoing
+  notes: text("notes"), // Optional explanation for the override
+  createdBy: varchar("created_by").references(() => users.id), // Who created this override
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -769,6 +786,7 @@ export const estimatesRelations = relations(estimates, ({ one, many }) => ({
   }),
   epics: many(estimateEpics),
   lineItems: many(estimateLineItems),
+  rateOverrides: many(estimateRateOverrides),
 }));
 
 export const estimateLineItemsRelations = relations(estimateLineItems, ({ one }) => ({
@@ -783,6 +801,17 @@ export const estimateLineItemsRelations = relations(estimateLineItems, ({ one })
   stage: one(estimateStages, {
     fields: [estimateLineItems.stageId],
     references: [estimateStages.id],
+  }),
+}));
+
+export const estimateRateOverridesRelations = relations(estimateRateOverrides, ({ one }) => ({
+  estimate: one(estimates, {
+    fields: [estimateRateOverrides.estimateId],
+    references: [estimates.id],
+  }),
+  createdByUser: one(users, {
+    fields: [estimateRateOverrides.createdBy],
+    references: [users.id],
   }),
 }));
 
@@ -1167,6 +1196,11 @@ export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems
   createdAt: true,
 });
 
+export const insertEstimateRateOverrideSchema = createInsertSchema(estimateRateOverrides).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertEstimateMilestoneSchema = createInsertSchema(estimateMilestones).omit({
   id: true,
   createdAt: true,
@@ -1289,6 +1323,9 @@ export type EstimateLineItemWithJoins = EstimateLineItem & {
   assignedUser: User | null;
   role: Role | null;
 };
+
+export type EstimateRateOverride = typeof estimateRateOverrides.$inferSelect;
+export type InsertEstimateRateOverride = z.infer<typeof insertEstimateRateOverrideSchema>;
 
 export type EstimateMilestone = typeof estimateMilestones.$inferSelect;
 export type InsertEstimateMilestone = z.infer<typeof insertEstimateMilestoneSchema>;
