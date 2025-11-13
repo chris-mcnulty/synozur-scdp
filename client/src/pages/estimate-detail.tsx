@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
 import { PMWizardDialog } from "@/components/pm-wizard-dialog";
+import { RateOverridesSection } from "@/components/RateOverridesSection";
 import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 
 function EstimateDetailContent() {
@@ -2348,6 +2349,9 @@ function EstimateDetailContent() {
               Fill in Description, Hours, and Rate to add a line item
             </p>
           )}
+
+          {/* Rate Overrides Section */}
+          {id && <RateOverridesSection estimateId={id} isEditable={isEditable} />}
 
           {/* Compact Filter Bar */}
           <div className="mb-4 bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border">
