@@ -523,6 +523,202 @@
   - Monday.com connector
   - Azure DevOps linking
 
+### Accounts Payable (AP) - Contractor Payment Management - NEW
+**Status:** PLANNING - New finance module  
+**Priority:** P4 - Lower priority, dependent on SharePoint stability  
+**Added:** January 2025
+
+**Why P4:** Important for contractor management but not blocking core consulting operations. SharePoint integration must be stable first.
+
+**Overview:** Complete contractor invoice submission, matching, and payment tracking system separate from client AR billing.
+
+**Scope:**
+
+- [ ] **Navigation Restructure - Finance Menu**
+  - Create new "Finance" top-level menu (admin/billing-admin/executive only)
+  - Move "Billing" (AR) under Finance menu
+  - Add "Accounts Payable" (AP) under Finance menu
+  - Maintain separate AR and AP workflows
+
+- [ ] **Database Schema - Contractor Invoices**
+  - New table: `contractor_invoices`
+    - Invoice number, date, due date, total amount
+    - Contractor (user) reference
+    - PDF file ID (SharePoint reference)
+    - Status: submitted → approved → paid
+    - Approval and payment tracking fields
+    - Payment method, payment reference, notes
+  - New table: `contractor_invoice_line_items`
+    - Links to time entries and/or expenses
+    - Amount, description
+    - Expected amount (from cost rate calculation)
+    - Variance amount and override reason (for fixed-fee)
+    - Matching status
+  
+- [ ] **User Management Extensions**
+  - Add to `users` table:
+    - `employment_type` (employee | contractor)
+    - `is_ap_eligible` (boolean - can submit AP invoices)
+    - Cost rate history tracking (leverage existing `user_rate_schedules`)
+  - Low priority compliance fields (future):
+    - `w9_on_file`, `operating_agreement_file_id`, `taxpayer_id`
+  
+- [ ] **Time/Expense Matching Enhancements**
+  - Add to `time_entries` table:
+    - `ap_invoice_line_id` (FK to contractor_invoice_line_items)
+    - `ap_matched_date`
+  - Add to `expenses` table:
+    - `ap_invoice_line_id` (FK to contractor_invoice_line_items)
+    - `ap_matched_date`
+  - Prevent double-matching business logic
+  
+- [ ] **AP Invoice Upload & Storage**
+  - PDF upload interface (admin/billing-admin only)
+  - SharePoint storage: `/ap-invoices/{contractor_name}/{year}/INV-{number}.pdf`
+  - Invoice metadata form (number, date, amount, contractor)
+  - Creates invoice in "submitted" status
+  
+- [ ] **Invoice Matching Interface**
+  - Split-view layout:
+    - Left: PDF viewer
+    - Right: Matching controls
+  - Display unbilled time entries for contractor
+    - Filter by date range, project
+    - Show: Date, Project, Client, Hours, Cost Rate, Amount
+    - Manual selection for matching
+  - Display unbilled expenses for contractor
+    - Filter by date range
+    - Show: Date, Project, Description, Amount
+    - Manual selection for matching
+  - Invoice line items management
+    - Add/edit line items
+    - Match to selected time/expenses
+    - Calculate expected amount (hours × cost_rate)
+    - Show variance (invoice amount - expected)
+    - Alert if variance > 5%
+    - Allow override with required reason field
+  
+- [ ] **Cost Rate Validation**
+  - Calculate expected cost: `hours × contractor_cost_rate` (at time entry date)
+  - Variance threshold: 5%
+  - Warning indicators for mismatches
+  - Override toggle with reason field (for fixed-fee arrangements)
+  - Validation summary before approval
+  
+- [ ] **Approval & Payment Workflow**
+  - Status transitions: submitted → approved → paid
+  - Approval button (admin/billing-admin only)
+  - Validation rules:
+    - Must have at least one matched line item
+    - All variances must be reviewed
+    - All matched items must be unbilled
+  - Payment tracking:
+    - Payment date picker
+    - Payment method dropdown (check, ACH, wire, etc.)
+    - Payment reference field (check #, transaction ID)
+    - Payment notes
+  - Lock matched time/expense entries (prevent future matching)
+  
+- [ ] **AP Invoice List & Dashboard**
+  - Browse all contractor invoices
+  - Filter by contractor, status, date range
+  - Status badges and quick stats
+  - Sortable table: Invoice #, Contractor, Date, Amount, Status
+  - Actions: View, Edit (if not paid), Delete (if not approved)
+  
+- [ ] **User Profile - Contractor Tab**
+  - New tab on user detail page (contractors only)
+  - Employment settings section:
+    - Employment type toggle
+    - AP invoice eligible checkbox
+    - Current cost rate display + history link
+  - Compliance section (future - grayed out):
+    - W9 on file checkbox
+    - Operating agreement upload
+    - Taxpayer ID (encrypted)
+  - Invoice history table:
+    - All invoices for this contractor
+    - Filter by status, date range
+    - Quick link to invoice detail
+  
+- [ ] **AP Reporting**
+  - Payment History Report:
+    - Filter by contractor, date range
+    - Columns: Contractor, Invoice #, Date, Amount, Approved By, Paid Date, Payment Method
+    - Subtotals by contractor
+    - CSV export
+  - Pending AP Invoices Report:
+    - All submitted/approved invoices not yet paid
+    - Aging buckets (0-30, 31-60, 61-90, 90+ days)
+    - Total pending by contractor
+    - CSV export
+  - Cost Variance Report (nice-to-have):
+    - Compare invoiced amounts to expected costs
+    - Identify contractors with frequent overrides
+    - Spot rate discrepancies
+  
+- [ ] **Business Rules & Validation**
+  - Matching rules:
+    - Time/expense can match only ONE invoice line
+    - Once matched and approved, entry is locked
+    - Unbilled = no AR invoice AND no AP match
+  - Approval rules:
+    - Only admin/billing-admin can approve
+    - Must have matched items
+    - Variances reviewed (or override reason provided)
+  - Payment rules:
+    - Can only mark paid if status = approved
+    - Requires payment date and method
+    - Payment reference optional
+  - Contractor eligibility:
+    - Only users with `employment_type = contractor` AND `is_ap_eligible = true`
+    - Dropdown filters show only eligible contractors
+
+**Dependencies:**
+- SharePoint Online document storage (stable)
+- Existing user management system
+- Role-based access control (billing-admin role)
+- Time entries and expenses tables
+- Cost rate tracking in user profiles
+
+**Implementation Phases:**
+
+**Phase 1: Foundation** (1-2 weeks)
+- Database schema migration
+- User employment type and AP eligibility fields
+- Navigation restructure (Finance menu)
+
+**Phase 2: Core Invoice Management** (2-3 weeks)
+- AP invoice list page
+- Invoice upload functionality
+- PDF storage in SharePoint
+- Basic invoice status tracking
+
+**Phase 3: Matching Interface** (3-4 weeks)
+- Invoice detail page with PDF viewer
+- Unbilled time/expense fetching
+- Manual matching interface
+- Cost rate variance calculation
+
+**Phase 4: Approval Workflow** (1-2 weeks)
+- Approval logic and status transitions
+- Payment tracking
+- Lock matched entries
+
+**Phase 5: Reporting & User Management** (1-2 weeks)
+- Payment history report
+- Pending invoices report
+- Contractor invoices tab in user management
+
+**Phase 6: Enhancements** (Future - P5)
+- W9 and compliance tracking
+- Cost variance reports
+- Email notifications for approvals
+- Batch payment processing
+
+**Total Timeline:** 8-13 weeks  
+**Complexity:** High (new module, complex matching logic, SharePoint integration)
+
 ### API Platform Development
 - [ ] **Public API**
   - RESTful API v2
