@@ -811,7 +811,7 @@
 
 ## 📋 SUMMARY
 
-**Total Features**: ~105 genuinely missing features across 15 categories
+**Total Features**: ~107 genuinely missing features across 16 categories
 
 ### Implementation Roadmap
 
@@ -825,22 +825,24 @@
 - Pricing privacy (P1)
 - Vocabulary customization (P1)
 - SPE UI/admin workflows (P2)
+- Per Diem expense calculation (P2)
 
 **Phase 3 (Q2 2026)**: Intelligence & Reporting
 - Advanced reporting suite (P2)
 - AI chat interface (P3)
 - MCP server implementation (P3)
 
-**Phase 4 (Q3-Q4 2026)**: Platform Evolution
+**Phase 4 (Q3-Q4 2026+)**: Platform Evolution
 - Extended integrations (P4)
+- Accounts Payable module (P4)
 - API platform (P4)
 - Internationalization (P4)
 - Performance optimizations (P4)
 
 ---
 
-**Last Updated**: October 2025
-**Version**: 2.0 - Corrected after comprehensive code review
+**Last Updated**: January 2025
+**Version**: 2.1 - Added Per Diem and Accounts Payable modules
 
 ## Notes on Already Implemented Features (NOT in backlog)
 - ✅ Expense bulk upload with CSV/Excel
