@@ -218,7 +218,7 @@ export const estimateRateOverrides = pgTable("estimate_rate_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
   lineItemIds: varchar("line_item_ids").array(), // Optional: specific line items this override applies to
-  subjectType: text("subject_type").notNull(), // 'role' or 'person'
+  subjectType: text("subject_type").notNull(), // 'role' or 'person' (validated in application layer)
   subjectId: varchar("subject_id").notNull(), // roleId or userId
   billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Override billing rate
   costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Override cost rate
@@ -227,7 +227,11 @@ export const estimateRateOverrides = pgTable("estimate_rate_overrides", {
   notes: text("notes"), // Optional explanation for the override
   createdBy: varchar("created_by").references(() => users.id), // Who created this override
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  // Index for efficient lookups by estimate and subject
+  estimateSubjectIdx: index("estimate_rate_overrides_estimate_subject_idx")
+    .on(table.estimateId, table.subjectType, table.subjectId),
+}));
 
 // Estimate Milestone Payments (outputs)
 export const estimateMilestones = pgTable("estimate_milestones", {
@@ -1196,10 +1200,14 @@ export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems
   createdAt: true,
 });
 
-export const insertEstimateRateOverrideSchema = createInsertSchema(estimateRateOverrides).omit({
-  id: true,
-  createdAt: true,
-});
+export const insertEstimateRateOverrideSchema = createInsertSchema(estimateRateOverrides)
+  .omit({
+    id: true,
+    createdAt: true,
+  })
+  .extend({
+    subjectType: z.enum(['role', 'person']), // Validate subject type
+  });
 
 export const insertEstimateMilestoneSchema = createInsertSchema(estimateMilestones).omit({
   id: true,

@@ -5201,6 +5201,18 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "At least one field must be provided for update" });
       }
 
+      // If rate or costRate is being explicitly set (not null/empty), mark as manual override
+      // If being cleared (null/''), allow future recalculations by not setting the flag
+      const hasRateValue = 'rate' in validatedData && validatedData.rate !== null && validatedData.rate !== '';
+      const hasCostRateValue = 'costRate' in validatedData && validatedData.costRate !== null && validatedData.costRate !== '';
+      
+      if (hasRateValue || hasCostRateValue) {
+        (validatedData as any).hasManualRateOverride = true;
+      } else if (('rate' in validatedData && !hasRateValue) || ('costRate' in validatedData && !hasCostRateValue)) {
+        // If clearing rates, remove the override flag to allow future recalculations
+        (validatedData as any).hasManualRateOverride = false;
+      }
+
       console.log("Validated update data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
       console.log("Updated line item:", lineItem);
@@ -5320,6 +5332,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Recalculate each line item
       for (const item of lineItems) {
+        // Skip items with manual rate overrides completely
+        if (item.hasManualRateOverride) {
+          continue;
+        }
+
         // Get multipliers from estimate
         const sizeMultiplier = item.size === 'small' ? Number(estimate.sizeSmallMultiplier || 1) :
                                item.size === 'medium' ? Number(estimate.sizeMediumMultiplier || 1) :
@@ -5333,16 +5350,20 @@ export async function registerRoutes(app: Express): Promise<void> {
                                      item.confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
                                      Number(estimate.confidenceLowMultiplier || 1);
 
-        // Get current rates - preserve manual overrides
-        let rate = Number(item.rate || 0);
-        let costRate = Number(item.costRate || 0);
+        // Determine rates: use user defaults if available, otherwise preserve existing rates
+        let rate = Number(item.rate || 0); // Default to existing rate
+        let costRate = Number(item.costRate || 0); // Default to existing cost rate
         
-        // Only update rates from user defaults if NOT manually overridden
-        if (!item.hasManualRateOverride && item.assignedUserId) {
+        if (item.assignedUserId) {
           const user = userMap.get(item.assignedUserId);
           if (user) {
-            rate = Number(user.defaultBillingRate || 0);
-            costRate = Number(user.defaultCostRate || 0);
+            // Override with user defaults only if they are defined (not null/undefined)
+            if (user.defaultBillingRate != null) {
+              rate = Number(user.defaultBillingRate);
+            }
+            if (user.defaultCostRate != null) {
+              costRate = Number(user.defaultCostRate);
+            }
           }
         }
 
@@ -5351,28 +5372,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         const factor = Number(item.factor || 1);
         const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
 
-        // Calculate amounts
+        // Calculate amounts using determined rates
         const totalAmount = adjustedHours * rate;
         const totalCost = adjustedHours * costRate;
         const margin = totalAmount - totalCost;
         const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
-        // Update the line item - only update rates if not manually overridden
-        const updateData: any = {
+        // Update the line item with all recalculated fields
+        await storage.updateEstimateLineItem(item.id, {
+          rate: String(rate),
+          costRate: String(costRate),
           adjustedHours: String(adjustedHours),
           totalAmount: String(totalAmount),
           totalCost: String(totalCost),
           margin: String(margin),
           marginPercent: String(marginPercent)
-        };
-        
-        // Only include rate fields if not manually overridden
-        if (!item.hasManualRateOverride) {
-          updateData.rate = String(rate);
-          updateData.costRate = String(costRate);
-        }
-
-        await storage.updateEstimateLineItem(item.id, updateData);
+        });
 
         updatedCount++;
       }
