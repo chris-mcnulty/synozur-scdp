@@ -291,6 +291,67 @@
 - [ ] Lessons learned repository
 - [ ] Predictive accuracy modeling
 
+### Per Diem Expense Calculation - NEW
+**Status:** PLANNING - Extension to existing expense workflow  
+**Priority:** P2 - Important but not blocking operations  
+**Added:** January 2025
+
+**Why P2:** Enhances expense reimbursement accuracy and compliance with GSA standards, but existing expense system functions without it.
+
+**Scope:**
+- [ ] **GSA Per Diem Integration**
+  - Real-time GSA API integration (https://www.gsa.gov/travel/plan-a-trip/per-diem-rates/per-diem-files)
+  - Location lookup by city/state
+  - Automatic rate determination (5 tiers: $68, $74, $80, $86, $92)
+  - FY 2025/2026 rate support with automatic updates
+  - Fallback to standard $68 rate if location not found
+  
+- [ ] **Per Diem Calculation Engine**
+  - Formula: `Full days × daily rate + (arrival/departure days × 75% rate)`
+  - Breakdown storage: breakfast, lunch, dinner, incidentals
+  - Date range validation (start date ≤ end date)
+  - Multi-day trip support
+  - First/last day 75% discount application
+  
+- [ ] **Expense Form Integration**
+  - New expense type: "Per Diem"
+  - Per diem-specific form fields:
+    - Start date picker
+    - End date picker  
+    - Location autocomplete (city, state)
+    - Calculated amount display (read-only)
+    - Breakdown display (B/L/D/I amounts per GSA tiers)
+  - Seamless integration with existing expense workflow
+  
+- [ ] **Data Model Extensions**
+  - Add to `expenses` table:
+    - `perDiemStartDate`, `perDiemEndDate`
+    - `perDiemLocation` (city, state)
+    - `perDiemTier` (cached M&IE rate)
+    - `perDiemBreakdown` (JSON: breakfast/lunch/dinner/incidentals)
+  - No changes to approval workflow (uses existing)
+  
+- [ ] **GSA Rate Caching**
+  - Cache rates locally for performance
+  - Rate validity period tracking
+  - Automatic refresh mechanism
+  - Handle rate changes mid-fiscal year
+  
+- [ ] **Reporting & Compliance**
+  - Per diem expense reports by employee
+  - Location-based per diem analysis
+  - GSA compliance verification
+  - Export for tax documentation
+
+**Dependencies:**
+- Existing expense system (complete)
+- Existing expense approval workflow (complete)
+- GSA Per Diem API availability
+- SharePoint document storage (for GSA rate cache files)
+
+**Timeline:** 2-3 weeks  
+**Complexity:** Medium (API integration, calculation logic, UI enhancements)
+
 ### Excel Import/Export Redevelopment
 **Status:** HIDDEN FROM UI - Security review required
 **Date Hidden:** October 8, 2025
