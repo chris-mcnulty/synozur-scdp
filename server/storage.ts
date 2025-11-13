@@ -1490,6 +1490,7 @@ export class DatabaseStorage implements IStorage {
           margin: originalLineItem.margin,
           marginPercent: originalLineItem.marginPercent,
           comments: originalLineItem.comments,
+          hasManualRateOverride: originalLineItem.hasManualRateOverride, // Preserve manual override flag
           sortOrder: originalLineItem.sortOrder,
         });
       }
@@ -1507,6 +1508,25 @@ export class DatabaseStorage implements IStorage {
           dueDate: originalMilestone.dueDate,
           percentage: originalMilestone.percentage,
           sortOrder: originalMilestone.sortOrder,
+        });
+      }
+
+      // Copy rate overrides
+      const originalRateOverrides = await tx.select().from(estimateRateOverrides)
+        .where(eq(estimateRateOverrides.estimateId, estimateId));
+      
+      for (const originalOverride of originalRateOverrides) {
+        await tx.insert(estimateRateOverrides).values({
+          estimateId: newEstimate.id,
+          lineItemIds: originalOverride.lineItemIds,
+          subjectType: originalOverride.subjectType,
+          subjectId: originalOverride.subjectId,
+          billingRate: originalOverride.billingRate,
+          costRate: originalOverride.costRate,
+          effectiveStart: originalOverride.effectiveStart,
+          effectiveEnd: originalOverride.effectiveEnd,
+          notes: originalOverride.notes,
+          createdBy: originalOverride.createdBy,
         });
       }
 
@@ -1898,7 +1918,7 @@ export class DatabaseStorage implements IStorage {
       await this.createEstimateRateOverride({
         estimateId: targetEstimateId,
         lineItemIds: override.lineItemIds,
-        subjectType: override.subjectType,
+        subjectType: override.subjectType as 'role' | 'person', // Cast to validated enum type
         subjectId: override.subjectId,
         billingRate: override.billingRate,
         costRate: override.costRate,
