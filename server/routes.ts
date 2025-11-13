@@ -5333,11 +5333,12 @@ export async function registerRoutes(app: Express): Promise<void> {
                                      item.confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
                                      Number(estimate.confidenceLowMultiplier || 1);
 
-        // Get current rates from user if assigned
+        // Get current rates - preserve manual overrides
         let rate = Number(item.rate || 0);
         let costRate = Number(item.costRate || 0);
         
-        if (item.assignedUserId) {
+        // Only update rates from user defaults if NOT manually overridden
+        if (!item.hasManualRateOverride && item.assignedUserId) {
           const user = userMap.get(item.assignedUserId);
           if (user) {
             rate = Number(user.defaultBillingRate || 0);
@@ -5356,16 +5357,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         const margin = totalAmount - totalCost;
         const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
-        // Update the line item
-        await storage.updateEstimateLineItem(item.id, {
-          rate: String(rate),
-          costRate: String(costRate),
+        // Update the line item - only update rates if not manually overridden
+        const updateData: any = {
           adjustedHours: String(adjustedHours),
           totalAmount: String(totalAmount),
           totalCost: String(totalCost),
           margin: String(margin),
           marginPercent: String(marginPercent)
-        });
+        };
+        
+        // Only include rate fields if not manually overridden
+        if (!item.hasManualRateOverride) {
+          updateData.rate = String(rate);
+          updateData.costRate = String(costRate);
+        }
+
+        await storage.updateEstimateLineItem(item.id, updateData);
 
         updatedCount++;
       }
