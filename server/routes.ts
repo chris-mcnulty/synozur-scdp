@@ -5480,6 +5480,116 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Estimate rate overrides
+  app.get("/api/estimates/:id/rate-overrides", requireAuth, async (req, res) => {
+    try {
+      const { RateResolver } = await import("./rate-resolver.js");
+      const enrichedOverrides = await RateResolver.getEstimateOverrides(req.params.id);
+      res.json(enrichedOverrides);
+    } catch (error) {
+      console.error("Error fetching rate overrides:", error);
+      res.status(500).json({ message: "Failed to fetch rate overrides" });
+    }
+  });
+
+  app.post("/api/estimates/:id/rate-overrides", requireAuth, async (req, res) => {
+    try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      
+      const { insertEstimateRateOverrideSchema } = await import("@shared/schema");
+      
+      // Validate with Zod schema
+      const validatedData = insertEstimateRateOverrideSchema.parse({
+        ...req.body,
+        estimateId: req.params.id,
+        createdBy: req.user!.id, // Set from authenticated user
+      });
+
+      // Domain validation: Check estimate exists
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      // Domain validation: Check subject exists and is valid
+      if (validatedData.subjectType === 'person') {
+        const user = await storage.getUser(validatedData.subjectId);
+        if (!user) {
+          return res.status(400).json({ message: "User not found" });
+        }
+      } else if (validatedData.subjectType === 'role') {
+        const role = await storage.getRole(validatedData.subjectId);
+        if (!role) {
+          return res.status(400).json({ message: "Role not found" });
+        }
+      }
+
+      // Domain validation: Validate date range
+      if (validatedData.effectiveEnd) {
+        const start = new Date(validatedData.effectiveStart);
+        const end = new Date(validatedData.effectiveEnd);
+        if (start > end) {
+          return res.status(400).json({ message: "Effective start date must be before end date" });
+        }
+      }
+
+      // Domain validation: Validate line items belong to this estimate
+      if (validatedData.lineItemIds && validatedData.lineItemIds.length > 0) {
+        const estimateLineItems = await storage.getEstimateLineItems(req.params.id);
+        const validLineItemIds = new Set(estimateLineItems.map(item => item.id));
+        const invalidItems = validatedData.lineItemIds.filter(id => !validLineItemIds.has(id));
+        
+        if (invalidItems.length > 0) {
+          return res.status(400).json({ 
+            message: "Some line items do not belong to this estimate",
+            invalidLineItemIds: invalidItems
+          });
+        }
+      }
+
+      // Create the override
+      const override = await storage.createEstimateRateOverride(validatedData);
+      res.status(201).json(override);
+      
+    } catch (error) {
+      console.error("Error creating rate override:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid rate override data", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        message: "Failed to create rate override",
+        error: (error as Error).message 
+      });
+    }
+  });
+
+  app.delete("/api/estimates/:estimateId/rate-overrides/:overrideId", requireAuth, async (req, res) => {
+    try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
+      // Verify override exists and belongs to this estimate (prevent cross-estimate deletion)
+      const overrides = await storage.getEstimateRateOverrides(req.params.estimateId);
+      const override = overrides.find(o => o.id === req.params.overrideId);
+      
+      if (!override) {
+        return res.status(404).json({ 
+          message: "Rate override not found or does not belong to this estimate" 
+        });
+      }
+      
+      await storage.deleteEstimateRateOverride(req.params.overrideId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting rate override:", error);
+      res.status(500).json({ message: "Failed to delete rate override" });
+    }
+  });
+
   // Resource summary endpoint
   app.get("/api/estimates/:id/resource-summary", requireAuth, async (req, res) => {
     try {
