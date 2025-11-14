@@ -6285,11 +6285,11 @@ export class DatabaseStorage implements IStorage {
     }, 0);
     
     // Get batch details for tax calculation
-    const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, params.batchId));
+    const [batchForTax] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, params.batchId));
     
     // Calculate tax amount based on subtotal after discount
-    const discountAmount = batch ? normalizeAmount(batch.discountAmount) : 0;
-    const taxRate = batch ? normalizeAmount(batch.taxRate) : 0;
+    const discountAmount = batchForTax ? normalizeAmount(batchForTax.discountAmount) : 0;
+    const taxRate = batchForTax ? normalizeAmount(batchForTax.taxRate) : 0;
     const subtotalAfterDiscount = batchTotal - discountAmount;
     const taxAmount = subtotalAfterDiscount * (taxRate / 100);
     

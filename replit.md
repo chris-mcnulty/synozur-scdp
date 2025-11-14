@@ -24,6 +24,7 @@ Preferred communication style: Simple, everyday language.
 - **ORM**: Drizzle ORM.
 - **Validation**: Zod schemas (shared).
 - **Authentication**: Azure AD SSO (production) and local email/password (development).
+- **Development Server**: Vite middleware isolated using sub-app pattern to prevent catch-all routes from intercepting API endpoints. API routes (/api/*) are handled by Express routes, while all other routes forward to Vite for hot-reloading (server/index.ts lines 247-267).
 
 ### Database
 - **Type**: PostgreSQL.

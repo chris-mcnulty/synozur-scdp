@@ -1071,12 +1071,20 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const fileData = await fileStorage.getFileContent(req.params.fileId);
       
-      if (!fileData) {
+      if (!fileData || !fileData.buffer) {
         return res.status(404).json({ message: "File not found" });
       }
       
-      res.setHeader('Content-Type', fileData.metadata.contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${fileData.metadata.originalName}"`);
+      // Gracefully handle optional metadata
+      const contentType = (fileData.metadata && 'contentType' in fileData.metadata) 
+        ? fileData.metadata.contentType 
+        : 'application/octet-stream';
+      const originalName = (fileData.metadata && 'originalName' in fileData.metadata)
+        ? fileData.metadata.originalName
+        : 'download';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
       res.send(fileData.buffer);
     } catch (error) {
       console.error("[FILE REPOSITORY] Error downloading file:", error);
@@ -5527,7 +5535,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Domain validation: Validate date range
       if (validatedData.effectiveEnd) {
-        const start = new Date(validatedData.effectiveStart);
+        const start = new Date(validatedData.effectiveStart || new Date());
         const end = new Date(validatedData.effectiveEnd);
         if (start > end) {
           return res.status(400).json({ message: "Effective start date must be before end date" });
@@ -8564,7 +8572,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Send email notification to submitter
       const submitter = await storage.getUser(submitted.submitterId);
-      if (submitter) {
+      if (submitter && submitter.email && submitter.name) {
         await emailService.notifyExpenseReportSubmitted(
           { email: submitter.email, name: submitter.name },
           submitted.reportNumber,
@@ -8575,7 +8583,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Get all users with approval permissions (admin, executive, billing-admin)
         const allUsers = await storage.getUsers();
         const approvers = allUsers.filter(u => 
-          ['admin', 'executive', 'billing-admin'].includes(u.role)
+          ['admin', 'executive', 'billing-admin'].includes(u.role) && u.email && u.name
         );
         
         for (const approver of approvers) {
@@ -8609,10 +8617,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Send email notification to submitter
       const submitter = await storage.getUser(approved.submitterId);
-      if (submitter) {
+      if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
         await emailService.notifyExpenseReportApproved(
           { email: submitter.email, name: submitter.name },
-          { email: req.user!.email, name: req.user!.name },
+          { email: req.user.email, name: req.user.name },
           approved.reportNumber,
           approved.title
         );
@@ -8642,10 +8650,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Send email notification to submitter
       const submitter = await storage.getUser(rejected.submitterId);
-      if (submitter) {
+      if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
         await emailService.notifyExpenseReportRejected(
           { email: submitter.email, name: submitter.name },
-          { email: req.user!.email, name: req.user!.name },
+          { email: req.user.email, name: req.user.name },
           rejected.reportNumber,
           rejected.title,
           rejected.rejectionNote ?? undefined

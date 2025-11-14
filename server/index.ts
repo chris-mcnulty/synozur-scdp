@@ -243,11 +243,24 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
   
   // In development mode, use Vite for hot reloading
   if (isDevelopment) {
-    
-    log('Setting up Vite development server...');
+    log('Setting up Vite development server with API route isolation...');
     try {
-      await setupVite(app, server);
-      log('✅ Vite development server setup successful');
+      // Create a separate Express sub-app for Vite to prevent its catch-all from intercepting API routes
+      const frontendApp = express();
+      await setupVite(frontendApp, server);
+      
+      // Conditionally mount Vite: forward only non-/api requests to prevent HTML responses for API calls
+      app.use((req, res, next) => {
+        if (req.originalUrl.startsWith('/api')) {
+          // Let API routes handle the request
+          next();
+        } else {
+          // Forward to Vite's middleware
+          frontendApp(req, res, next);
+        }
+      });
+      
+      log('✅ Vite development server setup successful (isolated from API routes)');
       log('📝 Frontend available at http://localhost:5000');
     } catch (viteError: any) {
       log(`⚠️ Vite setup failed: ${viteError.message}`);
