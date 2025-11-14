@@ -243,16 +243,6 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
   
   // In development mode, use Vite for hot reloading
   if (isDevelopment) {
-    // CRITICAL: Add guard middleware to prevent unhandled API routes from falling through to Vite catch-all
-    // This must come BEFORE setupVite to intercept API routes that weren't handled by the API router
-    // It ensures /api routes return JSON 404, not HTML
-    app.use((req, res, next) => {
-      // For API paths, if we reach here (after all API routes), return JSON 404 instead of letting Vite catch-all serve HTML
-      if (req.path.startsWith('/api')) {
-        return res.status(404).json({ message: `API endpoint not found: ${req.method} ${req.path}` });
-      }
-      next();
-    });
     
     log('Setting up Vite development server...');
     try {
