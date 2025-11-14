@@ -2359,9 +2359,6 @@ function EstimateDetailContent() {
             </p>
           )}
 
-          {/* Rate Overrides Section */}
-          {id && <RateOverridesSection estimateId={id} isEditable={isEditable} />}
-
           {/* Compact Filter Bar */}
           <div className="mb-4 bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border">
             <div className="flex flex-wrap gap-2 items-center">
@@ -3208,6 +3205,9 @@ function EstimateDetailContent() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Rate Overrides Section - Always visible to display existing overrides */}
+      {id && <RateOverridesSection estimateId={id} isEditable={isEditable} />}
         </TabsContent>
 
         {/* Resources Tab */}
