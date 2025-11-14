@@ -19,7 +19,9 @@ import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
 import { PMWizardDialog } from "@/components/pm-wizard-dialog";
 import { RateOverridesSection } from "@/components/RateOverridesSection";
+import { RatePrecedenceBadge } from "@/components/RatePrecedenceBadge";
 import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
+import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 
 function EstimateDetailContent() {
   const { id } = useParams();
@@ -213,6 +215,13 @@ function EstimateDetailContent() {
     enabled: !!id && !!estimate,
     retry: 1,
   });
+
+  const { data: effectiveRates = [], isLoading: ratesLoading } = useEffectiveRates(id);
+
+  const effectiveRateById = useMemo(
+    () => new Map(effectiveRates.map(rate => [rate.lineItemId, rate])),
+    [effectiveRates]
+  );
 
   const createEpicMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
@@ -2698,8 +2707,17 @@ function EstimateDetailContent() {
                       <TableCell className="py-2 text-right">
                         <div className="text-sm font-medium">{Number(item.adjustedHours || 0).toFixed(1)}</div>
                       </TableCell>
-                      <TableCell className="py-2 text-right">
-                        <div className="text-sm font-medium">${Number(item.totalAmount || 0).toFixed(0)}</div>
+                      <TableCell className="py-2">
+                        <div className="flex justify-end gap-2 items-center">
+                          <div className="text-sm font-medium" data-testid={`text-total-${item.id}`}>
+                            ${Number(item.totalAmount || 0).toFixed(0)}
+                          </div>
+                          {ratesLoading ? (
+                            <div className="h-5 w-16 bg-gray-200 animate-pulse rounded" data-testid="skeleton-rate-badge" />
+                          ) : (
+                            <RatePrecedenceBadge compact effectiveRate={effectiveRateById.get(item.id)} />
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="py-2">
                         <div className="flex items-center gap-1">
@@ -2740,8 +2758,28 @@ function EstimateDetailContent() {
                         <TableCell colSpan={8} className="bg-gray-50 dark:bg-slate-900 p-4">
                           <div className="grid grid-cols-3 gap-6">
                             {/* Left column - Additional details */}
-                            <div className="space-y-3">
-                              <h4 className="text-sm font-medium mb-2">Details</h4>
+                            <div className="space-y-4">
+                              {/* Rate Breakdown Section */}
+                              <div className="space-y-2" data-testid={`section-rate-breakdown-${item.id}`}>
+                                <h4 className="text-sm font-medium">Rate Breakdown</h4>
+                                {ratesLoading ? (
+                                  <div className="space-y-2">
+                                    <div className="h-6 w-32 bg-gray-200 animate-pulse rounded" />
+                                    <div className="h-4 w-48 bg-gray-200 animate-pulse rounded" />
+                                    <div className="h-4 w-40 bg-gray-200 animate-pulse rounded" />
+                                  </div>
+                                ) : effectiveRateById.get(item.id) ? (
+                                  <RatePrecedenceBadge effectiveRate={effectiveRateById.get(item.id)} compact={false} />
+                                ) : (
+                                  <p className="text-sm text-muted-foreground" data-testid={`text-no-rate-${item.id}`}>
+                                    No rate information available for this line item.
+                                  </p>
+                                )}
+                              </div>
+                              
+                              {/* Details Section */}
+                              <div className="space-y-3">
+                                <h4 className="text-sm font-medium mb-2">Details</h4>
                               <div className="space-y-2">
                                 <div className="flex justify-between text-sm">
                                   <span className="text-muted-foreground">Workstream:</span>
@@ -2940,6 +2978,7 @@ function EstimateDetailContent() {
                                   </Select>
                                 </div>
                               </div>
+                            </div>
                             </div>
                             
                             {/* Middle column - Financial details */}
