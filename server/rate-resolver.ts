@@ -221,4 +221,176 @@ export class RateResolver {
 
     return enriched;
   }
+
+  /**
+   * Batch resolve effective rates for all line items in an estimate
+   * Optimized to avoid N+1 queries by preloading users, roles, and overrides
+   */
+  static async resolveRatesBatch(estimateId: string): Promise<Array<{
+    lineItemId: string;
+    precedence: RatePrecedence;
+    billingRate: number | null;
+    costRate: number | null;
+    source: string;
+    overrideId?: string;
+    chain: Array<{ level: string; value: string; }>;
+  }>> {
+    // Fetch all line items for the estimate
+    const lineItems = await db.select()
+      .from(estimateLineItems)
+      .where(eq(estimateLineItems.estimateId, estimateId));
+    
+    if (lineItems.length === 0) {
+      return [];
+    }
+    
+    // Preload all users and roles to avoid N+1 queries
+    const userIds = [...new Set(lineItems.map(item => item.resourceId).filter(Boolean) as string[])];
+    const roleIds = [...new Set(lineItems.map(item => item.roleId).filter(Boolean) as string[])];
+    
+    const usersMap = new Map<string, User>();
+    const rolesMap = new Map<string, Role>();
+    
+    if (userIds.length > 0) {
+      const usersData = await db.select()
+        .from(users)
+        .where(inArray(users.id, userIds));
+      usersData.forEach(u => usersMap.set(u.id, u));
+    }
+    
+    if (roleIds.length > 0) {
+      const rolesData = await db.select()
+        .from(roles)
+        .where(inArray(roles.id, roleIds));
+      rolesData.forEach(r => rolesMap.set(r.id, r));
+    }
+    
+    // Fetch all estimate overrides once
+    const estimateOverrides = await db.select()
+      .from(estimateRateOverrides)
+      .where(eq(estimateRateOverrides.estimateId, estimateId));
+    
+    const now = new Date();
+    const results = [];
+    
+    for (const lineItem of lineItems) {
+      // 1. Check for manual override (highest precedence)
+      if (lineItem.hasManualRateOverride) {
+        results.push({
+          lineItemId: lineItem.id,
+          precedence: 'manual_override' as RatePrecedence,
+          billingRate: lineItem.rate ? Number(lineItem.rate) : null,
+          costRate: lineItem.costRate ? Number(lineItem.costRate) : null,
+          source: 'Manual inline edit',
+          chain: [{ level: 'Manual Override', value: 'Set directly on line item' }]
+        });
+        continue;
+      }
+      
+      // 2. Check for estimate override (person-specific first, then role-based)
+      let override: EstimateRateOverride | null = null;
+      
+      // Check person-specific overrides first (higher precedence)
+      if (lineItem.resourceId) {
+        override = estimateOverrides.find(o => {
+          if (o.subjectType !== 'person' || o.subjectId !== lineItem.resourceId) return false;
+          
+          // Check date range
+          if (new Date(o.effectiveStart) > now) return false;
+          if (o.effectiveEnd && new Date(o.effectiveEnd) < now) return false;
+          
+          // Check line item scope
+          if (o.lineItemIds && o.lineItemIds.length > 0) {
+            return o.lineItemIds.includes(lineItem.id);
+          }
+          
+          return true;
+        }) || null;
+      }
+      
+      // If no person override, check role-based overrides
+      if (!override && lineItem.roleId) {
+        override = estimateOverrides.find(o => {
+          if (o.subjectType !== 'role' || o.subjectId !== lineItem.roleId) return false;
+          
+          // Check date range
+          if (new Date(o.effectiveStart) > now) return false;
+          if (o.effectiveEnd && new Date(o.effectiveEnd) < now) return false;
+          
+          // Check line item scope
+          if (o.lineItemIds && o.lineItemIds.length > 0) {
+            return o.lineItemIds.includes(lineItem.id);
+          }
+          
+          return true;
+        }) || null;
+      }
+      
+      if (override && (override.billingRate || override.costRate)) {
+        const subject = override.subjectType === 'person' 
+          ? usersMap.get(override.subjectId)
+          : rolesMap.get(override.subjectId);
+        
+        const subjectName = subject?.name || 'Unknown';
+        
+        results.push({
+          lineItemId: lineItem.id,
+          precedence: 'estimate_override' as RatePrecedence,
+          billingRate: override.billingRate ? Number(override.billingRate) : null,
+          costRate: override.costRate ? Number(override.costRate) : null,
+          source: `Estimate override (${override.subjectType === 'role' ? 'Role' : 'Person'}: ${subjectName})`,
+          overrideId: override.id,
+          chain: [{ 
+            level: 'Estimate Override', 
+            value: `${override.subjectType === 'role' ? 'Role' : 'Person'}: ${subjectName}` 
+          }]
+        });
+        continue;
+      }
+      
+      // 3. Check for user default rates
+      if (lineItem.resourceId) {
+        const user = usersMap.get(lineItem.resourceId);
+        if (user && (user.defaultBillingRate || user.defaultCostRate)) {
+          results.push({
+            lineItemId: lineItem.id,
+            precedence: 'user_default' as RatePrecedence,
+            billingRate: user.defaultBillingRate ? Number(user.defaultBillingRate) : null,
+            costRate: user.defaultCostRate ? Number(user.defaultCostRate) : null,
+            source: `User default (${user.name})`,
+            chain: [{ level: 'User Default', value: user.name }]
+          });
+          continue;
+        }
+      }
+      
+      // 4. Check for role default rates
+      if (lineItem.roleId) {
+        const role = rolesMap.get(lineItem.roleId);
+        if (role && role.defaultRackRate) {
+          results.push({
+            lineItemId: lineItem.id,
+            precedence: 'role_default' as RatePrecedence,
+            billingRate: Number(role.defaultRackRate),
+            costRate: null,
+            source: `Role default (${role.name})`,
+            chain: [{ level: 'Role Default', value: role.name }]
+          });
+          continue;
+        }
+      }
+      
+      // No rates found
+      results.push({
+        lineItemId: lineItem.id,
+        precedence: 'none' as RatePrecedence,
+        billingRate: null,
+        costRate: null,
+        source: 'No rate configured',
+        chain: [{ level: 'None', value: 'No rate configured' }]
+      });
+    }
+    
+    return results;
+  }
 }

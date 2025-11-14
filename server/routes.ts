@@ -5590,6 +5590,18 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Effective rates (batch resolution for all line items)
+  app.get("/api/estimates/:id/effective-rates", requireAuth, async (req, res) => {
+    try {
+      const { RateResolver } = await import("./rate-resolver.js");
+      const effectiveRates = await RateResolver.resolveRatesBatch(req.params.id);
+      res.json(effectiveRates);
+    } catch (error) {
+      console.error("Error resolving effective rates:", error);
+      res.status(500).json({ message: "Failed to resolve effective rates" });
+    }
+  });
+
   // Resource summary endpoint
   app.get("/api/estimates/:id/resource-summary", requireAuth, async (req, res) => {
     try {

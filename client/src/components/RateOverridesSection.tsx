@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Trash2, Calendar, DollarSign, Users, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -45,6 +47,7 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
     effectiveStart: new Date().toISOString().split('T')[0],
     effectiveEnd: '',
     notes: '',
+    lineItemIds: [] as string[],
   });
 
   // Fetch rate overrides
@@ -60,6 +63,12 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
 
   const { data: roles = [] } = useQuery<any[]>({
     queryKey: ['/api/roles'],
+  });
+
+  // Fetch line items for the estimate
+  const { data: lineItems = [] } = useQuery<any[]>({
+    queryKey: ['/api/estimates', estimateId, 'line-items'],
+    enabled: !!estimateId,
   });
 
   // Create override mutation
@@ -87,6 +96,7 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
         effectiveStart: new Date().toISOString().split('T')[0],
         effectiveEnd: '',
         notes: '',
+        lineItemIds: [],
       });
     },
     onError: (error: any) => {
@@ -139,6 +149,9 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
     }
     if (newOverride.notes) {
       data.notes = newOverride.notes;
+    }
+    if (newOverride.lineItemIds && newOverride.lineItemIds.length > 0) {
+      data.lineItemIds = newOverride.lineItemIds;
     }
 
     createOverrideMutation.mutate(data);
@@ -405,6 +418,71 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
                 className="col-span-3"
                 data-testid="input-effective-end"
               />
+            </div>
+
+            {/* Line Item Selection */}
+            <div className="grid grid-cols-4 items-start gap-4">
+              <Label className="text-right pt-2">
+                Apply To
+              </Label>
+              <div className="col-span-3 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Select specific line items (optional). If none selected, applies to all matching {newOverride.subjectType === 'role' ? 'role' : 'person'} line items.
+                </p>
+                {lineItems.length > 0 ? (
+                  <div className="border rounded-md">
+                    <ScrollArea className="h-[200px] p-3">
+                      <div className="space-y-2">
+                        {lineItems.map((item: any) => {
+                          const isSelected = newOverride.lineItemIds.includes(item.id);
+                          return (
+                            <div key={item.id} className="flex items-start gap-2">
+                              <Checkbox
+                                id={`line-item-${item.id}`}
+                                checked={isSelected}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setNewOverride({
+                                      ...newOverride,
+                                      lineItemIds: [...newOverride.lineItemIds, item.id]
+                                    });
+                                  } else {
+                                    setNewOverride({
+                                      ...newOverride,
+                                      lineItemIds: newOverride.lineItemIds.filter(id => id !== item.id)
+                                    });
+                                  }
+                                }}
+                                data-testid={`checkbox-line-item-${item.id}`}
+                              />
+                              <label
+                                htmlFor={`line-item-${item.id}`}
+                                className="text-sm cursor-pointer flex-1"
+                              >
+                                <div className="font-medium">{item.description}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {item.epicName && item.stageName 
+                                    ? `${item.epicName} / ${item.stageName}` 
+                                    : item.epicName || item.stageName || 'No epic/stage'}
+                                  {item.resourceName && ` • ${item.resourceName}`}
+                                </div>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                    <div className="border-t p-2 bg-muted/50 text-xs text-muted-foreground">
+                      {newOverride.lineItemIds.length === 0 
+                        ? 'No specific items selected (will apply to all matching items)'
+                        : `${newOverride.lineItemIds.length} item${newOverride.lineItemIds.length === 1 ? '' : 's'} selected`
+                      }
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No line items available</p>
+                )}
+              </div>
             </div>
 
             {/* Notes */}
