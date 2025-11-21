@@ -60,6 +60,7 @@ import {
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ClientRateOverridesSection } from "@/components/ClientRateOverridesSection";
 
 type ProjectWithClient = Project & { client: Client };
 type InvoiceBatchWithDetails = InvoiceBatch & {
@@ -367,6 +368,7 @@ export default function ClientDetail() {
             <TabsTrigger value="projects">Projects ({projectStats.total})</TabsTrigger>
             <TabsTrigger value="sows">SOWs & Change Orders ({clientSows.length})</TabsTrigger>
             <TabsTrigger value="invoices">Invoices</TabsTrigger>
+            <TabsTrigger value="rate-overrides">Rate Overrides</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -1061,6 +1063,11 @@ export default function ClientDetail() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Rate Overrides Tab */}
+          <TabsContent value="rate-overrides" className="space-y-6">
+            <ClientRateOverridesSection clientId={clientId!} />
           </TabsContent>
         </Tabs>
       </div>

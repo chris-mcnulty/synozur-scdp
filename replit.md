@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
 ### Database
 - **Type**: PostgreSQL.
 - **Schema Management**: Drizzle Kit.
-- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Expense Reports, Reimbursement Batches, Invoices, Payment Milestones, Rate overrides, Pending receipts.
+- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Expense Reports, Reimbursement Batches, Invoices, Payment Milestones, Rate overrides (estimate-level and client-level), Pending receipts.
 
 ### Project Structure
 - **Monorepo**: Structured into `/client`, `/server`, and `/shared`.
@@ -59,7 +59,11 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **Estimate Management**: Excel/CSV import/export, AI-driven text export, status-based locking, optional resource assignment copying, inline editing.
-- **Rate Override System**: Hierarchical rate precedence (Manual inline > Estimate override > User default > Role default) for billing and cost rates. Estimate-level overrides support role-based and person-specific rates with optional date ranges and line item scoping. Manual rate edits are preserved during recalculation. Rate overrides copy automatically when duplicating estimates. RateResolver service provides transparent rate resolution with precedence tracking.
+- **Rate Override System**: Hierarchical rate precedence (Manual inline > Estimate override > Client override > User default > Role default) for billing and cost rates. 
+  - **Client-Level Overrides**: Default billing and cost rates per client for specific roles or individuals. Applied automatically to new estimates created on or after the override's effective start date. Managed via dedicated "Rate Overrides" tab on client detail page. Supports person-specific and role-based overrides with optional date ranges.
+  - **Estimate-Level Overrides**: Support role-based and person-specific rates with optional date ranges and line item scoping. Manual rate edits are preserved during recalculation. Rate overrides copy automatically when duplicating estimates.
+  - **Temporal Boundary**: Client overrides only apply to estimates created on or after the override's effective start date, preventing retroactive application to existing estimates.
+  - **RateResolver Service**: Provides transparent rate resolution with precedence tracking and deterministic selection (most recent override by effectiveStart DESC).
 - **Invoice & Document Management**: Automated invoice generation, PDF viewing/replacement, SOW/Change Order document handling. Milestone-based invoice generation with "INV" prefix. Invoice PDFs automatically include expense receipt images. Tax rates applied at batch level (default 9.3%) with automatic calculation on subtotal after discount.
 - **Expense Approval Workflow**: Comprehensive approval system with finite state machine (draft → submitted → approved/rejected → reimbursed) using `expense_reports`, `expense_report_items`, and `reimbursement_batches` tables. Role-based access control for approval and processing. Only approved expenses are eligible for invoicing. Email notifications via Outlook/Microsoft Graph API for all workflow transitions.
 - **Resource Management & Capacity Planning**: Dual List and Timeline views, capacity summary dashboard, color-coded utilization, conflict detection, enhanced filtering, cross-project resource dashboard, and "My Assignments" for employees.
