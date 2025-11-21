@@ -4587,7 +4587,38 @@ export class DatabaseStorage implements IStorage {
           });
         }
         
-        // 6. Create project rate overrides from estimate line items that have assigned users
+        // 6. Copy estimate-level rate overrides to project rate overrides
+        // Note: projectRateOverrides only supports person-specific overrides (userId),
+        // so we only copy person-based overrides. Role-based overrides remain at estimate level.
+        const estimateOverrides = await tx.select()
+          .from(estimateRateOverrides)
+          .where(and(
+            eq(estimateRateOverrides.estimateId, estimateId),
+            eq(estimateRateOverrides.subjectType, 'person')
+          ));
+        
+        // Track which users have estimate-level overrides to avoid duplicates
+        const usersWithEstimateOverrides = new Set<string>();
+        
+        for (const override of estimateOverrides) {
+          usersWithEstimateOverrides.add(override.subjectId);
+          
+          // Create project rate override from person-specific estimate override
+          // Note: lineItemIds scoping is lost in project overrides (becomes project-wide)
+          await tx.insert(projectRateOverrides).values({
+            projectId: project.id,
+            userId: override.subjectId,
+            billingRate: override.billingRate,
+            costRate: override.costRate,
+            effectiveStart: override.effectiveStart,
+            effectiveEnd: override.effectiveEnd,
+            notes: override.notes ? `From estimate: ${override.notes}` : 'Copied from estimate override',
+          });
+        }
+        
+        // 7. Create project rate overrides from estimate line items that have assigned users
+        // (These are the "baked-in" rates from line item assignments)
+        // Only create if user doesn't already have an estimate-level override
         const lineItemsWithUsers = await tx.select()
           .from(estimateLineItems)
           .where(and(
@@ -4596,25 +4627,32 @@ export class DatabaseStorage implements IStorage {
           ));
         
         // Track unique user rate combinations to avoid duplicates
-        const processedUserRates = new Set<string>();
+        const processedUserRates = new Map<string, { billingRate: string | null; costRate: string | null }>();
         
         for (const lineItem of lineItemsWithUsers) {
           if (!lineItem.assignedUserId || !lineItem.rate) continue;
           
-          // Create a unique key for this rate override
-          const rateKey = `${lineItem.assignedUserId}-${lineItem.rate}-${lineItem.costRate || '0'}`;
+          // Skip if user already has estimate-level override
+          if (usersWithEstimateOverrides.has(lineItem.assignedUserId)) continue;
           
-          if (processedUserRates.has(rateKey)) continue;
-          processedUserRates.add(rateKey);
-          
-          // Create project rate override for the user
-          await tx.insert(projectRateOverrides).values({
-            projectId: project.id,
-            userId: lineItem.assignedUserId,
+          // Track the most recent rates for each user (later line items override earlier ones)
+          processedUserRates.set(lineItem.assignedUserId, {
             billingRate: lineItem.rate,
             costRate: lineItem.costRate,
+          });
+        }
+        
+        // Create project overrides for users from line item rates
+        for (const userId of Array.from(processedUserRates.keys())) {
+          const rates = processedUserRates.get(userId)!;
+          await tx.insert(projectRateOverrides).values({
+            projectId: project.id,
+            userId,
+            billingRate: rates.billingRate,
+            costRate: rates.costRate,
             effectiveStart: projectData.startDate || new Date().toISOString().split('T')[0],
             effectiveEnd: projectData.endDate || null,
+            notes: 'From estimate line item assignments',
           });
         }
         
