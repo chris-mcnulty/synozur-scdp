@@ -1,6 +1,6 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
-  estimateMilestones, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
+  estimateMilestones, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
@@ -11,6 +11,7 @@ import {
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem, type EstimateLineItemWithJoins,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
+  type ClientRateOverride, type InsertClientRateOverride,
   type EstimateRateOverride, type InsertEstimateRateOverride,
   type TimeEntry, type InsertTimeEntry,
   type Expense, type InsertExpense,
@@ -273,6 +274,12 @@ export interface IStorage {
   createEstimateMilestone(milestone: InsertEstimateMilestone): Promise<EstimateMilestone>;
   updateEstimateMilestone(id: string, milestone: Partial<InsertEstimateMilestone>): Promise<EstimateMilestone>;
   deleteEstimateMilestone(id: string): Promise<void>;
+  
+  // Client Rate Overrides
+  getClientRateOverrides(clientId: string): Promise<ClientRateOverride[]>;
+  createClientRateOverride(override: InsertClientRateOverride): Promise<ClientRateOverride>;
+  updateClientRateOverride(id: string, override: Partial<InsertClientRateOverride>): Promise<ClientRateOverride>;
+  deleteClientRateOverride(id: string): Promise<void>;
   
   // Estimate Rate Overrides
   getEstimateRateOverrides(estimateId: string): Promise<EstimateRateOverride[]>;
@@ -1889,6 +1896,33 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEstimateMilestone(id: string): Promise<void> {
     await db.delete(estimateMilestones).where(eq(estimateMilestones.id, id));
+  }
+
+  // Client Rate Override methods
+  async getClientRateOverrides(clientId: string): Promise<ClientRateOverride[]> {
+    return await db.select()
+      .from(clientRateOverrides)
+      .where(eq(clientRateOverrides.clientId, clientId))
+      .orderBy(clientRateOverrides.createdAt);
+  }
+
+  async createClientRateOverride(override: InsertClientRateOverride): Promise<ClientRateOverride> {
+    const [created] = await db.insert(clientRateOverrides)
+      .values(override)
+      .returning();
+    return created;
+  }
+
+  async updateClientRateOverride(id: string, override: Partial<InsertClientRateOverride>): Promise<ClientRateOverride> {
+    const [updated] = await db.update(clientRateOverrides)
+      .set(override)
+      .where(eq(clientRateOverrides.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteClientRateOverride(id: string): Promise<void> {
+    await db.delete(clientRateOverrides).where(eq(clientRateOverrides.id, id));
   }
 
   async getEstimateRateOverrides(estimateId: string): Promise<EstimateRateOverride[]> {

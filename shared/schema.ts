@@ -213,6 +213,25 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Client Rate Overrides - Default rates for a client (applies to new estimates only)
+export const clientRateOverrides = pgTable("client_rate_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: 'cascade' }),
+  subjectType: text("subject_type").notNull(), // 'role' or 'person' (validated in application layer)
+  subjectId: varchar("subject_id").notNull(), // roleId or userId
+  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }), // Override billing rate
+  costRate: decimal("cost_rate", { precision: 10, scale: 2 }), // Override cost rate
+  effectiveStart: date("effective_start").notNull().default(sql`CURRENT_DATE`),
+  effectiveEnd: date("effective_end"), // null means ongoing
+  notes: text("notes"), // Optional explanation for the override
+  createdBy: varchar("created_by").references(() => users.id), // Who created this override
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  // Index for efficient lookups by client and subject
+  clientSubjectIdx: index("client_rate_overrides_client_subject_idx")
+    .on(table.clientId, table.subjectType, table.subjectId),
+}));
+
 // Estimate Rate Overrides - Custom rates for specific resources within an estimate
 export const estimateRateOverrides = pgTable("estimate_rate_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1200,6 +1219,15 @@ export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems
   createdAt: true,
 });
 
+export const insertClientRateOverrideSchema = createInsertSchema(clientRateOverrides)
+  .omit({
+    id: true,
+    createdAt: true,
+  })
+  .extend({
+    subjectType: z.enum(['role', 'person']), // Validate subject type
+  });
+
 export const insertEstimateRateOverrideSchema = createInsertSchema(estimateRateOverrides)
   .omit({
     id: true,
@@ -1331,6 +1359,9 @@ export type EstimateLineItemWithJoins = EstimateLineItem & {
   assignedUser: User | null;
   role: Role | null;
 };
+
+export type ClientRateOverride = typeof clientRateOverrides.$inferSelect;
+export type InsertClientRateOverride = z.infer<typeof insertClientRateOverrideSchema>;
 
 export type EstimateRateOverride = typeof estimateRateOverrides.$inferSelect;
 export type InsertEstimateRateOverride = z.infer<typeof insertEstimateRateOverrideSchema>;

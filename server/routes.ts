@@ -4834,6 +4834,130 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Client rate overrides
+  app.get("/api/clients/:clientId/rate-overrides", requireAuth, async (req, res) => {
+    try {
+      const overrides = await storage.getClientRateOverrides(req.params.clientId);
+      
+      // Enrich with subject names
+      const enrichedOverrides = await Promise.all(overrides.map(async (override) => {
+        let subjectName = 'Unknown';
+        
+        if (override.subjectType === 'person') {
+          const user = await storage.getUser(override.subjectId);
+          subjectName = user?.name || 'Unknown User';
+        } else if (override.subjectType === 'role') {
+          const role = await storage.getRole(override.subjectId);
+          subjectName = role?.name || 'Unknown Role';
+        }
+
+        return { ...override, subjectName };
+      }));
+      
+      res.json(enrichedOverrides);
+    } catch (error) {
+      console.error("Error fetching client rate overrides:", error);
+      res.status(500).json({ message: "Failed to fetch client rate overrides" });
+    }
+  });
+
+  app.post("/api/clients/:clientId/rate-overrides", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { insertClientRateOverrideSchema } = await import("@shared/schema");
+      
+      // Validate with Zod schema
+      const validatedData = insertClientRateOverrideSchema.parse({
+        ...req.body,
+        clientId: req.params.clientId,
+        createdBy: req.user!.id,
+      });
+
+      // Domain validation: Check client exists
+      const client = await storage.getClient(req.params.clientId);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+
+      // Domain validation: Check subject exists and is valid
+      if (validatedData.subjectType === 'person') {
+        const user = await storage.getUser(validatedData.subjectId);
+        if (!user) {
+          return res.status(400).json({ message: "User not found" });
+        }
+      } else if (validatedData.subjectType === 'role') {
+        const role = await storage.getRole(validatedData.subjectId);
+        if (!role) {
+          return res.status(400).json({ message: "Role not found" });
+        }
+      }
+
+      // Domain validation: Validate date range
+      if (validatedData.effectiveEnd) {
+        const start = new Date(validatedData.effectiveStart || new Date());
+        const end = new Date(validatedData.effectiveEnd);
+        if (start > end) {
+          return res.status(400).json({ message: "Effective start date must be before end date" });
+        }
+      }
+
+      const override = await storage.createClientRateOverride(validatedData);
+      res.status(201).json(override);
+      
+    } catch (error) {
+      console.error("Error creating client rate override:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid rate override data", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        message: "Failed to create client rate override",
+        error: (error as Error).message 
+      });
+    }
+  });
+
+  app.patch("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      // Verify override exists and belongs to this client
+      const overrides = await storage.getClientRateOverrides(req.params.clientId);
+      const override = overrides.find(o => o.id === req.params.overrideId);
+      
+      if (!override) {
+        return res.status(404).json({ 
+          message: "Rate override not found or does not belong to this client" 
+        });
+      }
+
+      const updated = await storage.updateClientRateOverride(req.params.overrideId, req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating client rate override:", error);
+      res.status(500).json({ message: "Failed to update client rate override" });
+    }
+  });
+
+  app.delete("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      // Verify override exists and belongs to this client
+      const overrides = await storage.getClientRateOverrides(req.params.clientId);
+      const override = overrides.find(o => o.id === req.params.overrideId);
+      
+      if (!override) {
+        return res.status(404).json({ 
+          message: "Rate override not found or does not belong to this client" 
+        });
+      }
+      
+      await storage.deleteClientRateOverride(req.params.overrideId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting client rate override:", error);
+      res.status(500).json({ message: "Failed to delete client rate override" });
+    }
+  });
+
   // Roles (admin only)
   app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {

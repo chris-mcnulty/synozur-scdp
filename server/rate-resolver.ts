@@ -1,19 +1,23 @@
 import { db } from "./db";
 import { 
-  estimateRateOverrides, 
-  estimateLineItems, 
+  estimateRateOverrides,
+  clientRateOverrides,
+  estimateLineItems,
+  estimates,
   users, 
   roles,
   type EstimateLineItem,
   type EstimateRateOverride,
+  type ClientRateOverride,
   type User,
   type Role
 } from "@shared/schema";
-import { eq, and, lte, or, isNull, inArray, gte } from "drizzle-orm";
+import { eq, and, lte, or, isNull, inArray, gte, desc } from "drizzle-orm";
 
 export type RatePrecedence = 
   | 'manual_override'      // Highest: Manual inline edit on line item
   | 'estimate_override'    // Estimate-level rate override
+  | 'client_override'      // Client-level rate override (default for all estimates)
   | 'user_default'         // User's default rate
   | 'role_default'         // Role's default rate
   | 'none';                // No rate found
@@ -81,7 +85,41 @@ export class RateResolver {
       };
     }
 
-    // 3. Check for user default rates
+    // 3. Check for client-level rate override
+    // Get the client ID from the estimate
+    const [estimate] = await db.select()
+      .from(estimates)
+      .where(eq(estimates.id, estimateId));
+    
+    if (estimate?.clientId) {
+      const clientOverride = await this.findClientOverride({
+        clientId: estimate.clientId,
+        userId,
+        roleId,
+        effectiveDate
+      });
+
+      // Client overrides only apply to estimates created AFTER the override was established
+      // This prevents retroactive application to existing estimates
+      if (clientOverride) {
+        const estimateCreatedAt = new Date(estimate.createdAt);
+        const overrideEffectiveStart = new Date(clientOverride.effectiveStart);
+        
+        // Only use the override if the estimate was created on or after the override's effective start date
+        if (estimateCreatedAt >= overrideEffectiveStart) {
+          const sourceType = clientOverride.subjectType === 'person' ? 'person' : 'role';
+          return {
+            billingRate: clientOverride.billingRate ? Number(clientOverride.billingRate) : null,
+            costRate: clientOverride.costRate ? Number(clientOverride.costRate) : null,
+            precedence: 'client_override',
+            source: `Client override (${sourceType})`,
+            overrideId: clientOverride.id
+          };
+        }
+      }
+    }
+
+    // 4. Check for user default rates
     if (userId) {
       const [user] = await db.select()
         .from(users)
@@ -97,7 +135,7 @@ export class RateResolver {
       }
     }
 
-    // 4. Check for role default rates (lowest precedence)
+    // 5. Check for role default rates (lowest precedence)
     if (roleId) {
       const [role] = await db.select()
         .from(roles)
@@ -184,6 +222,66 @@ export class RateResolver {
       });
 
       if (applicable) return applicable;
+    }
+
+    return null;
+  }
+
+  /**
+   * Find applicable client-level rate override
+   * Checks for person-specific override first, then role-based override
+   */
+  private static async findClientOverride(params: {
+    clientId: string;
+    userId?: string;
+    roleId?: string;
+    effectiveDate: Date;
+  }): Promise<ClientRateOverride | null> {
+    const { clientId, userId, roleId, effectiveDate } = params;
+
+    // Build conditions for date range check
+    const dateConditions = and(
+      lte(clientRateOverrides.effectiveStart, effectiveDate.toISOString().split('T')[0]),
+      or(
+        isNull(clientRateOverrides.effectiveEnd),
+        gte(clientRateOverrides.effectiveEnd, effectiveDate.toISOString().split('T')[0])
+      )
+    );
+
+    // Try person-specific override first (higher precedence)
+    if (userId) {
+      const personOverrides = await db.select()
+        .from(clientRateOverrides)
+        .where(and(
+          eq(clientRateOverrides.clientId, clientId),
+          eq(clientRateOverrides.subjectType, 'person'),
+          eq(clientRateOverrides.subjectId, userId),
+          dateConditions as any
+        ))
+        .orderBy(desc(clientRateOverrides.effectiveStart))
+        .limit(1);
+
+      if (personOverrides.length > 0) {
+        return personOverrides[0];
+      }
+    }
+
+    // Try role-based override
+    if (roleId) {
+      const roleOverrides = await db.select()
+        .from(clientRateOverrides)
+        .where(and(
+          eq(clientRateOverrides.clientId, clientId),
+          eq(clientRateOverrides.subjectType, 'role'),
+          eq(clientRateOverrides.subjectId, roleId),
+          dateConditions as any
+        ))
+        .orderBy(desc(clientRateOverrides.effectiveStart))
+        .limit(1);
+
+      if (roleOverrides.length > 0) {
+        return roleOverrides[0];
+      }
     }
 
     return null;
