@@ -1,0 +1,59 @@
+34
+errorCode: 'invalid_client',
+11-20 19:26:34
+' at async ConfidentialClientApplication.acquireTokenByCode (file:///home/runner/workspace/node_modules/@azure/msal-node/dist/client/ClientApplication.mjs:83:20)\n' +
+11-20 19:26:34
+' at AuthorizationCodeClient.acquireToken (file:///home/runner/workspace/node_modules/@azure/msal-common/dist/client/AuthorizationCodeClient.mjs:57:25)\n' +
+11-20 19:26:34
+' at async file:///home/runner/workspace/dist/index.js:21560:29',
+11-20 19:26:34
+' at ResponseHandler.validateTokenResponse (file:///home/runner/workspace/node_modules/@azure/msal-common/dist/response/ResponseHandler.mjs:52:33)\n' +
+11-20 19:26:34
+}
+11-20 19:26:34
+details: ServerError: invalid_client: Error(s): 700027 - Timestamp: 2025-11-21 03:26:34Z - Description: AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. [Reason - The key was not found., Thumbprint of key used by client: 'F4B9F92F', Please visit the Azure Portal, Graph Explorer or directly use MS Graph to see configured keys for app Id '198aa0a6-d2ed-4f35-b41b-b6f6778a30d6'. Review the documentation at https://docs.microsoft.com/en-us/graph/deployments to determine the corresponding service endpoint and https://docs.microsoft.com/en-us/graph/api/application-get?view=graph-rest-1.0&tabs=http to build a query request URL, such as 'https://graph.microsoft.com/beta/applications/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6']. Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00 Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 Timestamp: 2025-11-21 03:26:34Z - Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 - Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00
+11-20 19:26:34
+at async file:///home/runner/workspace/dist/index.js:21560:29 {
+11-20 19:26:34
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+11-20 19:26:34
+[SSO-CALLBACK] Fatal error during callback processing: {
+11-20 19:26:34
+errorMessage: "Error(s): 700027 - Timestamp: 2025-11-21 03:26:34Z - Description: AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. [Reason - The key was not found., Thumbprint of key used by client: 'F4B9F92F', Please visit the Azure Portal, Graph Explorer or directly use MS Graph to see configured keys for app Id '198aa0a6-d2ed-4f35-b41b-b6f6778a30d6'. Review the documentation at https://docs.microsoft.com/en-us/graph/deployments to determine the corresponding service endpoint and https://docs.microsoft.com/en-us/graph/api/application-get?view=graph-rest-1.0&tabs=http to build a query request URL, such as 'https://graph.microsoft.com/beta/applications/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6']. Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00 Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 Timestamp: 2025-11-21 03:26:34Z - Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 - Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00",
+11-20 19:26:34
+message: "invalid_client: Error(s): 700027 - Timestamp: 2025-11-21 03:26:34Z - Description: AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. [Reason - The key was not found., Thumbprint of key used by client: 'F4B9F92F', Please visit the Azure Portal, Graph Explorer or directly use MS Graph to see configured keys for app Id '198aa0a6-d2ed-4f35-b41b-b6f6778a30d6'. Review the documentation at https://docs.microsoft.com/en-us/graph/deployments to determine the corresponding service endpoint and https://docs.microsoft.com/en-us/graph/api/application-get?view=graph-rest-1.0&tabs=http to build a query request URL, such as 'https://graph.microsoft.com/beta/applications/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6']. Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00 Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 Timestamp: 2025-11-21 03:26:34Z - Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 - Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00",
+11-20 19:26:34
+errorCode: 'invalid_client',
+11-20 19:26:34
+at AuthorizationCodeClient.acquireToken (file:///home/runner/workspace/node_modules/@azure/msal-common/dist/client/AuthorizationCodeClient.mjs:57:25)
+11-20 19:26:34
+subError: '',
+11-20 19:26:34
+}
+11-20 19:26:34
+at async ConfidentialClientApplication.acquireTokenByCode (file:///home/runner/workspace/node_modules/@azure/msal-node/dist/client/ClientApplication.mjs:83:20)
+11-20 19:26:34
+correlationId: 'fe51e804-2373-4582-b136-e52420e2a2f8'
+11-20 19:26:34
+errorNo: 700027,
+11-20 19:26:34
+' at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n' +
+11-20 19:26:34
+status: undefined,
+11-20 19:26:34
+stack: "ServerError: invalid_client: Error(s): 700027 - Timestamp: 2025-11-21 03:26:34Z - Description: AADSTS700027: The certificate with identifier used to sign the client assertion is not registered on application. [Reason - The key was not found., Thumbprint of key used by client: 'F4B9F92F', Please visit the Azure Portal, Graph Explorer or directly use MS Graph to see configured keys for app Id '198aa0a6-d2ed-4f35-b41b-b6f6778a30d6'. Review the documentation at https://docs.microsoft.com/en-us/graph/deployments to determine the corresponding service endpoint and https://docs.microsoft.com/en-us/graph/api/application-get?view=graph-rest-1.0&tabs=http to build a query request URL, such as 'https://graph.microsoft.com/beta/applications/198aa0a6-d2ed-4f35-b41b-b6f6778a30d6']. Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00 Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 Timestamp: 2025-11-21 03:26:34Z - Correlation ID: fe51e804-2373-4582-b136-e52420e2a2f8 - Trace ID: 35081fec-5b58-47b1-a1f4-2e6e2f850e00\n" +
+11-20 19:26:34
+at ResponseHandler.validateTokenResponse (file:///home/runner/workspace/node_modules/@azure/msal-common/dist/response/ResponseHandler.mjs:52:33)
+11-20 19:26:34
+3:26:34 AM [express] GET /api/auth/callback 302 in 202ms
+11-20 19:26:35
+3:26:35 AM [express] GET /api/auth/user 401 in 1ms
+11-20 19:26:35
+3:26:35 AM [express] GET /api/auth/user 401 in 1ms
+11-20 19:26:35
+3:26:35 AM [express] GET /api/auth/sso/status 304 in 0ms
+11-20 19:26:35
+3:26:35 AM [express] GET /api/auth/sso/status 304 in 0ms
+
+Wrap
+
