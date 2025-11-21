@@ -3582,7 +3582,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           overAllocatedCount,
           averageUtilization: totalCapacity > 0 ? Math.round((totalAllocated / totalCapacity) * 100) : 0
         },
-        people: filteredCapacity
+        capacityByPerson: filteredCapacity
       });
     } catch (error: any) {
       console.error("[ERROR] Failed to fetch capacity timeline:", error);
