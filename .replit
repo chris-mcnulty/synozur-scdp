@@ -157,3 +157,8 @@ args = "nodemon index.js"
 
 [agent]
 integrations = ["javascript_object_storage:1.0.0", "outlook:1.0.0", "sharepoint:1.0.0"]
+
+[userenv]
+
+[userenv.production]
+AZURE_CERTIFICATE_THUMBPRINT = "C9C587A1C4FC823872007C45EE6A001DCF1AFE68"
