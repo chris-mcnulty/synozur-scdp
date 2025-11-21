@@ -1079,6 +1079,8 @@ export default function ProjectDetail() {
         workstreamId: data.workstreamId === 'none' ? null : data.workstreamId,
         epicId: data.epicId === 'none' ? null : data.epicId,
         stageId: data.stageId === 'none' ? null : data.stageId,
+        plannedStartDate: data.startDate || null,
+        plannedEndDate: data.endDate || null,
         taskDescription: data.taskDescription || null,
       };
       return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
