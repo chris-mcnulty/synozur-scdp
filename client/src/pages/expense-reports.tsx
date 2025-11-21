@@ -291,7 +291,7 @@ export default function ExpenseReports() {
             </DialogHeader>
 
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleCreateReport)} className="space-y-4">
+              <form name="create-expense-report-form" onSubmit={form.handleSubmit(handleCreateReport)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="title"

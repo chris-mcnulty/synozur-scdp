@@ -453,7 +453,7 @@ export default function ExpenseManagement() {
           </CardHeader>
           <CardContent>
             <Form {...filterForm}>
-              <form onSubmit={filterForm.handleSubmit(handleApplyFilters)} className="space-y-4">
+              <form name="expense-filter-form" onSubmit={filterForm.handleSubmit(handleApplyFilters)} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {/* Client Filter */}
                   <FormField
@@ -912,7 +912,7 @@ export default function ExpenseManagement() {
               <DialogTitle>Bulk Edit Expenses</DialogTitle>
             </DialogHeader>
             <Form {...bulkEditForm}>
-              <form onSubmit={bulkEditForm.handleSubmit(handleBulkEdit)} className="space-y-4">
+              <form name="bulk-edit-expenses-form" onSubmit={bulkEditForm.handleSubmit(handleBulkEdit)} className="space-y-4">
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
                     Editing {selectedExpenses.length} selected expenses
@@ -1011,7 +1011,7 @@ export default function ExpenseManagement() {
             </DialogHeader>
             {selectedExpense && (
               <Form {...individualEditForm}>
-                <form onSubmit={individualEditForm.handleSubmit(handleIndividualUpdate)} className="space-y-4">
+                <form name="edit-individual-expense-form" onSubmit={individualEditForm.handleSubmit(handleIndividualUpdate)} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={individualEditForm.control}
