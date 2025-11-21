@@ -48,7 +48,7 @@ export async function apiRequest(
   };
   
   if (sessionId) {
-    headers['X-Session-Id'] = sessionId;
+    headers['x-session-id'] = sessionId;
   }
   
   const res = await fetch(url, {
@@ -84,7 +84,7 @@ export const getQueryFn: <T>(options: {
     
     const headers: Record<string, string> = {};
     if (sessionId) {
-      headers['X-Session-Id'] = sessionId;
+      headers['x-session-id'] = sessionId;
     }
     
     const res = await fetch(url, {

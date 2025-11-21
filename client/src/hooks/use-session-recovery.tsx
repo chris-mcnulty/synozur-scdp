@@ -29,7 +29,7 @@ export function useSessionRecovery() {
           // Try to validate the stored session
           const response = await fetch('/api/auth/user', {
             headers: {
-              'X-Session-Id': storedSessionId
+              'x-session-id': storedSessionId
             }
           });
           
@@ -99,7 +99,7 @@ export function useSessionRecovery() {
         try {
           const response = await fetch('/api/auth/user', {
             headers: {
-              'X-Session-Id': sessionId
+              'x-session-id': sessionId
             }
           });
           
