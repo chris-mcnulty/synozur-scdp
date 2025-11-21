@@ -486,7 +486,7 @@ export default function Estimates() {
             <DialogHeader>
               <DialogTitle>Create New Estimate</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-estimate-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const projectId = formData.get('projectId');
@@ -727,7 +727,7 @@ export default function Estimates() {
             <DialogHeader>
               <DialogTitle>Create New Client</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-client-from-estimate-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               createClient.mutate({
@@ -839,7 +839,7 @@ export default function Estimates() {
               {/* Same Client Tab */}
               <TabsContent value="same">
                 <Form {...copySameForm}>
-                  <form onSubmit={copySameForm.handleSubmit((data) => {
+                  <form name="copy-estimate-same-client-form" onSubmit={copySameForm.handleSubmit((data) => {
                     if (!estimateToCopy) return;
                     copyEstimate.mutate({
                       id: estimateToCopy.id,
@@ -909,7 +909,7 @@ export default function Estimates() {
               {/* Different Client Tab */}
               <TabsContent value="different">
                 <Form {...copyDifferentForm}>
-                  <form onSubmit={copyDifferentForm.handleSubmit((data) => {
+                  <form name="copy-estimate-different-client-form" onSubmit={copyDifferentForm.handleSubmit((data) => {
                     if (!estimateToCopy) return;
                     copyEstimate.mutate({
                       id: estimateToCopy.id,
@@ -1005,7 +1005,7 @@ export default function Estimates() {
               {/* New Client Tab */}
               <TabsContent value="new">
                 <Form {...copyNewForm}>
-                  <form onSubmit={copyNewForm.handleSubmit((data) => {
+                  <form name="copy-estimate-new-client-form" onSubmit={copyNewForm.handleSubmit((data) => {
                     if (!estimateToCopy) return;
                     copyEstimate.mutate({
                       id: estimateToCopy.id,

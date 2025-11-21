@@ -312,7 +312,7 @@ export default function Clients() {
             <DialogHeader>
               <DialogTitle>Create New Client</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-client-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const msaDate = formData.get('msaDate') as string;

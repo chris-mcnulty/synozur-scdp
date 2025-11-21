@@ -3567,7 +3567,7 @@ export default function ProjectDetail() {
               </DialogDescription>
             </DialogHeader>
             <Form {...sowForm}>
-              <form onSubmit={sowForm.handleSubmit(handleSubmitSow)} className="space-y-4">
+              <form name="project-sow-form" onSubmit={sowForm.handleSubmit(handleSubmitSow)} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={sowForm.control}
@@ -3819,7 +3819,7 @@ export default function ProjectDetail() {
               </DialogDescription>
             </DialogHeader>
             <Form {...milestoneForm}>
-              <form onSubmit={milestoneForm.handleSubmit(handleSubmitMilestone)} className="space-y-4">
+              <form name="project-milestone-form" onSubmit={milestoneForm.handleSubmit(handleSubmitMilestone)} className="space-y-4">
                 <FormField
                   control={milestoneForm.control}
                   name="name"
@@ -4000,7 +4000,7 @@ export default function ProjectDetail() {
               </DialogDescription>
             </DialogHeader>
             <Form {...workstreamForm}>
-              <form onSubmit={workstreamForm.handleSubmit(handleSubmitWorkstream)} className="space-y-4">
+              <form name="project-workstream-form" onSubmit={workstreamForm.handleSubmit(handleSubmitWorkstream)} className="space-y-4">
                 <FormField
                   control={workstreamForm.control}
                   name="name"
@@ -4387,7 +4387,7 @@ export default function ProjectDetail() {
               </DialogDescription>
             </DialogHeader>
             <Form {...epicForm}>
-              <form onSubmit={epicForm.handleSubmit(handleSubmitEpic)} className="space-y-4">
+              <form name="project-epic-form" onSubmit={epicForm.handleSubmit(handleSubmitEpic)} className="space-y-4">
                 <FormField
                   control={epicForm.control}
                   name="name"
@@ -4567,7 +4567,7 @@ export default function ProjectDetail() {
                 {editingAssignment ? 'Update' : 'Assign'} a team member to this project with specific role and hours
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="project-team-assignment-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const roleIdValue = formData.get('roleId') as string;
@@ -4856,7 +4856,7 @@ export default function ProjectDetail() {
               <DialogTitle>Edit Project</DialogTitle>
             </DialogHeader>
             {projectToEdit && (
-              <form onSubmit={(e) => {
+              <form name="edit-project-form" onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const endDateValue = formData.get('endDate') as string;
