@@ -399,7 +399,7 @@ export default function Projects() {
             <DialogHeader>
               <DialogTitle>Create New Project</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-project-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const endDateValue = formData.get('endDate') as string;
@@ -578,7 +578,7 @@ export default function Projects() {
             <DialogHeader>
               <DialogTitle>Create New Client</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-client-from-project-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               createClient.mutate({
@@ -668,7 +668,7 @@ export default function Projects() {
               <DialogTitle>Edit Project</DialogTitle>
             </DialogHeader>
             {projectToEdit && (
-              <form onSubmit={(e) => {
+              <form name="edit-project-overview-form" onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const endDateValue = formData.get('endDate') as string;

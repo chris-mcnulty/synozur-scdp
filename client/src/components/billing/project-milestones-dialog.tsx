@@ -463,7 +463,7 @@ export function ProjectMilestonesDialog({
               )}
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form name="project-milestone-manage-form" onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name *</Label>
                 <Input

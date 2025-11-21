@@ -343,7 +343,7 @@ export function AggregateAdjustmentDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+          <form name="aggregate-adjustment-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             {/* Current vs Target Summary */}
             <Card>
               <CardHeader>

@@ -326,7 +326,7 @@ export default function RateManagement() {
                           <DialogTitle>Create New Role</DialogTitle>
                         </DialogHeader>
                         <Form {...roleForm}>
-                          <form onSubmit={roleForm.handleSubmit(onSubmitRole)} className="space-y-4">
+                          <form name="create-role-form" onSubmit={roleForm.handleSubmit(onSubmitRole)} className="space-y-4">
                             <FormField
                               control={roleForm.control}
                               name="name"
@@ -487,7 +487,7 @@ export default function RateManagement() {
                             </DialogDescription>
                           </DialogHeader>
                           <Form {...scheduleForm}>
-                            <form onSubmit={scheduleForm.handleSubmit(onSubmitSchedule)} className="space-y-4">
+                            <form name="create-rate-schedule-form" onSubmit={scheduleForm.handleSubmit(onSubmitSchedule)} className="space-y-4">
                               <FormField
                                 control={scheduleForm.control}
                                 name="userId"
@@ -729,7 +729,7 @@ export default function RateManagement() {
                 </Alert>
 
                 <Form {...bulkUpdateForm}>
-                  <form onSubmit={bulkUpdateForm.handleSubmit(onSubmitBulkUpdate)} className="space-y-4">
+                  <form name="bulk-rate-update-form" onSubmit={bulkUpdateForm.handleSubmit(onSubmitBulkUpdate)} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <FormField
                         control={bulkUpdateForm.control}

@@ -150,7 +150,7 @@ export function BatchSettings() {
           </p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form name="batch-settings-form" onSubmit={handleSubmit} className="space-y-6">
             {/* Batch Prefix */}
             <div className="space-y-2">
               <Label htmlFor="prefix" className="flex items-center gap-2">

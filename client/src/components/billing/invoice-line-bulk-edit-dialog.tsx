@@ -165,7 +165,7 @@ export function InvoiceLineBulkEditDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+          <form name="invoice-line-bulk-edit-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             {/* Adjustment Type */}
             <FormField
               control={form.control}

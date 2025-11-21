@@ -806,6 +806,7 @@ export default function TimeTracking() {
             <CardContent>
               <Form {...form}>
                 <form 
+                  name="log-time-entry-form"
                   onSubmit={form.handleSubmit(onSubmit, (errors) => {
                     console.log('Form validation errors:', errors);
                   })} 
@@ -1251,7 +1252,7 @@ export default function TimeTracking() {
               </DialogDescription>
             </DialogHeader>
             <Form {...editForm}>
-              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4" noValidate>
+              <form name="edit-time-entry-overview-form" onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4" noValidate>
                 <FormField
                   control={editForm.control}
                   name="date"

@@ -234,7 +234,7 @@ export default function Users() {
             <DialogHeader>
               <DialogTitle>Add New User</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
+            <form name="create-user-form" onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               const firstName = formData.get('firstName') as string;
@@ -380,7 +380,7 @@ export default function Users() {
               <DialogHeader>
                 <DialogTitle>Edit User</DialogTitle>
               </DialogHeader>
-              <form onSubmit={(e) => {
+              <form name="edit-user-form" onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
                 const firstName = formData.get('firstName') as string;

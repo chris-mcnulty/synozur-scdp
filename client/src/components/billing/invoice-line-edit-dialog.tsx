@@ -227,7 +227,7 @@ export function InvoiceLineEditDialog({
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <form name="invoice-line-edit-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
               {/* Project and Client Info */}
               <div className="rounded-lg bg-muted/50 p-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">

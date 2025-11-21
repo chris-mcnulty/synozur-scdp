@@ -496,7 +496,7 @@ export default function SystemSettings() {
 
           <TabsContent value="company" className="space-y-6">
             <Form {...companyForm}>
-              <form onSubmit={companyForm.handleSubmit(handleCompanySubmit)} className="space-y-6">
+              <form name="company-information-form" onSubmit={companyForm.handleSubmit(handleCompanySubmit)} className="space-y-6">
                 {/* Basic Information */}
                 <Card>
                   <CardHeader>
@@ -726,7 +726,7 @@ export default function SystemSettings() {
                 </Alert>
 
                 <Form {...rateForm}>
-                  <form onSubmit={rateForm.handleSubmit(handleRateSubmit)} className="space-y-6">
+                  <form name="default-rates-form" onSubmit={rateForm.handleSubmit(handleRateSubmit)} className="space-y-6">
                     <div className="grid grid-cols-3 gap-6">
                       <FormField
                         control={rateForm.control}
@@ -850,7 +850,7 @@ export default function SystemSettings() {
                 </Alert>
 
                 <Form {...estimationFactorsForm}>
-                  <form onSubmit={estimationFactorsForm.handleSubmit(handleEstimationFactorsSubmit)} className="space-y-8">
+                  <form name="estimation-factors-form" onSubmit={estimationFactorsForm.handleSubmit(handleEstimationFactorsSubmit)} className="space-y-8">
                     {/* Size Factors */}
                     <div>
                       <h3 className="text-sm font-medium mb-4">Size Multipliers</h3>
@@ -1455,7 +1455,7 @@ export default function SystemSettings() {
                     </Card>
 
                     <Form {...vocabularyForm}>
-                      <form onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
+                      <form name="vocabulary-customize-form" onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
                         <div className="grid grid-cols-2 gap-6">
                           <FormField
                             control={vocabularyForm.control}
