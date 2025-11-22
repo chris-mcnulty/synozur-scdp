@@ -37,6 +37,10 @@ const expenseFormSchema = insertExpenseSchema.omit({
   }),
   miles: z.string().optional(), // Separate field for miles input (not sent to backend)
   projectResourceId: z.string().optional(), // Optional person assignment
+  perDiemCity: z.string().optional(), // Per diem location
+  perDiemState: z.string().optional(),
+  perDiemZip: z.string().optional(),
+  perDiemDays: z.string().optional(), // Number of days for per diem (separate field)
 }).refine((data) => {
   // Validate that miles is positive when category is mileage
   if (data.category === "mileage") {
@@ -47,6 +51,21 @@ const expenseFormSchema = insertExpenseSchema.omit({
 }, {
   message: "Miles must be greater than 0 for mileage expenses",
   path: ["miles"],
+}).refine((data) => {
+  // Validate per diem fields
+  if (data.category === "perdiem") {
+    const days = parseFloat(data.perDiemDays || "0");
+    if (isNaN(days) || days <= 0) {
+      return false;
+    }
+    // Must have either city/state OR zip
+    const hasLocation = (data.perDiemCity && data.perDiemState) || data.perDiemZip;
+    return !!hasLocation;
+  }
+  return true;
+}, {
+  message: "Per diem requires days and location (city/state or ZIP)",
+  path: ["perDiemDays"],
 }).refine((data) => {
   // Ensure required fields are not empty strings
   if (data.category && data.projectId && data.description !== undefined) {
@@ -77,6 +96,8 @@ export default function Expenses() {
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
+  const [perDiemBreakdown, setPerDiemBreakdown] = useState<any>(null); // Per diem calculation breakdown
+  const [isCalculatingPerDiem, setIsCalculatingPerDiem] = useState<boolean>(false);
   const [prevCategory, setPrevCategory] = useState<string>("");
   const [editPrevCategory, setEditPrevCategory] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -107,6 +128,10 @@ export default function Expenses() {
       miles: "",
       quantity: "",
       unit: "",
+      perDiemCity: "",
+      perDiemState: "",
+      perDiemZip: "",
+      perDiemDays: "",
     },
   });
 
@@ -189,6 +214,67 @@ export default function Expenses() {
     }
   }, [watchedCategory, watchedMiles, mileageRate, form, prevCategory, isSubmitting]);
 
+  // Calculate per diem amount using GSA rates
+  const calculatePerDiem = async () => {
+    const city = form.getValues("perDiemCity");
+    const state = form.getValues("perDiemState");
+    const zip = form.getValues("perDiemZip");
+    const days = form.getValues("perDiemDays");
+
+    if (!days || parseFloat(days) <= 0) {
+      toast({
+        title: "Missing days",
+        description: "Please enter the number of days",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!zip && (!city || !state)) {
+      toast({
+        title: "Missing location",
+        description: "Please enter city/state or ZIP code",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCalculatingPerDiem(true);
+    try {
+      console.log("[PERDIEM_UI] Calculating per diem...", { city, state, zip, days });
+      const response = await apiRequest("/api/perdiem/calculate", {
+        method: "POST",
+        body: JSON.stringify({
+          city,
+          state,
+          zip,
+          days: parseFloat(days),
+          includePartialDays: true,
+        }),
+      });
+
+      console.log("[PERDIEM_UI] Calculation response:", response);
+      setPerDiemBreakdown(response);
+      form.setValue("amount", response.totalAmount.toFixed(2));
+      form.setValue("quantity", days);
+      form.setValue("unit", "day");
+
+      toast({
+        title: "Per diem calculated",
+        description: `$${response.totalAmount.toFixed(2)} (${response.breakdown})`,
+      });
+    } catch (error: any) {
+      console.error("[PERDIEM_UI] Calculation error:", error);
+      toast({
+        title: "Calculation failed",
+        description: error.message || "Could not fetch GSA rates. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCalculatingPerDiem(false);
+    }
+  };
+
   const createExpenseMutation = useMutation({
     mutationFn: async (data: any) => {
       // Data should already have numbers from onSubmit
@@ -213,10 +299,15 @@ export default function Expenses() {
         miles: "",
         quantity: "",
         unit: "",
+        perDiemCity: "",
+        perDiemState: "",
+        perDiemZip: "",
+        perDiemDays: "",
       });
       // Reset component state
       setPrevCategory("");
       setReceiptFile(null);
+      setPerDiemBreakdown(null);
       toast({
         title: "Expense created",
         description: "Your expense has been logged successfully.",
@@ -488,8 +579,12 @@ export default function Expenses() {
       amount: data.amount,
     };
 
-    // Remove the miles field (it's only for UI)
+    // Remove the UI-only fields
     delete submitData.miles;
+    delete submitData.perDiemCity;
+    delete submitData.perDiemState;
+    delete submitData.perDiemZip;
+    delete submitData.perDiemDays;
 
     // If it's mileage, ensure quantity and unit are set
     if (data.category === "mileage") {
@@ -509,11 +604,28 @@ export default function Expenses() {
         });
       }
       console.log('Mileage transformation:', { milesNum, quantity: submitData.quantity, amount: submitData.amount });
+    } else if (data.category === "perdiem") {
+      // For per diem, construct location and set rates from breakdown
+      submitData.unit = "day";
+      submitData.quantity = data.perDiemDays || null;
+      
+      // Construct location string
+      if (data.perDiemZip) {
+        submitData.perDiemLocation = `ZIP ${data.perDiemZip}`;
+      } else if (data.perDiemCity && data.perDiemState) {
+        submitData.perDiemLocation = `${data.perDiemCity}, ${data.perDiemState}`;
+      }
+      
+      console.log('Per diem transformation:', { 
+        days: data.perDiemDays, 
+        location: submitData.perDiemLocation,
+        amount: submitData.amount
+      });
     } else {
-      // Clear quantity and unit for non-mileage expenses
+      // Clear quantity and unit for non-mileage/non-perdiem expenses
       submitData.quantity = null;
       submitData.unit = null;
-      console.log('Non-mileage: cleared quantity and unit');
+      console.log('Regular expense: cleared quantity and unit');
     }
 
     // Ensure projectResourceId is handled correctly - convert "unassigned" to null
@@ -548,6 +660,10 @@ export default function Expenses() {
       miles: "",
       quantity: "",
       unit: "",
+      perDiemCity: "",
+      perDiemState: "",
+      perDiemZip: "",
+      perDiemDays: "",
     },
     mode: "onChange",
   });
@@ -744,7 +860,8 @@ export default function Expenses() {
     const allowedUpdateFields = [
       'projectId', 'projectResourceId', 'date', 'category', 'amount', 
       'quantity', 'unit', 'currency', 'billable', 'reimbursable', 
-      'description', 'vendor'
+      'description', 'vendor', 'perDiemLocation', 'perDiemMealsRate', 
+      'perDiemLodgingRate', 'perDiemBreakdown'
     ];
 
     const filteredData: any = {};
@@ -1011,6 +1128,117 @@ export default function Expenses() {
                     />
                   )}
 
+                  {/* Per Diem-specific fields */}
+                  {watchedCategory === "perdiem" && (
+                    <div className="space-y-4 p-4 border rounded-md bg-muted/50">
+                      <div className="text-sm font-medium">GSA Per Diem Calculator</div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="perDiemCity"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>City</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="San Francisco"
+                                  {...field}
+                                  data-testid="input-perdiem-city"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={form.control}
+                          name="perDiemState"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>State</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="CA"
+                                  maxLength={2}
+                                  {...field}
+                                  data-testid="input-perdiem-state"
+                                />
+                              </FormControl>
+                              <FormDescription>2-letter code</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="text-center text-xs text-muted-foreground">OR</div>
+
+                      <FormField
+                        control={form.control}
+                        name="perDiemZip"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ZIP Code</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="94102"
+                                {...field}
+                                data-testid="input-perdiem-zip"
+                              />
+                            </FormControl>
+                            <FormDescription>Enter ZIP instead of city/state</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="perDiemDays"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Number of Days</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="1"
+                                step="1"
+                                placeholder="3"
+                                {...field}
+                                data-testid="input-perdiem-days"
+                              />
+                            </FormControl>
+                            <FormDescription>Total days of travel</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <Button
+                        type="button"
+                        onClick={calculatePerDiem}
+                        disabled={isCalculatingPerDiem}
+                        className="w-full"
+                        data-testid="button-calculate-perdiem"
+                      >
+                        {isCalculatingPerDiem ? "Calculating..." : "Calculate Per Diem"}
+                      </Button>
+
+                      {perDiemBreakdown && (
+                        <div className="p-3 bg-background rounded-md border space-y-2">
+                          <div className="text-sm font-medium">Breakdown:</div>
+                          <div className="text-xs text-muted-foreground">{perDiemBreakdown.breakdown}</div>
+                          <div className="flex justify-between items-center pt-2 border-t">
+                            <span className="text-sm font-medium">Total Amount:</span>
+                            <span className="text-lg font-bold">${perDiemBreakdown.totalAmount.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
@@ -1023,13 +1251,18 @@ export default function Expenses() {
                               type="text"
                               placeholder="0.00"
                               {...field}
-                              disabled={watchedCategory === "mileage"} // Disable for mileage (auto-calculated)
+                              disabled={watchedCategory === "mileage" || watchedCategory === "perdiem"} // Disable for auto-calculated categories
                               data-testid="input-expense-amount"
                             />
                           </FormControl>
                           {watchedCategory === "mileage" && (
                             <FormDescription>
                               Auto-calculated from miles
+                            </FormDescription>
+                          )}
+                          {watchedCategory === "perdiem" && (
+                            <FormDescription>
+                              Auto-calculated from GSA rates
                             </FormDescription>
                           )}
                           <FormMessage />

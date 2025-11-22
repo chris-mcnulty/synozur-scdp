@@ -7955,25 +7955,47 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { city, state, zip, days, includePartialDays, year } = req.body;
       
+      console.log("[PERDIEM_CALCULATE] Request:", { city, state, zip, days, includePartialDays, year });
+      
+      // Validate required parameters
+      if (typeof days !== 'number' || days <= 0) {
+        return res.status(400).json({ message: "Invalid days parameter. Must be a positive number." });
+      }
+      
+      if (!zip && (!city || !state)) {
+        return res.status(400).json({ message: "Location required. Provide either city/state or ZIP code." });
+      }
+      
       const { getPerDiemRatesByCity, getPerDiemRatesByZip, calculatePerDiem, getStandardCONUSRate } = await import("./gsa-service.js");
       
       let gsaRate;
-      if (zip) {
-        gsaRate = await getPerDiemRatesByZip(zip, year);
-      } else if (city && state) {
-        gsaRate = await getPerDiemRatesByCity(city, state, year);
+      try {
+        if (zip) {
+          console.log("[PERDIEM_CALCULATE] Fetching rates by ZIP:", zip);
+          gsaRate = await getPerDiemRatesByZip(zip, year);
+        } else if (city && state) {
+          console.log("[PERDIEM_CALCULATE] Fetching rates by city/state:", city, state);
+          gsaRate = await getPerDiemRatesByCity(city, state, year);
+        }
+      } catch (apiError) {
+        console.warn("[PERDIEM_CALCULATE] GSA API error (will fallback to CONUS):", apiError);
+        // Don't re-throw, just log and fallback to CONUS
       }
       
       // Fallback to standard CONUS rate if specific rate not found
       if (!gsaRate) {
+        console.log("[PERDIEM_CALCULATE] Using standard CONUS rate");
         gsaRate = await getStandardCONUSRate(year);
       }
       
+      console.log("[PERDIEM_CALCULATE] Using GSA rate:", gsaRate);
       const calculation = calculatePerDiem(gsaRate, days, includePartialDays !== false);
+      console.log("[PERDIEM_CALCULATE] Calculation result:", calculation);
       res.json(calculation);
-    } catch (error) {
-      console.error("Error calculating per diem:", error);
-      res.status(500).json({ message: "Failed to calculate per diem" });
+    } catch (error: any) {
+      console.error("[PERDIEM_CALCULATE] Error:", error);
+      console.error("[PERDIEM_CALCULATE] Stack:", error?.stack);
+      res.status(500).json({ message: "Failed to calculate per diem", error: error?.message || String(error) });
     }
   });
 

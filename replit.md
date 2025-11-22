@@ -6,13 +6,18 @@ SCDP is a comprehensive platform for managing the entire lifecycle of consulting
 ## Recent Changes (November 22, 2025)
 - **Fixed Estimate Rate Override Validation Bug**: Corrected client-side validation in RateOverridesSection component to properly require the `effectiveStart` date field before form submission. Previously, the validation only checked for subjectId and rates, but the backend Zod schema requires effectiveStart as a non-empty string, causing validation failures.
 - **Enhanced Error Handling**: Improved error message display for rate override creation/editing, with better extraction of Zod validation errors from backend responses and detailed console logging for debugging.
-- **Per Diem GSA Integration (In Progress)**: Added foundation for automated per diem expense entry with GSA rate lookup:
+- **Per Diem GSA Integration (COMPLETE)**: Fully implemented automated per diem expense entry with GSA rate lookup and fallback to standard CONUS rates:
   - Extended expense schema with per diem fields (location, GSA rates, breakdown)
-  - Created GSA API service for fetching per diem rates by city/state/ZIP
-  - Implemented calculatePerDiem() with correct GSA partial day rules (first/last day 75%, middle days 100%)
+  - Created GSA API service (server/gsa-service.ts) for fetching per diem rates by city/state or ZIP code from GSA API
+  - Implemented calculatePerDiem() with correct GSA partial day rules (first/last day 75% M&IE, middle days 100%, lodging excludes last day)
   - Added API endpoints: GET /api/perdiem/rates/city/:city/state/:state, GET /api/perdiem/rates/zip/:zip, POST /api/perdiem/calculate
-  - Added "Per Diem" category to expense forms
-  - UI work in progress (location inputs, auto-calculate button, breakdown display)
+  - Added "Per Diem" category to expense forms with complete UI implementation
+  - Per Diem Calculator UI with location inputs (city/state or ZIP), days input, Calculate button, and breakdown display
+  - Auto-calculated amount field (disabled) like mileage expenses
+  - Robust error handling with automatic fallback to standard CONUS rates ($59 M&IE, $98 lodging) when GSA API is unavailable
+  - Backend validation for required parameters (days > 0, location provided)
+  - Comprehensive logging with [PERDIEM_CALCULATE] and [PERDIEM_UI] prefixes for debugging
+  - End-to-end tested and working correctly
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
