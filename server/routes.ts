@@ -5699,6 +5699,83 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.patch("/api/estimates/:estimateId/rate-overrides/:overrideId", requireAuth, async (req, res) => {
+    try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
+      // Verify override exists and belongs to this estimate
+      const overrides = await storage.getEstimateRateOverrides(req.params.estimateId);
+      const existingOverride = overrides.find(o => o.id === req.params.overrideId);
+      
+      if (!existingOverride) {
+        return res.status(404).json({ 
+          message: "Rate override not found or does not belong to this estimate" 
+        });
+      }
+
+      const { insertEstimateRateOverrideSchema } = await import("@shared/schema");
+      
+      // Validate with Zod schema (partial update)
+      const validatedData = insertEstimateRateOverrideSchema.partial().parse(req.body);
+
+      // Domain validation: Check subject exists if being updated
+      if (validatedData.subjectType && validatedData.subjectId) {
+        if (validatedData.subjectType === 'person') {
+          const user = await storage.getUser(validatedData.subjectId);
+          if (!user) {
+            return res.status(400).json({ message: "User not found" });
+          }
+        } else if (validatedData.subjectType === 'role') {
+          const role = await storage.getRole(validatedData.subjectId);
+          if (!role) {
+            return res.status(400).json({ message: "Role not found" });
+          }
+        }
+      }
+
+      // Domain validation: Validate date range if being updated
+      if (validatedData.effectiveStart || validatedData.effectiveEnd) {
+        const start = new Date(validatedData.effectiveStart || existingOverride.effectiveStart);
+        const end = validatedData.effectiveEnd ? new Date(validatedData.effectiveEnd) : (existingOverride.effectiveEnd ? new Date(existingOverride.effectiveEnd) : null);
+        if (end && start > end) {
+          return res.status(400).json({ message: "Effective start date must be before end date" });
+        }
+      }
+
+      // Domain validation: Validate line items belong to this estimate if being updated
+      if (validatedData.lineItemIds && validatedData.lineItemIds.length > 0) {
+        const estimateLineItems = await storage.getEstimateLineItems(req.params.estimateId);
+        const validLineItemIds = new Set(estimateLineItems.map(item => item.id));
+        const invalidItems = validatedData.lineItemIds.filter(id => !validLineItemIds.has(id));
+        
+        if (invalidItems.length > 0) {
+          return res.status(400).json({ 
+            message: "Some line items do not belong to this estimate",
+            invalidLineItemIds: invalidItems
+          });
+        }
+      }
+
+      // Update the override
+      const updated = await storage.updateEstimateRateOverride(req.params.overrideId, validatedData);
+      res.json(updated);
+      
+    } catch (error) {
+      console.error("Error updating rate override:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: "Invalid rate override data", 
+          errors: error.errors 
+        });
+      }
+      res.status(500).json({ 
+        message: "Failed to update rate override",
+        error: (error as Error).message 
+      });
+    }
+  });
+
   app.delete("/api/estimates/:estimateId/rate-overrides/:overrideId", requireAuth, async (req, res) => {
     try {
       // Check if estimate is editable

@@ -1939,6 +1939,14 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async updateEstimateRateOverride(id: string, override: Partial<InsertEstimateRateOverride>): Promise<EstimateRateOverride> {
+    const [updated] = await db.update(estimateRateOverrides)
+      .set(override)
+      .where(eq(estimateRateOverrides.id, id))
+      .returning();
+    return updated;
+  }
+
   async deleteEstimateRateOverride(id: string): Promise<void> {
     await db.delete(estimateRateOverrides).where(eq(estimateRateOverrides.id, id));
   }

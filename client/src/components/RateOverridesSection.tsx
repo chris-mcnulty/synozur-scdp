@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Trash2, Calendar, DollarSign, Users, User } from "lucide-react";
+import { Plus, Trash2, Calendar, DollarSign, Users, User, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -39,12 +39,24 @@ interface RateOverridesSectionProps {
 export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSectionProps) {
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingOverride, setEditingOverride] = useState<RateOverride | null>(null);
   const [newOverride, setNewOverride] = useState({
     subjectType: 'role' as 'role' | 'person',
     subjectId: '',
     billingRate: '',
     costRate: '',
     effectiveStart: new Date().toISOString().split('T')[0],
+    effectiveEnd: '',
+    notes: '',
+    lineItemIds: [] as string[],
+  });
+  const [editOverride, setEditOverride] = useState({
+    subjectType: 'role' as 'role' | 'person',
+    subjectId: '',
+    billingRate: '',
+    costRate: '',
+    effectiveStart: '',
     effectiveEnd: '',
     notes: '',
     lineItemIds: [] as string[],
@@ -108,6 +120,34 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
     },
   });
 
+  // Update override mutation
+  const updateOverrideMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest(`/api/estimates/${estimateId}/rate-overrides/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimateId, 'rate-overrides'] });
+      toast({
+        title: "Rate override updated",
+        description: "The rate override has been successfully updated.",
+      });
+      setShowEditDialog(false);
+      setEditingOverride(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error updating override",
+        description: error.message || "Failed to update rate override",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete override mutation
   const deleteOverrideMutation = useMutation({
     mutationFn: async (overrideId: string) => {
@@ -157,7 +197,51 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
     createOverrideMutation.mutate(data);
   };
 
+  const handleEditClick = (override: RateOverride) => {
+    setEditingOverride(override);
+    setEditOverride({
+      subjectType: override.subjectType,
+      subjectId: override.subjectId,
+      billingRate: override.billingRate || '',
+      costRate: override.costRate || '',
+      effectiveStart: override.effectiveStart,
+      effectiveEnd: override.effectiveEnd || '',
+      notes: override.notes || '',
+      lineItemIds: override.lineItemIds || [],
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateOverride = () => {
+    if (!editingOverride) return;
+
+    const data: any = {
+      subjectType: editOverride.subjectType,
+      subjectId: editOverride.subjectId,
+      effectiveStart: editOverride.effectiveStart,
+    };
+
+    if (editOverride.billingRate) {
+      data.billingRate = parseFloat(editOverride.billingRate);
+    }
+    if (editOverride.costRate) {
+      data.costRate = parseFloat(editOverride.costRate);
+    }
+    if (editOverride.effectiveEnd) {
+      data.effectiveEnd = editOverride.effectiveEnd;
+    }
+    if (editOverride.notes) {
+      data.notes = editOverride.notes;
+    }
+    if (editOverride.lineItemIds && editOverride.lineItemIds.length > 0) {
+      data.lineItemIds = editOverride.lineItemIds;
+    }
+
+    updateOverrideMutation.mutate({ id: editingOverride.id, data });
+  };
+
   const isFormValid = newOverride.subjectId && (newOverride.billingRate || newOverride.costRate);
+  const isEditFormValid = editOverride.subjectId && (editOverride.billingRate || editOverride.costRate);
 
   return (
     <>
@@ -266,15 +350,25 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
                       </TableCell>
                       {isEditable && (
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteOverrideMutation.mutate(override.id)}
-                            disabled={deleteOverrideMutation.isPending}
-                            data-testid={`button-delete-override-${override.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditClick(override)}
+                              data-testid={`button-edit-override-${override.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => deleteOverrideMutation.mutate(override.id)}
+                              disabled={deleteOverrideMutation.isPending}
+                              data-testid={`button-delete-override-${override.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -518,6 +612,238 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
               {createOverrideMutation.isPending ? "Creating..." : "Create Override"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Override Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Rate Override</DialogTitle>
+            <DialogDescription>
+              Update the billing or cost rate for this override
+            </DialogDescription>
+          </DialogHeader>
+
+          <form name="edit-estimate-rate-override-form" onSubmit={(e) => { e.preventDefault(); handleUpdateOverride(); }}>
+            <div className="grid gap-4 py-4">
+              {/* Subject Type */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-subject-type" className="text-right">
+                  Type
+                </Label>
+                <Select
+                  value={editOverride.subjectType}
+                  onValueChange={(value: 'role' | 'person') => 
+                    setEditOverride({ ...editOverride, subjectType: value, subjectId: '' })
+                  }
+                >
+                  <SelectTrigger className="col-span-3" data-testid="select-edit-subject-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="role">Role</SelectItem>
+                    <SelectItem value="person">Person</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Subject Selection */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-subject" className="text-right">
+                  {editOverride.subjectType === 'role' ? 'Role' : 'Person'} *
+                </Label>
+                <Select
+                  value={editOverride.subjectId}
+                  onValueChange={(value) => setEditOverride({ ...editOverride, subjectId: value })}
+                >
+                  <SelectTrigger className="col-span-3" data-testid="select-edit-subject">
+                    <SelectValue placeholder={`Select ${editOverride.subjectType}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editOverride.subjectType === 'role' ? (
+                      roles.map((role: any) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      users
+                        .filter((u: any) => u.isAssignable)
+                        .map((user: any) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.name}
+                          </SelectItem>
+                        ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Billing Rate */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-billing-rate" className="text-right">
+                  Billing Rate
+                </Label>
+                <Input
+                  id="edit-billing-rate"
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g., 150"
+                  value={editOverride.billingRate}
+                  onChange={(e) => setEditOverride({ ...editOverride, billingRate: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-edit-billing-rate"
+                />
+              </div>
+
+              {/* Cost Rate */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-cost-rate" className="text-right">
+                  Cost Rate
+                </Label>
+                <Input
+                  id="edit-cost-rate"
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g., 100"
+                  value={editOverride.costRate}
+                  onChange={(e) => setEditOverride({ ...editOverride, costRate: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-edit-cost-rate"
+                />
+              </div>
+
+              {/* Effective Start */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-effective-start" className="text-right">
+                  Effective Start *
+                </Label>
+                <Input
+                  id="edit-effective-start"
+                  type="date"
+                  value={editOverride.effectiveStart}
+                  onChange={(e) => setEditOverride({ ...editOverride, effectiveStart: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-edit-effective-start"
+                />
+              </div>
+
+              {/* Effective End */}
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-effective-end" className="text-right">
+                  Effective End
+                </Label>
+                <Input
+                  id="edit-effective-end"
+                  type="date"
+                  value={editOverride.effectiveEnd}
+                  onChange={(e) => setEditOverride({ ...editOverride, effectiveEnd: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-edit-effective-end"
+                />
+              </div>
+
+              {/* Line Item Selection */}
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label className="text-right pt-2">
+                  Apply To
+                </Label>
+                <div className="col-span-3 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Select specific line items (optional). If none selected, applies to all matching {editOverride.subjectType === 'role' ? 'role' : 'person'} line items.
+                  </p>
+                  {lineItems.length > 0 ? (
+                    <div className="border rounded-md">
+                      <ScrollArea className="h-[200px] p-3">
+                        <div className="space-y-2">
+                          {lineItems.map((item: any) => {
+                            const isSelected = editOverride.lineItemIds.includes(item.id);
+                            return (
+                              <div key={item.id} className="flex items-start gap-2">
+                                <Checkbox
+                                  id={`edit-line-item-${item.id}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setEditOverride({
+                                        ...editOverride,
+                                        lineItemIds: [...editOverride.lineItemIds, item.id]
+                                      });
+                                    } else {
+                                      setEditOverride({
+                                        ...editOverride,
+                                        lineItemIds: editOverride.lineItemIds.filter(id => id !== item.id)
+                                      });
+                                    }
+                                  }}
+                                  data-testid={`checkbox-edit-line-item-${item.id}`}
+                                />
+                                <label
+                                  htmlFor={`edit-line-item-${item.id}`}
+                                  className="text-sm cursor-pointer flex-1"
+                                >
+                                  <div className="font-medium">{item.description}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {item.epicName && item.stageName 
+                                      ? `${item.epicName} / ${item.stageName}` 
+                                      : item.epicName || item.stageName || 'No epic/stage'}
+                                    {item.resourceName && ` • ${item.resourceName}`}
+                                  </div>
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </ScrollArea>
+                      <div className="border-t p-2 bg-muted/50 text-xs text-muted-foreground">
+                        {editOverride.lineItemIds.length === 0 
+                          ? 'No specific items selected (will apply to all matching items)'
+                          : `${editOverride.lineItemIds.length} item${editOverride.lineItemIds.length === 1 ? '' : 's'} selected`
+                        }
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No line items available</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="grid grid-cols-4 items-start gap-4">
+                <Label htmlFor="edit-notes" className="text-right pt-2">
+                  Notes
+                </Label>
+                <Textarea
+                  id="edit-notes"
+                  placeholder="Optional notes about this override..."
+                  value={editOverride.notes}
+                  onChange={(e) => setEditOverride({ ...editOverride, notes: e.target.value })}
+                  className="col-span-3"
+                  rows={3}
+                  data-testid="input-edit-notes"
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEditDialog(false)}
+                data-testid="button-cancel-edit-override"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={!isEditFormValid || updateOverrideMutation.isPending}
+                data-testid="button-update-override"
+              >
+                {updateOverrideMutation.isPending ? "Updating..." : "Update Override"}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </>
