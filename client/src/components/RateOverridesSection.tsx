@@ -112,9 +112,19 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
       });
     },
     onError: (error: any) => {
+      console.error("Create override error:", error);
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      
+      let errorMessage = "Failed to create rate override";
+      if (error.errors && Array.isArray(error.errors)) {
+        errorMessage = `Validation error: ${error.errors.map((e: any) => `${e.path?.join('.') || 'field'}: ${e.message}`).join(', ')}`;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error creating override",
-        description: error.message || "Failed to create rate override",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -194,6 +204,7 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
       data.lineItemIds = newOverride.lineItemIds;
     }
 
+    console.log("Creating rate override with data:", data);
     createOverrideMutation.mutate(data);
   };
 
@@ -240,8 +251,8 @@ export function RateOverridesSection({ estimateId, isEditable }: RateOverridesSe
     updateOverrideMutation.mutate({ id: editingOverride.id, data });
   };
 
-  const isFormValid = newOverride.subjectId && (newOverride.billingRate || newOverride.costRate);
-  const isEditFormValid = editOverride.subjectId && (editOverride.billingRate || editOverride.costRate);
+  const isFormValid = newOverride.subjectId && newOverride.effectiveStart && (newOverride.billingRate || newOverride.costRate);
+  const isEditFormValid = editOverride.subjectId && editOverride.effectiveStart && (editOverride.billingRate || editOverride.costRate);
 
   return (
     <>

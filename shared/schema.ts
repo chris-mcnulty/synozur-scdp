@@ -1235,6 +1235,7 @@ export const insertEstimateRateOverrideSchema = createInsertSchema(estimateRateO
   })
   .extend({
     subjectType: z.enum(['role', 'person']), // Validate subject type
+    effectiveStart: z.string().min(1, "Effective start date is required"), // Explicitly require date string
   });
 
 export const insertEstimateMilestoneSchema = createInsertSchema(estimateMilestones).omit({

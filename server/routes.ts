@@ -5687,6 +5687,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error creating rate override:", error);
       if (error instanceof z.ZodError) {
+        console.error("Zod validation errors:", JSON.stringify(error.errors, null, 2));
+        console.error("Request body:", JSON.stringify(req.body, null, 2));
         return res.status(400).json({ 
           message: "Invalid rate override data", 
           errors: error.errors 

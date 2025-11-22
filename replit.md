@@ -3,6 +3,10 @@
 ## Overview
 SCDP is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, aims to enhance efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation without requiring time entries.
 
+## Recent Changes (November 22, 2025)
+- **Fixed Estimate Rate Override Validation Bug**: Corrected client-side validation in RateOverridesSection component to properly require the `effectiveStart` date field before form submission. Previously, the validation only checked for subjectId and rates, but the backend Zod schema requires effectiveStart as a non-empty string, causing validation failures.
+- **Enhanced Error Handling**: Improved error message display for rate override creation/editing, with better extraction of Zod validation errors from backend responses and detailed console logging for debugging.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
@@ -61,7 +65,7 @@ Preferred communication style: Simple, everyday language.
 - **Estimate Management**: Excel/CSV import/export, AI-driven text export, status-based locking, optional resource assignment copying, inline editing.
 - **Rate Override System**: Hierarchical rate precedence (Manual inline > Estimate override > Client override > User default > Role default) for billing and cost rates. 
   - **Client-Level Overrides**: Default billing and cost rates per client for specific roles or individuals. Applied automatically to new estimates created on or after the override's effective start date. Managed via dedicated "Rate Overrides" tab on client detail page. Supports person-specific and role-based overrides with optional date ranges.
-  - **Estimate-Level Overrides**: Support role-based and person-specific rates with optional date ranges and line item scoping. Manual rate edits are preserved during recalculation. Rate overrides copy automatically when duplicating estimates.
+  - **Estimate-Level Overrides**: Support role-based and person-specific rates with optional date ranges and line item scoping. Manual rate edits are preserved during recalculation. Rate overrides copy automatically when duplicating estimates. Users can create, edit, and delete estimate-level rate overrides through the UI on the estimate detail page's "Inputs" tab.
   - **Temporal Boundary**: Client overrides only apply to estimates created on or after the override's effective start date, preventing retroactive application to existing estimates.
   - **RateResolver Service**: Provides transparent rate resolution with precedence tracking and deterministic selection (most recent override by effectiveStart DESC).
 - **Invoice & Document Management**: Automated invoice generation, PDF viewing/replacement, SOW/Change Order document handling. Milestone-based invoice generation with "INV" prefix. Invoice PDFs automatically include expense receipt images. Tax rates applied at batch level (default 9.3%) with automatic calculation on subtotal after discount.
