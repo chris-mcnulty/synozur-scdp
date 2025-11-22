@@ -7912,6 +7912,71 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Per Diem GSA Rate Endpoints
+  app.get("/api/perdiem/rates/city/:city/state/:state", requireAuth, async (req, res) => {
+    try {
+      const { city, state } = req.params;
+      const { year } = req.query;
+      
+      const { getPerDiemRatesByCity } = await import("./gsa-service.js");
+      const rate = await getPerDiemRatesByCity(city, state, year ? parseInt(year as string) : undefined);
+      
+      if (!rate) {
+        return res.status(404).json({ message: "GSA rate not found for this location" });
+      }
+      
+      res.json(rate);
+    } catch (error) {
+      console.error("Error fetching GSA rates by city:", error);
+      res.status(500).json({ message: "Failed to fetch GSA rates" });
+    }
+  });
+
+  app.get("/api/perdiem/rates/zip/:zip", requireAuth, async (req, res) => {
+    try {
+      const { zip } = req.params;
+      const { year } = req.query;
+      
+      const { getPerDiemRatesByZip } = await import("./gsa-service.js");
+      const rate = await getPerDiemRatesByZip(zip, year ? parseInt(year as string) : undefined);
+      
+      if (!rate) {
+        return res.status(404).json({ message: "GSA rate not found for this ZIP code" });
+      }
+      
+      res.json(rate);
+    } catch (error) {
+      console.error("Error fetching GSA rates by ZIP:", error);
+      res.status(500).json({ message: "Failed to fetch GSA rates" });
+    }
+  });
+
+  app.post("/api/perdiem/calculate", requireAuth, async (req, res) => {
+    try {
+      const { city, state, zip, days, includePartialDays, year } = req.body;
+      
+      const { getPerDiemRatesByCity, getPerDiemRatesByZip, calculatePerDiem, getStandardCONUSRate } = await import("./gsa-service.js");
+      
+      let gsaRate;
+      if (zip) {
+        gsaRate = await getPerDiemRatesByZip(zip, year);
+      } else if (city && state) {
+        gsaRate = await getPerDiemRatesByCity(city, state, year);
+      }
+      
+      // Fallback to standard CONUS rate if specific rate not found
+      if (!gsaRate) {
+        gsaRate = await getStandardCONUSRate(year);
+      }
+      
+      const calculation = calculatePerDiem(gsaRate, days, includePartialDays !== false);
+      res.json(calculation);
+    } catch (error) {
+      console.error("Error calculating per diem:", error);
+      res.status(500).json({ message: "Failed to calculate per diem" });
+    }
+  });
+
 
   // Regular expenses endpoint (existing functionality)
   app.get("/api/expenses", requireAuth, async (req, res) => {

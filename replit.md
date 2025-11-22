@@ -6,6 +6,13 @@ SCDP is a comprehensive platform for managing the entire lifecycle of consulting
 ## Recent Changes (November 22, 2025)
 - **Fixed Estimate Rate Override Validation Bug**: Corrected client-side validation in RateOverridesSection component to properly require the `effectiveStart` date field before form submission. Previously, the validation only checked for subjectId and rates, but the backend Zod schema requires effectiveStart as a non-empty string, causing validation failures.
 - **Enhanced Error Handling**: Improved error message display for rate override creation/editing, with better extraction of Zod validation errors from backend responses and detailed console logging for debugging.
+- **Per Diem GSA Integration (In Progress)**: Added foundation for automated per diem expense entry with GSA rate lookup:
+  - Extended expense schema with per diem fields (location, GSA rates, breakdown)
+  - Created GSA API service for fetching per diem rates by city/state/ZIP
+  - Implemented calculatePerDiem() with correct GSA partial day rules (first/last day 75%, middle days 100%)
+  - Added API endpoints: GET /api/perdiem/rates/city/:city/state/:state, GET /api/perdiem/rates/zip/:zip, POST /api/perdiem/calculate
+  - Added "Per Diem" category to expense forms
+  - UI work in progress (location inputs, auto-calculate button, breakdown display)
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.

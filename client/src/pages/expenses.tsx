@@ -69,6 +69,7 @@ const EXPENSE_CATEGORIES = [
   { value: "entertainment", label: "Entertainment" },
   { value: "other", label: "Other" },
   { value: "mileage", label: "Mileage" },
+  { value: "perdiem", label: "Per Diem" },
 ];
 
 export default function Expenses() {

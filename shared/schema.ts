@@ -488,10 +488,10 @@ export const expenses = pgTable("expenses", {
   projectId: varchar("project_id").notNull().references(() => projects.id),
   projectResourceId: varchar("project_resource_id").references(() => users.id), // User assigned to this expense within the project
   date: date("date").notNull(),
-  category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment, mileage
+  category: text("category").notNull(), // travel, hotel, meals, taxi, airfare, entertainment, mileage, perdiem
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  quantity: decimal("quantity", { precision: 10, scale: 2 }), // Nullable, for tracking quantity (e.g., miles for mileage)
-  unit: text("unit"), // Nullable, for tracking unit of measurement (e.g., "mile" for mileage)
+  quantity: decimal("quantity", { precision: 10, scale: 2 }), // Nullable, for tracking quantity (e.g., miles for mileage, days for per diem)
+  unit: text("unit"), // Nullable, for tracking unit of measurement (e.g., "mile" for mileage, "day" for per diem)
   currency: text("currency").notNull().default("USD"),
   billable: boolean("billable").notNull().default(true),
   reimbursable: boolean("reimbursable").notNull().default(true),
@@ -499,6 +499,13 @@ export const expenses = pgTable("expenses", {
   vendor: text("vendor"), // Merchant/vendor name (e.g., Alaska Airlines, Starbucks, Hyatt)
   receiptUrl: text("receipt_url"),
   billedFlag: boolean("billed_flag").notNull().default(false),
+  // Per Diem specific fields
+  perDiemCity: text("per_diem_city"), // City for GSA rate lookup
+  perDiemState: text("per_diem_state"), // State abbreviation (e.g., "CA", "NY")
+  perDiemZip: text("per_diem_zip"), // ZIP code for rate lookup
+  perDiemMealsRate: decimal("per_diem_meals_rate", { precision: 10, scale: 2 }), // GSA M&IE rate
+  perDiemLodgingRate: decimal("per_diem_lodging_rate", { precision: 10, scale: 2 }), // GSA lodging rate
+  perDiemBreakdown: jsonb("per_diem_breakdown"), // Detailed breakdown: { fullDays: 2, partialDays: 1, mealsTotal: 148, lodgingTotal: 200 }
   // Approval workflow fields
   approvalStatus: text("approval_status").notNull().default("draft"), // draft, submitted, approved, rejected, reimbursed
   submittedAt: timestamp("submitted_at"),

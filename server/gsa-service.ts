@@ -1,0 +1,211 @@
+/**
+ * GSA Per Diem Rates Service
+ * 
+ * Fetches federal per diem rates from the GSA API
+ * API Documentation: https://open.gsa.gov/api/perdiem/
+ */
+
+const GSA_API_BASE = 'https://api.gsa.gov/travel/perdiem/v2';
+
+export interface GSARate {
+  city: string;
+  state: string;
+  year: number;
+  meals: number; // M&IE (Meals & Incidental Expenses)
+  lodging: number;
+  zip?: string;
+  county?: string;
+}
+
+export interface PerDiemCalculation {
+  fullDays: number;
+  partialDays: number;
+  mealsTotal: number;
+  lodgingTotal: number;
+  totalAmount: number;
+  breakdown: string;
+  gsaRate: GSARate;
+}
+
+/**
+ * Get GSA per diem rates by city and state
+ */
+export async function getPerDiemRatesByCity(city: string, state: string, year?: number): Promise<GSARate | null> {
+  try {
+    const targetYear = year || new Date().getFullYear();
+    const url = `${GSA_API_BASE}/rates/city/${encodeURIComponent(city)}/state/${state}/year/${targetYear}`;
+    
+    // GSA API key from environment variable (optional - API works without key but has rate limits)
+    const headers: HeadersInit = {};
+    if (process.env.GSA_API_KEY) {
+      headers['X-Api-Key'] = process.env.GSA_API_KEY;
+    }
+
+    const response = await fetch(url, { headers });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`GSA rate not found for ${city}, ${state} in ${targetYear}`);
+        return null;
+      }
+      throw new Error(`GSA API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    // GSA API returns an array of rates
+    if (data.rates && data.rates.length > 0) {
+      const rate = data.rates[0];
+      return {
+        city: rate.city || city,
+        state: rate.state || state,
+        year: targetYear,
+        meals: parseFloat(rate.meals) || 0,
+        lodging: parseFloat(rate.lodging) || 0,
+        county: rate.county,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching GSA rates for ${city}, ${state}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get GSA per diem rates by ZIP code
+ */
+export async function getPerDiemRatesByZip(zip: string, year?: number): Promise<GSARate | null> {
+  try {
+    const targetYear = year || new Date().getFullYear();
+    const url = `${GSA_API_BASE}/rates/zip/${zip}/year/${targetYear}`;
+    
+    const headers: HeadersInit = {};
+    if (process.env.GSA_API_KEY) {
+      headers['X-Api-Key'] = process.env.GSA_API_KEY;
+    }
+
+    const response = await fetch(url, { headers });
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`GSA rate not found for ZIP ${zip} in ${targetYear}`);
+        return null;
+      }
+      throw new Error(`GSA API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.rates && data.rates.length > 0) {
+      const rate = data.rates[0];
+      return {
+        city: rate.city,
+        state: rate.state,
+        year: targetYear,
+        meals: parseFloat(rate.meals) || 0,
+        lodging: parseFloat(rate.lodging) || 0,
+        zip: zip,
+        county: rate.county,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error(`Error fetching GSA rates for ZIP ${zip}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Calculate per diem total based on number of days
+ * 
+ * GSA Rules:
+ * - First day of travel: 75% M&IE (partial day)
+ * - Last day of travel: 75% M&IE (partial day)  
+ * - Full days (between first and last): 100% M&IE
+ * - Lodging: All nights except last day (no lodging on departure day)
+ * 
+ * Examples:
+ * - 1 day trip: 1 partial day (75%), no lodging
+ * - 2 day trip: 2 partial days (75% each), 1 night lodging
+ * - 3 day trip: 2 partial days (75% each) + 1 full day (100%), 2 nights lodging
+ */
+export function calculatePerDiem(
+  gsaRate: GSARate,
+  totalDays: number,
+  includePartialDays: boolean = true
+): PerDiemCalculation {
+  let fullDays = 0;
+  let partialDays = 0;
+
+  // Apply GSA partial day rules
+  if (includePartialDays && totalDays > 0) {
+    if (totalDays === 1) {
+      // Single day trip: 1 partial day (75% M&IE)
+      partialDays = 1;
+      fullDays = 0;
+    } else {
+      // Multi-day trip: First and last days are partial (75%), middle days are full (100%)
+      partialDays = 2; // First day + Last day
+      fullDays = Math.max(0, totalDays - 2); // All days in between
+    }
+  } else {
+    // No partial day calculation - treat all days as full days
+    fullDays = totalDays;
+    partialDays = 0;
+  }
+
+  // Calculate M&IE (Meals & Incidental Expenses)
+  const fullDayMeals = fullDays * gsaRate.meals; // 100% of daily rate
+  const partialDayMeals = partialDays * (gsaRate.meals * 0.75); // 75% of daily rate
+  const mealsTotal = Math.round((fullDayMeals + partialDayMeals) * 100) / 100;
+
+  // Calculate lodging (no lodging on last day - only nights where you stay)
+  const lodgingDays = Math.max(0, totalDays - 1); // All nights except departure day
+  const lodgingTotal = Math.round(lodgingDays * gsaRate.lodging * 100) / 100;
+
+  const totalAmount = Math.round((mealsTotal + lodgingTotal) * 100) / 100;
+
+  // Build human-readable breakdown
+  const breakdownParts: string[] = [];
+  if (partialDays > 0) {
+    breakdownParts.push(`${partialDays} partial day${partialDays > 1 ? 's' : ''} @ $${(gsaRate.meals * 0.75).toFixed(2)} M&IE`);
+  }
+  if (fullDays > 0) {
+    breakdownParts.push(`${fullDays} full day${fullDays > 1 ? 's' : ''} @ $${gsaRate.meals}/day M&IE`);
+  }
+  if (lodgingDays > 0) {
+    breakdownParts.push(`${lodgingDays} night${lodgingDays > 1 ? 's' : ''} @ $${gsaRate.lodging}/night lodging`);
+  }
+  const breakdown = breakdownParts.join(' + ');
+
+  return {
+    fullDays,
+    partialDays,
+    mealsTotal,
+    lodgingTotal,
+    totalAmount,
+    breakdown,
+    gsaRate,
+  };
+}
+
+/**
+ * Get default/standard CONUS rate (for locations without specific rates)
+ */
+export async function getStandardCONUSRate(year?: number): Promise<GSARate> {
+  // Standard CONUS rates (updated annually by GSA)
+  // These are fallback rates when specific city rates aren't available
+  const targetYear = year || new Date().getFullYear();
+  
+  // 2025 standard CONUS rates (these should be updated annually)
+  return {
+    city: 'Standard CONUS',
+    state: '',
+    year: targetYear,
+    meals: 59, // Standard M&IE rate for FY2025
+    lodging: 98, // Standard lodging rate for FY2025
+  };
+}
