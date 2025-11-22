@@ -1,6 +1,6 @@
 run = ["sh", "-c", "NODE_ENV=development npm run dev"]
 entrypoint = "server/index.ts"
-modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
+modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
 
 [nix]
 channel = "stable-24_05"
