@@ -35,6 +35,8 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
     const targetYear = year || new Date().getFullYear();
     const url = `${GSA_API_BASE}/rates/city/${encodeURIComponent(city)}/state/${state}/year/${targetYear}`;
     
+    console.log(`[GSA_API] Fetching rates from URL: ${url}`);
+    
     // GSA API key from environment variable (optional - API works without key but has rate limits)
     const headers: HeadersInit = {};
     if (process.env.GSA_API_KEY) {
@@ -43,19 +45,25 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
 
     const response = await fetch(url, { headers });
     
+    console.log(`[GSA_API] Response status: ${response.status}`);
+    
     if (!response.ok) {
       if (response.status === 404) {
-        console.log(`GSA rate not found for ${city}, ${state} in ${targetYear}`);
+        console.log(`[GSA_API] Rate not found for ${city}, ${state} in ${targetYear}`);
         return null;
       }
+      const errorText = await response.text();
+      console.error(`[GSA_API] Error response: ${errorText}`);
       throw new Error(`GSA API error: ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log(`[GSA_API] Response data:`, JSON.stringify(data, null, 2));
     
     // GSA API returns an array of rates
     if (data.rates && data.rates.length > 0) {
       const rate = data.rates[0];
+      console.log(`[GSA_API] Using rate:`, rate);
       return {
         city: rate.city || city,
         state: rate.state || state,
@@ -66,9 +74,10 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
       };
     }
 
+    console.log(`[GSA_API] No rates found in response`);
     return null;
   } catch (error) {
-    console.error(`Error fetching GSA rates for ${city}, ${state}:`, error);
+    console.error(`[GSA_API] Error fetching GSA rates for ${city}, ${state}:`, error);
     throw error;
   }
 }
@@ -135,7 +144,8 @@ export async function getPerDiemRatesByZip(zip: string, year?: number): Promise<
 export function calculatePerDiem(
   gsaRate: GSARate,
   totalDays: number,
-  includePartialDays: boolean = true
+  includePartialDays: boolean = true,
+  includeLodging: boolean = false
 ): PerDiemCalculation {
   let fullDays = 0;
   let partialDays = 0;
@@ -163,8 +173,13 @@ export function calculatePerDiem(
   const mealsTotal = Math.round((fullDayMeals + partialDayMeals) * 100) / 100;
 
   // Calculate lodging (no lodging on last day - only nights where you stay)
-  const lodgingDays = Math.max(0, totalDays - 1); // All nights except departure day
-  const lodgingTotal = Math.round(lodgingDays * gsaRate.lodging * 100) / 100;
+  // Only include if user explicitly requests it
+  let lodgingTotal = 0;
+  let lodgingDays = 0;
+  if (includeLodging) {
+    lodgingDays = Math.max(0, totalDays - 1); // All nights except departure day
+    lodgingTotal = Math.round(lodgingDays * gsaRate.lodging * 100) / 100;
+  }
 
   const totalAmount = Math.round((mealsTotal + lodgingTotal) * 100) / 100;
 
@@ -176,7 +191,7 @@ export function calculatePerDiem(
   if (fullDays > 0) {
     breakdownParts.push(`${fullDays} full day${fullDays > 1 ? 's' : ''} @ $${gsaRate.meals}/day M&IE`);
   }
-  if (lodgingDays > 0) {
+  if (includeLodging && lodgingDays > 0) {
     breakdownParts.push(`${lodgingDays} night${lodgingDays > 1 ? 's' : ''} @ $${gsaRate.lodging}/night lodging`);
   }
   const breakdown = breakdownParts.join(' + ');

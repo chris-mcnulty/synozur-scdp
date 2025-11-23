@@ -41,6 +41,7 @@ const expenseFormSchema = insertExpenseSchema.omit({
   perDiemState: z.string().optional(),
   perDiemZip: z.string().optional(),
   perDiemDays: z.string().optional(), // Number of days for per diem (separate field)
+  perDiemIncludeLodging: z.boolean().optional(), // Include lodging in per diem calculation
 }).refine((data) => {
   // Validate that miles is positive when category is mileage
   if (data.category === "mileage") {
@@ -132,6 +133,7 @@ export default function Expenses() {
       perDiemState: "",
       perDiemZip: "",
       perDiemDays: "",
+      perDiemIncludeLodging: false,
     },
   });
 
@@ -220,6 +222,7 @@ export default function Expenses() {
     const state = form.getValues("perDiemState");
     const zip = form.getValues("perDiemZip");
     const days = form.getValues("perDiemDays");
+    const includeLodging = form.getValues("perDiemIncludeLodging") || false;
 
     if (!days || parseFloat(days) <= 0) {
       toast({
@@ -241,7 +244,7 @@ export default function Expenses() {
 
     setIsCalculatingPerDiem(true);
     try {
-      console.log("[PERDIEM_UI] Calculating per diem...", { city, state, zip, days });
+      console.log("[PERDIEM_UI] Calculating per diem...", { city, state, zip, days, includeLodging });
       const response = await apiRequest("/api/perdiem/calculate", {
         method: "POST",
         body: JSON.stringify({
@@ -250,6 +253,7 @@ export default function Expenses() {
           zip,
           days: parseFloat(days),
           includePartialDays: true,
+          includeLodging,
         }),
       });
 
@@ -303,6 +307,7 @@ export default function Expenses() {
         perDiemState: "",
         perDiemZip: "",
         perDiemDays: "",
+        perDiemIncludeLodging: false,
       });
       // Reset component state
       setPrevCategory("");
@@ -664,6 +669,7 @@ export default function Expenses() {
       perDiemState: "",
       perDiemZip: "",
       perDiemDays: "",
+      perDiemIncludeLodging: false,
     },
     mode: "onChange",
   });
@@ -1212,6 +1218,30 @@ export default function Expenses() {
                             </FormControl>
                             <FormDescription>Total days of travel</FormDescription>
                             <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="perDiemIncludeLodging"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="checkbox-perdiem-include-lodging"
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>
+                                Include lodging in per diem?
+                              </FormLabel>
+                              <FormDescription>
+                                Check this if lodging costs are included in per diem. Leave unchecked if hotel is a direct charge.
+                              </FormDescription>
+                            </div>
                           </FormItem>
                         )}
                       />

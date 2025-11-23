@@ -7953,9 +7953,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/perdiem/calculate", requireAuth, async (req, res) => {
     try {
-      const { city, state, zip, days, includePartialDays, year } = req.body;
+      const { city, state, zip, days, includePartialDays, includeLodging, year } = req.body;
       
-      console.log("[PERDIEM_CALCULATE] Request:", { city, state, zip, days, includePartialDays, year });
+      console.log("[PERDIEM_CALCULATE] Request:", { city, state, zip, days, includePartialDays, includeLodging, year });
       
       // Validate required parameters
       if (typeof days !== 'number' || days <= 0) {
@@ -7977,8 +7977,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           console.log("[PERDIEM_CALCULATE] Fetching rates by city/state:", city, state);
           gsaRate = await getPerDiemRatesByCity(city, state, year);
         }
-      } catch (apiError) {
-        console.warn("[PERDIEM_CALCULATE] GSA API error (will fallback to CONUS):", apiError);
+      } catch (apiError: any) {
+        console.warn("[PERDIEM_CALCULATE] GSA API error (will fallback to CONUS):", apiError?.message || apiError);
         // Don't re-throw, just log and fallback to CONUS
       }
       
@@ -7989,7 +7989,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       console.log("[PERDIEM_CALCULATE] Using GSA rate:", gsaRate);
-      const calculation = calculatePerDiem(gsaRate, days, includePartialDays !== false);
+      const calculation = calculatePerDiem(gsaRate, days, includePartialDays !== false, includeLodging === true);
       console.log("[PERDIEM_CALCULATE] Calculation result:", calculation);
       res.json(calculation);
     } catch (error: any) {
