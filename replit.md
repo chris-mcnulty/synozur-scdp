@@ -11,8 +11,17 @@ SCDP is a comprehensive platform for managing the entire lifecycle of consulting
   - **API Endpoints**: GET /api/perdiem/rates/city/:city/state/:state, GET /api/perdiem/rates/zip/:zip, POST /api/perdiem/calculate
   - **UI Features**: Per Diem Calculator with city/state or ZIP lookup, days input, "Include lodging?" checkbox (defaults OFF), Calculate button showing detailed breakdown
   - **Lodging Default**: Lodging excluded from per diem by default (checkbox unchecked) as hotels are typically direct charges - matches typical consulting expense policy
-  - **Data Transform**: UI-only fields (perDiemCity, perDiemState, perDiemZip, perDiemDays, perDiemIncludeLodging) stripped before backend submission via explicit field mapping
+  - **Data Transform**: UI-only fields (perDiemCity, perDiemState, perDiemZip, perDiemDays, perDiemIncludeLodging, perDiemItemize) stripped before backend submission via explicit field mapping
   - **Auto-calculation**: Amount field auto-populated and disabled like mileage expenses
+  - **Auto-description**: Description field auto-populated with "Travel to: [Location]\n[Breakdown]" format, user-editable after calculation
+  - **Itemization Option (NEW)**: "Itemize by day component?" checkbox (defaults OFF, appears after Calculate) breaks per diem into individual daily charges:
+    - Each day's meals and lodging created as separate expense entries
+    - Meals use "day" unit, lodging uses "night" unit
+    - Description format: "[Location]\nDay X M&IE (Partial/Full day)" or "Day X Lodging"
+    - Receipt automatically attached to each itemized expense if provided
+    - Single toast notification after all itemized expenses created
+    - Robust error handling with user-visible feedback for failures
+    - Example: 3-day trip with lodging creates 5 entries (Day 1 M&IE + Lodging, Day 2 M&IE + Lodging, Day 3 M&IE only)
   - **Error Handling**: Automatic fallback to standard CONUS rates ($59 M&IE, $98 lodging) when GSA API unavailable
   - **Security**: GSA API key stored in Replit Secrets (GSA_API_KEY)
   - **Testing**: End-to-end tested with SF ($230 meals-only) and Seattle ($886 with lodging) expenses successfully created and appearing in expense list
