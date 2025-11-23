@@ -3,21 +3,19 @@
 ## Overview
 SCDP is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, aims to enhance efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation without requiring time entries.
 
-## Recent Changes (November 22, 2025)
-- **Fixed Estimate Rate Override Validation Bug**: Corrected client-side validation in RateOverridesSection component to properly require the `effectiveStart` date field before form submission. Previously, the validation only checked for subjectId and rates, but the backend Zod schema requires effectiveStart as a non-empty string, causing validation failures.
-- **Enhanced Error Handling**: Improved error message display for rate override creation/editing, with better extraction of Zod validation errors from backend responses and detailed console logging for debugging.
-- **Per Diem GSA Integration (COMPLETE)**: Fully implemented automated per diem expense entry with GSA rate lookup and fallback to standard CONUS rates:
-  - Extended expense schema with per diem fields (location, GSA rates, breakdown)
-  - Created GSA API service (server/gsa-service.ts) for fetching per diem rates by city/state or ZIP code from GSA API
-  - Implemented calculatePerDiem() with correct GSA partial day rules (first/last day 75% M&IE, middle days 100%, lodging excludes last day)
-  - Added API endpoints: GET /api/perdiem/rates/city/:city/state/:state, GET /api/perdiem/rates/zip/:zip, POST /api/perdiem/calculate
-  - Added "Per Diem" category to expense forms with complete UI implementation
-  - Per Diem Calculator UI with location inputs (city/state or ZIP), days input, Calculate button, and breakdown display
-  - Auto-calculated amount field (disabled) like mileage expenses
-  - Robust error handling with automatic fallback to standard CONUS rates ($59 M&IE, $98 lodging) when GSA API is unavailable
-  - Backend validation for required parameters (days > 0, location provided)
-  - Comprehensive logging with [PERDIEM_CALCULATE] and [PERDIEM_UI] prefixes for debugging
-  - End-to-end tested and working correctly
+## Recent Changes (November 23, 2025)
+- **Per Diem GSA Integration (COMPLETE)**: Fully implemented automated per diem expense entry with GSA federal rate lookup:
+  - **Schema Design**: Single `perDiemLocation` field stores location string (e.g., "Washington, DC" or "ZIP 20001") with separate fields for GSA meals/lodging rates and JSON breakdown
+  - **GSA API Service** (server/gsa-service.ts): Fetches per diem rates by city/state or ZIP code with correct parsing of nested month-specific lodging rates
+  - **Federal Rules Implementation**: Correct GSA partial day calculation (first/last day 75% M&IE, middle days 100%, lodging excludes last day)
+  - **API Endpoints**: GET /api/perdiem/rates/city/:city/state/:state, GET /api/perdiem/rates/zip/:zip, POST /api/perdiem/calculate
+  - **UI Features**: Per Diem Calculator with city/state or ZIP lookup, days input, "Include lodging?" checkbox (defaults OFF), Calculate button showing detailed breakdown
+  - **Lodging Default**: Lodging excluded from per diem by default (checkbox unchecked) as hotels are typically direct charges - matches typical consulting expense policy
+  - **Data Transform**: UI-only fields (perDiemCity, perDiemState, perDiemZip, perDiemDays, perDiemIncludeLodging) stripped before backend submission via explicit field mapping
+  - **Auto-calculation**: Amount field auto-populated and disabled like mileage expenses
+  - **Error Handling**: Automatic fallback to standard CONUS rates ($59 M&IE, $98 lodging) when GSA API unavailable
+  - **Security**: GSA API key stored in Replit Secrets (GSA_API_KEY)
+  - **Testing**: End-to-end tested with SF ($230 meals-only) and Seattle ($886 with lodging) expenses successfully created and appearing in expense list
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
