@@ -42,6 +42,7 @@ const expenseFormSchema = insertExpenseSchema.omit({
   perDiemZip: z.string().optional(),
   perDiemDays: z.string().optional(), // Number of days for per diem (separate field)
   perDiemIncludeLodging: z.boolean().optional(), // Include lodging in per diem calculation
+  perDiemItemize: z.boolean().optional(), // Break per diem into individual daily charges
 }).refine((data) => {
   // Validate that miles is positive when category is mileage
   if (data.category === "mileage") {
@@ -134,6 +135,7 @@ export default function Expenses() {
       perDiemZip: "",
       perDiemDays: "",
       perDiemIncludeLodging: false,
+      perDiemItemize: false,
     },
   });
 
@@ -319,6 +321,7 @@ export default function Expenses() {
         perDiemZip: "",
         perDiemDays: "",
         perDiemIncludeLodging: false,
+        perDiemItemize: false,
       });
       // Reset component state
       setPrevCategory("");
@@ -388,43 +391,156 @@ export default function Expenses() {
         }
       }
 
-      // Use the unified transform function with current mileage rate
-      const submitData = transformExpenseFormData(data, mileageRate);
-      console.log('Data after transformation:', submitData);
-
-      // First create the expense
-      const expense = await createExpenseMutation.mutateAsync(submitData);
-      console.log('Expense created:', expense);
-
-      // If there's a receipt file, upload it
-      if (receiptFile && expense.id) {
-        const formData = new FormData();
-        formData.append('file', receiptFile);
-
+      // Check if per diem should be itemized
+      if (data.category === "perdiem" && data.perDiemItemize && perDiemBreakdown?.dailyComponents) {
+        console.log('Creating itemized per diem expenses...');
+        const baseData = transformExpenseFormData(data, mileageRate);
+        const location = baseData.perDiemLocation;
+        
         try {
-          const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
-            method: 'POST',
-            body: formData,
-            credentials: 'include',
-            headers: {
-              'X-Session-Id': localStorage.getItem('sessionId') || '',
-            },
-          });
+          // Create separate expense for each daily component
+          // Use direct API calls to avoid multiple onSuccess toasts
+          const createdExpenses = [];
+          let receiptUploadFailures = 0;
+          
+          for (const component of perDiemBreakdown.dailyComponents) {
+            const itemizedData = {
+              ...baseData,
+              amount: component.amount.toFixed(2),
+              quantity: "1", // Each component is quantity 1
+              unit: component.type === 'lodging' ? 'night' : 'day', // Use correct unit for lodging vs meals
+              description: `${location}\n${component.description}`,
+            };
+            
+            // Call API directly to avoid mutation's onSuccess firing for each expense
+            const expense = await apiRequest("/api/expenses", {
+              method: "POST",
+              body: JSON.stringify(itemizedData),
+            });
+            createdExpenses.push(expense);
+            
+            // Upload receipt to each itemized expense if provided
+            if (receiptFile && expense.id) {
+              const formData = new FormData();
+              formData.append('file', receiptFile);
 
-          if (!response.ok) {
-            throw new Error('Receipt upload failed');
+              try {
+                const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
+                  method: 'POST',
+                  body: formData,
+                  credentials: 'include',
+                  headers: {
+                    'X-Session-Id': localStorage.getItem('sessionId') || '',
+                  },
+                });
+
+                if (!response.ok) {
+                  receiptUploadFailures++;
+                  console.warn(`Receipt upload failed for expense ${expense.id}`);
+                }
+              } catch (error) {
+                receiptUploadFailures++;
+                console.warn(`Receipt upload error for expense ${expense.id}:`, error);
+              }
+            }
           }
-
-          toast({
-            title: "Receipt uploaded",
-            description: "Receipt has been attached to the expense.",
+          
+          console.log(`Created ${createdExpenses.length} itemized per diem expenses`);
+          
+          // Invalidate cache after all expenses created
+          queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+          
+          // Reset form after batch creation
+          form.reset({
+            date: getTodayBusinessDate(),
+            amount: "0",
+            currency: "USD",
+            billable: true,
+            reimbursable: true,
+            description: "",
+            vendor: "",
+            category: "",
+            projectId: "",
+            miles: "",
+            quantity: "",
+            unit: "",
+            perDiemCity: "",
+            perDiemState: "",
+            perDiemZip: "",
+            perDiemDays: "",
+            perDiemIncludeLodging: false,
+            perDiemItemize: false,
           });
-        } catch (error) {
+          setPrevCategory("");
+          setReceiptFile(null);
+          setPerDiemBreakdown(null);
+          
+          // Show single toast after all expenses created
+          if (receiptFile && receiptUploadFailures > 0) {
+            toast({
+              title: "Per diem itemized",
+              description: `Created ${createdExpenses.length} expenses. Receipt upload failed for ${receiptUploadFailures} item(s).`,
+              variant: "destructive",
+            });
+          } else if (receiptFile) {
+            toast({
+              title: "Per diem itemized",
+              description: `Created ${createdExpenses.length} separate expenses with receipt attached to each.`,
+            });
+          } else {
+            toast({
+              title: "Per diem itemized",
+              description: `Created ${createdExpenses.length} separate expense entries.`,
+            });
+          }
+        } catch (error: any) {
+          console.error('Itemized per diem creation failed:', error);
           toast({
-            title: "Receipt upload failed",
-            description: "Expense was created but receipt upload failed.",
+            title: "Failed to create itemized expenses",
+            description: error.message || "An error occurred while creating itemized per diem expenses. Please try again.",
             variant: "destructive",
           });
+          // Don't reset form on error so user can retry
+        }
+      } else {
+        // Standard single expense creation
+        const submitData = transformExpenseFormData(data, mileageRate);
+        console.log('Data after transformation:', submitData);
+
+        // First create the expense
+        const expense = await createExpenseMutation.mutateAsync(submitData);
+        console.log('Expense created:', expense);
+
+        // If there's a receipt file, upload it
+        if (receiptFile && expense.id) {
+          const formData = new FormData();
+          formData.append('file', receiptFile);
+
+          try {
+            const response = await fetch(`/api/expenses/${expense.id}/attachments`, {
+              method: 'POST',
+              body: formData,
+              credentials: 'include',
+              headers: {
+                'X-Session-Id': localStorage.getItem('sessionId') || '',
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error('Receipt upload failed');
+            }
+
+            toast({
+              title: "Receipt uploaded",
+              description: "Receipt has been attached to the expense.",
+            });
+          } catch (error) {
+            toast({
+              title: "Receipt upload failed",
+              description: "Expense was created but receipt upload failed.",
+              variant: "destructive",
+            });
+          }
         }
       }
     } catch (error) {
@@ -687,6 +803,7 @@ export default function Expenses() {
       perDiemZip: "",
       perDiemDays: "",
       perDiemIncludeLodging: false,
+      perDiemItemize: false,
     },
     mode: "onChange",
   });
@@ -1272,6 +1389,32 @@ export default function Expenses() {
                       >
                         {isCalculatingPerDiem ? "Calculating..." : "Calculate Per Diem"}
                       </Button>
+
+                      {perDiemBreakdown && (
+                        <FormField
+                          control={form.control}
+                          name="perDiemItemize"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-muted/50">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                  data-testid="checkbox-perdiem-itemize"
+                                />
+                              </FormControl>
+                              <div className="space-y-1 leading-none">
+                                <FormLabel>
+                                  Itemize by day component?
+                                </FormLabel>
+                                <FormDescription>
+                                  Creates separate expense entries for each day's meals and lodging instead of one block charge.
+                                </FormDescription>
+                              </div>
+                            </FormItem>
+                          )}
+                        />
+                      )}
 
                       {perDiemBreakdown && (
                         <div className="p-3 bg-background rounded-md border space-y-2">

@@ -17,6 +17,14 @@ export interface GSARate {
   county?: string;
 }
 
+export interface DailyComponent {
+  day: number;
+  type: 'meals' | 'lodging';
+  description: string;
+  amount: number;
+  isPartialDay?: boolean;
+}
+
 export interface PerDiemCalculation {
   fullDays: number;
   partialDays: number;
@@ -25,6 +33,7 @@ export interface PerDiemCalculation {
   totalAmount: number;
   breakdown: string;
   gsaRate: GSARate;
+  dailyComponents: DailyComponent[];
 }
 
 /**
@@ -237,6 +246,50 @@ export function calculatePerDiem(
   }
   const breakdown = breakdownParts.join(' + ');
 
+  // Build itemized daily components for optional itemization
+  const dailyComponents: DailyComponent[] = [];
+  
+  for (let day = 1; day <= totalDays; day++) {
+    // Determine if this is a partial day (first or last day)
+    const isFirstDay = day === 1;
+    const isLastDay = day === totalDays;
+    const isPartialDay = includePartialDays && (isFirstDay || isLastDay);
+    
+    // Calculate meal amount for this day
+    const mealRate = isPartialDay ? gsaRate.meals * 0.75 : gsaRate.meals;
+    const mealAmount = Math.round(mealRate * 100) / 100;
+    
+    // Determine meal description
+    let mealDescription = `Day ${day} M&IE`;
+    if (isPartialDay) {
+      if (isFirstDay) {
+        mealDescription += ' (Partial day - Arrival)';
+      } else if (isLastDay) {
+        mealDescription += ' (Partial day - Departure)';
+      }
+    } else {
+      mealDescription += ' (Full day)';
+    }
+    
+    dailyComponents.push({
+      day,
+      type: 'meals',
+      description: mealDescription,
+      amount: mealAmount,
+      isPartialDay,
+    });
+    
+    // Add lodging component (all days except last day)
+    if (includeLodging && !isLastDay) {
+      dailyComponents.push({
+        day,
+        type: 'lodging',
+        description: `Day ${day} Lodging`,
+        amount: Math.round(gsaRate.lodging * 100) / 100,
+      });
+    }
+  }
+
   return {
     fullDays,
     partialDays,
@@ -245,6 +298,7 @@ export function calculatePerDiem(
     totalAmount,
     breakdown,
     gsaRate,
+    dailyComponents,
   };
 }
 
