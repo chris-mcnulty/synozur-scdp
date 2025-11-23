@@ -60,18 +60,39 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
     const data = await response.json();
     console.log(`[GSA_API] Response data:`, JSON.stringify(data, null, 2));
     
-    // GSA API returns an array of rates
+    // GSA API returns an array of rates with nested structure
     if (data.rates && data.rates.length > 0) {
-      const rate = data.rates[0];
-      console.log(`[GSA_API] Using rate:`, rate);
-      return {
-        city: rate.city || city,
-        state: rate.state || state,
-        year: targetYear,
-        meals: parseFloat(rate.meals) || 0,
-        lodging: parseFloat(rate.lodging) || 0,
-        county: rate.county,
-      };
+      const locationRate = data.rates[0];
+      console.log(`[GSA_API] Location rate:`, locationRate);
+      
+      // Rate details are nested in rate array
+      if (locationRate.rate && locationRate.rate.length > 0) {
+        const rateDetails = locationRate.rate[0];
+        console.log(`[GSA_API] Rate details:`, rateDetails);
+        
+        // Get current month to find lodging rate
+        const currentMonth = new Date().getMonth() + 1; // 1-based
+        let lodgingRate = 0;
+        
+        if (rateDetails.months && rateDetails.months.month) {
+          const monthData = rateDetails.months.month.find((m: any) => m.number === currentMonth);
+          if (monthData) {
+            lodgingRate = parseFloat(monthData.value) || 0;
+          } else if (rateDetails.months.month.length > 0) {
+            // Fallback to first month if current month not found
+            lodgingRate = parseFloat(rateDetails.months.month[0].value) || 0;
+          }
+        }
+        
+        return {
+          city: rateDetails.city || city,
+          state: locationRate.state || state,
+          year: targetYear,
+          meals: parseFloat(rateDetails.meals) || 0,
+          lodging: lodgingRate,
+          county: rateDetails.county,
+        };
+      }
     }
 
     console.log(`[GSA_API] No rates found in response`);
@@ -108,16 +129,36 @@ export async function getPerDiemRatesByZip(zip: string, year?: number): Promise<
     const data = await response.json();
     
     if (data.rates && data.rates.length > 0) {
-      const rate = data.rates[0];
-      return {
-        city: rate.city,
-        state: rate.state,
-        year: targetYear,
-        meals: parseFloat(rate.meals) || 0,
-        lodging: parseFloat(rate.lodging) || 0,
-        zip: zip,
-        county: rate.county,
-      };
+      const locationRate = data.rates[0];
+      
+      // Rate details are nested in rate array
+      if (locationRate.rate && locationRate.rate.length > 0) {
+        const rateDetails = locationRate.rate[0];
+        
+        // Get current month to find lodging rate
+        const currentMonth = new Date().getMonth() + 1; // 1-based
+        let lodgingRate = 0;
+        
+        if (rateDetails.months && rateDetails.months.month) {
+          const monthData = rateDetails.months.month.find((m: any) => m.number === currentMonth);
+          if (monthData) {
+            lodgingRate = parseFloat(monthData.value) || 0;
+          } else if (rateDetails.months.month.length > 0) {
+            // Fallback to first month if current month not found
+            lodgingRate = parseFloat(rateDetails.months.month[0].value) || 0;
+          }
+        }
+        
+        return {
+          city: rateDetails.city,
+          state: locationRate.state,
+          year: targetYear,
+          meals: parseFloat(rateDetails.meals) || 0,
+          lodging: lodgingRate,
+          zip: zip,
+          county: rateDetails.county,
+        };
+      }
     }
 
     return null;

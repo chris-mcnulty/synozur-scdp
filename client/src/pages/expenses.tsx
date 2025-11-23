@@ -579,17 +579,23 @@ export default function Expenses() {
     console.log('Current mileage rate (fixed):', currentMileageRate);
 
     const submitData: any = {
-      ...data,
+      projectId: data.projectId || null,
+      projectResourceId: data.projectResourceId || null,
+      date: data.date,
+      category: data.category,
+      description: data.description || "",
+      vendor: data.vendor || "",
+      quantity: data.quantity || null,
+      unit: data.unit || null,
+      currency: data.currency,
+      billable: data.billable ?? true,
+      reimbursable: data.reimbursable ?? true,
+      receiptUrl: data.receiptUrl || null,
       // Keep amount as string for decimal precision in PostgreSQL
       amount: data.amount,
     };
-
-    // Remove the UI-only fields
-    delete submitData.miles;
-    delete submitData.perDiemCity;
-    delete submitData.perDiemState;
-    delete submitData.perDiemZip;
-    delete submitData.perDiemDays;
+    
+    // Note: UI-only fields (miles, perDiemCity, etc.) are NOT copied above
 
     // If it's mileage, ensure quantity and unit are set
     if (data.category === "mileage") {
