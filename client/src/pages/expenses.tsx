@@ -262,6 +262,17 @@ export default function Expenses() {
       form.setValue("amount", response.totalAmount.toFixed(2));
       form.setValue("quantity", days);
       form.setValue("unit", "day");
+      
+      // Auto-populate description with destination and breakdown
+      let destination = "";
+      if (zip) {
+        destination = `ZIP ${zip}`;
+      } else if (city && state) {
+        destination = `${city}, ${state}`;
+      }
+      
+      const descriptionText = `Travel to: ${destination}\n${response.breakdown}`;
+      form.setValue("description", descriptionText);
 
       toast({
         title: "Per diem calculated",
