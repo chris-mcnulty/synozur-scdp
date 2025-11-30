@@ -1900,18 +1900,82 @@ function EstimateDetailContent() {
             </CardContent>
           </Card>
 
-          {/* Summary by Workstream and Stage */}
+          {/* Summary by Workstream, Stage, and Epic */}
           <Card>
             <CardHeader>
-              <CardTitle>Summary by Workstream & Stage</CardTitle>
+              <CardTitle>Summary by Workstream, {vocabulary.stage} & {vocabulary.epic}</CardTitle>
               <CardDescription>Effort and billing breakdown</CardDescription>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="workstream">
+              <Tabs defaultValue="epic">
                 <TabsList className="mb-4">
+                  <TabsTrigger value="epic">By {vocabulary.epic}</TabsTrigger>
                   <TabsTrigger value="workstream">By Workstream</TabsTrigger>
-                  <TabsTrigger value="stage">By Stage</TabsTrigger>
+                  <TabsTrigger value="stage">By {vocabulary.stage}</TabsTrigger>
                 </TabsList>
+                
+                <TabsContent value="epic">
+                  {(() => {
+                    // Group by epic
+                    const epicTotals = lineItems?.reduce((acc: any, item) => {
+                      const epic = item.epicId ? (epics?.find(e => e.id === item.epicId)?.name || "Unassigned") : "Unassigned";
+                      if (!acc[epic]) {
+                        acc[epic] = { hours: 0, amount: 0, cost: 0, count: 0 };
+                      }
+                      acc[epic].hours += Number(item.adjustedHours || 0);
+                      acc[epic].amount += Number(item.totalAmount || 0);
+                      acc[epic].cost += Number(item.totalCost || 0);
+                      acc[epic].count += 1;
+                      return acc;
+                    }, {});
+
+                    return (
+                      <div className="space-y-3">
+                        {Object.entries(epicTotals || {}).sort(([a], [b]) => {
+                          if (a === "Unassigned") return 1;
+                          if (b === "Unassigned") return -1;
+                          return a.localeCompare(b);
+                        }).map(([epic, data]: [string, any]) => (
+                          <div key={epic} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <div>
+                              <span className="font-medium">{epic}</span>
+                              <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
+                            </div>
+                            <div className="flex gap-6 text-right">
+                              <div>
+                                <span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Cost</span>
+                                <span className="text-muted-foreground">${Math.round(data.cost).toLocaleString()}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Billing</span>
+                                <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t pt-3">
+                          <div className="flex justify-between text-lg font-semibold">
+                            <span>Total</span>
+                            <div className="flex gap-6 text-right">
+                              <span>{totalHours.toFixed(1)} hrs</span>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Cost</span>
+                                <span>${Math.round(totalCost).toLocaleString()}</span>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Billing</span>
+                                <span>${Math.round(totalAmount).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </TabsContent>
                 
                 <TabsContent value="workstream">
                   {(() => {
@@ -4438,6 +4502,7 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
   const vocabulary = useVocabulary();
   const [filterEpic, setFilterEpic] = useState('all');
   const [filterStage, setFilterStage] = useState('all');
+  const [showWeekColumns, setShowWeekColumns] = useState(false);
 
   // Fetch line items instead of summary to build weekly view
   const { data: lineItems, isLoading } = useQuery({
@@ -4586,12 +4651,36 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
           </div>
         ) : (
           <div className="space-y-4">
+            {/* Toggle for week columns */}
+            {resourceWeeklyData.weeks.length > 0 && (
+              <div className="flex items-center justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowWeekColumns(!showWeekColumns)}
+                  className="flex items-center gap-2"
+                  data-testid="button-toggle-weeks"
+                >
+                  {showWeekColumns ? (
+                    <>
+                      <ChevronDown className="h-4 w-4" />
+                      Hide Week Breakdown ({resourceWeeklyData.weeks.length} weeks)
+                    </>
+                  ) : (
+                    <>
+                      <ChevronRight className="h-4 w-4" />
+                      Show Week Breakdown ({resourceWeeklyData.weeks.length} weeks)
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="sticky left-0 bg-background z-10 min-w-[200px]">Resource Name</TableHead>
-                    {resourceWeeklyData.weeks.map(week => (
+                    {showWeekColumns && resourceWeeklyData.weeks.map(week => (
                       <TableHead key={week} className="text-center min-w-[100px]">
                         {week}
                       </TableHead>
@@ -4609,7 +4698,7 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
                         <TableCell className="sticky left-0 bg-background z-10 font-medium">
                           {resource.resourceName}
                         </TableCell>
-                        {resourceWeeklyData.weeks.map(week => {
+                        {showWeekColumns && resourceWeeklyData.weeks.map(week => {
                           const hours = resource.weekData[week] || 0;
                           return (
                             <TableCell key={week} className="text-center">
@@ -4631,7 +4720,7 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
                     <TableCell className="sticky left-0 bg-muted/50 z-10">
                       Total
                     </TableCell>
-                    {resourceWeeklyData.weeks.map(week => (
+                    {showWeekColumns && resourceWeeklyData.weeks.map(week => (
                       <TableCell key={week} className="text-center">
                         {resourceWeeklyData.totalByWeek[week]?.toFixed(1) || '0'}
                       </TableCell>
