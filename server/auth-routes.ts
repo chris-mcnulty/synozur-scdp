@@ -20,7 +20,8 @@ export function registerAuthRoutes(app: Express): void {
       const validCredentials = process.env.NODE_ENV !== 'production' ? [
         { email: "admin@synozur.com", password: "demo123", name: "Admin User", role: "admin" },
         { email: "chris.mcnulty@synozur.com", password: "demo123", name: "Chris McNulty", role: "admin" },
-        { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" }
+        { email: "sarah.chen@synozur.com", password: "admin123", name: "Sarah Chen", role: "admin" },
+        { email: "admin@example.com", password: "pass@word1", name: "Admin Example", role: "admin" }
       ] : [];
 
       console.log("[AUTH] Valid credentials count:", validCredentials.length);
