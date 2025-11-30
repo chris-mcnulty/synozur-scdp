@@ -5155,11 +5155,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       
-      const { name } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: "Epic name is required" });
+      const { name, order } = req.body;
+      if (!name && order === undefined) {
+        return res.status(400).json({ message: "Epic name or order is required" });
       }
-      const epic = await storage.updateEstimateEpic(req.params.epicId, { name });
+      const updateData: { name?: string; order?: number } = {};
+      if (name) updateData.name = name;
+      if (order !== undefined) updateData.order = order;
+      const epic = await storage.updateEstimateEpic(req.params.epicId, updateData);
       res.json(epic);
     } catch (error) {
       console.error("Error updating epic:", error);
@@ -5199,11 +5202,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       
-      const { name } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: "Stage name is required" });
+      const { name, order } = req.body;
+      if (!name && order === undefined) {
+        return res.status(400).json({ message: "Stage name or order is required" });
       }
-      const stage = await storage.updateEstimateStage(req.params.stageId, { name });
+      const updateData: { name?: string; order?: number } = {};
+      if (name) updateData.name = name;
+      if (order !== undefined) updateData.order = order;
+      const stage = await storage.updateEstimateStage(req.params.stageId, updateData);
       res.json(stage);
     } catch (error) {
       console.error("Error updating stage:", error);

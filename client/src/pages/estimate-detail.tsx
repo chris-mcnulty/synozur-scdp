@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -269,10 +269,13 @@ function EstimateDetailContent() {
   });
 
   const updateEpicMutation = useMutation({
-    mutationFn: async ({ epicId, name }: { epicId: string; name: string }) => {
+    mutationFn: async ({ epicId, name, order }: { epicId: string; name?: string; order?: number }) => {
+      const body: { name?: string; order?: number } = {};
+      if (name !== undefined) body.name = name;
+      if (order !== undefined) body.order = order;
       return apiRequest(`/api/estimates/${id}/epics/${epicId}`, {
         method: "PATCH",
-        body: JSON.stringify({ name })
+        body: JSON.stringify(body)
       });
     },
     onSuccess: () => {
@@ -312,10 +315,13 @@ function EstimateDetailContent() {
   });
 
   const updateStageMutation = useMutation({
-    mutationFn: async ({ stageId, name }: { stageId: string; name: string }) => {
+    mutationFn: async ({ stageId, name, order }: { stageId: string; name?: string; order?: number }) => {
+      const body: { name?: string; order?: number } = {};
+      if (name !== undefined) body.name = name;
+      if (order !== undefined) body.order = order;
       return apiRequest(`/api/estimates/${id}/stages/${stageId}`, {
         method: "PATCH",
-        body: JSON.stringify({ name })
+        body: JSON.stringify(body)
       });
     },
     onSuccess: () => {
@@ -1916,29 +1922,36 @@ function EstimateDetailContent() {
                 
                 <TabsContent value="epic">
                   {(() => {
-                    // Group by epic
+                    // Group by epicId to preserve order
                     const epicTotals = lineItems?.reduce((acc: any, item) => {
-                      const epic = item.epicId ? (epics?.find(e => e.id === item.epicId)?.name || "Unassigned") : "Unassigned";
-                      if (!acc[epic]) {
-                        acc[epic] = { hours: 0, amount: 0, cost: 0, count: 0 };
+                      const epicId = item.epicId || 'unassigned';
+                      const epicData = epics?.find(e => e.id === item.epicId);
+                      if (!acc[epicId]) {
+                        acc[epicId] = { 
+                          name: epicData?.name || "Unassigned",
+                          order: epicData?.order ?? 999999,
+                          hours: 0, 
+                          amount: 0, 
+                          cost: 0, 
+                          count: 0 
+                        };
                       }
-                      acc[epic].hours += Number(item.adjustedHours || 0);
-                      acc[epic].amount += Number(item.totalAmount || 0);
-                      acc[epic].cost += Number(item.totalCost || 0);
-                      acc[epic].count += 1;
+                      acc[epicId].hours += Number(item.adjustedHours || 0);
+                      acc[epicId].amount += Number(item.totalAmount || 0);
+                      acc[epicId].cost += Number(item.totalCost || 0);
+                      acc[epicId].count += 1;
                       return acc;
                     }, {});
 
                     return (
                       <div className="space-y-3">
-                        {Object.entries(epicTotals || {}).sort(([a], [b]) => {
-                          if (a === "Unassigned") return 1;
-                          if (b === "Unassigned") return -1;
-                          return a.localeCompare(b);
-                        }).map(([epic, data]: [string, any]) => (
-                          <div key={epic} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        {Object.entries(epicTotals || {}).sort(([, a]: [string, any], [, b]: [string, any]) => {
+                          return a.order - b.order;
+                        }).map(([epicId, data]: [string, any]) => (
+                          <div key={epicId} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div>
-                              <span className="font-medium">{epic}</span>
+                              <span className="text-xs text-muted-foreground mr-2">#{data.order}</span>
+                              <span className="font-medium">{data.name}</span>
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
                             <div className="flex gap-6 text-right">
@@ -2021,28 +2034,38 @@ function EstimateDetailContent() {
                 
                 <TabsContent value="stage">
                   {(() => {
-                    // Group by stage
+                    // Group by stageId to preserve order
                     const stageTotals = lineItems?.reduce((acc: any, item) => {
-                      const stage = item.stageId ? (stages?.find(s => s.id === item.stageId)?.name || "Unassigned") : "Unassigned";
-                      if (!acc[stage]) {
-                        acc[stage] = { hours: 0, amount: 0, count: 0 };
+                      const stageId = item.stageId || 'unassigned';
+                      const stageData = stages?.find(s => s.id === item.stageId);
+                      const epicData = stageData ? epics?.find(e => e.id === stageData.epicId) : null;
+                      if (!acc[stageId]) {
+                        acc[stageId] = { 
+                          name: stageData?.name || "Unassigned",
+                          order: stageData?.order ?? 999999,
+                          epicOrder: epicData?.order ?? 999999,
+                          hours: 0, 
+                          amount: 0, 
+                          count: 0 
+                        };
                       }
-                      acc[stage].hours += Number(item.adjustedHours);
-                      acc[stage].amount += Number(item.totalAmount);
-                      acc[stage].count += 1;
+                      acc[stageId].hours += Number(item.adjustedHours);
+                      acc[stageId].amount += Number(item.totalAmount);
+                      acc[stageId].count += 1;
                       return acc;
                     }, {});
 
                     return (
                       <div className="space-y-3">
-                        {Object.entries(stageTotals || {}).sort(([a], [b]) => {
-                          if (a === "Unassigned") return 1;
-                          if (b === "Unassigned") return -1;
-                          return a.localeCompare(b);
-                        }).map(([stage, data]: [string, any]) => (
-                          <div key={stage} className="flex justify-between p-3 bg-gray-50 rounded-lg">
+                        {Object.entries(stageTotals || {}).sort(([, a]: [string, any], [, b]: [string, any]) => {
+                          // Sort by epic order first, then stage order
+                          if (a.epicOrder !== b.epicOrder) return a.epicOrder - b.epicOrder;
+                          return a.order - b.order;
+                        }).map(([stageId, data]: [string, any]) => (
+                          <div key={stageId} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div>
-                              <span className="font-medium">{stage}</span>
+                              <span className="text-xs text-muted-foreground mr-2">#{data.order}</span>
+                              <span className="font-medium">{data.name}</span>
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
                             <div className="flex gap-6">
@@ -2444,8 +2467,8 @@ function EstimateDetailContent() {
                 <SelectContent>
                   <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
                   <SelectItem value="none">No {vocabulary.epic}</SelectItem>
-                  {epics.map((epic) => (
-                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                  {[...epics].sort((a, b) => a.order - b.order).map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>#{epic.order} {epic.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -2457,8 +2480,8 @@ function EstimateDetailContent() {
                 <SelectContent>
                   <SelectItem value="all">All {vocabulary.stage}s</SelectItem>
                   <SelectItem value="none">No {vocabulary.stage}</SelectItem>
-                  {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
-                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                  {[...stages].sort((a, b) => a.order - b.order).map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>#{stage.order} {stage.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -3304,9 +3327,9 @@ function EstimateDetailContent() {
                     No {vocabulary.epic.toLowerCase()}s created yet. Click "Add {vocabulary.epic}" to get started.
                   </div>
                 ) : (
-                  epics.map((epic) => {
-                    // Get stages for this epic
-                    const epicStages = stages.filter(stage => stage.epicId === epic.id);
+                  [...epics].sort((a, b) => a.order - b.order).map((epic) => {
+                    // Get stages for this epic, sorted by order
+                    const epicStages = stages.filter(stage => stage.epicId === epic.id).sort((a, b) => a.order - b.order);
                     
                     // Detect duplicate stages (same name within epic)
                     const stageNames = epicStages.map(s => s.name.toLowerCase().trim());
@@ -3356,6 +3379,7 @@ function EstimateDetailContent() {
                               </div>
                             ) : (
                               <>
+                                <span className="text-sm text-muted-foreground font-normal">#{epic.order}</span>
                                 <h3 
                                   className="font-semibold text-lg cursor-pointer hover:underline" 
                                   onClick={() => {
@@ -3378,6 +3402,47 @@ function EstimateDetailContent() {
                             )}
                           </div>
                           <div className="flex gap-2">
+                            {/* Reorder buttons */}
+                            <div className="flex flex-col gap-0.5 mr-2">
+                              <Button
+                                onClick={() => {
+                                  const sortedEpics = [...epics].sort((a, b) => a.order - b.order);
+                                  const currentIndex = sortedEpics.findIndex(e => e.id === epic.id);
+                                  if (currentIndex > 0) {
+                                    const prevEpic = sortedEpics[currentIndex - 1];
+                                    updateEpicMutation.mutate({ epicId: epic.id, order: prevEpic.order });
+                                    updateEpicMutation.mutate({ epicId: prevEpic.id, order: epic.order });
+                                  }
+                                }}
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                disabled={!isEditable || epic.order === 1}
+                                title="Move up"
+                                data-testid={`button-epic-up-${epic.id}`}
+                              >
+                                <ArrowUp className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  const sortedEpics = [...epics].sort((a, b) => a.order - b.order);
+                                  const currentIndex = sortedEpics.findIndex(e => e.id === epic.id);
+                                  if (currentIndex < sortedEpics.length - 1) {
+                                    const nextEpic = sortedEpics[currentIndex + 1];
+                                    updateEpicMutation.mutate({ epicId: epic.id, order: nextEpic.order });
+                                    updateEpicMutation.mutate({ epicId: nextEpic.id, order: epic.order });
+                                  }
+                                }}
+                                size="sm"
+                                variant="ghost"
+                                className="h-5 w-5 p-0"
+                                disabled={!isEditable || [...epics].sort((a, b) => a.order - b.order).findIndex(e => e.id === epic.id) === epics.length - 1}
+                                title="Move down"
+                                data-testid={`button-epic-down-${epic.id}`}
+                              >
+                                <ArrowDown className="h-3 w-3" />
+                              </Button>
+                            </div>
                             <Button
                               onClick={() => {
                                 setSelectedEpicForStage(epic.id);
@@ -3498,6 +3563,7 @@ function EstimateDetailContent() {
                                       </div>
                                     ) : (
                                       <>
+                                        <span className="text-xs text-muted-foreground">#{stage.order}</span>
                                         <span className="font-medium">{stage.name}</span>
                                         <Badge variant={lineItemCount > 0 ? "default" : "outline"}>
                                           {lineItemCount} line item{lineItemCount !== 1 ? 's' : ''}
@@ -3510,7 +3576,48 @@ function EstimateDetailContent() {
                                       </>
                                     )}
                                   </div>
-                                  <div className="flex gap-1">
+                                  <div className="flex gap-1 items-center">
+                                    {/* Stage reorder buttons */}
+                                    {!editingStageId && (
+                                      <div className="flex flex-col gap-0.5 mr-1">
+                                        <Button
+                                          onClick={() => {
+                                            const currentIndex = epicStages.findIndex(s => s.id === stage.id);
+                                            if (currentIndex > 0) {
+                                              const prevStage = epicStages[currentIndex - 1];
+                                              updateStageMutation.mutate({ stageId: stage.id, order: prevStage.order });
+                                              updateStageMutation.mutate({ stageId: prevStage.id, order: stage.order });
+                                            }
+                                          }}
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-4 w-4 p-0"
+                                          disabled={!isEditable || epicStages.findIndex(s => s.id === stage.id) === 0}
+                                          title="Move up"
+                                          data-testid={`button-stage-up-${stage.id}`}
+                                        >
+                                          <ArrowUp className="h-2.5 w-2.5" />
+                                        </Button>
+                                        <Button
+                                          onClick={() => {
+                                            const currentIndex = epicStages.findIndex(s => s.id === stage.id);
+                                            if (currentIndex < epicStages.length - 1) {
+                                              const nextStage = epicStages[currentIndex + 1];
+                                              updateStageMutation.mutate({ stageId: stage.id, order: nextStage.order });
+                                              updateStageMutation.mutate({ stageId: nextStage.id, order: stage.order });
+                                            }
+                                          }}
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-4 w-4 p-0"
+                                          disabled={!isEditable || epicStages.findIndex(s => s.id === stage.id) === epicStages.length - 1}
+                                          title="Move down"
+                                          data-testid={`button-stage-down-${stage.id}`}
+                                        >
+                                          <ArrowDown className="h-2.5 w-2.5" />
+                                        </Button>
+                                      </div>
+                                    )}
                                     {!editingStageId && (
                                       <Button
                                         size="sm"
@@ -3932,8 +4039,8 @@ function EstimateDetailContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No Epic</SelectItem>
-                  {epics.map((epic) => (
-                    <SelectItem key={epic.id} value={epic.id}>{epic.name}</SelectItem>
+                  {[...epics].sort((a, b) => a.order - b.order).map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>#{epic.order} {epic.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -3946,8 +4053,8 @@ function EstimateDetailContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No Stage</SelectItem>
-                  {stages.sort((a, b) => a.name.localeCompare(b.name)).map((stage) => (
-                    <SelectItem key={stage.id} value={stage.id}>{stage.name}</SelectItem>
+                  {[...stages].sort((a, b) => a.order - b.order).map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id}>#{stage.order} {stage.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -4615,8 +4722,8 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All {vocabulary.epic}s</SelectItem>
-                  {epics.map(epic => (
-                    <SelectItem key={epic.id} value={String(epic.id)}>{epic.name}</SelectItem>
+                  {[...epics].sort((a, b) => a.order - b.order).map(epic => (
+                    <SelectItem key={epic.id} value={String(epic.id)}>#{epic.order} {epic.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

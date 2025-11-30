@@ -252,12 +252,12 @@ export interface IStorage {
   // Estimate Epics
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
   createEstimateEpic(estimateId: string, epic: { name: string }): Promise<EstimateEpic>;
-  updateEstimateEpic(epicId: string, update: { name: string }): Promise<EstimateEpic>;
+  updateEstimateEpic(epicId: string, update: { name?: string; order?: number }): Promise<EstimateEpic>;
   
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
   createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage>;
-  updateEstimateStage(stageId: string, update: { name: string }): Promise<EstimateStage>;
+  updateEstimateStage(stageId: string, update: { name?: string; order?: number }): Promise<EstimateStage>;
   deleteEstimateStage(estimateId: string, stageId: string): Promise<void>;
   mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
@@ -1560,9 +1560,13 @@ export class DatabaseStorage implements IStorage {
     return newEpic;
   }
 
-  async updateEstimateEpic(epicId: string, update: { name: string }): Promise<EstimateEpic> {
+  async updateEstimateEpic(epicId: string, update: { name?: string; order?: number }): Promise<EstimateEpic> {
+    const setData: { name?: string; order?: number } = {};
+    if (update.name !== undefined) setData.name = update.name;
+    if (update.order !== undefined) setData.order = update.order;
+    
     const [updatedEpic] = await db.update(estimateEpics)
-      .set({ name: update.name })
+      .set(setData)
       .where(eq(estimateEpics.id, epicId))
       .returning();
     return updatedEpic;
@@ -1593,9 +1597,13 @@ export class DatabaseStorage implements IStorage {
     return newStage;
   }
 
-  async updateEstimateStage(stageId: string, update: { name: string }): Promise<EstimateStage> {
+  async updateEstimateStage(stageId: string, update: { name?: string; order?: number }): Promise<EstimateStage> {
+    const setData: { name?: string; order?: number } = {};
+    if (update.name !== undefined) setData.name = update.name;
+    if (update.order !== undefined) setData.order = update.order;
+    
     const [updatedStage] = await db.update(estimateStages)
-      .set({ name: update.name })
+      .set(setData)
       .where(eq(estimateStages.id, stageId))
       .returning();
     return updatedStage;
