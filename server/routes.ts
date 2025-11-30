@@ -6601,15 +6601,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       const users = await storage.getUsers();
 
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
-      const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
+      // Stage lookup uses composite key: epicId:stageName to handle same-named stages in different epics
+      const stageKeyToId = new Map(stages.map(s => [`${s.epicId}:${s.name.toLowerCase()}`, s.id]));
       const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
 
-      const newEpics = [];
-      const newStages = [];
-      const lineItems = [];
-      const skippedRows = [];
-      const unmatchedEpics = new Set();
-      const unmatchedStages = new Set();
+      const newEpics: string[] = [];
+      const newStages: string[] = [];
+      const lineItems: any[] = [];
+      const skippedRows: { row: number; reason: string }[] = [];
+      const unmatchedEpics = new Set<string>();
+      const unmatchedStages = new Set<string>();
       
       // Process data rows (skip header)
       for (let i = 1; i < rows.length; i++) {
@@ -6633,9 +6634,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
         // Lookup/create epic
         const epicName = row[colIndex.epic]?.trim();
-        let epicId = null;
+        let epicId: string | null = null;
         if (epicName) {
-          epicId = epicNameToId.get(epicName.toLowerCase());
+          epicId = epicNameToId.get(epicName.toLowerCase()) || null;
           if (!epicId) {
             try {
               const newEpic = await storage.createEstimateEpic(req.params.id, { name: epicName });
@@ -6649,31 +6650,29 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
 
-        // Lookup/create stage
+        // Lookup/create stage using composite key (epicId:stageName)
         const stageName = row[colIndex.stage]?.trim();
-        let stageId = null;
-        if (stageName) {
-          stageId = stageNameToId.get(stageName.toLowerCase());
+        let stageId: string | null = null;
+        if (stageName && epicId) {
+          const stageKey = `${epicId}:${stageName.toLowerCase()}`;
+          stageId = stageKeyToId.get(stageKey) || null;
           if (!stageId) {
-            // Stages require an epicId to be created
-            if (epicId) {
-              try {
-                const newStage = await storage.createEstimateStage(req.params.id, { 
-                  epicId: epicId,
-                  name: stageName
-                });
-                stageNameToId.set(stageName.toLowerCase(), newStage.id);
-                stageId = newStage.id;
-                newStages.push(stageName);
-              } catch (error) {
-                console.error(`Failed to create stage "${stageName}":`, error);
-                unmatchedStages.add(stageName);
-              }
-            } else {
-              console.log(`Cannot create stage "${stageName}" without an epic`);
+            try {
+              const newStage = await storage.createEstimateStage(req.params.id, { 
+                epicId: epicId,
+                name: stageName
+              });
+              stageKeyToId.set(stageKey, newStage.id);
+              stageId = newStage.id;
+              newStages.push(stageName);
+            } catch (error) {
+              console.error(`Failed to create stage "${stageName}":`, error);
               unmatchedStages.add(stageName);
             }
           }
+        } else if (stageName && !epicId) {
+          console.log(`Cannot create stage "${stageName}" without an epic`);
+          unmatchedStages.add(stageName);
         }
 
         // Lookup user
@@ -6829,11 +6828,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Create lookup maps for epic and stage IDs by name
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
-      const stageNameToId = new Map(stages.map(s => [s.name.toLowerCase(), s.id]));
+      // Stage lookup uses composite key: epicId:stageName to handle same-named stages in different epics
+      const stageKeyToId = new Map(stages.map(s => [`${s.epicId}:${s.name.toLowerCase()}`, s.id]));
       
       // Track newly created epics and stages
-      const newEpics = [];
-      const newStages = [];
+      const newEpics: string[] = [];
+      const newStages: string[] = [];
       
       // Create user lookup by name (case-insensitive)
       const userNameToId = new Map(users.map(u => [u.name.toLowerCase(), u.id]));
@@ -6907,8 +6907,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Lookup epic and stage IDs from names
         const epicName = row[0] ? String(row[0]).trim() : "";
         const stageName = row[1] ? String(row[1]).trim() : "";
-        let epicId = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
-        let stageId = stageName ? (stageNameToId.get(stageName.toLowerCase()) || null) : null;
+        let epicId: string | null = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
+        let stageId: string | null = null;
         
         // Auto-create missing epic if needed
         if (epicName && !epicId) {
@@ -6930,33 +6930,28 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
         
-        // Auto-create missing stage if needed
-        if (stageName && !stageId) {
-          // Check if we already created this stage in this import
-          if (!stageNameToId.has(stageName.toLowerCase())) {
+        // Lookup/create stage using composite key (epicId:stageName)
+        if (stageName && epicId) {
+          const stageKey = `${epicId}:${stageName.toLowerCase()}`;
+          stageId = stageKeyToId.get(stageKey) || null;
+          if (!stageId) {
             try {
-              // For stages, we need an epic ID. If we have an epic for this row, use it.
-              // Otherwise, create a default epic or skip stage creation
-              if (epicId) {
-                const newStage = await storage.createEstimateStage(req.params.id, {
-                  epicId: epicId,
-                  name: stageName
-                });
-                stageNameToId.set(stageName.toLowerCase(), newStage.id);
-                stageId = newStage.id;
-                newStages.push(stageName);
-              } else {
-                // Can't create stage without an epic, track as unmatched
-                console.log(`Cannot create stage "${stageName}" without an epic`);
-                unmatchedStages.add(stageName);
-              }
+              const newStage = await storage.createEstimateStage(req.params.id, {
+                epicId: epicId,
+                name: stageName
+              });
+              stageKeyToId.set(stageKey, newStage.id);
+              stageId = newStage.id;
+              newStages.push(stageName);
             } catch (error) {
               console.error(`Failed to create stage "${stageName}":`, error);
               unmatchedStages.add(stageName);
             }
-          } else {
-            stageId = stageNameToId.get(stageName.toLowerCase()) || null;
           }
+        } else if (stageName && !epicId) {
+          // Can't create stage without an epic, track as unmatched
+          console.log(`Cannot create stage "${stageName}" without an epic`);
+          unmatchedStages.add(stageName);
         }
 
         // Lookup user by resource name

@@ -12,6 +12,12 @@ SCDP is a comprehensive platform for managing the entire lifecycle of consulting
   - **AI Export**: Text export for AI respects order-based sorting for consistent document generation
   - **Backend Support**: PATCH endpoints for epics/stages accept optional `order` parameter for order updates
 
+- **Import Bug Fix (COMPLETE)**: Fixed CSV/Excel import creating duplicate epics and stages:
+  - **Root Cause**: Stage lookup was keyed by name only, not considering parent epic. Stages with same name across different epics caused duplicates.
+  - **Fix**: Stage lookup now uses composite key `epicId:stageName` to correctly identify stages within their parent epic
+  - **Affected Files**: server/routes.ts (import-csv and import-excel endpoints)
+  - **Data Cleanup**: Merged duplicate epics/stages in "Ready Credit Test" estimate, reassigning line items to kept records
+
 ## Recent Changes (November 23, 2025)
 - **Per Diem GSA Integration (COMPLETE)**: Fully implemented automated per diem expense entry with GSA federal rate lookup:
   - **Schema Design**: Single `perDiemLocation` field stores location string (e.g., "Washington, DC" or "ZIP 20001") with separate fields for GSA meals/lodging rates and JSON breakdown
