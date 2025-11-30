@@ -68,6 +68,8 @@ type BulkUpdateFormData = z.infer<typeof bulkUpdateFormSchema>;
 
 export default function RateManagement() {
   const [newRoleOpen, setNewRoleOpen] = useState(false);
+  const [editRoleOpen, setEditRoleOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [newScheduleOpen, setNewScheduleOpen] = useState(false);
   const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
@@ -235,6 +237,31 @@ export default function RateManagement() {
       toast({
         title: "Error",
         description: "Failed to update rates. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<RoleFormData> }) => {
+      return apiRequest(`/api/roles/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/roles"] });
+      setEditRoleOpen(false);
+      setEditingRole(null);
+      toast({
+        title: "Role updated",
+        description: "Role has been updated successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update role. Please try again.",
         variant: "destructive",
       });
     },
@@ -433,6 +460,17 @@ export default function RateManagement() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                onClick={() => {
+                                  setEditingRole(role);
+                                  setEditRoleOpen(true);
+                                }}
+                                data-testid={`button-edit-role-${role.id}`}
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 onClick={() => deleteRoleMutation.mutate(role.id)}
                                 data-testid={`button-delete-role-${role.id}`}
                               >
@@ -445,6 +483,82 @@ export default function RateManagement() {
                     ))}
                   </div>
                 )}
+
+                {/* Edit Role Dialog */}
+                <Dialog open={editRoleOpen} onOpenChange={(open) => {
+                  setEditRoleOpen(open);
+                  if (!open) setEditingRole(null);
+                }}>
+                  <DialogContent data-testid="edit-role-modal">
+                    <DialogHeader>
+                      <DialogTitle>Edit Role</DialogTitle>
+                      <DialogDescription>
+                        Update the role name and default rack rate.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {editingRole && (
+                      <form 
+                        name="edit-role-form"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const formData = new FormData(e.currentTarget);
+                          updateRoleMutation.mutate({
+                            id: editingRole.id,
+                            data: {
+                              name: formData.get('name') as string,
+                              defaultRackRate: formData.get('defaultRackRate') as string,
+                            }
+                          });
+                        }} 
+                        className="space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Role Name</label>
+                          <Input
+                            name="name"
+                            defaultValue={editingRole.name}
+                            placeholder="e.g., Senior Consultant"
+                            data-testid="input-edit-role-name"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Default Rack Rate ($/hour)</label>
+                          <Input
+                            name="defaultRackRate"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            defaultValue={parseFloat(editingRole.defaultRackRate).toFixed(2)}
+                            placeholder="250.00"
+                            data-testid="input-edit-default-rate"
+                          />
+                        </div>
+
+                        <div className="flex justify-end space-x-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditRoleOpen(false);
+                              setEditingRole(null);
+                            }}
+                            data-testid="button-cancel-edit-role"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="submit"
+                            disabled={updateRoleMutation.isPending}
+                            data-testid="button-save-role"
+                          >
+                            {updateRoleMutation.isPending ? "Saving..." : "Save Changes"}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </DialogContent>
+                </Dialog>
               </CardContent>
             </Card>
           </TabsContent>
