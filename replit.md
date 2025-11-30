@@ -3,6 +3,15 @@
 ## Overview
 SCDP is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, aims to enhance efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation without requiring time entries.
 
+## Recent Changes (November 30, 2025)
+- **Custom Sort Order for Epics and Stages (COMPLETE)**: Added user-controlled ordering for epics and stages to ensure logical sequential grouping in reports and on-screen displays:
+  - **Order Field**: Each epic and stage now has an `order` field that determines display sequence
+  - **UI Controls**: Up/down arrow buttons in Structure Management tab allow reordering epics and stages
+  - **Order Display**: Order numbers shown as "#1", "#2", etc. next to epic/stage names across all views
+  - **Sorting Updated**: Epic Summary, Stage Summary, and all dropdown selects now sort by order field (not alphabetically)
+  - **AI Export**: Text export for AI respects order-based sorting for consistent document generation
+  - **Backend Support**: PATCH endpoints for epics/stages accept optional `order` parameter for order updates
+
 ## Recent Changes (November 23, 2025)
 - **Per Diem GSA Integration (COMPLETE)**: Fully implemented automated per diem expense entry with GSA federal rate lookup:
   - **Schema Design**: Single `perDiemLocation` field stores location string (e.g., "Washington, DC" or "ZIP 20001") with separate fields for GSA meals/lodging rates and JSON breakdown
