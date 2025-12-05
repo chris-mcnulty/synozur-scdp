@@ -132,6 +132,10 @@ Be helpful, accurate, and concise. If you're unsure about something, say so.`
     return getAIProvider().isConfigured();
   }
 
+  getProviderName(): string {
+    return getAIProvider().getProviderName();
+  }
+
   async generateEstimateDraft(input: EstimateGenerationInput): Promise<EstimateLineItemSuggestion[]> {
     const provider = getAIProvider();
 

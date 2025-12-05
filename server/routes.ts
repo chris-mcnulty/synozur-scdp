@@ -12455,7 +12455,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       res.json({
         configured: aiService.isConfigured(),
-        provider: process.env.AI_PROVIDER || 'azure'
+        provider: aiService.getProviderName()
       });
     } catch (error: any) {
       console.error("[AI] Status check failed:", error);
