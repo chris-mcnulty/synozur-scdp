@@ -50,7 +50,8 @@ export class ReplitAIProvider implements IAIProvider {
 
   async chatCompletion(params: ChatCompletionParams): Promise<ChatCompletionResult> {
     if (!this.client) {
-      throw new Error('Replit AI Integrations is not configured.');
+      console.error('[AI_PROVIDER] Replit AI not configured. BASE_URL:', !!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL, 'API_KEY:', !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY);
+      throw new Error('Replit AI Integrations is not configured. Please ensure the AI integration is properly set up.');
     }
 
     const requestParams: OpenAI.ChatCompletionCreateParams = {
@@ -67,8 +68,14 @@ export class ReplitAIProvider implements IAIProvider {
       requestParams.response_format = { type: 'json_object' };
     }
 
+    const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
+    console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${params.maxTokens ?? 8192}`);
+    const startTime = Date.now();
+
     try {
       const response = await this.client.chat.completions.create(requestParams);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[AI_PROVIDER] Request completed in ${duration}s, tokens: ${response.usage?.total_tokens || 0}`);
 
       return {
         content: response.choices?.[0]?.message?.content || '',
@@ -77,8 +84,10 @@ export class ReplitAIProvider implements IAIProvider {
         completionTokens: response.usage?.completion_tokens || 0,
       };
     } catch (error: any) {
-      console.error('[AI_PROVIDER] Replit AI error:', error.message);
-      throw new Error(`AI API error: ${error.message}`);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`[AI_PROVIDER] Replit AI error after ${duration}s:`, error.message);
+      console.error('[AI_PROVIDER] Full error:', JSON.stringify(error, null, 2));
+      throw new Error(`AI request failed: ${error.message}`);
     }
   }
 }
