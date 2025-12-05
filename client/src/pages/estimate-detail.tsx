@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -114,6 +114,7 @@ function EstimateDetailContent() {
   const [editingStageName, setEditingStageName] = useState<string>("");
   const [showNarrativeDialog, setShowNarrativeDialog] = useState(false);
   const [generatedNarrative, setGeneratedNarrative] = useState<string>("");
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -235,14 +236,17 @@ function EstimateDetailContent() {
     
     setShowNarrativeDialog(true);
     setGeneratedNarrative("");
+    setNarrativeError(null);
     
     try {
       const result = await generateNarrativeMutation.mutateAsync(id);
       setGeneratedNarrative(result.narrative);
     } catch (error: any) {
+      const errorMsg = error.message || "Failed to generate narrative. Please try again.";
+      setNarrativeError(errorMsg);
       toast({
         title: "Failed to generate narrative",
-        description: error.message || "Please try again",
+        description: errorMsg,
         variant: "destructive"
       });
     }
@@ -4649,7 +4653,21 @@ function EstimateDetailContent() {
             <div className="flex flex-col items-center justify-center py-16 space-y-4">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="text-muted-foreground">Generating comprehensive proposal narrative...</p>
-              <p className="text-sm text-muted-foreground">This may take 30-60 seconds for large estimates.</p>
+              <p className="text-sm text-muted-foreground">This may take 1-2 minutes for large estimates.</p>
+            </div>
+          ) : narrativeError ? (
+            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-destructive font-medium">Generation Failed</p>
+              <p className="text-sm text-muted-foreground text-center max-w-md">{narrativeError}</p>
+              <Button 
+                onClick={handleGenerateNarrative}
+                variant="outline"
+                className="mt-4"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Try Again
+              </Button>
             </div>
           ) : generatedNarrative ? (
             <ScrollArea className="h-[60vh] pr-4">
