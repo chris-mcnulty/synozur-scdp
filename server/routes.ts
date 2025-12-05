@@ -12728,9 +12728,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         }))
       };
 
+      const lineItemCount = lineItems.length;
+      const epicCount = epics.length;
       console.log(`[AI] Generating estimate narrative for "${estimate.name}" (${estimateId}) by user ${req.user!.id}`);
+      console.log(`[AI] Estimate has ${epicCount} epics and ${lineItemCount} line items`);
       
+      const startTime = Date.now();
       const narrative = await aiService.generateEstimateNarrative(narrativeInput);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      
+      console.log(`[AI] Narrative generated in ${duration}s (${narrative.length} chars)`);
 
       res.json({ narrative });
     } catch (error: any) {
