@@ -3,6 +3,17 @@
 ## Overview
 SCDP is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, aims to enhance efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation without requiring time entries.
 
+## Recent Changes (December 05, 2025)
+- **Azure OpenAI Integration (COMPLETE)**: Integrated Azure OpenAI GPT-5.1 for AI-powered features:
+  - **AI Provider Interface** (server/services/ai-provider.ts): Extensible provider interface supporting Azure OpenAI, with hooks for future OpenAI/Anthropic/local model support
+  - **AI Service Layer** (server/services/ai-service.ts): Domain-specific methods for estimate narrative generation, invoice narratives, and report queries
+  - **Frontend Hooks** (client/src/lib/ai.ts): React Query hooks for AI status check and various AI generation mutations
+  - **API Endpoints**: /api/ai/status (check configuration), /api/ai/chat (general chat), /api/ai/estimate-narrative/:id (proposal narratives)
+  - **Rate Limiting**: AI endpoints protected with 20 requests/minute per user
+  - **Security**: All API keys server-side only via environment secrets (AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, AZURE_OPENAI_DEPLOYMENT)
+  - **Estimate Narrative Generator**: AI-powered proposal narrative that addresses client questions about scope (in/out), deliverables, sprint length, roles/allocation by epic, KPIs, and required client inputs
+  - **UI**: "Generate Proposal Narrative" button on estimate detail page with dialog displaying formatted AI response with copy-to-clipboard support
+
 ## Recent Changes (November 30, 2025)
 - **Custom Sort Order for Epics and Stages (COMPLETE)**: Added user-controlled ordering for epics and stages to ensure logical sequential grouping in reports and on-screen displays:
   - **Order Field**: Each epic and stage now has an `order` field that determines display sequence
