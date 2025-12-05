@@ -38,6 +38,41 @@ export interface InvoiceNarrativeInput {
   milestones?: string[];
 }
 
+export interface EstimateNarrativeInput {
+  estimateName: string;
+  clientName: string;
+  estimateDate: string;
+  validUntil?: string;
+  totalHours: number;
+  totalFees: number;
+  epics: Array<{
+    name: string;
+    order: number;
+    stages: Array<{
+      name: string;
+      order: number;
+      lineItems: Array<{
+        description: string;
+        hours: number;
+        role?: string;
+        comments?: string;
+      }>;
+    }>;
+    totalHours: number;
+    totalFees: number;
+    roleBreakdown: Array<{
+      role: string;
+      hours: number;
+      percentage: number;
+    }>;
+  }>;
+  milestones?: Array<{
+    name: string;
+    description?: string;
+    dueDate?: string;
+  }>;
+}
+
 class AIService {
   private systemPrompts = {
     estimateGeneration: `You are an expert consulting project estimator. Given a project description, generate a detailed work breakdown structure with line items.
@@ -67,6 +102,26 @@ Generate clear, professional invoice narratives that:
 - Are appropriate for C-level executives to read
 
 Keep narratives concise (2-4 paragraphs) but comprehensive.`,
+
+    estimateNarrative: `You are an expert consulting proposal writer. Your task is to generate a comprehensive, professional narrative summary of a project estimate that is suitable for inclusion in a client proposal document.
+
+The narrative should be written in rich, professional prose that is appropriate for C-level executives and procurement teams. Use clear section headers and bullet points where appropriate for readability.
+
+For each EPIC, you must address the following key client questions:
+
+1. **Scope Definition**: What is explicitly IN SCOPE and OUT OF SCOPE for this Epic? Be specific about boundaries.
+
+2. **Deliverables**: What concrete deliverables will the client receive? (documents, tools, models, dashboards, code, processes, training materials, workshops, etc.)
+
+3. **Sprint/Phase Duration**: Based on the hours allocated, estimate how long each phase/sprint might take (assume 2-week sprints, 40 hours per person per week).
+
+4. **Staffing & Allocation**: What roles will be staffed and at what approximate percentage allocation? Show the breakdown clearly.
+
+5. **Success Criteria & KPIs**: What key performance indicators will indicate progress or success? Be specific and measurable where possible.
+
+6. **Client Dependencies**: What inputs, access, or resources must the client provide for the plan to work? Help them understand their time and resource commitment.
+
+Format the output as professional proposal text with clear headers and sections. Use markdown formatting for rich text (headers, bold, bullets, tables where helpful).`,
 
     general: `You are an AI assistant for SCDP, a consulting delivery management platform. Help users with questions about projects, estimates, resources, expenses, and invoicing.
 
@@ -164,6 +219,75 @@ Write a professional narrative suitable for the invoice.`;
       messages,
       temperature: 0.6,
       maxTokens: 1024
+    });
+
+    return result.content;
+  }
+
+  async generateEstimateNarrative(input: EstimateNarrativeInput): Promise<string> {
+    const provider = getAIProvider();
+
+    // Build detailed epic summaries
+    const epicSummaries = input.epics
+      .sort((a, b) => a.order - b.order)
+      .map(epic => {
+        const stageSummaries = epic.stages
+          .sort((a, b) => a.order - b.order)
+          .map(stage => {
+            const itemList = stage.lineItems.map(item => 
+              `      - ${item.description}${item.role ? ` (${item.role})` : ''}${item.hours ? ` - ${item.hours} hours` : ''}${item.comments ? ` | Notes: ${item.comments}` : ''}`
+            ).join('\n');
+            return `    Stage: ${stage.name}\n${itemList}`;
+          }).join('\n\n');
+
+        const roleBreakdown = epic.roleBreakdown
+          .map(r => `    - ${r.role}: ${r.hours} hours (${r.percentage.toFixed(1)}%)`)
+          .join('\n');
+
+        return `
+EPIC: ${epic.name}
+Total Hours: ${epic.totalHours}
+Total Fees: $${epic.totalFees.toLocaleString()}
+
+Stages and Activities:
+${stageSummaries}
+
+Role Allocation:
+${roleBreakdown}
+`;
+      }).join('\n' + '='.repeat(60) + '\n');
+
+    const milestoneSummary = input.milestones?.length 
+      ? `\nMILESTONES:\n${input.milestones.map(m => `- ${m.name}${m.dueDate ? ` (Due: ${m.dueDate})` : ''}${m.description ? `: ${m.description}` : ''}`).join('\n')}`
+      : '';
+
+    const userMessage = `Generate a comprehensive proposal narrative for the following estimate:
+
+ESTIMATE OVERVIEW
+================
+Name: ${input.estimateName}
+Client: ${input.clientName}
+Date: ${input.estimateDate}
+${input.validUntil ? `Valid Until: ${input.validUntil}` : ''}
+Total Hours: ${input.totalHours}
+Total Investment: $${input.totalFees.toLocaleString()}
+
+DETAILED BREAKDOWN BY EPIC
+==========================
+${epicSummaries}
+${milestoneSummary}
+
+Please generate a professional proposal narrative that addresses all six key client questions for each Epic (scope, deliverables, duration, staffing, KPIs, and client dependencies). Make it suitable for a formal proposal document.`;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: this.systemPrompts.estimateNarrative },
+      { role: 'user', content: userMessage }
+    ];
+
+    const result = await provider.chatCompletion({
+      messages,
+      temperature: 0.7,
+      maxTokens: 8192  // Larger for comprehensive narratives
     });
 
     return result.content;
