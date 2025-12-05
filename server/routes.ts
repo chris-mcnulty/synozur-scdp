@@ -12444,4 +12444,133 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Apply token refresh check middleware to protected routes (AFTER SSO login/callback endpoints)
   app.use("/api/*", checkAndRefreshToken);
 
+  // ============================================
+  // AI ROUTES
+  // ============================================
+
+  const { aiService } = await import('./services/ai-service.js');
+
+  // GET /api/ai/status - Check if AI is configured
+  app.get("/api/ai/status", requireAuth, async (req, res) => {
+    try {
+      res.json({
+        configured: aiService.isConfigured(),
+        provider: process.env.AI_PROVIDER || 'azure'
+      });
+    } catch (error: any) {
+      console.error("[AI] Status check failed:", error);
+      res.status(500).json({ message: "Failed to check AI status" });
+    }
+  });
+
+  // Rate limiter for AI endpoints
+  const aiRateLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 requests per minute
+    message: { message: "Too many AI requests. Please try again later." },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // POST /api/ai/chat - General chat endpoint
+  app.post("/api/ai/chat", requireAuth, aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        message: z.string().min(1).max(10000),
+        context: z.string().max(50000).optional()
+      });
+
+      const validated = schema.parse(req.body);
+      const result = await aiService.chat(validated.message, validated.context);
+
+      console.log(`[AI] Chat request from user ${req.user!.id}: ${validated.message.substring(0, 50)}...`);
+
+      res.json({
+        content: result.content,
+        usage: {
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          totalTokens: result.totalTokens
+        }
+      });
+    } catch (error: any) {
+      console.error("[AI] Chat failed:", error);
+      res.status(500).json({ message: error.message || "AI request failed" });
+    }
+  });
+
+  // POST /api/ai/generate-estimate - Generate estimate line items from description
+  app.post("/api/ai/generate-estimate", requireAuth, requireRole(["admin", "pm", "executive"]), aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        projectDescription: z.string().min(10).max(10000),
+        clientName: z.string().max(255).optional(),
+        industry: z.string().max(100).optional(),
+        constraints: z.string().max(5000).optional()
+      });
+
+      const validated = schema.parse(req.body);
+      const lineItems = await aiService.generateEstimateDraft(validated);
+
+      console.log(`[AI] Generated ${lineItems.length} estimate line items for user ${req.user!.id}`);
+
+      res.json({ lineItems });
+    } catch (error: any) {
+      console.error("[AI] Generate estimate failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate estimate" });
+    }
+  });
+
+  // POST /api/ai/invoice-narrative - Generate invoice narrative
+  app.post("/api/ai/invoice-narrative", requireAuth, requireRole(["admin", "billing-admin", "pm"]), aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        projectName: z.string().min(1).max(255),
+        clientName: z.string().min(1).max(255),
+        periodStart: z.string(),
+        periodEnd: z.string(),
+        lineItems: z.array(z.object({
+          description: z.string(),
+          hours: z.number().optional(),
+          amount: z.number(),
+          category: z.string().optional()
+        })),
+        milestones: z.array(z.string()).optional()
+      });
+
+      const validated = schema.parse(req.body);
+      const narrative = await aiService.generateInvoiceNarrative(validated);
+
+      console.log(`[AI] Generated invoice narrative for project "${validated.projectName}" by user ${req.user!.id}`);
+
+      res.json({ narrative });
+    } catch (error: any) {
+      console.error("[AI] Generate invoice narrative failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate invoice narrative" });
+    }
+  });
+
+  // POST /api/ai/report-query - Natural language report query
+  app.post("/api/ai/report-query", requireAuth, aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        query: z.string().min(1).max(5000),
+        context: z.object({
+          availableData: z.array(z.string()),
+          currentFilters: z.record(z.any()).optional()
+        })
+      });
+
+      const validated = schema.parse(req.body);
+      const response = await aiService.naturalLanguageReport(validated);
+
+      console.log(`[AI] Report query from user ${req.user!.id}: "${validated.query.substring(0, 50)}..."`);
+
+      res.json({ response });
+    } catch (error: any) {
+      console.error("[AI] Report query failed:", error);
+      res.status(500).json({ message: error.message || "Failed to process report query" });
+    }
+  });
+
 }
