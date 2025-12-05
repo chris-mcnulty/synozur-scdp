@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -22,6 +23,7 @@ import { RateOverridesSection } from "@/components/RateOverridesSection";
 import { RatePrecedenceBadge } from "@/components/RatePrecedenceBadge";
 import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 import { useEffectiveRates } from "@/hooks/useEffectiveRates";
+import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
 
 function EstimateDetailContent() {
   const { id } = useParams();
@@ -110,6 +112,8 @@ function EstimateDetailContent() {
   const [importType, setImportType] = useState<'excel' | 'csv'>('excel');
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [editingStageName, setEditingStageName] = useState<string>("");
+  const [showNarrativeDialog, setShowNarrativeDialog] = useState(false);
+  const [generatedNarrative, setGeneratedNarrative] = useState<string>("");
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -222,6 +226,35 @@ function EstimateDetailContent() {
     () => new Map(effectiveRates.map(rate => [rate.lineItemId, rate])),
     [effectiveRates]
   );
+
+  const { data: aiStatus } = useAIStatus();
+  const generateNarrativeMutation = useGenerateEstimateNarrative();
+
+  const handleGenerateNarrative = async () => {
+    if (!id) return;
+    
+    setShowNarrativeDialog(true);
+    setGeneratedNarrative("");
+    
+    try {
+      const result = await generateNarrativeMutation.mutateAsync(id);
+      setGeneratedNarrative(result.narrative);
+    } catch (error: any) {
+      toast({
+        title: "Failed to generate narrative",
+        description: error.message || "Please try again",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCopyNarrative = () => {
+    navigator.clipboard.writeText(generatedNarrative);
+    toast({
+      title: "Copied to clipboard",
+      description: "Narrative copied successfully"
+    });
+  };
 
   const createEpicMutation = useMutation({
     mutationFn: async (data: { name: string }) => {
@@ -1492,6 +1525,22 @@ function EstimateDetailContent() {
               <FileText className="h-4 w-4 mr-2" />
               Export for AI
             </Button>
+            {aiStatus?.configured && (
+              <Button 
+                onClick={handleGenerateNarrative}
+                variant="default"
+                size="sm"
+                disabled={generateNarrativeMutation.isPending}
+                data-testid="button-generate-narrative"
+              >
+                {generateNarrativeMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4 mr-2" />
+                )}
+                Generate Proposal Narrative
+              </Button>
+            )}
           </div>
           
           <input
@@ -4579,6 +4628,83 @@ function EstimateDetailContent() {
           >
             {recalculateEstimateMutation.isPending ? "Recalculating..." : "Recalculate All"}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Proposal Narrative Dialog */}
+    <Dialog open={showNarrativeDialog} onOpenChange={setShowNarrativeDialog}>
+      <DialogContent className="max-w-4xl max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Proposal Narrative
+          </DialogTitle>
+          <DialogDescription>
+            AI-generated proposal narrative addressing scope, deliverables, staffing, KPIs, and client dependencies for each Epic.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          {generateNarrativeMutation.isPending ? (
+            <div className="flex flex-col items-center justify-center py-16 space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-muted-foreground">Generating comprehensive proposal narrative...</p>
+              <p className="text-sm text-muted-foreground">This may take 30-60 seconds for large estimates.</p>
+            </div>
+          ) : generatedNarrative ? (
+            <ScrollArea className="h-[60vh] pr-4">
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <div 
+                  className="whitespace-pre-wrap font-sans text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ 
+                    __html: generatedNarrative
+                      .replace(/^### (.*?)$/gm, '<h3 class="text-lg font-semibold mt-6 mb-2">$1</h3>')
+                      .replace(/^## (.*?)$/gm, '<h2 class="text-xl font-bold mt-8 mb-3 border-b pb-2">$1</h2>')
+                      .replace(/^# (.*?)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                      .replace(/^- (.*?)$/gm, '<li class="ml-4">$1</li>')
+                      .replace(/(<li.*?<\/li>\n?)+/g, '<ul class="list-disc space-y-1 my-2">$&</ul>')
+                  }}
+                />
+              </div>
+            </ScrollArea>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <p>No narrative generated yet.</p>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="gap-2">
+          {generatedNarrative && (
+            <Button
+              variant="outline"
+              onClick={handleCopyNarrative}
+              data-testid="button-copy-narrative"
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Copy to Clipboard
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() => setShowNarrativeDialog(false)}
+          >
+            Close
+          </Button>
+          {generatedNarrative && (
+            <Button
+              onClick={handleGenerateNarrative}
+              disabled={generateNarrativeMutation.isPending}
+            >
+              {generateNarrativeMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Regenerate
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

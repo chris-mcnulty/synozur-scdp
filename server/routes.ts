@@ -12573,4 +12573,170 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // POST /api/ai/estimate-narrative/:id - Generate proposal narrative for estimate
+  app.post("/api/ai/estimate-narrative/:id", requireAuth, requireRole(["admin", "pm", "executive"]), aiRateLimiter, async (req, res) => {
+    try {
+      const estimateId = req.params.id;
+      
+      // Fetch estimate data
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const client = estimate.clientId ? await storage.getClient(estimate.clientId) : null;
+      const lineItems = await storage.getEstimateLineItems(estimateId);
+      const epics = await storage.getEstimateEpics(estimateId);
+      const stages = await storage.getEstimateStages(estimateId);
+      const milestones = await storage.getEstimateMilestones(estimateId);
+      const allRoles = await storage.getRoles();
+
+      // Create role lookup map
+      const roleMap = new Map(allRoles.map(r => [r.id, r.name]));
+
+      // Build hierarchical structure with aggregations
+      interface StageWithItems {
+        id: string;
+        name: string;
+        order: number;
+        epicId: string;
+        lineItems: Array<{
+          description: string;
+          hours: number;
+          role?: string;
+          comments?: string;
+        }>;
+      }
+
+      interface EpicWithData {
+        id: string;
+        name: string;
+        order: number;
+        stages: StageWithItems[];
+        totalHours: number;
+        totalFees: number;
+        roleBreakdown: Array<{
+          role: string;
+          hours: number;
+          percentage: number;
+        }>;
+      }
+
+      const epicMap = new Map<string, EpicWithData>();
+      epics.forEach(e => {
+        epicMap.set(e.id, {
+          ...e,
+          stages: [],
+          totalHours: 0,
+          totalFees: 0,
+          roleBreakdown: []
+        });
+      });
+
+      const stageMap = new Map<string, StageWithItems>();
+      stages.forEach(s => {
+        stageMap.set(s.id, { ...s, lineItems: [] });
+      });
+
+      // Track hours by role per epic
+      const epicRoleHours = new Map<string, Map<string, number>>();
+
+      // Process line items
+      lineItems.forEach(item => {
+        const hours = parseFloat(String(item.adjustedHours || item.baseHours || 0));
+        const fees = parseFloat(String(item.totalAmount || 0));
+        const roleName = item.roleId ? roleMap.get(item.roleId) || 'Unknown Role' : item.resourceName || 'Unassigned';
+
+        // Find the epic for this line item
+        let epicId: string | null = null;
+        if (item.stageId && stageMap.has(item.stageId)) {
+          const stage = stageMap.get(item.stageId)!;
+          epicId = stage.epicId;
+          stage.lineItems.push({
+            description: item.description,
+            hours,
+            role: roleName,
+            comments: item.comments || undefined
+          });
+        } else if (item.epicId && epicMap.has(item.epicId)) {
+          epicId = item.epicId;
+        }
+
+        // Aggregate to epic
+        if (epicId && epicMap.has(epicId)) {
+          const epic = epicMap.get(epicId)!;
+          epic.totalHours += hours;
+          epic.totalFees += fees;
+
+          // Track role hours
+          if (!epicRoleHours.has(epicId)) {
+            epicRoleHours.set(epicId, new Map());
+          }
+          const roleHoursMap = epicRoleHours.get(epicId)!;
+          roleHoursMap.set(roleName, (roleHoursMap.get(roleName) || 0) + hours);
+        }
+      });
+
+      // Link stages to epics
+      stages.forEach(stage => {
+        if (stage.epicId && epicMap.has(stage.epicId)) {
+          const stageWithItems = stageMap.get(stage.id);
+          if (stageWithItems) {
+            epicMap.get(stage.epicId)!.stages.push(stageWithItems);
+          }
+        }
+      });
+
+      // Calculate role breakdown percentages
+      epicMap.forEach((epic, epicId) => {
+        const roleHoursMap = epicRoleHours.get(epicId);
+        if (roleHoursMap && epic.totalHours > 0) {
+          epic.roleBreakdown = Array.from(roleHoursMap.entries()).map(([role, hours]) => ({
+            role,
+            hours,
+            percentage: (hours / epic.totalHours) * 100
+          })).sort((a, b) => b.hours - a.hours);
+        }
+      });
+
+      // Prepare input for AI
+      const narrativeInput = {
+        estimateName: estimate.name,
+        clientName: client?.name || 'Client',
+        estimateDate: estimate.estimateDate || new Date().toISOString().split('T')[0],
+        validUntil: estimate.validUntil || undefined,
+        totalHours: parseFloat(String(estimate.totalHours || 0)),
+        totalFees: parseFloat(String(estimate.totalFees || estimate.presentedTotal || 0)),
+        epics: Array.from(epicMap.values())
+          .sort((a, b) => a.order - b.order)
+          .map(epic => ({
+            name: epic.name,
+            order: epic.order,
+            stages: epic.stages.sort((a, b) => a.order - b.order).map(s => ({
+              name: s.name,
+              order: s.order,
+              lineItems: s.lineItems
+            })),
+            totalHours: epic.totalHours,
+            totalFees: epic.totalFees,
+            roleBreakdown: epic.roleBreakdown
+          })),
+        milestones: milestones?.map(m => ({
+          name: m.name,
+          description: m.description || undefined,
+          dueDate: m.dueDate || undefined
+        }))
+      };
+
+      console.log(`[AI] Generating estimate narrative for "${estimate.name}" (${estimateId}) by user ${req.user!.id}`);
+      
+      const narrative = await aiService.generateEstimateNarrative(narrativeInput);
+
+      res.json({ narrative });
+    } catch (error: any) {
+      console.error("[AI] Estimate narrative generation failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate estimate narrative" });
+    }
+  });
+
 }

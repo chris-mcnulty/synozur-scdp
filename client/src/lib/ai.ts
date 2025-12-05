@@ -109,3 +109,17 @@ export function useReportQuery() {
     },
   });
 }
+
+export interface EstimateNarrativeResponse {
+  narrative: string;
+}
+
+export function useGenerateEstimateNarrative() {
+  return useMutation({
+    mutationFn: async (estimateId: string): Promise<EstimateNarrativeResponse> => {
+      return apiRequest(`/api/ai/estimate-narrative/${estimateId}`, {
+        method: "POST",
+      });
+    },
+  });
+}
