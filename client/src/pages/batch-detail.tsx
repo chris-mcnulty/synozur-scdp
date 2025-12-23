@@ -111,6 +111,8 @@ interface InvoiceBatchDetails {
   discountAmount?: string;
   taxRate?: string;
   taxAmount?: string;
+  taxAmountOverride?: string | null;
+  glInvoiceNumber?: string | null;
   totalAmount?: string;
   invoicingMode: string;
   status: string;
@@ -210,6 +212,11 @@ export default function BatchDetail() {
   const [isEditingPaymentTerms, setIsEditingPaymentTerms] = useState(false);
   const [isEditingAsOfDate, setIsEditingAsOfDate] = useState(false);
   const [newAsOfDate, setNewAsOfDate] = useState("");
+  // GL Invoice Number and Tax Override editing state
+  const [isEditingGlNumber, setIsEditingGlNumber] = useState(false);
+  const [glInvoiceNumber, setGlInvoiceNumber] = useState("");
+  const [isEditingTaxOverride, setIsEditingTaxOverride] = useState(false);
+  const [taxOverrideValue, setTaxOverrideValue] = useState("");
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -338,6 +345,61 @@ export default function BatchDetail() {
       toast({ 
         title: "Error",
         description: error.message || "Failed to update payment terms",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // GL Invoice Number Update Mutation
+  const updateGlNumberMutation = useMutation({
+    mutationFn: async (glInvoiceNumber: string | null) => {
+      return await apiRequest(`/api/invoice-batches/${batchId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ glInvoiceNumber })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      toast({ 
+        title: "Success",
+        description: "GL invoice number updated successfully" 
+      });
+      setIsEditingGlNumber(false);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update GL invoice number",
+        variant: "destructive" 
+      });
+    }
+  });
+
+  // Tax Override Update Mutation
+  const updateTaxOverrideMutation = useMutation({
+    mutationFn: async (taxAmountOverride: number | null) => {
+      // Send as string for consistent backend handling, or null to clear
+      return await apiRequest(`/api/invoice-batches/${batchId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ 
+          taxAmountOverride: taxAmountOverride === null ? null : taxAmountOverride.toFixed(2)
+        })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      toast({ 
+        title: "Success",
+        description: "Tax override updated successfully" 
+      });
+      setIsEditingTaxOverride(false);
+      setTaxOverrideValue("");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Error",
+        description: error.message || "Failed to update tax override",
         variant: "destructive" 
       });
     }
@@ -981,7 +1043,12 @@ export default function BatchDetail() {
   const discountAmount = parseFloat(batchDetails.discountAmount || "0");
   const subtotalAfterDiscount = grandTotal - discountAmount;
   const taxRate = parseFloat(batchDetails.taxRate || "0");
-  const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+  // Use manual override if set, otherwise calculate from rate
+  const taxAmountOverride = batchDetails.taxAmountOverride ? parseFloat(batchDetails.taxAmountOverride) : null;
+  const isManualTaxOverride = taxAmountOverride !== null && !isNaN(taxAmountOverride);
+  const taxAmount = isManualTaxOverride ? taxAmountOverride : (subtotalAfterDiscount * (taxRate / 100));
+  // Calculate effective percentage for display
+  const effectiveTaxPercent = subtotalAfterDiscount > 0 ? (taxAmount / subtotalAfterDiscount) * 100 : 0;
   const netTotal = subtotalAfterDiscount + taxAmount;
 
   return (
@@ -1598,7 +1665,21 @@ export default function BatchDetail() {
               
               {taxAmount > 0 && (
                 <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Tax ({taxRate}%)</div>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    Tax ({effectiveTaxPercent.toFixed(2)}%)
+                    {isManualTaxOverride && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Badge variant="secondary" className="text-xs ml-1">Override</Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Manual tax override applied (rate: {taxRate}%)</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
                   <p className="text-xl font-semibold text-blue-600 dark:text-blue-400" data-testid="text-tax">
                     ${taxAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -1785,6 +1866,225 @@ export default function BatchDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* Invoice Settings Card - GL Invoice Number and Tax Override */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calculator className="h-5 w-5" />
+              Invoice Settings
+            </CardTitle>
+            <CardDescription>
+              External accounting integration and tax configuration
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* GL Invoice Number Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">GL Invoice Number</Label>
+                {batchDetails.glInvoiceNumber && (
+                  <Badge variant="secondary" className="text-xs">Set</Badge>
+                )}
+              </div>
+              
+              {!isEditingGlNumber ? (
+                <div className="rounded-lg border p-4 space-y-3">
+                  <p className="text-sm" data-testid="text-gl-invoice-number">
+                    {batchDetails.glInvoiceNumber || <span className="text-muted-foreground italic">Not set</span>}
+                  </p>
+                  {batchDetails.status !== 'finalized' && canEditLines() && (
+                    <Button
+                      onClick={() => {
+                        setIsEditingGlNumber(true);
+                        setGlInvoiceNumber(batchDetails.glInvoiceNumber || '');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      data-testid="button-edit-gl-number"
+                    >
+                      <Edit className="mr-2 h-3 w-3" />
+                      {batchDetails.glInvoiceNumber ? 'Edit' : 'Add'} GL Number
+                    </Button>
+                  )}
+                  {batchDetails.status === 'finalized' && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Lock className="h-3 w-3" />
+                      <span>Locked for finalized batch</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Input
+                    value={glInvoiceNumber}
+                    onChange={(e) => setGlInvoiceNumber(e.target.value)}
+                    placeholder="Enter GL invoice number (e.g., INV-2024-001)"
+                    data-testid="input-gl-invoice-number"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => updateGlNumberMutation.mutate(glInvoiceNumber.trim() || null)}
+                      disabled={updateGlNumberMutation.isPending}
+                      size="sm"
+                      data-testid="button-save-gl-number"
+                    >
+                      {updateGlNumberMutation.isPending ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIsEditingGlNumber(false);
+                        setGlInvoiceNumber('');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      disabled={updateGlNumberMutation.isPending}
+                      data-testid="button-cancel-gl-number"
+                    >
+                      Cancel
+                    </Button>
+                    {batchDetails.glInvoiceNumber && (
+                      <Button
+                        onClick={() => updateGlNumberMutation.mutate(null)}
+                        variant="ghost"
+                        size="sm"
+                        disabled={updateGlNumberMutation.isPending}
+                        className="text-destructive"
+                        data-testid="button-clear-gl-number"
+                      >
+                        <Trash2 className="mr-2 h-3 w-3" />
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Tax Override Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Tax Amount Override</Label>
+                {isManualTaxOverride && (
+                  <Badge variant="secondary" className="text-xs">Manual Override</Badge>
+                )}
+              </div>
+              
+              {!isEditingTaxOverride ? (
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Tax Rate:</span>
+                      <span className="ml-2 font-medium">{taxRate.toFixed(2)}%</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Calculated Tax:</span>
+                      <span className="ml-2 font-medium">
+                        ${(subtotalAfterDiscount * (taxRate / 100)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {isManualTaxOverride && (
+                    <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Info className="h-4 w-4 text-blue-600" />
+                        <span className="text-blue-800 dark:text-blue-300">
+                          Manual override: <strong>${taxAmountOverride?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                          <span className="text-muted-foreground ml-1">
+                            (effective rate: {effectiveTaxPercent.toFixed(2)}%)
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {batchDetails.status !== 'finalized' && canEditLines() && (
+                    <Button
+                      onClick={() => {
+                        setIsEditingTaxOverride(true);
+                        // Initialize with existing override value (convert from string/null)
+                        setTaxOverrideValue(batchDetails.taxAmountOverride ? String(batchDetails.taxAmountOverride) : '');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      data-testid="button-edit-tax-override"
+                    >
+                      <Edit className="mr-2 h-3 w-3" />
+                      {isManualTaxOverride ? 'Edit Override' : 'Set Override'}
+                    </Button>
+                  )}
+                  {batchDetails.status === 'finalized' && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Lock className="h-3 w-3" />
+                      <span>Locked for finalized batch</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">$</span>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={taxOverrideValue}
+                      onChange={(e) => setTaxOverrideValue(e.target.value)}
+                      placeholder="Enter exact tax amount"
+                      className="max-w-48"
+                      data-testid="input-tax-override"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Enter the exact tax amount to override the calculated tax ({taxRate}% = ${(subtotalAfterDiscount * (taxRate / 100)).toFixed(2)})
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        const value = parseFloat(taxOverrideValue);
+                        // Allow zero as a valid override value
+                        updateTaxOverrideMutation.mutate(isNaN(value) ? null : value);
+                      }}
+                      disabled={updateTaxOverrideMutation.isPending || taxOverrideValue === ''}
+                      size="sm"
+                      data-testid="button-save-tax-override"
+                    >
+                      {updateTaxOverrideMutation.isPending ? 'Saving...' : 'Save Override'}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setIsEditingTaxOverride(false);
+                        setTaxOverrideValue('');
+                      }}
+                      variant="outline"
+                      size="sm"
+                      disabled={updateTaxOverrideMutation.isPending}
+                      data-testid="button-cancel-tax-override"
+                    >
+                      Cancel
+                    </Button>
+                    {isManualTaxOverride && (
+                      <Button
+                        onClick={() => updateTaxOverrideMutation.mutate(null)}
+                        variant="ghost"
+                        size="sm"
+                        disabled={updateTaxOverrideMutation.isPending}
+                        className="text-destructive"
+                        data-testid="button-clear-tax-override"
+                      >
+                        <Undo className="mr-2 h-3 w-3" />
+                        Reset to Calculated
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Milestone Summary Section */}
         {groupedLines && (() => {
