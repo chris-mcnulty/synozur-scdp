@@ -19,7 +19,8 @@ import {
   Home,
   Calculator,
   CreditCard,
-  Database
+  Database,
+  BookOpen
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -224,6 +225,11 @@ export function Sidebar() {
           
           {/* About - always visible */}
           <div className="pt-4">
+            <SidebarItem
+              href="/user-guide"
+              icon={<BookOpen />}
+              label="User Guide"
+            />
             <SidebarItem
               href="/about"
               icon={<Info />}
