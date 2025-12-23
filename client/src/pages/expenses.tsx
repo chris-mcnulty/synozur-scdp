@@ -111,8 +111,8 @@ export default function Expenses() {
   const queryClient = useQueryClient();
   const { hasAnyRole } = useAuth();
 
-  // Check if current user can assign expenses to other people
-  const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin']);
+  // Check if current user can assign expenses to other people (create on behalf of others)
+  const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive']);
 
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
@@ -770,6 +770,12 @@ export default function Expenses() {
     // Ensure projectResourceId is handled correctly - convert "unassigned" to null
     if (submitData.projectResourceId === "unassigned" || submitData.projectResourceId === "") {
       submitData.projectResourceId = null;
+    }
+
+    // When privileged users assign an expense to a person, that person becomes the expense owner
+    // The backend validates permissions before accepting this override
+    if (submitData.projectResourceId) {
+      submitData.personId = submitData.projectResourceId;
     }
 
     // Keep amount as string, ensure booleans are properly typed

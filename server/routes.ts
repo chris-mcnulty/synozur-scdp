@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -8031,20 +8031,56 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log("[EXPENSE_CREATE] Request body:", JSON.stringify(req.body, null, 2));
       console.log("[EXPENSE_CREATE] User:", req.user?.id, "Role:", req.user?.role);
       
+      // SECURITY: Check privilege BEFORE processing payload
+      const isPrivilegedUser = ['admin', 'pm', 'billing-admin', 'executive'].includes(req.user!.role);
+      
       // Normalize form strings to database types
       const normalizedData = normalizeExpensePayload(req.body);
-      console.log("[EXPENSE_CREATE] Normalized data:", JSON.stringify(normalizedData, null, 2));
+      
+      // SECURITY: Strip personId from non-privileged users' requests IMMEDIATELY
+      // This prevents any possibility of the field being used
+      if (!isPrivilegedUser) {
+        delete normalizedData.personId;
+        delete normalizedData.projectResourceId; // Also strip project assignment for non-privileged users
+        console.log("[EXPENSE_CREATE] Non-privileged user - stripped personId and projectResourceId from request");
+      }
+      
+      console.log("[EXPENSE_CREATE] Normalized data (after security strip):", JSON.stringify(normalizedData, null, 2));
+
+      // Determine expense owner (personId)
+      let expenseOwnerId: string;
+      
+      if (!isPrivilegedUser) {
+        // Non-privileged users ALWAYS create expenses for themselves
+        expenseOwnerId = req.user!.id;
+        console.log("[EXPENSE_CREATE] Non-privileged user - personId set to self:", expenseOwnerId);
+      } else if (normalizedData.personId && normalizedData.personId !== req.user!.id) {
+        // Privileged user creating expense on behalf of another user
+        // Validate the target user exists
+        const targetUser = await storage.getUser(normalizedData.personId);
+        if (!targetUser) {
+          console.error("[EXPENSE_CREATE] Target user not found:", normalizedData.personId);
+          return res.status(400).json({ 
+            message: "Selected user not found" 
+          });
+        }
+        expenseOwnerId = normalizedData.personId;
+        console.log("[EXPENSE_CREATE] Creating expense on behalf of:", expenseOwnerId);
+      } else {
+        // Privileged user creating expense for themselves
+        expenseOwnerId = req.user!.id;
+      }
 
       const validatedData = insertExpenseSchema.parse({
         ...normalizedData,
-        personId: req.user!.id // Always use the authenticated user
+        personId: expenseOwnerId
       });
       console.log("[EXPENSE_CREATE] Validated data:", JSON.stringify(validatedData, null, 2));
 
-      // Validate person assignment permissions
+      // Validate person assignment permissions (projectResourceId is for project assignment, separate from owner)
       if (validatedData.projectResourceId) {
-        // Only admin, PM, and billing-admin can assign expenses to specific people
-        if (!['admin', 'pm', 'billing-admin'].includes(req.user!.role)) {
+        // Only admin, PM, and billing-admin can assign expenses to specific people within projects
+        if (!isPrivilegedUser) {
           console.error("[EXPENSE_CREATE] Permission denied for projectResourceId assignment");
           return res.status(403).json({ 
             message: "Insufficient permissions to assign expenses to specific people" 
@@ -8128,10 +8164,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const expenseId = req.params.id;
       const userId = req.user!.id;
+      console.log("[EXPENSE_DELETE] Attempting to delete expense:", expenseId, "by user:", userId);
 
       // Validate expense exists and user has permission to delete it
       const { canAccess, expense } = await canAccessExpense(expenseId, userId, req.user!.role);
       if (!canAccess || !expense) {
+        console.log("[EXPENSE_DELETE] Access denied or not found:", { canAccess, hasExpense: !!expense });
         return res.status(expense ? 403 : 404).json({
           message: expense ? "Insufficient permissions to delete this expense" : "Expense not found"
         });
@@ -8140,14 +8178,70 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Only expense owner can delete their own expenses (unless admin/billing-admin)
       const canDelete = expense.personId === userId || ['admin', 'billing-admin'].includes(req.user!.role);
       if (!canDelete) {
+        console.log("[EXPENSE_DELETE] Permission denied - not owner and not admin");
         return res.status(403).json({ message: "You can only delete your own expenses" });
       }
 
+      // Guard: Cannot delete billed expenses
+      if (expense.billedFlag) {
+        console.log("[EXPENSE_DELETE] Cannot delete - expense is already billed");
+        return res.status(400).json({ message: "Cannot delete an expense that has already been billed" });
+      }
+
+      // Guard: Only admins/billing-admins can delete submitted/approved expenses
+      // Regular users can only delete their draft expenses
+      const isAdminRole = ['admin', 'billing-admin'].includes(req.user!.role);
+      if (expense.approvalStatus && !['draft'].includes(expense.approvalStatus)) {
+        if (!isAdminRole) {
+          console.log("[EXPENSE_DELETE] Cannot delete - expense is submitted/approved and user is not admin:", expense.approvalStatus);
+          return res.status(400).json({ 
+            message: `Cannot delete an expense with status "${expense.approvalStatus}". Only draft expenses can be deleted, or contact an administrator.` 
+          });
+        }
+        console.log("[EXPENSE_DELETE] Admin deleting submitted/approved expense:", expense.approvalStatus);
+      }
+
+      // Clean up related records before deleting the expense
+      try {
+        // Delete attachments (files and database records)
+        const attachments = await storage.listExpenseAttachments(expenseId);
+        console.log("[EXPENSE_DELETE] Found", attachments.length, "attachments to clean up");
+        
+        for (const attachment of attachments) {
+          try {
+            // Delete file from storage
+            if (attachment.driveId === 'receipt-storage' || attachment.driveId === 'local-storage') {
+              await receiptStorage.deleteReceipt(attachment.itemId);
+            }
+          } catch (fileError) {
+            console.warn("[EXPENSE_DELETE] Failed to delete attachment file:", attachment.itemId, fileError);
+            // Continue even if file deletion fails - we'll still clean up the database record
+          }
+          // Delete database record
+          await storage.deleteExpenseAttachment(attachment.id);
+        }
+
+        // Clear pending receipt references (set expenseId to null instead of deleting)
+        await db.update(pendingReceipts)
+          .set({ expenseId: null, assignedAt: null, assignedBy: null })
+          .where(eq(pendingReceipts.expenseId, expenseId));
+        console.log("[EXPENSE_DELETE] Cleared pending receipt references");
+
+      } catch (cleanupError) {
+        console.error("[EXPENSE_DELETE] Error during cleanup:", cleanupError);
+        // Don't fail the entire operation if cleanup has issues
+      }
+
+      // Now delete the expense
       await storage.deleteExpense(expenseId);
+      console.log("[EXPENSE_DELETE] Expense deleted successfully:", expenseId);
       res.json({ message: "Expense deleted successfully" });
     } catch (error) {
-      console.error("Error deleting expense:", error);
-      res.status(500).json({ message: "Failed to delete expense" });
+      console.error("[EXPENSE_DELETE] Error deleting expense:", error);
+      res.status(500).json({ 
+        message: "Failed to delete expense",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
