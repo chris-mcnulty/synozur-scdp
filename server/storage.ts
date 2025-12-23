@@ -2844,9 +2844,10 @@ export class DatabaseStorage implements IStorage {
     
     let projectResourceMap = new Map<string, User>();
     if (uniqueProjectResourceIds.length > 0) {
+      // Use Drizzle's inArray helper for proper parameterized query
       const projectResources = await db.select()
         .from(users)
-        .where(sql`${users.id} IN (${uniqueProjectResourceIds.map(id => `'${id}'`).join(',')})`);
+        .where(inArray(users.id, uniqueProjectResourceIds));
       
       projectResources.forEach(resource => {
         projectResourceMap.set(resource.id, resource);
