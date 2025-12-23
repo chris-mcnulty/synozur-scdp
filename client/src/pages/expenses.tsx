@@ -332,10 +332,11 @@ export default function Expenses() {
         description: "Your expense has been logged successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      console.error('[EXPENSE_CREATE] Mutation error:', error);
       toast({
-        title: "Error",
-        description: "Failed to create expense. Please try again.",
+        title: "Error creating expense",
+        description: error?.message || "Failed to create expense. Please try again.",
         variant: "destructive",
       });
     },
@@ -1165,7 +1166,7 @@ export default function Expenses() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-expense-project">
                               <SelectValue placeholder="Select project" />
@@ -1192,7 +1193,7 @@ export default function Expenses() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Assign to Person</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
                             <FormControl>
                               <SelectTrigger data-testid="select-expense-person">
                                 <SelectValue placeholder="Select person (optional)" />
@@ -1222,7 +1223,7 @@ export default function Expenses() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Category</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-expense-category">
                               <SelectValue placeholder="Select category" />
@@ -1466,7 +1467,7 @@ export default function Expenses() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Currency</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger data-testid="select-expense-currency">
                                 <SelectValue />
