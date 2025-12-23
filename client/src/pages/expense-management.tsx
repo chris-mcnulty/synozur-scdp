@@ -817,7 +817,7 @@ export default function ExpenseManagement() {
                       <TableHead>Date</TableHead>
                       <TableHead>Project</TableHead>
                       <TableHead>Client</TableHead>
-                      <TableHead>Person</TableHead>
+                      <TableHead>Assigned To</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Description</TableHead>
@@ -855,7 +855,7 @@ export default function ExpenseManagement() {
                         <TableCell data-testid={`text-person-${expense.id}`}>
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4 text-muted-foreground" />
-                            {expense.person?.name || 'N/A'}
+                            {expense.projectResource?.name || expense.person?.name || 'N/A'}
                           </div>
                         </TableCell>
                         <TableCell data-testid={`text-category-${expense.id}`}>
