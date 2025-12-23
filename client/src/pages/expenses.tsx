@@ -15,7 +15,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format } from "date-fns";
-import { getTodayBusinessDate } from "@/lib/date-utils";
+import { getTodayBusinessDate, formatBusinessDate } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -23,6 +23,56 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
+
+/**
+ * Parse a business date (YYYY-MM-DD string or Date) to a Date object without timezone shift
+ * This creates a date at noon local time to avoid any day boundary issues
+ * 
+ * PostgreSQL's date type returns YYYY-MM-DD strings, which is our primary format.
+ * Returns null if input is invalid so callers can handle appropriately.
+ */
+function parseBusinessDate(dateInput: string | Date | null | undefined): Date | null {
+  // Handle null/undefined explicitly
+  if (dateInput === null || dateInput === undefined) {
+    return null;
+  }
+  
+  // Handle Date objects directly - extract local date components
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    return new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 12, 0, 0);
+  }
+  
+  // Convert to string
+  const dateString = String(dateInput);
+  
+  // Primary: Handle YYYY-MM-DD format (PostgreSQL date type returns this)
+  // Use regex to extract just the date portion, ignoring any time/timezone suffix
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, yearStr, monthStr, dayStr] = match;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      // Create date at noon local time to avoid any day boundary issues
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+  
+  console.error('[parseBusinessDate] Could not parse date:', dateInput);
+  return null;
+}
+
+/**
+ * Safely parse a business date, returning today's date at noon if parsing fails
+ * Use this when a fallback is acceptable (e.g., initial calendar display)
+ */
+function parseBusinessDateOrToday(dateInput: string | Date | null | undefined): Date {
+  const parsed = parseBusinessDate(dateInput);
+  if (parsed) return parsed;
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+}
 
 const expenseFormSchema = insertExpenseSchema.omit({
   personId: true, // Server-side only
@@ -875,18 +925,18 @@ export default function Expenses() {
       if (expense.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
         formattedDate = expense.date;
       } else {
-        // Otherwise parse and format it
-        formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
+        // Otherwise parse and format it using local time to avoid timezone shift
+        formattedDate = format(parseBusinessDateOrToday(expense.date), 'yyyy-MM-dd');
       }
     } else {
-      // If it's any other type (Date object), format it
-      formattedDate = format(new Date(expense.date), 'yyyy-MM-dd');
+      // If it's any other type (Date object or ISO timestamp), format it
+      formattedDate = format(parseBusinessDateOrToday(expense.date), 'yyyy-MM-dd');
     }
 
     console.log('Formatted date:', formattedDate);
 
-    // Sync the selectedDate state for the date picker
-    setSelectedDate(new Date(expense.date));
+    // Sync the selectedDate state for the date picker (use parseBusinessDateOrToday for safety)
+    setSelectedDate(parseBusinessDateOrToday(expense.date));
 
     // Populate the edit form with current expense data - ensure all fields have defined values
     const formData: ExpenseFormData = {
@@ -1141,7 +1191,7 @@ export default function Expenses() {
                                 data-testid="button-select-expense-date"
                               >
                                 {field.value ? (
-                                  format(new Date(field.value + 'T00:00:00'), "PPP")
+                                  formatBusinessDate(field.value, "PPP")
                                 ) : (
                                   <span>Pick a date</span>
                                 )}
@@ -1152,7 +1202,7 @@ export default function Expenses() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value + 'T12:00:00') : undefined}
+                              selected={field.value ? parseBusinessDate(field.value) ?? undefined : undefined}
                               onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
@@ -1688,7 +1738,7 @@ export default function Expenses() {
                             ${parseFloat(expense.amount).toFixed(2)}
                           </div>
                           <div className="text-sm text-muted-foreground" data-testid={`expense-date-${expense.id}`}>
-                            {format(new Date(expense.date + 'T00:00:00'), 'MMM d, yyyy')}
+                            {formatBusinessDate(expense.date, 'MMM d, yyyy')}
                           </div>
                         </div>
                         <Button
