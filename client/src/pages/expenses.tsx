@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -404,9 +404,22 @@ export default function Expenses() {
           const createdExpenses = [];
           let receiptUploadFailures = 0;
           
+          // Parse the start date from the form to calculate individual dates
+          const startDate = parseBusinessDate(data.date);
+          
           for (const component of perDiemBreakdown.dailyComponents) {
+            // Calculate the actual date for this component based on the day number
+            // Day 1 = start date, Day 2 = start date + 1, etc.
+            let componentDate = data.date; // Default to form date
+            if (startDate) {
+              const dayOffset = component.day - 1; // Day 1 has offset 0
+              const actualDate = addDays(startDate, dayOffset);
+              componentDate = format(actualDate, 'yyyy-MM-dd');
+            }
+            
             const itemizedData = {
               ...baseData,
+              date: componentDate, // Use the calculated date for this specific day
               amount: component.amount.toFixed(2),
               quantity: "1", // Each component is quantity 1
               unit: component.type === 'lodging' ? 'night' : 'day', // Use correct unit for lodging vs meals
