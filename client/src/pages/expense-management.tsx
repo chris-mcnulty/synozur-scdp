@@ -337,10 +337,14 @@ export default function ExpenseManagement() {
   const handleIndividualUpdate = (data: IndividualEditData) => {
     if (!selectedExpense) return;
 
+    console.log("[EXPENSE_EDIT] Form data received:", JSON.stringify(data, null, 2));
+    console.log("[EXPENSE_EDIT] Selected expense ID:", selectedExpense.id);
+
     // Process the form data to handle special values
     const updates: any = {};
     
     Object.entries(data).forEach(([key, value]) => {
+      console.log(`[EXPENSE_EDIT] Processing field: ${key} = ${value} (type: ${typeof value})`);
       if (value !== undefined && value !== "") {
         if (key === "projectResourceId" && value === "unassigned") {
           updates[key] = null;
@@ -349,6 +353,8 @@ export default function ExpenseManagement() {
         }
       }
     });
+
+    console.log("[EXPENSE_EDIT] Updates to send:", JSON.stringify(updates, null, 2));
 
     individualUpdateMutation.mutate({
       expenseId: selectedExpense.id,
@@ -889,12 +895,14 @@ export default function ExpenseManagement() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleIndividualEdit(expense)}
                               data-testid={`button-edit-${expense.id}`}
+                              title="Edit expense"
+                              className="hover:bg-primary/10"
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
@@ -902,8 +910,9 @@ export default function ExpenseManagement() {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleIndividualDelete(expense.id, expense.description || undefined)}
-                              className="text-destructive hover:text-destructive"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
                               data-testid={`button-delete-${expense.id}`}
+                              title="Delete expense"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>

@@ -8125,8 +8125,24 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/expenses/:id", requireAuth, async (req, res) => {
     try {
-      console.log("[EXPENSE UPDATE] Request for expense:", req.params.id);
+      const expenseId = req.params.id;
+      const userId = req.user!.id;
+      const userRole = req.user!.role;
+      
+      console.log("[EXPENSE UPDATE] Request for expense:", expenseId, "by user:", userId, "role:", userRole);
       console.log("[EXPENSE UPDATE] Update data:", JSON.stringify(req.body, null, 2));
+
+      // SAFETY CHECK: Verify expense exists before updating using canAccessExpense helper
+      const { canAccess, expense: existingExpense } = await canAccessExpense(expenseId, userId, userRole);
+      if (!existingExpense) {
+        console.error("[EXPENSE UPDATE] Expense not found:", expenseId);
+        return res.status(404).json({ message: "Expense not found" });
+      }
+      if (!canAccess) {
+        console.error("[EXPENSE UPDATE] Access denied for expense:", expenseId);
+        return res.status(403).json({ message: "Insufficient permissions to update this expense" });
+      }
+      console.log("[EXPENSE UPDATE] Found existing expense:", existingExpense.id, "personId:", existingExpense.personId, "projectResourceId:", existingExpense.projectResourceId);
 
       // Normalize the data before validation (same as POST route)
       const normalizedData = normalizeExpensePayload(req.body);
@@ -8147,9 +8163,19 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       console.log("[EXPENSE UPDATE] Validated data:", JSON.stringify(validationResult.data, null, 2));
 
-      const expense = await storage.updateExpense(req.params.id, validationResult.data);
-      console.log("[EXPENSE UPDATE] Success:", expense.id);
-      res.json(expense);
+      const updatedExpense = await storage.updateExpense(expenseId, validationResult.data);
+      console.log("[EXPENSE UPDATE] Success - ID:", updatedExpense.id, "projectResourceId:", updatedExpense.projectResourceId);
+      
+      // SAFETY CHECK: Verify expense still exists after update
+      const { expense: verifyExpense } = await canAccessExpense(expenseId, userId, userRole);
+      if (!verifyExpense) {
+        console.error("[EXPENSE UPDATE] CRITICAL: Expense disappeared after update!", expenseId);
+        // This should never happen, but log it if it does
+      } else {
+        console.log("[EXPENSE UPDATE] Verified expense still exists after update");
+      }
+      
+      res.json(updatedExpense);
     } catch (error) {
       console.error("[EXPENSE UPDATE] Error:", error);
       res.status(500).json({ 
