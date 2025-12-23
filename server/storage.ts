@@ -83,6 +83,20 @@ function safeDivide(numerator: number, denominator: number, defaultValue: number
   return isNaN(result) ? defaultValue : result;
 }
 
+// Calculate effective tax amount - uses override if set, otherwise calculates from rate
+function calculateEffectiveTaxAmount(
+  subtotalAfterDiscount: number,
+  taxRate: number,
+  taxAmountOverride: number | null | undefined
+): number {
+  // If there's an explicit override, use it
+  if (taxAmountOverride !== null && taxAmountOverride !== undefined && !isNaN(taxAmountOverride)) {
+    return round2(taxAmountOverride);
+  }
+  // Otherwise calculate from rate
+  return round2(subtotalAfterDiscount * (taxRate / 100));
+}
+
 function distributeResidual(targetAmount: number, allocations: Record<string, number>): Record<string, number> {
   // Round all allocations to 2 decimal places
   const rounded: Record<string, number> = {};
@@ -5250,17 +5264,18 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // Calculate tax amount based on subtotal after discount
+      // Calculate tax amount based on subtotal after discount (respects override if set)
       const discountAmount = normalizeAmount(batch.discountAmount);
       const taxRate = normalizeAmount(batch.taxRate);
+      const taxAmountOverride = batch.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
       const subtotalAfterDiscount = totalAmount - discountAmount;
-      const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+      const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
       
       // Update batch total amount and tax amount
       await tx.update(invoiceBatches)
         .set({ 
           totalAmount: totalAmount.toString(),
-          taxAmount: round2(taxAmount).toString()
+          taxAmount: taxAmount.toString()
         })
         .where(eq(invoiceBatches.batchId, batchId));
 
@@ -6375,18 +6390,19 @@ export class DatabaseStorage implements IStorage {
     // Get batch details for tax calculation
     const [batchForTax] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, params.batchId));
     
-    // Calculate tax amount based on subtotal after discount
+    // Calculate tax amount based on subtotal after discount (respects override if set)
     const discountAmount = batchForTax ? normalizeAmount(batchForTax.discountAmount) : 0;
     const taxRate = batchForTax ? normalizeAmount(batchForTax.taxRate) : 0;
+    const taxAmountOverride = batchForTax?.taxAmountOverride ? normalizeAmount(batchForTax.taxAmountOverride) : null;
     const subtotalAfterDiscount = batchTotal - discountAmount;
-    const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+    const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
     
     // Update batch with new totals
     await db.update(invoiceBatches)
       .set({
         totalAmount: round2(batchTotal).toString(),
         aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString(),
-        taxAmount: round2(taxAmount).toString()
+        taxAmount: taxAmount.toString()
       })
       .where(eq(invoiceBatches.batchId, params.batchId));
     
@@ -6454,18 +6470,19 @@ export class DatabaseStorage implements IStorage {
       return sum + amount;
     }, 0);
     
-    // Calculate tax amount based on subtotal after discount
+    // Calculate tax amount based on subtotal after discount (respects override if set)
     const discountAmount = batch ? normalizeAmount(batch.discountAmount) : 0;
     const taxRate = batch ? normalizeAmount(batch.taxRate) : 0;
+    const taxAmountOverride = batch?.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
     const subtotalAfterDiscount = batchTotal - discountAmount;
-    const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+    const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
     
     // Update batch with recalculated totals
     await db.update(invoiceBatches)
       .set({
         totalAmount: round2(batchTotal).toString(),
         aggregateAdjustmentTotal: round2(aggregateAdjustmentTotal).toString(),
-        taxAmount: round2(taxAmount).toString()
+        taxAmount: taxAmount.toString()
       })
       .where(eq(invoiceBatches.batchId, adjustment.batchId));
   }
@@ -9170,8 +9187,13 @@ export async function generateInvoicePDF(params: {
   const subtotalAfterDiscount = subtotal - discountAmount;
   
   // Calculate tax (applied at batch level, not individual services/expenses)
+  // Respects manual override if set
   const taxRate = batch.taxRate ? parseFloat(batch.taxRate) : 0;
-  const taxAmount = subtotalAfterDiscount * (taxRate / 100);
+  const taxAmountOverride = batch.taxAmountOverride ? parseFloat(batch.taxAmountOverride) : null;
+  const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
+  const isManualTaxOverride = taxAmountOverride !== null;
+  // Calculate effective tax percentage for display purposes
+  const effectiveTaxPercent = subtotalAfterDiscount > 0 ? round2((taxAmount / subtotalAfterDiscount) * 100) : 0;
   
   const total = subtotalAfterDiscount + taxAmount;
 
@@ -9293,6 +9315,7 @@ export async function generateInvoicePDF(params: {
     
     // Batch info
     batchId: batch.batchId,
+    glInvoiceNumber: batch.glInvoiceNumber, // External GL system invoice number
     startDate: batch.startDate,
     endDate: batch.endDate,
     status: batch.status,
@@ -9323,6 +9346,9 @@ export async function generateInvoicePDF(params: {
     subtotalAfterDiscount: subtotalAfterDiscount.toFixed(2),
     taxRate: taxRate > 0 ? taxRate.toFixed(2) : null,
     taxAmount: taxAmount > 0 ? taxAmount.toFixed(2) : null,
+    taxAmountOverride: batch.taxAmountOverride ? parseFloat(batch.taxAmountOverride).toFixed(2) : null,
+    isManualTaxOverride,
+    effectiveTaxPercent: effectiveTaxPercent > 0 ? effectiveTaxPercent.toFixed(2) : null,
     originalTotal: originalTotal.toFixed(2),
     totalAdjustments: totalAdjustments.toFixed(2),
     totalAdjustmentIsPositive: totalAdjustments >= 0,

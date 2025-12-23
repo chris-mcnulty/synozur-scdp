@@ -10903,6 +10903,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         discountPercent: z.coerce.number().optional().transform(val => val?.toString()),
         discountAmount: z.coerce.number().optional().transform(val => val?.toString()),
         taxRate: z.coerce.number().optional().transform(val => val?.toString()),
+        taxAmountOverride: z.coerce.number().nullable().optional().transform(val => val === null ? null : val?.toString()),
+        glInvoiceNumber: z.string().nullable().optional(),
         invoicingMode: z.enum(["client", "project"]).optional(),
         notes: z.string().optional()
       }).strict(); // strict ensures no extra fields are accepted

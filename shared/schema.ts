@@ -701,6 +701,9 @@ export const invoiceBatches = pgTable("invoice_batches", {
   // Tax fields (applied at batch level, not individual services/expenses)
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default('9.3'), // Tax rate percentage (default 9.3%)
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }), // Calculated tax amount
+  taxAmountOverride: decimal("tax_amount_override", { precision: 10, scale: 2 }), // Manual override for tax amount (bypasses calculation)
+  // GL System integration
+  glInvoiceNumber: text("gl_invoice_number"), // External GL system invoice number (e.g., QuickBooks, NetSuite)
   invoicingMode: text("invoicing_mode").notNull().default("client"), // "client" or "project"
   batchType: text("batch_type").notNull().default("mixed"), // "services", "expenses", or "mixed"
   paymentTerms: text("payment_terms"), // Optional payment terms override for this batch
