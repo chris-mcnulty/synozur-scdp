@@ -17,7 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format } from "date-fns";
-import { getTodayBusinessDate } from "@/lib/date-utils";
+import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
 import { 
   CalendarIcon, 
   Plus, 
@@ -579,7 +579,7 @@ export default function ExpenseManagement() {
                                 data-testid="input-start-date"
                               >
                                 {field.value
-                                  ? format(new Date(field.value), "PPP")
+                                  ? formatBusinessDate(field.value, "PPP")
                                   : "Select start date"
                                 }
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
@@ -589,7 +589,7 @@ export default function ExpenseManagement() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
+                              selected={field.value ? parseBusinessDate(field.value) ?? undefined : undefined}
                               onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                               disabled={(date) => date > new Date()}
                               initialFocus
@@ -619,7 +619,7 @@ export default function ExpenseManagement() {
                                 data-testid="input-end-date"
                               >
                                 {field.value
-                                  ? format(new Date(field.value), "PPP")
+                                  ? formatBusinessDate(field.value, "PPP")
                                   : "Select end date"
                                 }
                                 <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
@@ -629,7 +629,7 @@ export default function ExpenseManagement() {
                           <PopoverContent className="w-auto p-0" align="start">
                             <Calendar
                               mode="single"
-                              selected={field.value ? new Date(field.value) : undefined}
+                              selected={field.value ? parseBusinessDate(field.value) ?? undefined : undefined}
                               onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                               disabled={(date) => date > new Date()}
                               initialFocus
@@ -820,7 +820,7 @@ export default function ExpenseManagement() {
                           />
                         </TableCell>
                         <TableCell data-testid={`text-date-${expense.id}`}>
-                          {format(new Date(expense.date), "MMM dd, yyyy")}
+                          {formatBusinessDate(expense.date, "MMM dd, yyyy")}
                         </TableCell>
                         <TableCell data-testid={`text-project-${expense.id}`}>
                           <div className="flex items-center gap-2">
@@ -1090,7 +1090,7 @@ export default function ExpenseManagement() {
                                   data-testid="button-individual-date"
                                 >
                                   {field.value ? (
-                                    format(new Date(field.value), "PPP")
+                                    formatBusinessDate(field.value, "PPP")
                                   ) : (
                                     <span>Pick a date</span>
                                   )}
@@ -1101,7 +1101,7 @@ export default function ExpenseManagement() {
                             <PopoverContent className="w-auto p-0" align="start">
                               <Calendar
                                 mode="single"
-                                selected={field.value ? new Date(field.value) : undefined}
+                                selected={field.value ? parseBusinessDate(field.value) ?? undefined : undefined}
                                 onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
                                 disabled={(date) =>
                                   date > new Date() || date < new Date("1900-01-01")

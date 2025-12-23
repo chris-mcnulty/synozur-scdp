@@ -63,3 +63,53 @@ export function isValidBusinessDate(dateString: string): boolean {
   const [year, month, day] = dateString.split('-').map(Number);
   return year >= 1900 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31;
 }
+
+/**
+ * Parse a business date (YYYY-MM-DD string or Date) to a Date object without timezone shift
+ * This creates a date at noon local time to avoid any day boundary issues
+ * 
+ * PostgreSQL's date type returns YYYY-MM-DD strings, which is our primary format.
+ * Returns null if input is invalid so callers can handle appropriately.
+ */
+export function parseBusinessDate(dateInput: string | Date | null | undefined): Date | null {
+  // Handle null/undefined explicitly
+  if (dateInput === null || dateInput === undefined) {
+    return null;
+  }
+  
+  // Handle Date objects directly - extract local date components
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    return new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate(), 12, 0, 0);
+  }
+  
+  // Convert to string
+  const dateString = String(dateInput);
+  
+  // Primary: Handle YYYY-MM-DD format (PostgreSQL date type returns this)
+  // Use regex to extract just the date portion, ignoring any time/timezone suffix
+  const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, yearStr, monthStr, dayStr] = match;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      // Create date at noon local time to avoid any day boundary issues
+      return new Date(year, month - 1, day, 12, 0, 0);
+    }
+  }
+  
+  console.error('[parseBusinessDate] Could not parse date:', dateInput);
+  return null;
+}
+
+/**
+ * Safely parse a business date, returning today's date at noon if parsing fails
+ * Use this when a fallback is acceptable (e.g., initial calendar display)
+ */
+export function parseBusinessDateOrToday(dateInput: string | Date | null | undefined): Date {
+  const parsed = parseBusinessDate(dateInput);
+  if (parsed) return parsed;
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+}
