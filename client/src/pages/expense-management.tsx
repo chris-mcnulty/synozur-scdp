@@ -183,7 +183,11 @@ export default function ExpenseManagement() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      // Force refetch all expense queries to ensure UI is updated
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/expenses/admin"],
+        refetchType: 'all'
+      });
       setSelectedExpenses([]);
       setBulkEditDialogOpen(false);
       toast({
@@ -208,7 +212,11 @@ export default function ExpenseManagement() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      // Force refetch all expense queries to ensure UI is updated
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/expenses/admin"],
+        refetchType: 'all'
+      });
       setIndividualEditDialogOpen(false);
       setSelectedExpense(null);
       toast({
@@ -232,7 +240,11 @@ export default function ExpenseManagement() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      // Force refetch all expense queries to ensure UI is updated
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/expenses/admin"],
+        refetchType: 'all'
+      });
       toast({
         title: "Expense deleted",
         description: "Expense has been deleted successfully.",

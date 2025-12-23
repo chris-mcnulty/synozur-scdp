@@ -8973,7 +8973,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         
         for (const approver of approvers) {
           await emailService.notifyExpenseReportNeedsApproval(
-            { email: approver.email, name: approver.name },
+            { email: approver.email!, name: approver.name! },
             { email: submitter.email, name: submitter.name },
             submitted.reportNumber,
             submitted.title,
