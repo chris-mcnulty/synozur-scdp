@@ -2619,7 +2619,7 @@ export default function BatchDetail() {
                           onClick={async () => {
                             setIsRepairing(true);
                             try {
-                              const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`, { method: 'POST' });
+                              const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`, { method: 'POST', credentials: 'include' });
                               const data = await response.json();
                               if (!response.ok) {
                                 throw new Error(data.message || "Failed to check repair options");
@@ -2966,7 +2966,8 @@ export default function BatchDetail() {
                         const response = await fetch(`/api/invoice-batches/${batchId}/repair-from-json?dryRun=true`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ timeEntries: data })
+                          body: JSON.stringify({ timeEntries: data }),
+                          credentials: 'include'
                         });
                         const preview = await response.json();
                         if (!response.ok) {
