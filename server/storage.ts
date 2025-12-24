@@ -5314,12 +5314,24 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      // Calculate tax amount based on subtotal after discount (respects override if set)
+      // Get all invoice lines to calculate taxable subtotal
+      const allLines = await tx.select().from(invoiceLines).where(eq(invoiceLines.batchId, batchId));
+      
+      // Calculate taxable subtotal (only lines marked as taxable)
+      const taxableSubtotal = allLines.reduce((sum, line) => {
+        if (line.taxable === false) return sum;
+        return sum + normalizeAmount(line.billedAmount || line.amount);
+      }, 0);
+      
+      // Calculate tax amount based on taxable subtotal after discount (respects override if set)
       const discountAmount = normalizeAmount(batch.discountAmount);
       const taxRate = normalizeAmount(batch.taxRate);
       const taxAmountOverride = batch.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
-      const subtotalAfterDiscount = totalAmount - discountAmount;
-      const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
+      
+      // Apply discount proportionally to taxable items
+      const discountRatio = totalAmount > 0 ? discountAmount / totalAmount : 0;
+      const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
+      const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
       
       // Update batch total amount and tax amount
       await tx.update(invoiceBatches)
@@ -6441,12 +6453,21 @@ export class DatabaseStorage implements IStorage {
     // Get batch details for tax calculation
     const [batchForTax] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, params.batchId));
     
-    // Calculate tax amount based on subtotal after discount (respects override if set)
+    // Calculate taxable subtotal (only lines marked as taxable)
+    const taxableSubtotal = allBatchLines.reduce((sum, line) => {
+      if (line.taxable === false) return sum;
+      return sum + normalizeAmount(line.billedAmount || line.amount);
+    }, 0);
+    
+    // Calculate tax amount based on taxable subtotal after discount (respects override if set)
     const discountAmount = batchForTax ? normalizeAmount(batchForTax.discountAmount) : 0;
     const taxRate = batchForTax ? normalizeAmount(batchForTax.taxRate) : 0;
     const taxAmountOverride = batchForTax?.taxAmountOverride ? normalizeAmount(batchForTax.taxAmountOverride) : null;
-    const subtotalAfterDiscount = batchTotal - discountAmount;
-    const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
+    
+    // Apply discount proportionally to taxable items
+    const discountRatio = batchTotal > 0 ? discountAmount / batchTotal : 0;
+    const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
+    const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
     
     // Update batch with new totals
     await db.update(invoiceBatches)
@@ -6521,12 +6542,21 @@ export class DatabaseStorage implements IStorage {
       return sum + amount;
     }, 0);
     
-    // Calculate tax amount based on subtotal after discount (respects override if set)
+    // Calculate taxable subtotal (only lines marked as taxable)
+    const taxableSubtotal = allBatchLines.reduce((sum, line) => {
+      if (line.taxable === false) return sum;
+      return sum + normalizeAmount(line.billedAmount || line.amount);
+    }, 0);
+    
+    // Calculate tax amount based on taxable subtotal after discount (respects override if set)
     const discountAmount = batch ? normalizeAmount(batch.discountAmount) : 0;
     const taxRate = batch ? normalizeAmount(batch.taxRate) : 0;
     const taxAmountOverride = batch?.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
-    const subtotalAfterDiscount = batchTotal - discountAmount;
-    const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
+    
+    // Apply discount proportionally to taxable items
+    const discountRatio = batchTotal > 0 ? discountAmount / batchTotal : 0;
+    const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
+    const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
     
     // Update batch with recalculated totals
     await db.update(invoiceBatches)
@@ -9232,19 +9262,36 @@ export async function generateInvoicePDF(params: {
     return sum + parseFloat(String(amount));
   }, 0);
 
+  // Calculate taxable subtotal (only lines marked as taxable)
+  const taxableSubtotal = lines.reduce((sum, line) => {
+    // Skip non-taxable lines (like expenses)
+    if (line.taxable === false) return sum;
+    const amount = line.billedAmount !== null && line.billedAmount !== undefined 
+      ? line.billedAmount 
+      : line.amount || '0';
+    return sum + parseFloat(String(amount));
+  }, 0);
+
+  // Calculate non-taxable subtotal for display
+  const nonTaxableSubtotal = subtotal - taxableSubtotal;
+
   const discountAmount = batch.discountAmount ? parseFloat(batch.discountAmount) : 0;
   const originalTotal = lines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount || '0'), 0);
   const totalAdjustments = subtotal - originalTotal;
   const subtotalAfterDiscount = subtotal - discountAmount;
   
-  // Calculate tax (applied at batch level, not individual services/expenses)
+  // Calculate taxable amount after proportional discount allocation
+  const discountRatio = subtotal > 0 ? discountAmount / subtotal : 0;
+  const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
+  
+  // Calculate tax (only on taxable items, not expenses)
   // Respects manual override if set
   const taxRate = batch.taxRate ? parseFloat(batch.taxRate) : 0;
   const taxAmountOverride = batch.taxAmountOverride ? parseFloat(batch.taxAmountOverride) : null;
-  const taxAmount = calculateEffectiveTaxAmount(subtotalAfterDiscount, taxRate, taxAmountOverride);
+  const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
   const isManualTaxOverride = taxAmountOverride !== null;
   // Calculate effective tax percentage for display purposes
-  const effectiveTaxPercent = subtotalAfterDiscount > 0 ? round2((taxAmount / subtotalAfterDiscount) * 100) : 0;
+  const effectiveTaxPercent = taxableAfterDiscount > 0 ? round2((taxAmount / taxableAfterDiscount) * 100) : 0;
   
   const total = subtotalAfterDiscount + taxAmount;
 
