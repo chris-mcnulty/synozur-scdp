@@ -8001,18 +8001,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
 
-  // Regular expenses endpoint (existing functionality)
+  // Regular expenses endpoint - "My Expenses" page always shows current user's expenses only
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
-      const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
+      const { projectId, startDate, endDate } = req.query as Record<string, string>;
 
-      // Non-admin users can only see their own expenses
-      const filters: any = {};
-      if (req.user?.role === "employee" || req.user?.role === "pm") {
-        filters.personId = req.user.id;
-      } else if (personId) {
-        filters.personId = personId;
-      }
+      // Always filter to current user's expenses - this is the "My Expenses" endpoint
+      // Admins who want to see all expenses should use /api/expenses-admin
+      const filters: any = {
+        personId: req.user!.id,
+      };
 
       if (projectId) filters.projectId = projectId;
       if (startDate) filters.startDate = startDate;
