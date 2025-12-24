@@ -6695,6 +6695,17 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Cannot delete a finalized batch');
     }
     
+    // FIRST: Get projects and expense lines BEFORE deleting anything
+    // Get the projects associated with this batch to identify related expenses
+    const batchProjects = await db.select({ projectId: invoiceLines.projectId })
+      .from(invoiceLines)
+      .where(eq(invoiceLines.batchId, batchId))
+      .groupBy(invoiceLines.projectId);
+    
+    // Also get the date range from the batch to scope expense resets more precisely
+    const startDate = batch.startDate;
+    const endDate = batch.endDate;
+    
     // Delete in correct order due to foreign key constraints
     // 1. Delete adjustments
     await db.delete(invoiceAdjustments)
@@ -6715,25 +6726,24 @@ export class DatabaseStorage implements IStorage {
       .where(eq(timeEntries.invoiceBatchId, batchId));
     
     // 4. Clear expense billed flag for expenses in this batch
-    // Note: expenses don't have invoiceBatchId, but we need to reset their billed status
-    // Get the projects associated with this batch to identify related expenses
-    const batchProjects = await db.select({ projectId: invoiceLines.projectId })
-      .from(invoiceLines)
-      .where(eq(invoiceLines.batchId, batchId))
-      .groupBy(invoiceLines.projectId);
-    
+    // Reset expenses that match the project and date range criteria
     if (batchProjects.length > 0) {
-      // Reset billed flag for expenses in these projects that were marked as billed
-      // This is a conservative approach - only reset expenses that were likely in this batch
+      // Reset billed flag for expenses in these projects within the batch date range
       for (const { projectId } of batchProjects) {
+        const conditions = [
+          eq(expenses.projectId, projectId),
+          eq(expenses.billedFlag, true)
+        ];
+        
+        // Add date range filter if available
+        if (startDate && endDate) {
+          conditions.push(gte(expenses.date, startDate));
+          conditions.push(lte(expenses.date, endDate));
+        }
+        
         await db.update(expenses)
           .set({ billedFlag: false })
-          .where(
-            and(
-              eq(expenses.projectId, projectId),
-              eq(expenses.billedFlag, true)
-            )
-          );
+          .where(and(...conditions));
       }
     }
     
