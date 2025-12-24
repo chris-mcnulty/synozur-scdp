@@ -634,34 +634,56 @@ export default function BatchDetail() {
     setExpandedProjects(new Set());
   };
 
-  const handleExportCSV = async () => {
-    if (!groupedLines || !batchDetails) return;
+  const handleExportCSV = async (exportType: 'all' | 'expense' | 'time' = 'all') => {
+    if (!batchId) return;
 
-    let csv = "Client,Project,Type,Description,Quantity,Rate,Amount\n";
-    
-    Object.values(groupedLines).forEach(clientData => {
-      Object.values(clientData.projects).forEach(projectData => {
-        projectData.lines.forEach(line => {
-          csv += `"${line.client.name}","${line.project.name}","${line.type}","${line.description || ''}","${line.quantity || ''}","${line.rate || ''}","${line.amount}"\n`;
+    try {
+      const sessionId = localStorage.getItem('sessionId');
+      if (!sessionId) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to export CSV",
+          variant: "destructive"
         });
+        return;
+      }
+
+      const typeParam = exportType !== 'all' ? `?type=${exportType}` : '';
+      const response = await fetch(`/api/invoice-batches/${batchId}/lines/export-csv${typeParam}`, {
+        credentials: 'include',
+        headers: {
+          'X-Session-Id': sessionId
+        }
       });
-    });
 
-    // Create blob and download
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `invoice-batch-${batchId}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      if (!response.ok) {
+        throw new Error('Failed to export CSV');
+      }
 
-    toast({
-      title: "Export successful",
-      description: "Invoice batch details have been exported to CSV.",
-    });
+      // Download the CSV file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const typeLabel = exportType === 'expense' ? '_expenses' : exportType === 'time' ? '_time' : '';
+      a.download = `invoice-batch-${batchId}${typeLabel}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      const typeDescription = exportType === 'expense' ? 'Expenses' : exportType === 'time' ? 'Time entries' : 'All line items';
+      toast({
+        title: "Export successful",
+        description: `${typeDescription} have been exported to CSV.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: "Failed to export CSV. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   const [isPDFGenerating, setIsPDFGenerating] = useState(false);
@@ -1084,14 +1106,27 @@ export default function BatchDetail() {
 
         {/* Actions Bar */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <Button
-            onClick={handleExportCSV}
-            variant="outline"
-            data-testid="button-export-csv"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" data-testid="button-export-csv">
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuLabel>Export Line Items</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleExportCSV('all')} data-testid="dropdown-export-all">
+                All Line Items
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportCSV('expense')} data-testid="dropdown-export-expenses">
+                Expenses Only
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExportCSV('time')} data-testid="dropdown-export-time">
+                Time Entries Only
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           
           {/* QuickBooks CSV Export - only for admins/billing-admins, enabled when finalized */}
           {['admin', 'billing-admin'].includes(user?.role || '') && (

@@ -5729,9 +5729,13 @@ export class DatabaseStorage implements IStorage {
       lte(timeEntries.date, endDate)
     ));
 
-    // Get unbilled expenses for this project (only approved expenses)
-    const unbilledExpenses = await tx.select()
+    // Get unbilled expenses for this project (only approved expenses) with person info
+    const unbilledExpensesWithPerson = await tx.select({
+      expense: expenses,
+      person: users
+    })
       .from(expenses)
+      .innerJoin(users, eq(expenses.personId, users.id))
       .where(and(
         eq(expenses.projectId, projectId),
         eq(expenses.billable, true),
@@ -5741,7 +5745,7 @@ export class DatabaseStorage implements IStorage {
         lte(expenses.date, endDate)
       ));
 
-    if (unbilledTimeEntries.length === 0 && unbilledExpenses.length === 0) {
+    if (unbilledTimeEntries.length === 0 && unbilledExpensesWithPerson.length === 0) {
       console.log(`[STORAGE] No unbilled items found for project ${projectId}`);
       return { invoicesCreated: 0, timeEntriesBilled: 0, expensesBilled: 0, totalAmount: 0 };
     }
@@ -5779,12 +5783,13 @@ export class DatabaseStorage implements IStorage {
     // Process expenses (skip if batch type is services only)
     const expenseIds: string[] = [];
     if (batchType === 'expenses' || batchType === 'mixed') {
-      for (const expense of unbilledExpenses) {
+      for (const { expense, person } of unbilledExpensesWithPerson) {
         const amount = Number(expense.amount);
         totalAmount += amount;
         expenseIds.push(expense.id);
 
         // Create invoice line for expense (expenses are not taxable by default)
+        // Include person name for tracking (especially important for per diems)
         const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
         await tx.insert(invoiceLines).values({
           batchId,
@@ -5792,7 +5797,7 @@ export class DatabaseStorage implements IStorage {
           clientId: client.id,
           type: 'expense',
           amount: expense.amount,
-          description: `${expense.description}${vendorInfo} (${expense.date})`,
+          description: `${person.name} - ${expense.description}${vendorInfo} (${expense.date})`,
           taxable: false // Expenses are pass-through costs, not subject to tax
         });
       }

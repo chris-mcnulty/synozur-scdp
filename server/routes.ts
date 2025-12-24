@@ -10350,6 +10350,77 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // CSV export of invoice lines for reconciliation
+  app.get("/api/invoice-batches/:batchId/lines/export-csv", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { type } = req.query; // Optional filter: 'all', 'time', 'expense'
+      
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
+      
+      if (!batchDetails) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+      
+      // Filter by type if specified
+      let filteredLines = lines;
+      if (type === 'expense') {
+        filteredLines = lines.filter(l => l.type === 'expense');
+      } else if (type === 'time') {
+        filteredLines = lines.filter(l => l.type === 'time');
+      }
+      
+      // Build CSV content
+      const csvHeaders = [
+        'Line ID',
+        'Type',
+        'Client',
+        'Project',
+        'Project Code',
+        'Description',
+        'Quantity',
+        'Rate',
+        'Amount',
+        'Taxable',
+        'Date'
+      ];
+      
+      const csvRows = filteredLines.map(line => {
+        // Extract date from description if present (format: "... (YYYY-MM-DD)")
+        const dateMatch = line.description?.match(/\((\d{4}-\d{2}-\d{2})\)$/);
+        const date = dateMatch ? dateMatch[1] : '';
+        
+        return [
+          line.id,
+          line.type,
+          `"${(line.client.name || '').replace(/"/g, '""')}"`,
+          `"${(line.project.name || '').replace(/"/g, '""')}"`,
+          line.project.code || '',
+          `"${(line.description || '').replace(/"/g, '""')}"`,
+          line.quantity || '',
+          line.rate || '',
+          line.billedAmount || line.amount || '0',
+          line.taxable === false ? 'No' : 'Yes',
+          date
+        ].join(',');
+      });
+      
+      const csvContent = [csvHeaders.join(','), ...csvRows].join('\n');
+      
+      // Generate filename using batch ID
+      const typeLabel = type === 'expense' ? '_expenses' : type === 'time' ? '_time' : '';
+      const filename = `invoice_lines_${batchId}${typeLabel}.csv`;
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("[ERROR] Failed to export invoice lines CSV:", error);
+      res.status(500).json({ message: "Failed to export invoice lines" });
+    }
+  });
+
   // Unbilled items detail endpoint
   app.get("/api/billing/unbilled-items", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
