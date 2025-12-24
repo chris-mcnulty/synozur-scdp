@@ -16,7 +16,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format, addDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
-import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car } from "lucide-react";
+import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText } from "lucide-react";
+import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -110,6 +111,7 @@ export default function Expenses() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { hasAnyRole } = useAuth();
+  const [, navigate] = useLocation();
 
   // Check if current user can assign expenses to other people (create on behalf of others)
   const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive']);
@@ -1063,14 +1065,24 @@ export default function Expenses() {
               Track and manage project-related expenses
             </p>
           </div>
-          <Button 
-            data-testid="button-import-expenses"
-            onClick={() => setShowImportDialog(true)}
-            disabled={!hasAnyRole(['admin', 'pm', 'billing-admin'])}
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Import Expenses
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline"
+              onClick={() => navigate('/expense-reports')}
+              data-testid="button-create-expense-report"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              My Expense Reports
+            </Button>
+            <Button 
+              data-testid="button-import-expenses"
+              onClick={() => setShowImportDialog(true)}
+              disabled={!hasAnyRole(['admin', 'pm', 'billing-admin'])}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Import Expenses
+            </Button>
+          </div>
         </div>
 
         {/* Summary Cards */}

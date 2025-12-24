@@ -155,6 +155,13 @@ export function MobileNav() {
               />
               
               <MobileNavItem
+                href="/expense-reports"
+                icon={<FileText />}
+                label="My Expense Reports"
+                onClick={handleNavClick}
+              />
+              
+              <MobileNavItem
                 href="/my-projects"
                 icon={<FolderOpen />}
                 label="My Projects"

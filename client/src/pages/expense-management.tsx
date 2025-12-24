@@ -32,6 +32,7 @@ import {
   RefreshCw,
   FileText,
   Check,
+  CheckCircle,
   User as UserIcon,
   Building2,
   FolderOpen,
@@ -207,6 +208,35 @@ export default function ExpenseManagement() {
       toast({
         title: "Error",
         description: "Failed to update expenses. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: async (expenseIds: string[]) => {
+      return apiRequest("/api/expenses/approve", {
+        method: "POST",
+        body: JSON.stringify({ expenseIds }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/expenses/admin"],
+        refetchType: 'all'
+      });
+      setSelectedExpenses([]);
+      const approved = data.approved || 0;
+      const alreadyApproved = data.alreadyApproved || 0;
+      toast({
+        title: "Expenses approved",
+        description: `${approved} expense(s) approved${alreadyApproved > 0 ? `, ${alreadyApproved} were already approved` : ''}.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to approve expenses. Please try again.",
         variant: "destructive",
       });
     },
@@ -459,13 +489,26 @@ export default function ExpenseManagement() {
               {isExporting ? 'Exporting...' : 'Excel'}
             </Button>
             {selectedExpenses.length > 0 && (
-              <Button
-                onClick={() => setBulkEditDialogOpen(true)}
-                data-testid="button-bulk-edit"
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Bulk Edit ({selectedExpenses.length})
-              </Button>
+              <>
+                {hasAnyRole(['admin', 'billing-admin']) && (
+                  <Button
+                    variant="outline"
+                    onClick={() => bulkApproveMutation.mutate(selectedExpenses)}
+                    disabled={bulkApproveMutation.isPending}
+                    data-testid="button-approve-selected"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    {bulkApproveMutation.isPending ? 'Approving...' : `Approve (${selectedExpenses.length})`}
+                  </Button>
+                )}
+                <Button
+                  onClick={() => setBulkEditDialogOpen(true)}
+                  data-testid="button-bulk-edit"
+                >
+                  <Edit className="w-4 h-4 mr-2" />
+                  Bulk Edit ({selectedExpenses.length})
+                </Button>
+              </>
             )}
           </div>
         </div>

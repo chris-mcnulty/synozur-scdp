@@ -11418,6 +11418,63 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Bulk approve expenses (for admins to approve expenses directly without expense report)
+  app.post("/api/expenses/approve", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { expenseIds } = req.body;
+
+      if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
+        return res.status(400).json({ message: "expenseIds must be a non-empty array" });
+      }
+
+      const results: { expenseId: string; success: boolean; previousStatus?: string }[] = [];
+      const errors: { expenseId: string; error: string }[] = [];
+
+      for (const expenseId of expenseIds) {
+        try {
+          // Get the current expense to check status
+          const [expense] = await db.select().from(expenses).where(eq(expenses.id, expenseId));
+          
+          if (!expense) {
+            errors.push({ expenseId, error: "Expense not found" });
+            continue;
+          }
+
+          // Skip already approved expenses
+          if (expense.approvalStatus === 'approved') {
+            results.push({ expenseId, success: true, previousStatus: 'approved' });
+            continue;
+          }
+
+          // Update to approved status (use db directly since these fields aren't in InsertExpense)
+          await db.update(expenses)
+            .set({ 
+              approvalStatus: 'approved',
+              approvedBy: req.user!.id,
+              approvedAt: new Date(),
+            })
+            .where(eq(expenses.id, expenseId));
+          
+          results.push({ expenseId, success: true, previousStatus: expense.approvalStatus || 'draft' });
+        } catch (error) {
+          errors.push({ expenseId, error: error instanceof Error ? error.message : "Approval failed" });
+        }
+      }
+
+      res.json({
+        success: true,
+        approved: results.filter(r => r.previousStatus !== 'approved').length,
+        alreadyApproved: results.filter(r => r.previousStatus === 'approved').length,
+        errors: errors.length,
+        results,
+        ...(errors.length > 0 && { errorDetails: errors })
+      });
+    } catch (error) {
+      console.error("Error bulk approving expenses:", error);
+      res.status(500).json({ message: "Failed to bulk approve expenses" });
+    }
+  });
+
   // Export expenses as CSV/Excel
   app.get("/api/expenses/export", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {

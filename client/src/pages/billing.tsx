@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -92,6 +92,9 @@ export default function Billing() {
   const [taxRate, setTaxRate] = useState('9.3'); // Default tax rate of 9.3%
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<InvoiceBatchData | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<InvoiceBatchData | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   
   const { canViewPricing, user } = useAuth();
   const { toast } = useToast();
@@ -305,8 +308,17 @@ export default function Billing() {
       return;
     }
     
-    if (confirm(`Are you sure you want to delete invoice batch ${batch.batchId}? This cannot be undone.`)) {
-      deleteBatchMutation.mutate(batch.batchId);
+    setBatchToDelete(batch);
+    setDeleteConfirmText('');
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteBatch = () => {
+    if (batchToDelete && deleteConfirmText === batchToDelete.batchId) {
+      deleteBatchMutation.mutate(batchToDelete.batchId);
+      setDeleteDialogOpen(false);
+      setBatchToDelete(null);
+      setDeleteConfirmText('');
     }
   };
 
@@ -929,6 +941,60 @@ export default function Billing() {
             }}
           />
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            setDeleteDialogOpen(false);
+            setBatchToDelete(null);
+            setDeleteConfirmText('');
+          }
+        }}>
+          <DialogContent data-testid="dialog-delete-invoice">
+            <DialogHeader>
+              <DialogTitle>Delete Invoice Batch</DialogTitle>
+              <DialogDescription>
+                This action cannot be undone. This will permanently delete the invoice batch and all its data.
+              </DialogDescription>
+            </DialogHeader>
+            {batchToDelete && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <p className="text-sm">
+                    To confirm deletion, please type the invoice ID: <strong>{batchToDelete.batchId}</strong>
+                  </p>
+                  <Input
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type invoice ID to confirm"
+                    data-testid="input-delete-confirm"
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setBatchToDelete(null);
+                  setDeleteConfirmText('');
+                }}
+                data-testid="button-cancel-delete"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmDeleteBatch}
+                disabled={!batchToDelete || deleteConfirmText !== batchToDelete.batchId || deleteBatchMutation.isPending}
+                data-testid="button-confirm-delete"
+              >
+                {deleteBatchMutation.isPending ? 'Deleting...' : 'Delete Invoice'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
