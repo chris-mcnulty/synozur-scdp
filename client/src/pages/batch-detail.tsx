@@ -156,6 +156,7 @@ interface InvoiceLine {
   editedAt?: string;
   isAdjustment?: boolean;
   projectMilestoneId?: string;
+  taxable?: boolean;
   milestone?: {
     id: string;
     name: string;
@@ -2354,6 +2355,20 @@ export default function BatchDetail() {
                                                   <Badge variant={line.type === "time" ? "default" : "secondary"}>
                                                     {line.type}
                                                   </Badge>
+                                                  {line.taxable === false && (
+                                                    <TooltipProvider>
+                                                      <Tooltip>
+                                                        <TooltipTrigger>
+                                                          <Badge variant="outline" className="text-xs px-1 py-0 text-muted-foreground">
+                                                            No Tax
+                                                          </Badge>
+                                                        </TooltipTrigger>
+                                                        <TooltipContent>
+                                                          <p className="text-sm">This line is not subject to tax</p>
+                                                        </TooltipContent>
+                                                      </Tooltip>
+                                                    </TooltipProvider>
+                                                  )}
                                                   {isEdited && (
                                                     <TooltipProvider>
                                                       <Tooltip>
