@@ -2616,12 +2616,15 @@ export default function BatchDetail() {
                           try {
                             const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`);
                             const data = await response.json();
+                            if (!response.ok) {
+                              throw new Error(data.message || "Failed to check repair options");
+                            }
                             setRepairPreview(data);
                             setShowRepairDialog(true);
-                          } catch (error) {
+                          } catch (error: any) {
                             toast({
                               title: "Error",
-                              description: "Failed to check repair options",
+                              description: error.message || "Failed to check repair options",
                               variant: "destructive"
                             });
                           } finally {
