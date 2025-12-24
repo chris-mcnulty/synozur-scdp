@@ -10661,7 +10661,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
       const companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
       const companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
-      const paymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
+      const defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
+      
+      // Use batch-specific payment terms if set, otherwise use defaults based on batch type
+      // Expense-only invoices default to "Due on Receipt"
+      const paymentTerms = batch.paymentTerms || 
+        (batch.batchType === 'expense' ? 'Due on Receipt' : defaultPaymentTerms);
 
       // Generate PDF
       const pdfBuffer = await storage.generateInvoicePDF({
