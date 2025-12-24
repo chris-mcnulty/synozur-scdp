@@ -923,7 +923,10 @@ export default function BatchDetail() {
   };
 
   const calculateGrandTotal = () => {
-    if (!groupedLines) return 0;
+    if (!groupedLines || Object.keys(groupedLines).length === 0) {
+      // Fall back to stored totalAmount when no line items exist (legacy batches)
+      return parseFloat(batchDetails?.totalAmount || '0');
+    }
     return Object.values(groupedLines).reduce((total, client) => total + client.subtotal, 0);
   };
 
