@@ -68,7 +68,8 @@ import {
   Trash2,
   User as UserIcon,
   ExternalLink,
-  Wrench
+  Wrench,
+  Upload
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -222,6 +223,9 @@ export default function BatchDetail() {
   const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [repairPreview, setRepairPreview] = useState<any>(null);
   const [isRepairing, setIsRepairing] = useState(false);
+  const [showJsonRepairDialog, setShowJsonRepairDialog] = useState(false);
+  const [jsonRepairPreview, setJsonRepairPreview] = useState<any>(null);
+  const [jsonTimeEntries, setJsonTimeEntries] = useState<any[]>([]);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -2608,35 +2612,47 @@ export default function BatchDetail() {
                       </p>
                     )}
                     {user?.role === 'admin' && (
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={async () => {
-                          setIsRepairing(true);
-                          try {
-                            const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`);
-                            const data = await response.json();
-                            if (!response.ok) {
-                              throw new Error(data.message || "Failed to check repair options");
+                      <div className="flex gap-2 flex-wrap">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={async () => {
+                            setIsRepairing(true);
+                            try {
+                              const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`);
+                              const data = await response.json();
+                              if (!response.ok) {
+                                throw new Error(data.message || "Failed to check repair options");
+                              }
+                              setRepairPreview(data);
+                              setShowRepairDialog(true);
+                            } catch (error: any) {
+                              toast({
+                                title: "Error",
+                                description: error.message || "Failed to check repair options",
+                                variant: "destructive"
+                              });
+                            } finally {
+                              setIsRepairing(false);
                             }
-                            setRepairPreview(data);
-                            setShowRepairDialog(true);
-                          } catch (error: any) {
-                            toast({
-                              title: "Error",
-                              description: error.message || "Failed to check repair options",
-                              variant: "destructive"
-                            });
-                          } finally {
-                            setIsRepairing(false);
-                          }
-                        }}
-                        disabled={isRepairing}
-                        data-testid="button-repair-batch"
-                      >
-                        <Wrench className="mr-2 h-4 w-4" />
-                        {isRepairing ? "Checking..." : "Repair Line Items"}
-                      </Button>
+                          }}
+                          disabled={isRepairing}
+                          data-testid="button-repair-batch"
+                        >
+                          <Wrench className="mr-2 h-4 w-4" />
+                          {isRepairing ? "Checking..." : "Repair from DB"}
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setShowJsonRepairDialog(true)}
+                          disabled={isRepairing}
+                          data-testid="button-repair-from-json"
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Repair from JSON
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -2893,6 +2909,145 @@ export default function BatchDetail() {
                   } finally {
                     setIsRepairing(false);
                     setShowRepairDialog(false);
+                  }
+                }}
+                disabled={isRepairing}
+              >
+                {isRepairing ? "Repairing..." : "Repair Now"}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Repair from JSON Dialog */}
+      <AlertDialog open={showJsonRepairDialog} onOpenChange={(open) => {
+        setShowJsonRepairDialog(open);
+        if (!open) {
+          setJsonRepairPreview(null);
+          setJsonTimeEntries([]);
+        }
+      }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Repair from JSON Export</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Upload a time_entries JSON export file to reconstruct missing invoice lines.
+                </p>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Select time_entries JSON file:</label>
+                  <Input
+                    type="file"
+                    accept=".json"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+                        
+                        if (!Array.isArray(data)) {
+                          toast({
+                            title: "Invalid File",
+                            description: "Expected a JSON array of time entries",
+                            variant: "destructive"
+                          });
+                          return;
+                        }
+                        
+                        setJsonTimeEntries(data);
+                        
+                        // Preview what would be created
+                        setIsRepairing(true);
+                        const response = await fetch(`/api/invoice-batches/${batchId}/repair-from-json?dryRun=true`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ timeEntries: data })
+                        });
+                        const preview = await response.json();
+                        if (!response.ok) {
+                          throw new Error(preview.message || "Failed to preview repair");
+                        }
+                        setJsonRepairPreview(preview);
+                      } catch (error: any) {
+                        toast({
+                          title: "Error",
+                          description: error.message || "Failed to parse JSON file",
+                          variant: "destructive"
+                        });
+                      } finally {
+                        setIsRepairing(false);
+                      }
+                    }}
+                    data-testid="input-json-file"
+                  />
+                </div>
+                
+                {jsonRepairPreview && (
+                  <div className="bg-muted p-3 rounded text-sm">
+                    {jsonRepairPreview.timeEntriesFound === 0 ? (
+                      <p className="text-amber-600">
+                        No time entries found for batch {batchId} in the uploaded file.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        <span>Time entries found:</span>
+                        <span className="font-medium">{jsonRepairPreview.timeEntriesFound}</span>
+                        <span>Lines to create:</span>
+                        <span className="font-medium">{jsonRepairPreview.linesToCreate}</span>
+                        <span>Calculated total:</span>
+                        <span className="font-medium">${jsonRepairPreview.totalAmount}</span>
+                        <span>Stored batch total:</span>
+                        <span className="font-medium">${parseFloat(batchDetails?.totalAmount || '0').toFixed(2)}</span>
+                        <span>Clients:</span>
+                        <span className="font-medium">{jsonRepairPreview.uniqueClients}</span>
+                        <span>Projects:</span>
+                        <span className="font-medium">{jsonRepairPreview.uniqueProjects}</span>
+                      </div>
+                    )}
+                    {jsonRepairPreview.totalAmount !== batchDetails?.totalAmount && jsonRepairPreview.timeEntriesFound > 0 && (
+                      <p className="text-amber-600 text-sm mt-2">
+                        Note: The difference may be due to aggregate adjustments or rate changes at the time of invoicing.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {jsonRepairPreview?.timeEntriesFound > 0 && (
+              <AlertDialogAction 
+                onClick={async () => {
+                  setIsRepairing(true);
+                  try {
+                    const response = await apiRequest(`/api/invoice-batches/${batchId}/repair-from-json`, {
+                      method: 'POST',
+                      body: JSON.stringify({ timeEntries: jsonTimeEntries })
+                    });
+                    toast({
+                      title: "Repair Complete",
+                      description: `Created ${response.linesCreated} invoice lines from ${response.timeEntriesProcessed} time entries.`
+                    });
+                    queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+                    queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+                  } catch (error: any) {
+                    toast({
+                      title: "Repair Failed",
+                      description: error.message || "Failed to repair invoice batch",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setIsRepairing(false);
+                    setShowJsonRepairDialog(false);
+                    setJsonRepairPreview(null);
+                    setJsonTimeEntries([]);
                   }
                 }}
                 disabled={isRepairing}

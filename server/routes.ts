@@ -11481,6 +11481,165 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Repair invoice batch from JSON export data (for legacy batches where time entries aren't linked)
+  app.post("/api/invoice-batches/:batchId/repair-from-json", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const { timeEntries: jsonTimeEntries } = req.body;
+      const dryRun = req.query.dryRun === 'true';
+      
+      console.log(`[REPAIR-JSON] Starting repair from JSON for batch ${batchId}, dryRun=${dryRun}`);
+      
+      if (!jsonTimeEntries || !Array.isArray(jsonTimeEntries)) {
+        return res.status(400).json({ message: "timeEntries array is required in request body" });
+      }
+      
+      // Get the batch to verify it exists
+      const batch = await storage.getInvoiceBatchByBatchId(batchId);
+      if (!batch) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+      
+      // Check if lines already exist
+      const existingLines = await storage.getInvoiceLinesForBatch(batchId);
+      if (existingLines.length > 0 && !req.query.force) {
+        return res.status(400).json({ 
+          message: `Batch already has ${existingLines.length} invoice lines. Use ?force=true to rebuild.`,
+          existingLinesCount: existingLines.length
+        });
+      }
+      
+      // Filter entries for this batch from the JSON data
+      const batchEntries = jsonTimeEntries.filter((e: any) => e.invoice_batch_id === batchId);
+      
+      if (batchEntries.length === 0) {
+        return res.json({
+          message: "No time entries found for this batch in the provided JSON data",
+          batchId,
+          timeEntriesFound: 0,
+          linesCreated: 0
+        });
+      }
+      
+      console.log(`[REPAIR-JSON] Found ${batchEntries.length} time entries for batch ${batchId}`);
+      
+      // Get all unique project IDs
+      const projectIds = Array.from(new Set(batchEntries.map((e: any) => e.project_id)));
+      const projects = await storage.getProjectsByIds(projectIds as string[]);
+      const projectMap = new Map(projects.map(p => [p.id, p]));
+      
+      // Get all unique person IDs and fetch their names
+      const personIds = Array.from(new Set(batchEntries.map((e: any) => e.person_id)));
+      const personMap = new Map<string, string>();
+      for (const personId of personIds) {
+        const person = await storage.getUser(personId as string);
+        personMap.set(personId as string, person?.name || 'Unknown');
+      }
+      
+      // Prepare invoice lines to create
+      const linesToCreate: Array<{
+        batchId: string;
+        projectId: string;
+        clientId: string;
+        type: string;
+        quantity: string;
+        rate: string;
+        amount: string;
+        description: string;
+        originalAmount: string;
+        billedAmount: string;
+        varianceAmount: string;
+        taxable: boolean;
+      }> = [];
+      
+      for (const entry of batchEntries) {
+        const project = projectMap.get(entry.project_id);
+        if (!project) {
+          console.warn(`[REPAIR-JSON] Project not found: ${entry.project_id}`);
+          continue;
+        }
+        
+        const hours = parseFloat(entry.hours || '0');
+        const rate = parseFloat(entry.billing_rate || '0');
+        const amount = hours * rate;
+        
+        const personName = personMap.get(entry.person_id) || 'Unknown';
+        const dateStr = entry.date ? new Date(entry.date).toISOString().split('T')[0] : '';
+        
+        linesToCreate.push({
+          batchId,
+          projectId: project.id,
+          clientId: project.clientId,
+          type: 'time',
+          quantity: hours.toFixed(2),
+          rate: rate.toFixed(2),
+          amount: amount.toFixed(2),
+          description: `${personName} - ${entry.description || 'Time entry'} (${dateStr})`,
+          originalAmount: amount.toFixed(2),
+          billedAmount: amount.toFixed(2),
+          varianceAmount: '0.00',
+          taxable: true
+        });
+      }
+      
+      if (dryRun) {
+        const totalAmount = linesToCreate.reduce((sum, line) => sum + parseFloat(line.amount), 0);
+        const uniqueClients = new Set(linesToCreate.map(l => l.clientId)).size;
+        const uniqueProjects = new Set(linesToCreate.map(l => l.projectId)).size;
+        
+        return res.json({
+          dryRun: true,
+          message: "Preview of repair from JSON operation",
+          batchId,
+          timeEntriesFound: batchEntries.length,
+          linesToCreate: linesToCreate.length,
+          totalAmount: totalAmount.toFixed(2),
+          storedBatchAmount: batch.totalAmount,
+          uniqueClients,
+          uniqueProjects,
+          sampleLines: linesToCreate.slice(0, 5)
+        });
+      }
+      
+      // Delete existing lines if force=true
+      if (existingLines.length > 0 && req.query.force) {
+        await storage.deleteInvoiceLinesForBatch(batchId);
+        console.log(`[REPAIR-JSON] Deleted ${existingLines.length} existing lines`);
+      }
+      
+      // Create the new invoice lines
+      let createdCount = 0;
+      for (const line of linesToCreate) {
+        await storage.createInvoiceLine(line);
+        createdCount++;
+      }
+      
+      const totalAmount = linesToCreate.reduce((sum, line) => sum + parseFloat(line.amount), 0);
+      const uniqueClients = new Set(linesToCreate.map(l => l.clientId)).size;
+      const uniqueProjects = new Set(linesToCreate.map(l => l.projectId)).size;
+      
+      console.log(`[REPAIR-JSON] Created ${createdCount} invoice lines for batch ${batchId}`);
+      
+      res.json({
+        success: true,
+        message: `Repaired batch ${batchId} from JSON data`,
+        batchId,
+        timeEntriesProcessed: batchEntries.length,
+        linesCreated: createdCount,
+        totalAmount: totalAmount.toFixed(2),
+        storedBatchAmount: batch.totalAmount,
+        uniqueClients,
+        uniqueProjects
+      });
+      
+    } catch (error: any) {
+      console.error("[REPAIR-JSON] Failed to repair invoice batch from JSON:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to repair invoice batch from JSON" 
+      });
+    }
+  });
+
   // Milestone mapping
   app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-billing-admin", "executive"]), async (req, res) => {
     try {
