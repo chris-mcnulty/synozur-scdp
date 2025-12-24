@@ -5772,7 +5772,7 @@ export class DatabaseStorage implements IStorage {
         totalAmount += amount;
         expenseIds.push(expense.id);
 
-        // Create invoice line for expense
+        // Create invoice line for expense (expenses are not taxable by default)
         const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
         await tx.insert(invoiceLines).values({
           batchId,
@@ -5780,7 +5780,8 @@ export class DatabaseStorage implements IStorage {
           clientId: client.id,
           type: 'expense',
           amount: expense.amount,
-          description: `${expense.description}${vendorInfo} (${expense.date})`
+          description: `${expense.description}${vendorInfo} (${expense.date})`,
+          taxable: false // Expenses are pass-through costs, not subject to tax
         });
       }
       expensesBilled = expenseIds.length;

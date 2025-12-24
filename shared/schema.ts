@@ -757,6 +757,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   isAdjustment: boolean("is_adjustment").notNull().default(false), // Flag for adjustment lines vs generated lines
   allocationGroupId: varchar("allocation_group_id"), // Groups related adjustment lines
   sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW if applicable
+  taxable: boolean("taxable").notNull().default(true), // Whether this line is subject to tax (expenses default to false)
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
