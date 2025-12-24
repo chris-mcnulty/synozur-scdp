@@ -305,6 +305,9 @@
         <div class="invoice-title">INVOICE</div>
         <div class="invoice-details">
           <div><strong>Batch ID:</strong> {{batchId}}</div>
+          {{#if glInvoiceNumber}}
+          <div><strong>GL Invoice #:</strong> {{glInvoiceNumber}}</div>
+          {{/if}}
           <div><strong>Generated:</strong> {{generatedDate}}</div>
           {{#if dueDate}}
           <div><strong>Due Date:</strong> {{dueDate}}</div>
