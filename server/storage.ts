@@ -5217,6 +5217,52 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
+  async getInvoiceBatchByBatchId(batchId: string): Promise<InvoiceBatch | undefined> {
+    const [batch] = await db
+      .select()
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.batchId, batchId));
+    return batch ? convertDecimalFieldsToNumbers(batch) : undefined;
+  }
+
+  async getTimeEntriesForBatch(batchId: string): Promise<TimeEntry[]> {
+    const entries = await db
+      .select()
+      .from(timeEntries)
+      .where(eq(timeEntries.invoiceBatchId, batchId));
+    return entries.map(e => convertDecimalFieldsToNumbers(e));
+  }
+
+  async getProjectsByIds(ids: string[]): Promise<Project[]> {
+    if (ids.length === 0) return [];
+    const result = await db
+      .select()
+      .from(projects)
+      .where(inArray(projects.id, ids));
+    return result.map(p => convertDecimalFieldsToNumbers(p));
+  }
+
+  async deleteInvoiceLinesForBatch(batchId: string): Promise<void> {
+    await db.delete(invoiceLines).where(eq(invoiceLines.batchId, batchId));
+  }
+
+  async createInvoiceLine(line: {
+    batchId: string;
+    projectId: string;
+    clientId: string;
+    type: string;
+    quantity: string;
+    rate: string;
+    amount: string;
+    description: string;
+    originalAmount?: string;
+    billedAmount?: string;
+    varianceAmount?: string;
+  }): Promise<InvoiceLine> {
+    const [newLine] = await db.insert(invoiceLines).values(line).returning();
+    return convertDecimalFieldsToNumbers(newLine);
+  }
+
   async generateInvoicesForBatch(batchId: string, options: {
     clientIds?: string[];
     projectIds?: string[];

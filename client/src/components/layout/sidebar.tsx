@@ -184,6 +184,12 @@ export function Sidebar() {
               />
               
               <SidebarItem
+                href="/expense-approval"
+                icon={<Receipt />}
+                label="Expense Approval"
+              />
+              
+              <SidebarItem
                 href="/rates"
                 icon={<Calculator />}
                 label="Rate Management"

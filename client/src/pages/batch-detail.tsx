@@ -2533,8 +2533,21 @@ export default function BatchDetail() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No invoice lines found for this batch.
+              <div className="text-center py-8">
+                <div className="text-muted-foreground mb-4">
+                  No invoice lines found for this batch.
+                </div>
+                {batchDetails && parseFloat(batchDetails.totalAmount || '0') > 0 && (
+                  <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4 max-w-md mx-auto">
+                    <p className="text-amber-800 dark:text-amber-200 text-sm">
+                      <strong>Legacy Invoice:</strong> This batch has a stored total of{' '}
+                      <span className="font-semibold">
+                        ${parseFloat(batchDetails.totalAmount || '0').toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>{' '}
+                      but the itemized line details were not saved when it was created.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

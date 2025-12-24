@@ -239,6 +239,13 @@ export function MobileNav() {
                   />
                   
                   <MobileNavItem
+                    href="/expense-approval"
+                    icon={<Receipt />}
+                    label="Expense Approval"
+                    onClick={handleNavClick}
+                  />
+                  
+                  <MobileNavItem
                     href="/rates"
                     icon={<Calculator />}
                     label="Rate Management"
