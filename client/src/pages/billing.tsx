@@ -32,7 +32,8 @@ import {
   Lock,
   Users,
   CreditCard,
-  Layers
+  Layers,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -92,7 +93,7 @@ export default function Billing() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<InvoiceBatchData | null>(null);
   
-  const { canViewPricing } = useAuth();
+  const { canViewPricing, user } = useAuth();
   const { toast } = useToast();
 
   const { data: projects = [] } = useQuery({
@@ -270,6 +271,44 @@ export default function Billing() {
       });
     }
   });
+
+  const deleteBatchMutation = useMutation({
+    mutationFn: async (batchId: string) => {
+      return await apiRequest(`/api/invoice-batches/${batchId}`, {
+        method: 'DELETE'
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
+      toast({
+        title: "Invoice batch deleted",
+        description: "The invoice batch has been deleted successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to delete invoice batch",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleDeleteBatch = (batch: InvoiceBatchData) => {
+    if (batch.status === 'finalized') {
+      toast({
+        title: "Cannot delete finalized batch",
+        description: "Finalized batches cannot be deleted. Contact an admin to unfinalize first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (confirm(`Are you sure you want to delete invoice batch ${batch.batchId}? This cannot be undone.`)) {
+      deleteBatchMutation.mutate(batch.batchId);
+    }
+  };
 
   const handleCreateBatch = () => {
     // Validate date range
@@ -820,6 +859,21 @@ export default function Billing() {
                             >
                               <CreditCard className="w-4 h-4 mr-1" />
                               Payment
+                            </Button>
+                          )}
+                          {batch.status !== 'finalized' && user && (user.role === 'admin' || user.role === 'billing-admin') && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteBatch(batch);
+                              }}
+                              disabled={deleteBatchMutation.isPending}
+                              data-testid={`button-delete-batch-${batch.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
                         </div>

@@ -3052,6 +3052,9 @@ export class DatabaseStorage implements IStorage {
     if (filters.billedFlag !== undefined) {
       conditions.push(eq(expenses.billedFlag, filters.billedFlag));
     }
+    if (filters.approvalStatus) {
+      conditions.push(eq(expenses.approvalStatus, filters.approvalStatus));
+    }
     if (filters.hasReceipt !== undefined) {
       if (filters.hasReceipt) {
         conditions.push(isNotNull(expenses.receiptUrl));

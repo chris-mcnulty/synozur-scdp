@@ -68,11 +68,19 @@ const expenseFilterSchema = z.object({
   billable: z.string().optional(),
   reimbursable: z.string().optional(),
   billedFlag: z.string().optional(),
+  approvalStatus: z.string().optional(),
   hasReceipt: z.string().optional(),
   minAmount: z.string().optional(),
   maxAmount: z.string().optional(),
   vendor: z.string().optional(),
 });
+
+const APPROVAL_STATUS_OPTIONS = [
+  { value: "draft", label: "Draft (Not Submitted)" },
+  { value: "submitted", label: "Pending Approval" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
 
 type ExpenseFilters = z.infer<typeof expenseFilterSchema>;
 
@@ -681,6 +689,32 @@ export default function ExpenseManagement() {
                     )}
                   />
 
+                  {/* Approval Status */}
+                  <FormField
+                    control={filterForm.control}
+                    name="approvalStatus"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Approval Status</FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-approval-status">
+                              <SelectValue placeholder="All approval statuses" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="all-approval-statuses">All approval statuses</SelectItem>
+                            {APPROVAL_STATUS_OPTIONS.map(status => (
+                              <SelectItem key={status.value} value={status.value}>
+                                {status.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+
                   {/* Receipt Status */}
                   <FormField
                     control={filterForm.control}
@@ -823,6 +857,7 @@ export default function ExpenseManagement() {
                       <TableHead>Description</TableHead>
                       <TableHead>Vendor</TableHead>
                       <TableHead>Receipt</TableHead>
+                      <TableHead>Approval</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -887,6 +922,25 @@ export default function ExpenseManagement() {
                               <Receipt className="w-4 h-4" />
                               <span className="text-xs">No</span>
                             </div>
+                          )}
+                        </TableCell>
+                        <TableCell data-testid={`status-approval-${expense.id}`}>
+                          {expense.approvalStatus === 'approved' ? (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                              Approved
+                            </Badge>
+                          ) : expense.approvalStatus === 'submitted' ? (
+                            <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+                              Pending
+                            </Badge>
+                          ) : expense.approvalStatus === 'rejected' ? (
+                            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">
+                              Rejected
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Draft
+                            </Badge>
                           )}
                         </TableCell>
                         <TableCell data-testid={`status-billed-${expense.id}`}>
