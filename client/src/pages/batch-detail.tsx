@@ -67,7 +67,8 @@ import {
   Target,
   Trash2,
   User as UserIcon,
-  ExternalLink
+  ExternalLink,
+  Wrench
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -217,6 +218,9 @@ export default function BatchDetail() {
   const [glInvoiceNumber, setGlInvoiceNumber] = useState("");
   const [isEditingTaxOverride, setIsEditingTaxOverride] = useState(false);
   const [taxOverrideValue, setTaxOverrideValue] = useState("");
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
+  const [repairPreview, setRepairPreview] = useState<any>(null);
+  const [isRepairing, setIsRepairing] = useState(false);
   
   // Fetch batch details
   const { data: batchDetails, isLoading: isLoadingDetails, error: detailsError } = useQuery<InvoiceBatchDetails>({
@@ -2538,14 +2542,42 @@ export default function BatchDetail() {
                   No invoice lines found for this batch.
                 </div>
                 {batchDetails && parseFloat(batchDetails.totalAmount || '0') > 0 && (
-                  <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4 max-w-md mx-auto">
-                    <p className="text-amber-800 dark:text-amber-200 text-sm">
+                  <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4 max-w-lg mx-auto">
+                    <p className="text-amber-800 dark:text-amber-200 text-sm mb-3">
                       <strong>Legacy Invoice:</strong> This batch has a stored total of{' '}
                       <span className="font-semibold">
                         ${parseFloat(batchDetails.totalAmount || '0').toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>{' '}
                       but the itemized line details were not saved when it was created.
                     </p>
+                    {user?.role === 'admin' && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={async () => {
+                          setIsRepairing(true);
+                          try {
+                            const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`);
+                            const data = await response.json();
+                            setRepairPreview(data);
+                            setShowRepairDialog(true);
+                          } catch (error) {
+                            toast({
+                              title: "Error",
+                              description: "Failed to check repair options",
+                              variant: "destructive"
+                            });
+                          } finally {
+                            setIsRepairing(false);
+                          }
+                        }}
+                        disabled={isRepairing}
+                        data-testid="button-repair-batch"
+                      >
+                        <Wrench className="mr-2 h-4 w-4" />
+                        {isRepairing ? "Checking..." : "Repair Line Items"}
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2734,6 +2766,83 @@ export default function BatchDetail() {
           }}
         />
       )}
+
+      {/* Repair Batch Dialog */}
+      <AlertDialog open={showRepairDialog} onOpenChange={setShowRepairDialog}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Repair Invoice Line Items</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                {repairPreview?.timeEntriesFound === 0 ? (
+                  <p className="text-amber-600">
+                    No time entries found linked to this batch. Unable to reconstruct line items.
+                  </p>
+                ) : (
+                  <>
+                    <p>
+                      Found <strong>{repairPreview?.timeEntriesFound || 0}</strong> time entries linked to this batch.
+                    </p>
+                    <div className="bg-muted p-3 rounded text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <span>Lines to create:</span>
+                        <span className="font-medium">{repairPreview?.linesToCreate || 0}</span>
+                        <span>Calculated total:</span>
+                        <span className="font-medium">${repairPreview?.totalAmount || '0.00'}</span>
+                        <span>Stored batch total:</span>
+                        <span className="font-medium">${parseFloat(batchDetails?.totalAmount || '0').toFixed(2)}</span>
+                        <span>Clients:</span>
+                        <span className="font-medium">{repairPreview?.uniqueClients || 0}</span>
+                        <span>Projects:</span>
+                        <span className="font-medium">{repairPreview?.uniqueProjects || 0}</span>
+                      </div>
+                    </div>
+                    {repairPreview?.totalAmount !== batchDetails?.totalAmount && (
+                      <p className="text-amber-600 text-sm">
+                        Note: The reconstructed total may differ from the stored amount due to rate changes or adjustments made at the time of invoicing.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {repairPreview?.timeEntriesFound > 0 && (
+              <AlertDialogAction 
+                onClick={async () => {
+                  setIsRepairing(true);
+                  try {
+                    const response = await apiRequest(`/api/invoice-batches/${batchId}/repair`, {
+                      method: 'POST'
+                    });
+                    toast({
+                      title: "Repair Complete",
+                      description: `Created ${response.linesCreated} invoice lines from ${response.timeEntriesProcessed} time entries.`
+                    });
+                    queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+                    queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+                    queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+                  } catch (error: any) {
+                    toast({
+                      title: "Repair Failed",
+                      description: error.message || "Failed to repair invoice batch",
+                      variant: "destructive"
+                    });
+                  } finally {
+                    setIsRepairing(false);
+                    setShowRepairDialog(false);
+                  }
+                }}
+                disabled={isRepairing}
+              >
+                {isRepairing ? "Repairing..." : "Repair Now"}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 }
