@@ -5468,6 +5468,22 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       let updatedCount = 0;
 
+      // Helper to normalize factor values (handles mixed-case imports)
+      const normalizeSize = (val: any): string => {
+        const v = String(val || '').toLowerCase().trim();
+        if (v === 'small' || v === 's') return 'small';
+        if (v === 'medium' || v === 'm' || v === 'medum') return 'medium';
+        if (v === 'large' || v === 'l') return 'large';
+        return 'small'; // default
+      };
+      const normalizeConfidence = (val: any): string => {
+        const v = String(val || '').toLowerCase().trim();
+        if (v === 'high' || v === 'h') return 'high';
+        if (v === 'medium' || v === 'm' || v === 'medum') return 'medium';
+        if (v === 'low' || v === 'l') return 'low';
+        return 'high'; // default
+      };
+
       // Recalculate each line item
       for (const item of lineItems) {
         // Skip items with manual rate overrides completely
@@ -5475,17 +5491,22 @@ export async function registerRoutes(app: Express): Promise<void> {
           continue;
         }
 
+        // Normalize factor values for case-insensitive matching
+        const size = normalizeSize(item.size);
+        const complexity = normalizeSize(item.complexity);
+        const confidence = normalizeConfidence(item.confidence);
+
         // Get multipliers from estimate
-        const sizeMultiplier = item.size === 'small' ? Number(estimate.sizeSmallMultiplier || 1) :
-                               item.size === 'medium' ? Number(estimate.sizeMediumMultiplier || 1) :
+        const sizeMultiplier = size === 'small' ? Number(estimate.sizeSmallMultiplier || 1) :
+                               size === 'medium' ? Number(estimate.sizeMediumMultiplier || 1) :
                                Number(estimate.sizeLargeMultiplier || 1);
         
-        const complexityMultiplier = item.complexity === 'small' ? Number(estimate.complexitySmallMultiplier || 1) :
-                                     item.complexity === 'medium' ? Number(estimate.complexityMediumMultiplier || 1) :
+        const complexityMultiplier = complexity === 'small' ? Number(estimate.complexitySmallMultiplier || 1) :
+                                     complexity === 'medium' ? Number(estimate.complexityMediumMultiplier || 1) :
                                      Number(estimate.complexityLargeMultiplier || 1);
         
-        const confidenceMultiplier = item.confidence === 'high' ? Number(estimate.confidenceHighMultiplier || 1) :
-                                     item.confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
+        const confidenceMultiplier = confidence === 'high' ? Number(estimate.confidenceHighMultiplier || 1) :
+                                     confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
                                      Number(estimate.confidenceLowMultiplier || 1);
 
         // Determine rates: use user defaults if available, otherwise preserve existing rates
@@ -5516,7 +5537,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         const margin = totalAmount - totalCost;
         const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
-        // Update the line item with all recalculated fields
+        // Update the line item with all recalculated fields and normalized factor values
         await storage.updateEstimateLineItem(item.id, {
           rate: String(rate),
           costRate: String(costRate),
@@ -5524,7 +5545,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           totalAmount: String(totalAmount),
           totalCost: String(totalCost),
           margin: String(margin),
-          marginPercent: String(marginPercent)
+          marginPercent: String(marginPercent),
+          size: size,           // Save normalized value
+          complexity: complexity, // Save normalized value
+          confidence: confidence  // Save normalized value
         });
 
         updatedCount++;
@@ -6958,9 +6982,25 @@ export async function registerRoutes(app: Express): Promise<void> {
         const resourceName = row[6] ? String(row[6]).trim() : "";
         const assignedUserId = resourceName ? (userNameToId.get(resourceName.toLowerCase()) || null) : null;
 
-        const size = row[sizeCol] || "small";
-        const complexity = row[complexityCol] || "small";
-        const confidence = row[confidenceCol] || "high";
+        // Normalize factor values to lowercase (CSV may have "Small", "Medium", "High", etc.)
+        const normalizeSize = (val: any): string => {
+          const v = String(val || '').toLowerCase().trim();
+          if (v === 'small' || v === 's') return 'small';
+          if (v === 'medium' || v === 'm' || v === 'medum') return 'medium'; // handle typo
+          if (v === 'large' || v === 'l') return 'large';
+          return 'small'; // default
+        };
+        const normalizeConfidence = (val: any): string => {
+          const v = String(val || '').toLowerCase().trim();
+          if (v === 'high' || v === 'h') return 'high';
+          if (v === 'medium' || v === 'm' || v === 'medum') return 'medium'; // handle typo
+          if (v === 'low' || v === 'l') return 'low';
+          return 'high'; // default
+        };
+        
+        const size = normalizeSize(row[sizeCol]);
+        const complexity = normalizeSize(row[complexityCol]); // complexity uses same scale as size
+        const confidence = normalizeConfidence(row[confidenceCol]);
 
         // Calculate multipliers
         let sizeMultiplier = 1.0;
