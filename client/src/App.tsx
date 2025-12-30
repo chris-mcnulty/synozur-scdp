@@ -27,6 +27,7 @@ import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import About from "@/pages/about";
+import UserGuide from "@/pages/user-guide";
 import Login from "@/pages/login";
 import FileRepository from "@/pages/file-repository";
 import NotFound from "@/pages/not-found";
@@ -218,6 +219,9 @@ function Router() {
       </Route>
       <Route path="/about">
         {user ? <About /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/user-guide">
+        {user ? <UserGuide /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />

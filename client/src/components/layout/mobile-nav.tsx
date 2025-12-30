@@ -22,7 +22,8 @@ import {
   Home,
   Calculator,
   CreditCard,
-  ChevronRight
+  ChevronRight,
+  BookOpen
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -285,6 +286,12 @@ export function MobileNav() {
               
               {/* About - always visible */}
               <Separator className="my-2" />
+              <MobileNavItem
+                href="/user-guide"
+                icon={<BookOpen />}
+                label="User Guide"
+                onClick={handleNavClick}
+              />
               <MobileNavItem
                 href="/about"
                 icon={<Info />}
