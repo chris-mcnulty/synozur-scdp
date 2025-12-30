@@ -2619,11 +2619,7 @@ export default function BatchDetail() {
                           onClick={async () => {
                             setIsRepairing(true);
                             try {
-                              const response = await fetch(`/api/invoice-batches/${batchId}/repair?dryRun=true`, { method: 'POST', credentials: 'include' });
-                              const data = await response.json();
-                              if (!response.ok) {
-                                throw new Error(data.message || "Failed to check repair options");
-                              }
+                              const data = await apiRequest(`/api/invoice-batches/${batchId}/repair?dryRun=true`, { method: 'POST' });
                               setRepairPreview(data);
                               setShowRepairDialog(true);
                             } catch (error: any) {
@@ -2963,16 +2959,10 @@ export default function BatchDetail() {
                         
                         // Preview what would be created
                         setIsRepairing(true);
-                        const response = await fetch(`/api/invoice-batches/${batchId}/repair-from-json?dryRun=true`, {
+                        const preview = await apiRequest(`/api/invoice-batches/${batchId}/repair-from-json?dryRun=true`, {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ timeEntries: data }),
-                          credentials: 'include'
+                          body: JSON.stringify({ timeEntries: data })
                         });
-                        const preview = await response.json();
-                        if (!response.ok) {
-                          throw new Error(preview.message || "Failed to preview repair");
-                        }
                         setJsonRepairPreview(preview);
                       } catch (error: any) {
                         toast({
