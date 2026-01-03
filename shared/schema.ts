@@ -402,6 +402,20 @@ export const projectAllocations = pgTable("project_allocations", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Project Engagements - tracks a user's overall engagement status on a project
+// Separate from individual allocations - tracks whether user is actively working on project
+export const projectEngagements = pgTable("project_engagements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text("status").notNull().default('active'), // active, complete
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id), // User who marked complete (self or admin/PM)
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
 // Weekly staffing allocations (Weekly Staffing Grid)
 export const estimateAllocations = pgTable("estimate_allocations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -807,6 +821,22 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   epics: many(projectEpics),
   workstreams: many(projectWorkstreams),
   rateOverrides: many(projectRateOverrides),
+  engagements: many(projectEngagements),
+}));
+
+export const projectEngagementsRelations = relations(projectEngagements, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectEngagements.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [projectEngagements.userId],
+    references: [users.id],
+  }),
+  completedByUser: one(users, {
+    fields: [projectEngagements.completedBy],
+    references: [users.id],
+  }),
 }));
 
 export const estimatesRelations = relations(estimates, ({ one, many }) => ({
@@ -1179,6 +1209,12 @@ export const insertProjectAllocationSchema = createInsertSchema(projectAllocatio
   rackRate: z.union([z.string(), z.number()]).transform(val => String(val)),
 });
 
+export const insertProjectEngagementSchema = createInsertSchema(projectEngagements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertUserRateScheduleSchema = createInsertSchema(userRateSchedules).omit({
   id: true,
   createdAt: true,
@@ -1398,6 +1434,8 @@ export type ProjectMilestone = typeof projectMilestones.$inferSelect;
 export type InsertProjectMilestone = z.infer<typeof insertProjectMilestoneSchema>;
 export type ProjectAllocation = typeof projectAllocations.$inferSelect;
 export type InsertProjectAllocation = z.infer<typeof insertProjectAllocationSchema>;
+export type ProjectEngagement = typeof projectEngagements.$inferSelect;
+export type InsertProjectEngagement = z.infer<typeof insertProjectEngagementSchema>;
 export type ProjectRateOverride = typeof projectRateOverrides.$inferSelect;
 export type InsertProjectRateOverride = z.infer<typeof insertProjectRateOverrideSchema>;
 export type UserRateSchedule = typeof userRateSchedules.$inferSelect;
