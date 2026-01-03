@@ -237,6 +237,7 @@ export interface IStorage {
   
   // Project Allocations
   getProjectAllocations(projectId: string): Promise<any[]>;
+  getUserAllocations(userId: string): Promise<any[]>;
   createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation>;
   updateProjectAllocation(id: string, updates: any): Promise<any>;
   deleteProjectAllocation(id: string): Promise<void>;
@@ -2031,6 +2032,7 @@ export class DatabaseStorage implements IStorage {
         defaultBillingRate: null,
         defaultCostRate: null,
         isActive: false,
+        receiveTimeReminders: true,
         createdAt: new Date()
       };
       
@@ -2074,6 +2076,7 @@ export class DatabaseStorage implements IStorage {
       defaultBillingRate: null,
       defaultCostRate: null,
       isActive: false,
+      receiveTimeReminders: true,
       createdAt: new Date()
     };
     
@@ -2873,6 +2876,7 @@ export class DatabaseStorage implements IStorage {
         defaultBillingRate: null,
         defaultCostRate: null,
         isActive: false,
+        receiveTimeReminders: true,
         createdAt: new Date()
       };
 
@@ -4863,6 +4867,35 @@ export class DatabaseStorage implements IStorage {
       workstream: row.workstream,
       epic: row.epic,
       stage: row.stage,
+    }));
+  }
+
+  async getUserAllocations(userId: string): Promise<any[]> {
+    const allocations = await db
+      .select({
+        allocation: projectAllocations,
+        project: projects,
+        role: roles,
+        epic: projectEpics,
+        stage: projectStages,
+        workstream: projectWorkstreams,
+      })
+      .from(projectAllocations)
+      .where(eq(projectAllocations.personId, userId))
+      .leftJoin(projects, eq(projectAllocations.projectId, projects.id))
+      .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
+      .leftJoin(projectEpics, eq(projectAllocations.projectEpicId, projectEpics.id))
+      .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
+      .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id))
+      .orderBy(projectAllocations.plannedStartDate);
+    
+    return allocations.map(row => ({
+      ...row.allocation,
+      project: row.project,
+      role: row.role,
+      epic: row.epic,
+      stage: row.stage,
+      workstream: row.workstream,
     }));
   }
   

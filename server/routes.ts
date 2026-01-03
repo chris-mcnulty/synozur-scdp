@@ -397,6 +397,184 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // User reminder settings - users can update their own preference
+  app.patch("/api/users/:id/reminder-settings", requireAuth, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const currentUser = (req as any).user;
+      
+      // Users can only update their own settings, unless admin
+      if (currentUser.id !== userId && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "You can only update your own reminder settings" });
+      }
+      
+      const { receiveTimeReminders } = req.body;
+      if (typeof receiveTimeReminders !== 'boolean') {
+        return res.status(400).json({ message: "receiveTimeReminders must be a boolean" });
+      }
+      
+      const user = await storage.updateUser(userId, { receiveTimeReminders });
+      res.json({ receiveTimeReminders: user.receiveTimeReminders });
+    } catch (error) {
+      console.error("Error updating reminder settings:", error);
+      res.status(500).json({ message: "Failed to update reminder settings" });
+    }
+  });
+
+  app.get("/api/users/:id/reminder-settings", requireAuth, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const currentUser = (req as any).user;
+      
+      // Users can only view their own settings, unless admin
+      if (currentUser.id !== userId && currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "You can only view your own reminder settings" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json({ receiveTimeReminders: user.receiveTimeReminders });
+    } catch (error) {
+      console.error("Error fetching reminder settings:", error);
+      res.status(500).json({ message: "Failed to fetch reminder settings" });
+    }
+  });
+
+  // Admin time reminder management
+  app.post("/api/admin/time-reminders/run", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { runTimeReminders } = await import('./services/time-reminder-scheduler.js');
+      const result = await runTimeReminders();
+      res.json({ 
+        success: true, 
+        message: `Time reminders sent successfully`,
+        ...result
+      });
+    } catch (error) {
+      console.error("Error running time reminders:", error);
+      res.status(500).json({ message: "Failed to run time reminders" });
+    }
+  });
+
+  app.post("/api/admin/time-reminders/restart-scheduler", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { restartTimeReminderScheduler } = await import('./services/time-reminder-scheduler.js');
+      await restartTimeReminderScheduler();
+      res.json({ success: true, message: "Time reminder scheduler restarted" });
+    } catch (error) {
+      console.error("Error restarting scheduler:", error);
+      res.status(500).json({ message: "Failed to restart scheduler" });
+    }
+  });
+
+  // Missing time entries report for a project
+  app.get("/api/admin/time-reminders/missing", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { projectId, weekStart } = req.query;
+      
+      if (!projectId) {
+        return res.status(400).json({ message: "projectId is required" });
+      }
+      
+      // Default to prior week if no date provided
+      let weekStartDate: Date;
+      if (weekStart) {
+        weekStartDate = new Date(weekStart as string);
+      } else {
+        const today = new Date();
+        const dayOfWeek = today.getDay();
+        const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const thisMonday = new Date(today);
+        thisMonday.setDate(today.getDate() - daysToSubtract);
+        weekStartDate = new Date(thisMonday);
+        weekStartDate.setDate(thisMonday.getDate() - 7);
+      }
+      weekStartDate.setHours(0, 0, 0, 0);
+      
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 6);
+      weekEndDate.setHours(23, 59, 59, 999);
+      
+      // Get all allocations for the project
+      const allocations = await storage.getProjectAllocations(projectId as string);
+      
+      // Get unique users assigned to the project
+      const assignedUserIds = new Set<string>();
+      const userAllocatedHours = new Map<string, number>();
+      
+      for (const allocation of allocations) {
+        if (allocation.person?.id) {
+          assignedUserIds.add(allocation.person.id);
+          const currentHours = userAllocatedHours.get(allocation.person.id) || 0;
+          userAllocatedHours.set(allocation.person.id, currentHours + Number(allocation.hours || 0));
+        }
+      }
+      
+      // Get time entries for the week
+      const timeEntries = await storage.getTimeEntries({
+        projectId: projectId as string,
+        startDate: weekStartDate.toISOString().split('T')[0],
+        endDate: weekEndDate.toISOString().split('T')[0]
+      });
+      
+      // Calculate hours entered per user
+      const userEnteredHours = new Map<string, number>();
+      for (const entry of timeEntries) {
+        const currentHours = userEnteredHours.get(entry.personId) || 0;
+        userEnteredHours.set(entry.personId, currentHours + Number(entry.hours || 0));
+      }
+      
+      // Build the report
+      const users = await storage.getUsers();
+      const userMap = new Map(users.map(u => [u.id, u]));
+      
+      const missingEntries = [];
+      for (const userId of assignedUserIds) {
+        const user = userMap.get(userId);
+        if (!user || !user.isActive) continue;
+        
+        const allocatedHours = userAllocatedHours.get(userId) || 0;
+        const enteredHours = userEnteredHours.get(userId) || 0;
+        
+        missingEntries.push({
+          userId,
+          userName: user.name,
+          userEmail: user.email,
+          allocatedHours,
+          enteredHours,
+          missingHours: Math.max(0, allocatedHours - enteredHours),
+          hasMissingTime: enteredHours < allocatedHours,
+          hasNoEntries: enteredHours === 0
+        });
+      }
+      
+      // Sort by missing status, then by name
+      missingEntries.sort((a, b) => {
+        if (a.hasNoEntries !== b.hasNoEntries) return a.hasNoEntries ? -1 : 1;
+        if (a.hasMissingTime !== b.hasMissingTime) return a.hasMissingTime ? -1 : 1;
+        return a.userName.localeCompare(b.userName);
+      });
+      
+      res.json({
+        projectId,
+        weekStart: weekStartDate.toISOString().split('T')[0],
+        weekEnd: weekEndDate.toISOString().split('T')[0],
+        entries: missingEntries,
+        summary: {
+          totalAssigned: missingEntries.length,
+          withMissingTime: missingEntries.filter(e => e.hasMissingTime).length,
+          withNoEntries: missingEntries.filter(e => e.hasNoEntries).length
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching missing time entries:", error);
+      res.status(500).json({ message: "Failed to fetch missing time entries report" });
+    }
+  });
+
   // SharePoint configuration endpoint
   app.get("/api/sharepoint/config", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

@@ -1,0 +1,219 @@
+import * as cron from 'node-cron';
+import { storage } from '../storage.js';
+import { EmailNotificationService } from './email-notification.js';
+
+const emailService = new EmailNotificationService();
+
+interface ReminderRecipient {
+  userId: string;
+  email: string;
+  name: string;
+  projectNames: string[];
+}
+
+function escapeHtml(text: string): string {
+  const htmlEscapeMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;'
+  };
+  return text.replace(/[&<>"'\/]/g, (char) => htmlEscapeMap[char] || char);
+}
+
+/**
+ * Calculate the start of the prior work week (Monday)
+ */
+function getPriorWeekStart(): Date {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const thisMonday = new Date(today);
+  thisMonday.setDate(today.getDate() - daysToSubtract);
+  const priorMonday = new Date(thisMonday);
+  priorMonday.setDate(thisMonday.getDate() - 7);
+  priorMonday.setHours(0, 0, 0, 0);
+  return priorMonday;
+}
+
+/**
+ * Get users who need time entry reminders
+ * Criteria:
+ * - User has active assignments on active projects
+ * - User has receiveTimeReminders enabled
+ * - User has email address
+ * - User is active
+ */
+async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
+  const recipients: Map<string, ReminderRecipient> = new Map();
+  
+  const users = await storage.getUsers();
+  const activeUsers = users.filter(u => 
+    u.isActive && 
+    u.email && 
+    u.receiveTimeReminders !== false &&
+    u.canLogin
+  );
+
+  for (const user of activeUsers) {
+    const allocations = await storage.getUserAllocations(user.id);
+    
+    const activeProjectNames: string[] = [];
+    for (const allocation of allocations) {
+      if (allocation.project && allocation.project.status === 'active') {
+        if (!activeProjectNames.includes(allocation.project.name)) {
+          activeProjectNames.push(allocation.project.name);
+        }
+      }
+    }
+
+    if (activeProjectNames.length > 0) {
+      recipients.set(user.id, {
+        userId: user.id,
+        email: user.email!,
+        name: user.name,
+        projectNames: activeProjectNames
+      });
+    }
+  }
+
+  return Array.from(recipients.values());
+}
+
+/**
+ * Send a time entry reminder email to a user
+ */
+async function sendReminderEmail(recipient: ReminderRecipient, appUrl: string): Promise<void> {
+  const priorWeekStart = getPriorWeekStart();
+  const weekEndDate = new Date(priorWeekStart);
+  weekEndDate.setDate(priorWeekStart.getDate() + 6);
+  
+  const weekStartStr = priorWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const weekEndStr = weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  
+  const projectList = recipient.projectNames.map(name => `<li>${escapeHtml(name)}</li>`).join('');
+  
+  const subject = `Time Entry Reminder: Week of ${weekStartStr}`;
+  const body = `
+    <html>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <h2 style="color: #7C3AED;">Time Entry Reminder</h2>
+        <p>Hi ${escapeHtml(recipient.name)},</p>
+        <p>This is a friendly reminder to enter your time for the week of <strong>${weekStartStr} - ${weekEndStr}</strong>.</p>
+        <p>You have active assignments on the following project(s):</p>
+        <ul style="background-color: #f4f4f4; padding: 15px 15px 15px 35px; border-left: 4px solid #7C3AED; margin: 20px 0;">
+          ${projectList}
+        </ul>
+        <p>
+          <a href="${appUrl}/time" style="display: inline-block; background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 10px 0;">
+            Enter Time Now
+          </a>
+        </p>
+        <p style="color: #666; font-size: 0.9em; margin-top: 30px;">
+          You can disable these reminders in your personal settings if you prefer not to receive them.
+        </p>
+        <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+      </body>
+    </html>
+  `;
+
+  await emailService.sendEmail({
+    to: { email: recipient.email, name: recipient.name },
+    subject,
+    body
+  });
+}
+
+/**
+ * Run the time reminder job
+ * This is called by the scheduler or can be triggered manually
+ */
+export async function runTimeReminders(): Promise<{ sent: number; skipped: number; errors: number }> {
+  console.log('[TIME-REMINDERS] Starting time reminder job...');
+  
+  const remindersEnabled = await storage.getSystemSettingValue('TIME_REMINDERS_ENABLED', 'true');
+  if (remindersEnabled !== 'true') {
+    console.log('[TIME-REMINDERS] Time reminders are disabled at system level. Skipping.');
+    return { sent: 0, skipped: 0, errors: 0 };
+  }
+
+  const appUrl = process.env.REPLIT_DEV_DOMAIN 
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : process.env.REPLIT_DOMAINS 
+      ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
+      : 'https://scdp.synozur.com';
+
+  const recipients = await getUsersNeedingReminders();
+  console.log(`[TIME-REMINDERS] Found ${recipients.length} users to remind`);
+
+  let sent = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const recipient of recipients) {
+    try {
+      await sendReminderEmail(recipient, appUrl);
+      sent++;
+      console.log(`[TIME-REMINDERS] Sent reminder to ${recipient.email}`);
+    } catch (error) {
+      errors++;
+      console.error(`[TIME-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+    }
+  }
+
+  console.log(`[TIME-REMINDERS] Completed: ${sent} sent, ${skipped} skipped, ${errors} errors`);
+  return { sent, skipped, errors };
+}
+
+let scheduledTask: cron.ScheduledTask | null = null;
+
+/**
+ * Start the time reminder scheduler
+ * Runs every Thursday at the configured time
+ */
+export async function startTimeReminderScheduler(): Promise<void> {
+  if (scheduledTask) {
+    console.log('[TIME-REMINDERS] Scheduler already running');
+    return;
+  }
+
+  const reminderTime = await storage.getSystemSettingValue('TIME_REMINDER_TIME', '23:30');
+  const reminderDay = await storage.getSystemSettingValue('TIME_REMINDER_DAY', '4');
+  
+  const [hours, minutes] = reminderTime.split(':').map(Number);
+  const dayOfWeek = parseInt(reminderDay, 10);
+
+  const cronExpression = `${minutes} ${hours} * * ${dayOfWeek}`;
+  
+  console.log(`[TIME-REMINDERS] Scheduling reminders for day ${dayOfWeek} at ${reminderTime} (cron: ${cronExpression})`);
+
+  scheduledTask = cron.schedule(cronExpression, async () => {
+    console.log('[TIME-REMINDERS] Cron triggered, running reminders...');
+    await runTimeReminders();
+  }, {
+    timezone: 'America/New_York'
+  });
+
+  console.log('[TIME-REMINDERS] Scheduler started');
+}
+
+/**
+ * Stop the time reminder scheduler
+ */
+export function stopTimeReminderScheduler(): void {
+  if (scheduledTask) {
+    scheduledTask.stop();
+    scheduledTask = null;
+    console.log('[TIME-REMINDERS] Scheduler stopped');
+  }
+}
+
+/**
+ * Restart the scheduler (e.g., after settings change)
+ */
+export async function restartTimeReminderScheduler(): Promise<void> {
+  stopTimeReminderScheduler();
+  await startTimeReminderScheduler();
+}

@@ -203,6 +203,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       return db.execute(`SELECT 1 as test`);
     }).then(() => {
       log('✅ Database connection successful');
+      
+      // Start the time reminder scheduler after database is confirmed working
+      log('🔄 Starting time reminder scheduler...');
+      import('./services/time-reminder-scheduler.js').then(({ startTimeReminderScheduler }) => {
+        startTimeReminderScheduler().then(() => {
+          log('✅ Time reminder scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Time reminder scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import time reminder scheduler: ${importError.message}`);
+      });
     }).catch((dbError: any) => {
       log(`⚠️ Database not available: ${dbError.message}`);
       log('Server will continue without database features');

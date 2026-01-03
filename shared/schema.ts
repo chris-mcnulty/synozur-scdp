@@ -29,6 +29,7 @@ export const users = pgTable("users", {
   defaultBillingRate: decimal("default_billing_rate", { precision: 10, scale: 2 }), // Default billing rate
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate (internal)
   isActive: boolean("is_active").notNull().default(true),
+  receiveTimeReminders: boolean("receive_time_reminders").notNull().default(true), // Opt-in for weekly time entry reminders
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
