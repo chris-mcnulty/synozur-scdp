@@ -9,7 +9,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Layout } from "@/components/layout/layout";
-import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Loader2, Calendar, Clock, CheckCircle, AlertCircle, Filter, Search, ChevronRight, ArrowUpDown, UserCheck } from "lucide-react";
 import { format, subMonths } from "date-fns";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
@@ -52,6 +53,14 @@ export function MyAssignments() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [groupBy, setGroupBy] = useState<string>("");
   const [view, setView] = useState<"list" | "kanban">("list");
+  
+  // Engagement completion dialog state
+  const [engagementDialog, setEngagementDialog] = useState<{
+    open: boolean;
+    projectId: string;
+    projectName: string;
+    allocationId: string;
+  } | null>(null);
 
   // Get vocabulary terms
   const vocabulary = useVocabulary();
@@ -161,9 +170,34 @@ export function MyAssignments() {
     return grouped;
   }, [filteredAssignments]);
 
+  // Mutation to complete engagement (mark user as done with the project)
+  const completeEngagementMutation = useMutation({
+    mutationFn: async ({ projectId }: { projectId: string }) => {
+      return apiRequest(`/api/projects/${projectId}/engagements/${currentUser?.id}/complete`, {
+        method: "PATCH",
+        body: JSON.stringify({ force: true })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/my-assignments'] });
+      setEngagementDialog(null);
+      toast({
+        title: "Engagement Marked Complete",
+        description: "You've been marked as finished with this project. You won't receive time reminders for it."
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to complete engagement",
+        variant: "destructive"
+      });
+    }
+  });
+
   // Update assignment status
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, projectId }: { id: string; status: string; projectId: string }) => {
+    mutationFn: async ({ id, status, projectId, skipEngagementCheck }: { id: string; status: string; projectId: string; skipEngagementCheck?: boolean }) => {
       const updates: any = { status };
       
       // Auto-set dates based on status
@@ -174,17 +208,50 @@ export function MyAssignments() {
         updates.completedDate = today;
       }
       
-      return apiRequest(`/api/projects/${projectId}/allocations/${id}`, {
+      const result = await apiRequest(`/api/projects/${projectId}/allocations/${id}`, {
         method: "PUT",
         body: JSON.stringify(updates)
       });
+      
+      // If completing an assignment, check if this is the user's last active allocation
+      if (status === 'completed' && !skipEngagementCheck) {
+        try {
+          const checkResponse = await fetch(
+            `/api/projects/${projectId}/engagements/${currentUser?.id}/check-last-allocation?excludeAllocationId=${id}`,
+            { credentials: "include", headers: { 'x-session-id': localStorage.getItem('sessionId') || '' } }
+          );
+          if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            if (checkData.isLastAllocation) {
+              // Find project name for the dialog
+              const assignment = assignments.find((a: Assignment) => a.id === id);
+              const projectName = assignment?.project?.name || "this project";
+              return { ...result, showEngagementDialog: true, projectId, projectName, allocationId: id };
+            }
+          }
+        } catch (e) {
+          // Silently ignore engagement check errors
+        }
+      }
+      
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/my-assignments'] });
       toast({
         title: "Success",
         description: "Assignment status updated"
       });
+      
+      // Show engagement completion dialog if this was the last allocation
+      if (data?.showEngagementDialog) {
+        setEngagementDialog({
+          open: true,
+          projectId: data.projectId,
+          projectName: data.projectName,
+          allocationId: data.allocationId
+        });
+      }
     },
     onError: (error: any) => {
       toast({
@@ -532,6 +599,52 @@ export function MyAssignments() {
           </Card>
         </div>
       </div>
+
+      {/* Engagement Completion Dialog */}
+      <Dialog open={engagementDialog?.open || false} onOpenChange={(open) => !open && setEngagementDialog(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="w-5 h-5 text-primary" />
+              Mark Your Engagement Complete?
+            </DialogTitle>
+            <DialogDescription>
+              You've completed your last assignment on <span className="font-semibold">{engagementDialog?.projectName}</span>.
+              Would you like to mark your engagement with this project as complete?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Marking your engagement complete means:
+            </p>
+            <ul className="text-sm text-muted-foreground mt-2 space-y-1 ml-4 list-disc">
+              <li>You won't receive time entry reminders for this project</li>
+              <li>If you're assigned new work on this project, your engagement will automatically reactivate</li>
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEngagementDialog(null)}
+              data-testid="button-skip-engagement"
+            >
+              Not Now
+            </Button>
+            <Button
+              onClick={() => engagementDialog && completeEngagementMutation.mutate({ projectId: engagementDialog.projectId })}
+              disabled={completeEngagementMutation.isPending}
+              data-testid="button-complete-engagement"
+            >
+              {completeEngagementMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle className="w-4 h-4 mr-2" />
+              )}
+              Yes, Mark Complete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
