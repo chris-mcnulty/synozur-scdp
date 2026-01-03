@@ -1,4 +1,4 @@
-# SCDP Product Backlog - Corrected Comprehensive Version
+# Constellation Product Backlog
 
 ## ✅ Recently Completed (Week of Oct 7-11, 2025)
 
@@ -181,6 +181,72 @@
   - Bench time visibility
   - Resource demand vs. supply analysis
   - Historical utilization trends
+
+### Microsoft 365 Project Integration - NEW
+**Status:** DESIGN COMPLETE - Ready for implementation  
+**Priority:** P1 - High priority for collaboration  
+**Added:** January 2026  
+**Design Document:** `docs/design/microsoft-365-project-integration.md`
+
+**Why P1:** Seamless Microsoft 365 integration enhances team collaboration, centralizes project communications, and enables future task synchronization between Constellation and Microsoft Planner.
+
+**Prerequisites:**
+- Azure AD tenant admin approval for Graph API permissions
+- Microsoft 365 Business license for Teams/Planner
+- Existing Outlook connector extended or new Teams connector
+
+**Scope:**
+
+- [ ] **Administrative Settings**
+  - System settings table additions for M365 integration toggles
+  - Master toggle to enable/disable M365 integration
+  - Separate toggles for Teams creation and Planner sync
+  - Default Team template selection
+  - Test connection functionality
+
+- [ ] **Database Schema**
+  - `clientTeams` table: Maps clients to Microsoft Teams
+  - `projectChannels` table: Maps projects to channels and Planner plans
+  - `userAzureMapping` table: Links Constellation users to Azure AD accounts
+  - `plannerTaskSync` table: Tracks task sync status per allocation
+
+- [ ] **Microsoft Teams Integration**
+  - Automatic Team creation for new clients (first project)
+  - Channel creation for subsequent projects in existing client Teams
+  - SharePoint site provisioning with Team
+  - Team member management (add/remove based on assignments)
+
+- [ ] **Microsoft Planner Integration (Phase 1: One-Way Copy)**
+  - Create Planner plan per project
+  - Weekly buckets matching allocation periods
+  - Task creation from allocations (one task per user per week)
+  - Sync status tracking and error handling
+
+- [ ] **Microsoft Planner Integration (Phase 2: Bidirectional Sync)**
+  - Microsoft Graph webhooks for change notifications
+  - Planner-to-Constellation sync logic
+  - Conflict resolution for simultaneous edits
+  - Audit trail for sync activities
+
+- [ ] **Project Creation UI Enhancement**
+  - M365 integration options in project creation dialog
+  - Smart detection: "First project for client" vs "Add to existing Team"
+  - Checkbox options for Teams, Planner, auto-member management
+  - Visual preview of what will be created
+
+- [ ] **Project Detail M365 Tab**
+  - Links to Team, Channel, SharePoint site, Planner
+  - Sync status display with manual sync button
+  - Team member mapping status with retry for failures
+  - External user handling for non-Azure AD consultants
+
+**Dependencies:**
+- Extended Microsoft Graph permissions (Team.Create, Channel.Create, Tasks.ReadWrite, etc.)
+- Existing Outlook connector or new Teams connector
+- User email matching between Constellation and Azure AD
+
+**Timeline:** 6-8 weeks (phased implementation)  
+**Complexity:** High (multiple Microsoft Graph APIs, sync logic, error handling)
 
 ---
 
