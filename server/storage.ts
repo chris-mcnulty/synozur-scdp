@@ -2,7 +2,7 @@ import {
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
   estimateMilestones, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
-  projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations,
+  projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
   vocabularyCatalog, organizationVocabulary,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
@@ -28,6 +28,7 @@ import {
   type ProjectMilestone, type InsertProjectMilestone,
   type ProjectWorkstream, type InsertProjectWorkstream,
   type ProjectAllocation, type InsertProjectAllocation,
+  type ProjectEngagement, type InsertProjectEngagement,
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
@@ -242,6 +243,16 @@ export interface IStorage {
   updateProjectAllocation(id: string, updates: any): Promise<any>;
   deleteProjectAllocation(id: string): Promise<void>;
   bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]>;
+  
+  // Project Engagements
+  getProjectEngagements(projectId: string): Promise<ProjectEngagement[]>;
+  getProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement | undefined>;
+  getUserActiveEngagements(userId: string): Promise<(ProjectEngagement & { project: Project })[]>;
+  createProjectEngagement(engagement: InsertProjectEngagement): Promise<ProjectEngagement>;
+  updateProjectEngagement(id: string, updates: Partial<InsertProjectEngagement>): Promise<ProjectEngagement>;
+  ensureProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement>;
+  markEngagementComplete(projectId: string, userId: string, completedBy: string, notes?: string): Promise<ProjectEngagement>;
+  checkUserHasActiveAllocations(projectId: string, userId: string): Promise<boolean>;
   
   // Roles
   getRoles(): Promise<Role[]>;
@@ -4943,6 +4954,112 @@ export class DatabaseStorage implements IStorage {
       }
       return results;
     });
+  }
+
+  // Project Engagements
+  async getProjectEngagements(projectId: string): Promise<ProjectEngagement[]> {
+    return await db
+      .select()
+      .from(projectEngagements)
+      .where(eq(projectEngagements.projectId, projectId));
+  }
+
+  async getProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement | undefined> {
+    const [engagement] = await db
+      .select()
+      .from(projectEngagements)
+      .where(and(
+        eq(projectEngagements.projectId, projectId),
+        eq(projectEngagements.userId, userId)
+      ));
+    return engagement;
+  }
+
+  async getUserActiveEngagements(userId: string): Promise<(ProjectEngagement & { project: Project })[]> {
+    const engagements = await db
+      .select({
+        engagement: projectEngagements,
+        project: projects,
+      })
+      .from(projectEngagements)
+      .innerJoin(projects, eq(projectEngagements.projectId, projects.id))
+      .where(and(
+        eq(projectEngagements.userId, userId),
+        eq(projectEngagements.status, 'active'),
+        eq(projects.status, 'active')
+      ));
+    
+    return engagements.map(row => ({
+      ...row.engagement,
+      project: row.project,
+    }));
+  }
+
+  async createProjectEngagement(engagement: InsertProjectEngagement): Promise<ProjectEngagement> {
+    const [created] = await db
+      .insert(projectEngagements)
+      .values(engagement)
+      .returning();
+    return created;
+  }
+
+  async updateProjectEngagement(id: string, updates: Partial<InsertProjectEngagement>): Promise<ProjectEngagement> {
+    const [updated] = await db
+      .update(projectEngagements)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projectEngagements.id, id))
+      .returning();
+    return updated;
+  }
+
+  async ensureProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement> {
+    const existing = await this.getProjectEngagement(projectId, userId);
+    
+    if (existing) {
+      if (existing.status === 'complete') {
+        return await this.updateProjectEngagement(existing.id, {
+          status: 'active',
+          completedAt: null,
+          completedBy: null,
+        });
+      }
+      return existing;
+    }
+    
+    return await this.createProjectEngagement({
+      projectId,
+      userId,
+      status: 'active',
+    });
+  }
+
+  async markEngagementComplete(projectId: string, userId: string, completedBy: string, notes?: string): Promise<ProjectEngagement> {
+    const existing = await this.getProjectEngagement(projectId, userId);
+    
+    if (!existing) {
+      throw new Error('Engagement not found');
+    }
+    
+    return await this.updateProjectEngagement(existing.id, {
+      status: 'complete',
+      completedAt: new Date(),
+      completedBy,
+      notes,
+    });
+  }
+
+  async checkUserHasActiveAllocations(projectId: string, userId: string): Promise<boolean> {
+    const activeAllocations = await db
+      .select({ id: projectAllocations.id })
+      .from(projectAllocations)
+      .where(and(
+        eq(projectAllocations.projectId, projectId),
+        eq(projectAllocations.personId, userId),
+        inArray(projectAllocations.status, ['open', 'in_progress'])
+      ))
+      .limit(1);
+    
+    return activeAllocations.length > 0;
   }
 
   async createInvoiceBatch(batch: InsertInvoiceBatch): Promise<InvoiceBatch> {
