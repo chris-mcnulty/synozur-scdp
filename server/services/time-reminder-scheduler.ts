@@ -93,11 +93,8 @@ async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
       endDate: formatLocalDate(priorWeekEnd)
     });
 
-    // Calculate total hours logged
-    const totalHoursLogged = timeEntries.reduce((sum, entry) => sum + Number(entry.hours || 0), 0);
-    
-    // Only remind users who have logged less than 1 hour (essentially no time entries)
-    if (totalHoursLogged < 1) {
+    // Only remind users who have no time entries at all for the prior week
+    if (timeEntries.length === 0) {
       recipients.set(user.id, {
         userId: user.id,
         email: user.email!,
