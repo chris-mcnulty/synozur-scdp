@@ -97,7 +97,7 @@ export default function Login() {
             <SynozurLogo className="h-16 w-16" />
           </div>
           <CardTitle className="text-2xl text-center">
-            Welcome to SCDP
+            Welcome to Constellation
             {isDevelopment && (
               <span className="block text-sm font-normal text-muted-foreground mt-1">
                 Development
@@ -105,7 +105,7 @@ export default function Login() {
             )}
           </CardTitle>
           <CardDescription className="text-center">
-            Synozur Consulting Delivery Platform
+            Synozur Consulting Delivery Platform (SCDP)
           </CardDescription>
         </CardHeader>
         <CardContent>

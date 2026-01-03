@@ -1,7 +1,7 @@
-# SCDP - Synozur Consulting Delivery Platform
+# Constellation - Synozur Consulting Delivery Platform (SCDP)
 
 ## Overview
-SCDP is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, enhances efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with SharePoint Online and Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation. The platform also integrates AI for features like narrative generation for estimates and invoices, and automated per diem expense calculation with GSA federal rate lookup.
+Constellation is a comprehensive platform for managing the entire lifecycle of consulting projects, from estimation to billing. It streamlines time tracking, expense management, resource allocation, and automates invoice generation. The platform features robust role-based access control, enhances efficiency, and provides strong management capabilities for consulting businesses. Key capabilities include improved file management with SharePoint Online and Replit Object Storage integration, transparent quote displays, enhanced resource management for capacity planning, and milestone-based invoice generation. The platform also integrates AI for features like narrative generation for estimates and invoices, and automated per diem expense calculation with GSA federal rate lookup.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
