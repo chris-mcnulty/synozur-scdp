@@ -13,10 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // Types
 interface SystemSetting {
@@ -491,6 +493,10 @@ export default function SystemSettings() {
             <TabsTrigger value="general" className="flex items-center space-x-2">
               <Settings className="w-4 h-4" />
               <span>All Settings</span>
+            </TabsTrigger>
+            <TabsTrigger value="reminders" className="flex items-center space-x-2">
+              <Bell className="w-4 h-4" />
+              <span>Time Reminders</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1672,8 +1678,238 @@ export default function SystemSettings() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TimeRemindersTab settings={settings} toast={toast} />
         </Tabs>
       </div>
     </Layout>
+  );
+}
+
+// Time Reminders Tab Component
+function TimeRemindersTab({ settings, toast }: { settings: SystemSetting[]; toast: ReturnType<typeof useToast>['toast'] }) {
+  const timeRemindersEnabled = settings.find(s => s.settingKey === 'TIME_REMINDERS_ENABLED')?.settingValue !== 'false';
+  const reminderDay = settings.find(s => s.settingKey === 'TIME_REMINDER_DAY')?.settingValue || '4'; // Default Thursday
+  const reminderTime = settings.find(s => s.settingKey === 'TIME_REMINDER_TIME')?.settingValue || '09:00';
+  
+  const [isRunning, setIsRunning] = useState(false);
+
+  const toggleRemindersMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      await apiRequest("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          settingKey: "TIME_REMINDERS_ENABLED",
+          settingValue: enabled ? "true" : "false",
+          settingType: "boolean",
+          description: "Enable/disable weekly time entry reminder emails"
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Settings updated",
+        description: "Time reminder settings have been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update reminder settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateDayMutation = useMutation({
+    mutationFn: async (day: string) => {
+      await apiRequest("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          settingKey: "TIME_REMINDER_DAY",
+          settingValue: day,
+          settingType: "number",
+          description: "Day of week for time reminders (0=Sunday, 1=Monday, ..., 6=Saturday)"
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Reminder day updated",
+        description: "Time reminder schedule has been updated.",
+      });
+    },
+  });
+
+  const updateTimeMutation = useMutation({
+    mutationFn: async (time: string) => {
+      await apiRequest("/api/settings", {
+        method: "POST",
+        body: JSON.stringify({
+          settingKey: "TIME_REMINDER_TIME",
+          settingValue: time,
+          settingType: "string",
+          description: "Time of day for time reminders (HH:MM format)"
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Reminder time updated",
+        description: "Time reminder schedule has been updated.",
+      });
+    },
+  });
+
+  const runRemindersMutation = useMutation({
+    mutationFn: async () => {
+      setIsRunning(true);
+      return await apiRequest("/api/admin/time-reminders/run", {
+        method: "POST",
+      });
+    },
+    onSuccess: (data: any) => {
+      setIsRunning(false);
+      toast({
+        title: "Reminders sent",
+        description: `Successfully sent ${data?.emailsSent || 0} reminder emails.`,
+      });
+    },
+    onError: () => {
+      setIsRunning(false);
+      toast({
+        title: "Error",
+        description: "Failed to send reminders. Check server logs for details.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const dayOptions = [
+    { value: "0", label: "Sunday" },
+    { value: "1", label: "Monday" },
+    { value: "2", label: "Tuesday" },
+    { value: "3", label: "Wednesday" },
+    { value: "4", label: "Thursday" },
+    { value: "5", label: "Friday" },
+    { value: "6", label: "Saturday" },
+  ];
+
+  return (
+    <TabsContent value="reminders" className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5" />
+            Time Entry Reminders
+          </CardTitle>
+          <CardDescription>
+            Configure weekly email reminders to encourage timely submission of time entries
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex items-center justify-between p-4 border rounded-lg" data-testid="setting-system-reminders-enabled">
+            <div className="space-y-0.5">
+              <Label>Enable Time Reminders</Label>
+              <p className="text-sm text-muted-foreground">
+                Send weekly email reminders to users with active project assignments who haven't submitted time entries
+              </p>
+            </div>
+            <Switch
+              data-testid="switch-system-reminders-enabled"
+              checked={timeRemindersEnabled}
+              disabled={toggleRemindersMutation.isPending}
+              onCheckedChange={(checked) => toggleRemindersMutation.mutate(checked)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2" data-testid="setting-reminder-day">
+              <Label>Reminder Day</Label>
+              <Select 
+                value={reminderDay} 
+                onValueChange={(value) => updateDayMutation.mutate(value)}
+                disabled={!timeRemindersEnabled}
+              >
+                <SelectTrigger data-testid="select-reminder-day">
+                  <SelectValue placeholder="Select day" />
+                </SelectTrigger>
+                <SelectContent>
+                  {dayOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The day of the week when reminders are sent
+              </p>
+            </div>
+
+            <div className="space-y-2" data-testid="setting-reminder-time">
+              <Label>Reminder Time</Label>
+              <Input
+                type="time"
+                value={reminderTime}
+                onChange={(e) => {
+                  if (e.target.value) updateTimeMutation.mutate(e.target.value);
+                }}
+                disabled={!timeRemindersEnabled}
+                data-testid="input-reminder-time"
+              />
+              <p className="text-xs text-muted-foreground">
+                The time of day when reminders are sent (server timezone)
+              </p>
+            </div>
+          </div>
+
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Reminders are sent to active users who have project assignments but haven't yet logged time for the current week. 
+              Individual users can opt out from their personal settings.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Play className="h-5 w-5" />
+            Manual Trigger
+          </CardTitle>
+          <CardDescription>
+            Send time entry reminders immediately (bypasses the scheduled time)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={() => runRemindersMutation.mutate()}
+            disabled={!timeRemindersEnabled || isRunning}
+            data-testid="button-run-reminders"
+          >
+            {isRunning ? (
+              <>
+                <Clock className="w-4 h-4 mr-2 animate-spin" />
+                Sending Reminders...
+              </>
+            ) : (
+              <>
+                <Bell className="w-4 h-4 mr-2" />
+                Send Reminders Now
+              </>
+            )}
+          </Button>
+          <p className="text-sm text-muted-foreground mt-2">
+            This will immediately send reminder emails to all users with missing time entries for the current week.
+          </p>
+        </CardContent>
+      </Card>
+    </TabsContent>
   );
 }
