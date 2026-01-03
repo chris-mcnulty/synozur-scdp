@@ -24,6 +24,16 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * Format a date as YYYY-MM-DD in local timezone (not UTC)
+ */
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Calculate the start of the prior work week (Monday)
  */
 function getPriorWeekStart(): Date {
@@ -45,9 +55,14 @@ function getPriorWeekStart(): Date {
  * - User has receiveTimeReminders enabled
  * - User has email address
  * - User is active
+ * - User has NOT entered time for the prior week
  */
 async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
   const recipients: Map<string, ReminderRecipient> = new Map();
+  
+  const priorWeekStart = getPriorWeekStart();
+  const priorWeekEnd = new Date(priorWeekStart);
+  priorWeekEnd.setDate(priorWeekStart.getDate() + 6);
   
   const users = await storage.getUsers();
   const activeUsers = users.filter(u => 
@@ -69,7 +84,20 @@ async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
       }
     }
 
-    if (activeProjectNames.length > 0) {
+    if (activeProjectNames.length === 0) continue;
+
+    // Check if the user has logged any time for the prior week (using local timezone dates)
+    const timeEntries = await storage.getTimeEntries({
+      personId: user.id,
+      startDate: formatLocalDate(priorWeekStart),
+      endDate: formatLocalDate(priorWeekEnd)
+    });
+
+    // Calculate total hours logged
+    const totalHoursLogged = timeEntries.reduce((sum, entry) => sum + Number(entry.hours || 0), 0);
+    
+    // Only remind users who have logged less than 1 hour (essentially no time entries)
+    if (totalHoursLogged < 1) {
       recipients.set(user.id, {
         userId: user.id,
         email: user.email!,
