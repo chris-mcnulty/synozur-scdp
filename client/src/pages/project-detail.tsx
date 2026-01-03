@@ -236,6 +236,19 @@ export default function ProjectDetail() {
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   
+  // Engagement completion confirmation state
+  const [engagementToComplete, setEngagementToComplete] = useState<{
+    userId: string;
+    userName: string;
+    hasActiveAllocations: boolean;
+  } | null>(null);
+  
+  // Track the last completion attempt for error recovery
+  const [lastCompletionAttempt, setLastCompletionAttempt] = useState<{
+    userId: string;
+    userName: string;
+  } | null>(null);
+  
   const { toast } = useToast();
   
   // Check if user can view Time tab
@@ -331,6 +344,12 @@ export default function ProjectDetail() {
   // Project allocations query - fetch resource assignments
   const { data: allocations = [], isLoading: allocationsLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/allocations`],
+    enabled: !!id,
+  });
+
+  // Project engagements query - fetch team member engagement status
+  const { data: engagements = [], isLoading: engagementsLoading } = useQuery<any[]>({
+    queryKey: [`/api/projects/${id}/engagements`],
     enabled: !!id,
   });
 
@@ -1123,6 +1142,90 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete assignment",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Engagement mutations for marking team members as complete/reactivating
+  const completeEngagementMutation = useMutation({
+    mutationFn: async ({ userId, force }: { userId: string; force?: boolean }) => {
+      return apiRequest(`/api/projects/${id}/engagements/${userId}/complete`, {
+        method: "PATCH",
+        body: JSON.stringify({ force: force ?? false })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+      setEngagementToComplete(null);
+      setLastCompletionAttempt(null);
+      toast({
+        title: "Engagement Marked Complete",
+        description: "Team member has been marked as complete on this project"
+      });
+    },
+    onError: (error: any) => {
+      // Check if the error is because of active allocations (e.g., race condition with stale pre-check)
+      // apiRequest throws an Error with message from response, so check for the known message pattern
+      const isActiveAllocationsError = error.hasActiveAllocations || 
+        (error.message && error.message.includes("active allocations"));
+      
+      if (isActiveAllocationsError && lastCompletionAttempt) {
+        // Show confirmation dialog to allow override
+        setEngagementToComplete({ 
+          userId: lastCompletionAttempt.userId, 
+          userName: lastCompletionAttempt.userName, 
+          hasActiveAllocations: true 
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to complete engagement",
+          variant: "destructive"
+        });
+        setLastCompletionAttempt(null);
+      }
+    }
+  });
+
+  // Handler to initiate engagement completion with pre-check
+  const handleCompleteEngagement = async (userId: string, userName: string) => {
+    // Store attempt info for error recovery in case of race condition
+    setLastCompletionAttempt({ userId, userName });
+    
+    try {
+      // First check if the user has active allocations using proper API request
+      const data: any = await apiRequest(`/api/projects/${id}/engagements/${userId}/check-last-allocation`);
+      if (data.remainingAllocations > 0) {
+        // User has active allocations, show confirmation dialog requiring override
+        setEngagementToComplete({ userId, userName, hasActiveAllocations: true });
+      } else {
+        // No active allocations, complete directly without force
+        completeEngagementMutation.mutate({ userId, force: false });
+      }
+    } catch (e) {
+      // If check fails, show confirmation dialog to let admin decide
+      setEngagementToComplete({ userId, userName, hasActiveAllocations: true });
+    }
+  };
+
+  const reactivateEngagementMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest(`/api/projects/${id}/engagements/${userId}/reactivate`, {
+        method: "PATCH"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+      toast({
+        title: "Engagement Reactivated",
+        description: "Team member is now active on this project again"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reactivate engagement",
         variant: "destructive"
       });
     }
@@ -2301,6 +2404,101 @@ export default function ProjectDetail() {
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Team Engagements Card - Shows team member engagement status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Team Engagements
+                </CardTitle>
+                <CardDescription>
+                  Track which team members are actively working on this project. 
+                  Mark members as "complete" when they've finished their involvement to stop time reminders.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {engagementsLoading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-12 w-full" />
+                    ))}
+                  </div>
+                ) : engagements.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No team engagements yet</p>
+                    <p className="text-sm mt-2">
+                      Engagements are created automatically when team members are assigned to tasks
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Team Member</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Started</TableHead>
+                        <TableHead>Completed</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {engagements.map((engagement: any) => (
+                        <TableRow key={engagement.id} data-testid={`engagement-row-${engagement.userId}`}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <User className="w-4 h-4 text-muted-foreground" />
+                              {engagement.user?.name || 'Unknown User'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={engagement.status === 'active' ? 'default' : 'secondary'}>
+                              {engagement.status === 'active' ? (
+                                <><Activity className="w-3 h-3 mr-1" /> Active</>
+                              ) : (
+                                <><CheckCircle className="w-3 h-3 mr-1" /> Complete</>
+                              )}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {engagement.createdAt ? format(new Date(engagement.createdAt), "MMM d, yyyy") : '—'}
+                          </TableCell>
+                          <TableCell>
+                            {engagement.completedAt ? format(new Date(engagement.completedAt), "MMM d, yyyy") : '—'}
+                          </TableCell>
+                          <TableCell>
+                            {engagement.status === 'active' ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleCompleteEngagement(engagement.userId, engagement.user?.name || 'Unknown User')}
+                                disabled={completeEngagementMutation.isPending}
+                                data-testid={`button-complete-engagement-${engagement.userId}`}
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Mark Complete
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => reactivateEngagementMutation.mutate(engagement.userId)}
+                                disabled={reactivateEngagementMutation.isPending}
+                                data-testid={`button-reactivate-engagement-${engagement.userId}`}
+                              >
+                                <Activity className="w-3 h-3 mr-1" />
+                                Reactivate
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -5219,6 +5417,46 @@ export default function ProjectDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Engagement Completion Confirmation Dialog - Only shows when user has active allocations */}
+        <AlertDialog open={!!engagementToComplete} onOpenChange={(open) => !open && setEngagementToComplete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Team Member Has Active Assignments
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{engagementToComplete?.userName}</strong> still has active assignments on this project. 
+                Are you sure you want to mark their engagement as complete?
+                <div className="mt-3 p-3 bg-muted rounded-md text-sm">
+                  <p className="font-medium mb-1">What happens when you mark complete:</p>
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>They won't receive time entry reminders for this project</li>
+                    <li>Their active assignments will remain unchanged</li>
+                    <li>They can be reactivated manually or automatically if assigned new work</li>
+                  </ul>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-engagement-completion">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => engagementToComplete && completeEngagementMutation.mutate({ 
+                  userId: engagementToComplete.userId, 
+                  force: true 
+                })}
+                className="bg-amber-600 hover:bg-amber-700"
+                disabled={completeEngagementMutation.isPending}
+                data-testid="button-confirm-engagement-completion"
+              >
+                {completeEngagementMutation.isPending ? "Completing..." : "Yes, Mark Complete Anyway"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );

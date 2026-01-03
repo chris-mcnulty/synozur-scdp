@@ -29,7 +29,7 @@ Preferred communication style: Simple, everyday language.
 ### Database
 - **Type**: PostgreSQL.
 - **Schema Management**: Drizzle Kit.
-- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Expense Reports, Reimbursement Batches, Invoices, Payment Milestones, Rate overrides (estimate-level and client-level), Pending receipts.
+- **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Expense Reports, Reimbursement Batches, Invoices, Payment Milestones, Rate overrides (estimate-level and client-level), Pending receipts, Project Engagements (tracking user involvement status on projects).
 
 ### Project Structure
 - **Monorepo**: Structured into `/client`, `/server`, and `/shared`.
@@ -57,7 +57,8 @@ Preferred communication style: Simple, everyday language.
 - **Expense Approval Workflow**: Comprehensive approval system with finite state machine and role-based access control. Includes automated per diem calculation with GSA federal rates. Email notifications via Outlook/Microsoft Graph API.
 - **Resource Management & Capacity Planning**: Dual List and Timeline views, capacity summary dashboard, color-coded utilization, conflict detection, enhanced filtering, cross-project resource dashboard, and "My Assignments" for employees.
 - **Budget & SOW Management**: Project budgets tied to explicit SOW uploads.
-- **Time Tracking**: Enhanced with assignment/allocation linking and mobile optimizations.
+- **Time Tracking**: Enhanced with assignment/allocation linking and mobile optimizations. Time reminders are sent only to users with active project engagements (not marked as "complete").
+- **Project Engagement Tracking**: Tracks user's overall involvement status (active/complete) on projects, separate from individual assignment status. Auto-creates engagements when users receive assignments, with manual completion by self/admin/PM. Supports future Microsoft Planner bidirectional sync.
 - **Vocabulary Management**: Hierarchical terminology management.
 - **Tax Management**: Configurable tax rates per invoice batch (default 9.3%).
 
