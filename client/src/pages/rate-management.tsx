@@ -102,6 +102,7 @@ export default function RateManagement() {
     defaultValues: {
       name: "",
       defaultRackRate: "0",
+      defaultCostRate: "0",
     },
   });
 
@@ -372,26 +373,50 @@ export default function RateManagement() {
                               )}
                             />
 
-                            <FormField
-                              control={roleForm.control}
-                              name="defaultRackRate"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Default Rack Rate ($/hour)</FormLabel>
-                                  <FormControl>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      placeholder="250.00"
-                                      {...field}
-                                      data-testid="input-default-rate"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+                            <div className="grid grid-cols-2 gap-4">
+                              <FormField
+                                control={roleForm.control}
+                                name="defaultRackRate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Default Billing Rate ($/hour)</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="250.00"
+                                        {...field}
+                                        data-testid="input-default-rate"
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={roleForm.control}
+                                name="defaultCostRate"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>Default Cost Rate ($/hour)</FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        placeholder="150.00"
+                                        {...field}
+                                        value={field.value ?? "0"}
+                                        data-testid="input-default-cost-rate"
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
 
                             <div className="flex justify-end space-x-3">
                               <Button
@@ -453,7 +478,13 @@ export default function RateManagement() {
                             <div className="font-medium text-lg" data-testid={`role-rate-${role.id}`}>
                               ${parseFloat(role.defaultRackRate).toFixed(2)}/hr
                             </div>
-                            <div className="text-sm text-muted-foreground">Standard Rate</div>
+                            <div className="text-sm text-muted-foreground">Billing Rate</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium text-lg text-muted-foreground" data-testid={`role-cost-rate-${role.id}`}>
+                              ${parseFloat(role.defaultCostRate || '0').toFixed(2)}/hr
+                            </div>
+                            <div className="text-sm text-muted-foreground">Cost Rate</div>
                           </div>
                           {hasRole('admin') && (
                             <div className="flex space-x-2">
@@ -493,7 +524,7 @@ export default function RateManagement() {
                     <DialogHeader>
                       <DialogTitle>Edit Role</DialogTitle>
                       <DialogDescription>
-                        Update the role name and default rack rate.
+                        Update the role name and default rates.
                       </DialogDescription>
                     </DialogHeader>
                     {editingRole && (
@@ -507,6 +538,7 @@ export default function RateManagement() {
                             data: {
                               name: formData.get('name') as string,
                               defaultRackRate: formData.get('defaultRackRate') as string,
+                              defaultCostRate: formData.get('defaultCostRate') as string,
                             }
                           });
                         }} 
@@ -522,17 +554,31 @@ export default function RateManagement() {
                           />
                         </div>
 
-                        <div className="space-y-2">
-                          <label className="text-sm font-medium">Default Rack Rate ($/hour)</label>
-                          <Input
-                            name="defaultRackRate"
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            defaultValue={parseFloat(editingRole.defaultRackRate).toFixed(2)}
-                            placeholder="250.00"
-                            data-testid="input-edit-default-rate"
-                          />
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Default Billing Rate ($/hour)</label>
+                            <Input
+                              name="defaultRackRate"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              defaultValue={parseFloat(editingRole.defaultRackRate).toFixed(2)}
+                              placeholder="250.00"
+                              data-testid="input-edit-default-rate"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-sm font-medium">Default Cost Rate ($/hour)</label>
+                            <Input
+                              name="defaultCostRate"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              defaultValue={parseFloat(editingRole.defaultCostRate || '0').toFixed(2)}
+                              placeholder="150.00"
+                              data-testid="input-edit-default-cost-rate"
+                            />
+                          </div>
                         </div>
 
                         <div className="flex justify-end space-x-3">

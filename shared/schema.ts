@@ -65,6 +65,7 @@ export const roles = pgTable("roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }).notNull(),
+  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate for margin calculations
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

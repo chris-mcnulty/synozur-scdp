@@ -5466,6 +5466,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const users = await storage.getUsers();
       const userMap = new Map(users.map(u => [u.id, u]));
 
+      // Get all roles to lookup default rates for role-based estimates
+      const roles = await storage.getRoles();
+      const roleMap = new Map(roles.map(r => [r.id, r]));
+
       let updatedCount = 0;
 
       // Helper to normalize factor values (handles mixed-case imports)
@@ -5509,10 +5513,26 @@ export async function registerRoutes(app: Express): Promise<void> {
                                      confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
                                      Number(estimate.confidenceLowMultiplier || 1);
 
-        // Determine rates: use user defaults if available, otherwise preserve existing rates
+        // Determine rates: user > role > existing
+        // Rate precedence: Manual overrides (already skipped) > User defaults > Role defaults > Existing rates
         let rate = Number(item.rate || 0); // Default to existing rate
         let costRate = Number(item.costRate || 0); // Default to existing cost rate
         
+        // First check role defaults (if no user assigned)
+        if (item.roleId && !item.assignedUserId) {
+          const role = roleMap.get(item.roleId);
+          if (role) {
+            // Use role defaults for billing and cost rates
+            if (role.defaultRackRate != null) {
+              rate = Number(role.defaultRackRate);
+            }
+            if (role.defaultCostRate != null) {
+              costRate = Number(role.defaultCostRate);
+            }
+          }
+        }
+        
+        // User defaults override role defaults
         if (item.assignedUserId) {
           const user = userMap.get(item.assignedUserId);
           if (user) {
