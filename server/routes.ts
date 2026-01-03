@@ -2920,6 +2920,120 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Project Engagements - track user's overall engagement status on a project
+  app.get("/api/projects/:projectId/engagements", requireAuth, async (req, res) => {
+    try {
+      const engagements = await storage.getProjectEngagements(req.params.projectId);
+      res.json(engagements);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to get project engagements:", error);
+      res.status(500).json({ message: "Failed to get project engagements" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/engagements/:userId", requireAuth, async (req, res) => {
+    try {
+      const engagement = await storage.getProjectEngagement(req.params.projectId, req.params.userId);
+      if (!engagement) {
+        return res.status(404).json({ message: "Engagement not found" });
+      }
+      res.json(engagement);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to get project engagement:", error);
+      res.status(500).json({ message: "Failed to get project engagement" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/engagements", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+      const engagement = await storage.ensureProjectEngagement(req.params.projectId, userId);
+      res.json(engagement);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create project engagement:", error);
+      res.status(500).json({ message: "Failed to create project engagement" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/engagements/:userId/complete", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { projectId, userId } = req.params;
+      const { notes, force } = req.body;
+      
+      // Check if user can complete this engagement (self, admin, or PM)
+      const canComplete = user.id === userId || ['admin', 'pm'].includes(user.role);
+      if (!canComplete) {
+        return res.status(403).json({ message: "Not authorized to complete this engagement" });
+      }
+      
+      // Check for active allocations unless force is true
+      if (!force) {
+        const hasActiveAllocations = await storage.checkUserHasActiveAllocations(projectId, userId);
+        if (hasActiveAllocations) {
+          return res.status(409).json({ 
+            message: "User has active allocations", 
+            hasActiveAllocations: true 
+          });
+        }
+      }
+      
+      const engagement = await storage.markEngagementComplete(projectId, userId, user.id, notes);
+      res.json(engagement);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to complete engagement:", error);
+      res.status(500).json({ message: "Failed to complete engagement" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/engagements/:userId/reactivate", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const engagement = await storage.ensureProjectEngagement(req.params.projectId, req.params.userId);
+      res.json(engagement);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to reactivate engagement:", error);
+      res.status(500).json({ message: "Failed to reactivate engagement" });
+    }
+  });
+
+  // Get user's active engagements (projects they're actively working on)
+  app.get("/api/users/:userId/active-engagements", requireAuth, async (req, res) => {
+    try {
+      const engagements = await storage.getUserActiveEngagements(req.params.userId);
+      res.json(engagements);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to get user active engagements:", error);
+      res.status(500).json({ message: "Failed to get user active engagements" });
+    }
+  });
+
+  // Check if completing an allocation would leave a user with no active allocations
+  app.get("/api/projects/:projectId/engagements/:userId/check-last-allocation", requireAuth, async (req, res) => {
+    try {
+      const { projectId, userId } = req.params;
+      const { excludeAllocationId } = req.query;
+      
+      // Get active allocations for this user on this project
+      const allocations = await storage.getProjectAllocations(projectId);
+      const userActiveAllocations = allocations.filter((a: any) => 
+        a.personId === userId && 
+        ['open', 'in_progress'].includes(a.status) &&
+        a.id !== excludeAllocationId
+      );
+      
+      res.json({ 
+        isLastAllocation: userActiveAllocations.length === 0,
+        remainingAllocations: userActiveAllocations.length 
+      });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to check last allocation:", error);
+      res.status(500).json({ message: "Failed to check last allocation" });
+    }
+  });
+
   // Export project allocations to CSV (Planner-compatible format)
   app.get("/api/projects/:projectId/allocations/export", requireAuth, async (req, res) => {
     try {
