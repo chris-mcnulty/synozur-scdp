@@ -51,7 +51,7 @@ function getPriorWeekStart(): Date {
 /**
  * Get users who need time entry reminders
  * Criteria:
- * - User has active assignments on active projects
+ * - User has ACTIVE engagement on active projects (not 'complete')
  * - User has receiveTimeReminders enabled
  * - User has email address
  * - User is active
@@ -73,18 +73,12 @@ async function getUsersNeedingReminders(): Promise<ReminderRecipient[]> {
   );
 
   for (const user of activeUsers) {
-    const allocations = await storage.getUserAllocations(user.id);
+    // Use getUserActiveEngagements which returns only engagements with status='active' on active projects
+    const activeEngagements = await storage.getUserActiveEngagements(user.id);
     
-    const activeProjectNames: string[] = [];
-    for (const allocation of allocations) {
-      if (allocation.project && allocation.project.status === 'active') {
-        if (!activeProjectNames.includes(allocation.project.name)) {
-          activeProjectNames.push(allocation.project.name);
-        }
-      }
-    }
-
-    if (activeProjectNames.length === 0) continue;
+    if (activeEngagements.length === 0) continue;
+    
+    const activeProjectNames = activeEngagements.map(e => e.project.name);
 
     // Check if the user has logged any time for the prior week (using local timezone dates)
     const timeEntries = await storage.getTimeEntries({

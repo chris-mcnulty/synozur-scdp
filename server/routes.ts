@@ -2880,6 +2880,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
       const created = await storage.createProjectAllocation(validatedData);
+      
+      // Auto-create or reactivate engagement when a person is assigned
+      if (validatedData.personId) {
+        await storage.ensureProjectEngagement(req.params.projectId, validatedData.personId);
+      }
+      
       res.status(201).json(created);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
@@ -2893,6 +2899,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.put("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const updated = await storage.updateProjectAllocation(req.params.id, req.body);
+      
+      // Auto-create or reactivate engagement when a person is assigned
+      if (req.body.personId) {
+        await storage.ensureProjectEngagement(req.params.projectId, req.body.personId);
+      }
+      
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to update project allocation:", error);
@@ -2913,6 +2925,18 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/projects/:projectId/allocations/bulk-update", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const updated = await storage.bulkUpdateProjectAllocations(req.params.projectId, req.body.allocations);
+      
+      // Auto-create or reactivate engagements for all assigned users
+      const personIds = new Set<string>();
+      for (const allocation of req.body.allocations) {
+        if (allocation.personId) {
+          personIds.add(allocation.personId);
+        }
+      }
+      for (const personId of Array.from(personIds)) {
+        await storage.ensureProjectEngagement(req.params.projectId, personId);
+      }
+      
       res.json(updated);
     } catch (error: any) {
       console.error("[ERROR] Failed to bulk update project allocations:", error);
