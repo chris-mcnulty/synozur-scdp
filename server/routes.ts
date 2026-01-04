@@ -6894,6 +6894,158 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // CSV validation - check for unrecognized resources/roles before import
+  app.post("/api/estimates/:id/validate-csv", requireAuth, async (req, res) => {
+    try {
+      const fileData = req.body.file;
+      
+      if (!fileData) {
+        return res.status(400).json({ message: "No file data received" });
+      }
+      
+      const buffer = Buffer.from(fileData, "base64");
+      const csvText = buffer.toString("utf-8");
+      
+      // Parse CSV
+      const lines = csvText.split(/\r?\n/);
+      const rows = lines.map(line => {
+        const result = [];
+        let current = "";
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+          
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current);
+            current = "";
+          } else {
+            current += char;
+          }
+        }
+        result.push(current);
+        return result;
+      }).filter(row => row.length > 1 || row[0]);
+
+      if (rows.length < 2) {
+        return res.json({ 
+          valid: true, 
+          missingRoles: [],
+          message: "CSV file must have headers and at least one data row" 
+        });
+      }
+
+      // Find resource column
+      const headers = rows[0];
+      let resourceColIndex = -1;
+      headers.forEach((header, idx) => {
+        const normalized = header.toLowerCase().trim();
+        if (normalized.includes("resource")) resourceColIndex = idx;
+      });
+
+      if (resourceColIndex === -1) {
+        return res.json({ valid: true, missingRoles: [] });
+      }
+
+      // Helper to strip surrounding quotes from CSV values
+      const stripQuotes = (val: string): string => {
+        let v = val?.trim() || '';
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1);
+        }
+        return v.trim();
+      };
+
+      // Get all unique resource names from CSV
+      const resourceNames = new Set<string>();
+      for (let i = 1; i < rows.length; i++) {
+        const resourceName = stripQuotes(rows[i][resourceColIndex] || '');
+        if (resourceName) {
+          resourceNames.add(resourceName);
+        }
+      }
+
+      // Get existing roles and users
+      const roles = await storage.getRoles();
+      const users = await storage.getUsers();
+      
+      const roleNameSet = new Set(roles.map(r => r.name.toLowerCase().trim()));
+      const userNameSet = new Set(users.map(u => u.name.toLowerCase().trim()));
+
+      // Find resources that don't match any role or user
+      const missingRoles: { name: string; suggestedRate: number; usageCount: number }[] = [];
+      
+      for (const resourceName of Array.from(resourceNames)) {
+        const normalized = resourceName.toLowerCase().trim();
+        if (!roleNameSet.has(normalized) && !userNameSet.has(normalized)) {
+          // Count how many times this resource appears in the CSV
+          let usageCount = 0;
+          for (let i = 1; i < rows.length; i++) {
+            if (rows[i][resourceColIndex]?.trim().toLowerCase() === normalized) {
+              usageCount++;
+            }
+          }
+          missingRoles.push({
+            name: resourceName,
+            suggestedRate: 175, // Default suggested rate
+            usageCount
+          });
+        }
+      }
+
+      // Sort by usage count (most used first)
+      missingRoles.sort((a, b) => b.usageCount - a.usageCount);
+
+      res.json({
+        valid: missingRoles.length === 0,
+        missingRoles,
+        totalResources: resourceNames.size,
+        matchedResources: resourceNames.size - missingRoles.length
+      });
+    } catch (error) {
+      console.error("CSV validation error:", error);
+      res.status(500).json({ message: "Failed to validate CSV" });
+    }
+  });
+
+  // Bulk create roles endpoint for import wizard
+  app.post("/api/roles/bulk", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { roles: rolesToCreate } = req.body;
+      
+      if (!Array.isArray(rolesToCreate) || rolesToCreate.length === 0) {
+        return res.status(400).json({ message: "No roles provided" });
+      }
+
+      const createdRoles = [];
+      for (const roleData of rolesToCreate) {
+        const role = await storage.createRole({
+          name: roleData.name,
+          defaultRackRate: roleData.defaultRackRate?.toString() || "175",
+          defaultCostRate: roleData.defaultCostRate?.toString() || "131.25"
+        });
+        createdRoles.push(role);
+      }
+
+      res.json({ 
+        success: true, 
+        rolesCreated: createdRoles.length,
+        roles: createdRoles
+      });
+    } catch (error) {
+      console.error("Bulk role creation error:", error);
+      res.status(500).json({ message: "Failed to create roles" });
+    }
+  });
+
   // CSV import
   app.post("/api/estimates/:id/import-csv", requireAuth, async (req, res) => {
     try {

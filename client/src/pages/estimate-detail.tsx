@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -110,6 +110,9 @@ function EstimateDetailContent() {
   const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<string | null>(null);
   const [importType, setImportType] = useState<'excel' | 'csv'>('excel');
+  const [showMissingRolesWizard, setShowMissingRolesWizard] = useState(false);
+  const [missingRoles, setMissingRoles] = useState<{ name: string; billingRate: string; costRate: string; usageCount: number }[]>([]);
+  const [isValidatingImport, setIsValidatingImport] = useState(false);
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [editingStageName, setEditingStageName] = useState<string>("");
   const [showNarrativeDialog, setShowNarrativeDialog] = useState(false);
@@ -1097,6 +1100,7 @@ function EstimateDetailContent() {
     // Clear any old pending file first
     setPendingImportFile(null);
     setImportType('csv');
+    setMissingRoles([]);
     
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -1104,12 +1108,91 @@ function EstimateDetailContent() {
       if (!base64) return;
       
       setPendingImportFile(base64);
-      setShowImportConfirmDialog(true);
+      
+      // Validate CSV for missing roles before showing import dialog
+      setIsValidatingImport(true);
+      try {
+        const validationResponse = await fetch(`/api/estimates/${id}/validate-csv`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": localStorage.getItem("sessionId") || "",
+          },
+          body: JSON.stringify({ file: base64 })
+        });
+        
+        const validation = await validationResponse.json();
+        
+        if (validation.missingRoles && validation.missingRoles.length > 0) {
+          // Show missing roles wizard
+          setMissingRoles(validation.missingRoles.map((r: any) => ({
+            name: r.name,
+            billingRate: "175",
+            costRate: "131.25",
+            usageCount: r.usageCount
+          })));
+          setShowMissingRolesWizard(true);
+        } else {
+          // No missing roles, proceed to import confirmation
+          setShowImportConfirmDialog(true);
+        }
+      } catch (error) {
+        console.error("CSV validation error:", error);
+        // On validation error, just proceed with import
+        setShowImportConfirmDialog(true);
+      } finally {
+        setIsValidatingImport(false);
+      }
     };
     reader.readAsDataURL(file);
     
     // Reset file input so the same file can be selected again
     event.target.value = '';
+  };
+
+  const handleCreateMissingRoles = async () => {
+    try {
+      // Create all missing roles with user-specified rates
+      const rolesToCreate = missingRoles.map(r => ({
+        name: r.name,
+        defaultRackRate: r.billingRate,
+        defaultCostRate: r.costRate
+      }));
+
+      const response = await fetch("/api/roles/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": localStorage.getItem("sessionId") || "",
+        },
+        body: JSON.stringify({ roles: rolesToCreate })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create roles");
+      }
+
+      const result = await response.json();
+      toast({ title: `Created ${result.rolesCreated} new role(s)` });
+      
+      // Close wizard and proceed to import confirmation (keep pendingImportFile!)
+      setShowMissingRolesWizard(false);
+      setMissingRoles([]);
+      setShowImportConfirmDialog(true);
+      
+      // Invalidate roles query to refresh role list
+      queryClient.invalidateQueries({ queryKey: ['/api/roles'] });
+    } catch (error) {
+      toast({ title: "Failed to create roles", variant: "destructive" });
+    }
+  };
+
+  const updateMissingRoleRate = (index: number, field: 'billingRate' | 'costRate', value: string) => {
+    setMissingRoles(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
   };
 
   const executeImport = async (removeExisting: boolean) => {
@@ -4531,6 +4614,106 @@ function EstimateDetailContent() {
             {approveEstimateMutation.isPending 
               ? (estimate?.status === 'approved' ? "Creating Project..." : "Approving...") 
               : (estimate?.status === 'approved' ? "Create Project" : "Approve Estimate")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Missing Roles Wizard Dialog */}
+    <Dialog open={showMissingRolesWizard} onOpenChange={(open) => {
+      setShowMissingRolesWizard(open);
+      if (!open) {
+        setMissingRoles([]);
+        // Only clear pending file if user closes without action (not when proceeding)
+      }
+    }}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            Unrecognized Resources Found
+          </DialogTitle>
+          <DialogDescription>
+            The following resource names in your CSV don't match any existing roles or users. 
+            Please set their billing and cost rates to create them as new roles.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left p-3 font-medium">Resource Name</th>
+                  <th className="text-center p-3 font-medium">Used</th>
+                  <th className="text-right p-3 font-medium">Billing Rate</th>
+                  <th className="text-right p-3 font-medium">Cost Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {missingRoles.map((role, index) => (
+                  <tr key={role.name} className="border-t">
+                    <td className="p-3 font-medium">{role.name}</td>
+                    <td className="p-3 text-center text-muted-foreground">{role.usageCount}x</td>
+                    <td className="p-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          value={role.billingRate}
+                          onChange={(e) => updateMissingRoleRate(index, 'billingRate', e.target.value)}
+                          className="w-24 text-right"
+                          data-testid={`input-billing-rate-${index}`}
+                        />
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          value={role.costRate}
+                          onChange={(e) => updateMissingRoleRate(index, 'costRate', e.target.value)}
+                          className="w-24 text-right"
+                          data-testid={`input-cost-rate-${index}`}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            These roles will be created in your system and can be managed from the Roles page.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowMissingRolesWizard(false);
+              setMissingRoles([]);
+              setPendingImportFile(null);
+            }}
+            data-testid="button-cancel-missing-roles"
+          >
+            Cancel Import
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowMissingRolesWizard(false);
+              setShowImportConfirmDialog(true);
+            }}
+            data-testid="button-skip-roles"
+          >
+            Skip (Import Anyway)
+          </Button>
+          <Button
+            onClick={handleCreateMissingRoles}
+            data-testid="button-create-roles"
+          >
+            Create Roles & Continue
           </Button>
         </DialogFooter>
       </DialogContent>
