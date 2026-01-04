@@ -5785,6 +5785,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Get all roles to lookup default rates for role-based estimates
       const roles = await storage.getRoles();
       const roleMap = new Map(roles.map(r => [r.id, r]));
+      
+      // Find "All" role as fallback for items without role/user assignment
+      const allRole = roles.find(r => r.name === 'All');
+      let defaultCostRatio = 0.75; // Default to 75% cost ratio (25% margin)
+      if (allRole) {
+        const rackRate = Number(allRole.defaultRackRate) || 0;
+        const costRate = Number(allRole.defaultCostRate) || 0;
+        if (rackRate > 0 && costRate > 0) {
+          defaultCostRatio = costRate / rackRate;
+        }
+      }
 
       let updatedCount = 0;
 
@@ -5860,6 +5871,13 @@ export async function registerRoutes(app: Express): Promise<void> {
               costRate = Number(user.defaultCostRate);
             }
           }
+        }
+        
+        // FALLBACK: If no role and no user assigned, but we have a billing rate and no cost rate,
+        // calculate cost rate using the default cost ratio (from "All" role or 75% default)
+        // This prevents 100% margin for generic rate estimates
+        if (!item.roleId && !item.assignedUserId && rate > 0 && costRate === 0) {
+          costRate = rate * defaultCostRatio;
         }
 
         // Calculate adjusted hours
