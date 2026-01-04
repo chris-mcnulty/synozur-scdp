@@ -5857,7 +5857,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         if (!matchedRole && item.resourceName && !item.assignedUserId) {
           const lookupKey = item.resourceName.toLowerCase().trim();
           matchedRole = roleNameMap.get(lookupKey);
-          console.log(`[Recalc] Looking up role for "${item.resourceName}" (key: "${lookupKey}") - found: ${matchedRole ? matchedRole.name : 'NONE'}`);
         }
         
         if (matchedRole && !item.assignedUserId) {
