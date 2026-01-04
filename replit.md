@@ -74,3 +74,13 @@ Preferred communication style: Simple, everyday language.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client (Replit Connector integration).
 - **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI.
 - **Per Diem Rates**: GSA Per Diem API.
+
+## Design Documentation
+
+### Active Design Documents
+- **Multi-Tenancy Architecture**: `docs/design/multi-tenancy-design.md` - Comprehensive design for converting Constellation to multi-tenant SaaS platform. Includes service plans (Trial, Team, Enterprise, Unlimited), 60-day data retention, co-branding support, subdomain routing for Enterprise/Unlimited, and migration strategy for production continuity.
+- **Microsoft 365 Project Integration**: `docs/design/microsoft-365-project-integration.md` - Teams/Channel creation, Planner sync, 6-8 weeks estimated.
+
+### Planned Architecture Changes
+- **Multi-Tenancy (P1 Backlog)**: 13-17 week implementation to enable SaaS subscription model. Key decisions: remix codebase for parallel development, maintain Synozur production during transition, 60-day data retention, subdomain routing as premium feature.
+- **Two-Tier Role System**: Platform roles (user, constellation_consultant, constellation_admin, global_admin) + Tenant roles (existing: admin, billing-admin, pm, employee, executive).

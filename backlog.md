@@ -248,6 +248,91 @@
 **Timeline:** 6-8 weeks (phased implementation)  
 **Complexity:** High (multiple Microsoft Graph APIs, sync logic, error handling)
 
+### Multi-Tenancy Architecture - NEW
+**Status:** DESIGN COMPLETE - Ready for implementation  
+**Priority:** P1 - High priority for SaaS enablement  
+**Added:** January 2026  
+**Design Document:** `docs/design/multi-tenancy-design.md`
+
+**Why P1:** Converts Constellation from single-tenant to multi-tenant SaaS platform, enabling software subscription offerings in 6-12 months. Modeled after Vega's proven multi-tenant architecture.
+
+**Service Plans:**
+| Plan | Users | Billing | Features |
+|------|-------|---------|----------|
+| Trial | 5 | 30-60 days free | Core features, AI, basic branding |
+| Team | 5+ (tiers) | Monthly/Annual | Full features, co-branding, SharePoint |
+| Enterprise | Generous tiers | Annual | SSO, custom subdomain, priority support |
+| Unlimited | Unlimited | Internal | Synozur + priority accounts |
+
+**Key Design Decisions:**
+- **Data Retention**: 60 days after trial/subscription expiration
+- **Co-Branding**: Supported on all paying plans (logo, colors)
+- **Subdomain Routing**: Premium option for Enterprise/Unlimited (`clientname.constellation.synozur.com`)
+- **Migration Strategy**: Remix codebase for parallel development, data migration path maintains production continuity
+
+**Scope:**
+
+- [ ] **Phase 1: Foundation (3-4 weeks)**
+  - Create multi-tenant schema tables (tenants, tenantUsers, servicePlans, tenantPlans)
+  - Add tenantId column to all existing tables
+  - Create Synozur as initial tenant
+  - Backfill existing data with Synozur tenant ID
+  - Add tenant middleware layer
+
+- [ ] **Phase 2: User & Auth (2-3 weeks)**
+  - Create tenantUsers table for multi-tenant membership
+  - Migrate existing users to tenantUsers
+  - Add platform roles (user, constellation_consultant, constellation_admin, global_admin)
+  - Update authentication flow with tenant context
+  - Add tenant switcher UI
+
+- [ ] **Phase 3: Tenant Admin (2-3 weeks)**
+  - Build Tenant Admin pages (users, settings, branding)
+  - Implement co-branding (logo, colors)
+  - Per-tenant SSO configuration
+  - Per-tenant vocabulary
+  - User invitation system
+
+- [ ] **Phase 4: Platform Admin (2 weeks)**
+  - Build Platform Admin pages
+  - Service plan management (Trial, Team, Enterprise, Unlimited)
+  - Tenant monitoring dashboard
+  - Blocked domains management
+  - Consultant access management
+
+- [ ] **Phase 5: Subdomain Routing (1-2 weeks)**
+  - Subdomain detection middleware
+  - Wildcard DNS and SSL configuration
+  - Tenant-specific login pages
+  - Subdomain assignment for Enterprise/Unlimited
+
+- [ ] **Phase 6: Self-Service & Plans (2-3 weeks)**
+  - Signup flow with domain detection
+  - Onboarding wizard
+  - Trial plan logic (30/60 days)
+  - Plan expiration and grace period handling
+  - Data retention enforcement (60 days)
+
+- [ ] **Phase 7: Polish & Testing (2 weeks)**
+  - Security audit (tenant isolation)
+  - Performance optimization
+  - Documentation updates
+
+**Migration Strategy:**
+1. **Remix Approach**: Fork codebase for parallel multi-tenant development
+2. **Schema First**: Add nullable tenantId columns (backward compatible)
+3. **Data Migration**: Backfill existing data to Synozur tenant
+4. **Code Cutover**: Deploy multi-tenant version with minimal disruption
+5. **Rollback Ready**: 15-minute rollback if issues arise
+
+**Dependencies:**
+- Vega architecture reference
+- Database schema planning complete
+- Production continuity requirements
+
+**Timeline:** 13-17 weeks (phased implementation)  
+**Complexity:** Very High (schema changes, auth refactoring, data migration, production continuity)
+
 ---
 
 ## 📊 P2 - IMPORTANT FEATURES (Weeks 5-8)
