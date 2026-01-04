@@ -5785,8 +5785,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Get all roles to lookup default rates for role-based estimates
       const roles = await storage.getRoles();
       const roleMap = new Map(roles.map(r => [r.id, r]));
+      // Create role name map for looking up by resourceName (case-insensitive)
+      const roleNameMap = new Map(roles.map(r => [r.name.toLowerCase().trim(), r]));
       
-      // Find "All" role as fallback for items without role/user assignment
+      // Find "All" role as last-resort fallback
       const allRole = roles.find(r => r.name === 'All');
       let defaultCostRatio = 0.75; // Default to 75% cost ratio (25% margin)
       if (allRole) {
@@ -5846,16 +5848,23 @@ export async function registerRoutes(app: Express): Promise<void> {
         let costRate = Number(item.costRate || 0); // Default to existing cost rate
         
         // First check role defaults (if no user assigned)
-        if (item.roleId && !item.assignedUserId) {
-          const role = roleMap.get(item.roleId);
-          if (role) {
-            // Use role defaults for billing and cost rates
-            if (role.defaultRackRate != null) {
-              rate = Number(role.defaultRackRate);
-            }
-            if (role.defaultCostRate != null) {
-              costRate = Number(role.defaultCostRate);
-            }
+        // Try to find role by roleId first, then by resourceName
+        let matchedRole = null;
+        if (item.roleId) {
+          matchedRole = roleMap.get(item.roleId);
+        }
+        // If no roleId or role not found, try matching by resourceName
+        if (!matchedRole && item.resourceName && !item.assignedUserId) {
+          matchedRole = roleNameMap.get(item.resourceName.toLowerCase().trim());
+        }
+        
+        if (matchedRole && !item.assignedUserId) {
+          // Use role defaults for billing and cost rates
+          if (matchedRole.defaultRackRate != null) {
+            rate = Number(matchedRole.defaultRackRate);
+          }
+          if (matchedRole.defaultCostRate != null) {
+            costRate = Number(matchedRole.defaultCostRate);
           }
         }
         
@@ -5873,10 +5882,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
         
-        // FALLBACK: If no role and no user assigned, but we have a billing rate and no cost rate,
+        // FALLBACK: If no matching role (by ID or name) and no user assigned, 
+        // but we have a billing rate and no cost rate,
         // calculate cost rate using the default cost ratio (from "All" role or 75% default)
         // This prevents 100% margin for generic rate estimates
-        if (!item.roleId && !item.assignedUserId && rate > 0 && costRate === 0) {
+        if (!matchedRole && !item.assignedUserId && rate > 0 && costRate === 0) {
           costRate = rate * defaultCostRatio;
         }
 
