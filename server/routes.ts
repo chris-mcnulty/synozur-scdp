@@ -5636,8 +5636,6 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
-      console.log("Updating line item:", req.params.id);
-      console.log("Request body:", JSON.stringify(req.body, null, 2));
 
       // Validate the request body
       const { z } = await import("zod");
@@ -5655,21 +5653,40 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "At least one field must be provided for update" });
       }
 
+      // If resourceName is being changed and no assignedUserId, look up role's default rates
+      if ('resourceName' in validatedData && validatedData.resourceName && !validatedData.assignedUserId) {
+        const roles = await storage.getRoles();
+        const matchedRole = roles.find(r => r.name.toLowerCase().trim() === validatedData.resourceName!.toLowerCase().trim());
+        
+        if (matchedRole) {
+          // Auto-populate rates from role defaults (unless explicitly provided in the request)
+          if (!('rate' in req.body) || req.body.rate === null || req.body.rate === '') {
+            (validatedData as any).rate = matchedRole.defaultRackRate;
+          }
+          if (!('costRate' in req.body) || req.body.costRate === null || req.body.costRate === '') {
+            (validatedData as any).costRate = matchedRole.defaultCostRate || '0';
+          }
+          // Clear assignedUserId and roleId when switching to generic role by name
+          (validatedData as any).assignedUserId = null;
+          (validatedData as any).roleId = matchedRole.id;
+          // Don't mark as manual override since we're using role defaults
+          (validatedData as any).hasManualRateOverride = false;
+        }
+      }
+
       // If rate or costRate is being explicitly set (not null/empty), mark as manual override
       // If being cleared (null/''), allow future recalculations by not setting the flag
-      const hasRateValue = 'rate' in validatedData && validatedData.rate !== null && validatedData.rate !== '';
-      const hasCostRateValue = 'costRate' in validatedData && validatedData.costRate !== null && validatedData.costRate !== '';
+      const hasRateValue = 'rate' in req.body && req.body.rate !== null && req.body.rate !== '';
+      const hasCostRateValue = 'costRate' in req.body && req.body.costRate !== null && req.body.costRate !== '';
       
       if (hasRateValue || hasCostRateValue) {
         (validatedData as any).hasManualRateOverride = true;
-      } else if (('rate' in validatedData && !hasRateValue) || ('costRate' in validatedData && !hasCostRateValue)) {
+      } else if (('rate' in req.body && !hasRateValue) || ('costRate' in req.body && !hasCostRateValue)) {
         // If clearing rates, remove the override flag to allow future recalculations
         (validatedData as any).hasManualRateOverride = false;
       }
 
-      console.log("Validated update data:", JSON.stringify(validatedData, null, 2));
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
-      console.log("Updated line item:", lineItem);
 
       res.json(lineItem);
     } catch (error) {
