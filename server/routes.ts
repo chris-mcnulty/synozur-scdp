@@ -6209,13 +6209,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       const marginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
 
       // Calculate referral fee and net revenue
+      // Referral fee is calculated on PROFIT (totalMargin = totalFees - totalCost), not on total revenue
       let referralFeeAmount = 0;
       if (estimate.referralFeeType === 'percentage' && estimate.referralFeePercent) {
-        referralFeeAmount = totalFees * (Number(estimate.referralFeePercent) / 100);
+        referralFeeAmount = totalMargin * (Number(estimate.referralFeePercent) / 100);
       } else if (estimate.referralFeeType === 'flat' && estimate.referralFeeFlat) {
         referralFeeAmount = Number(estimate.referralFeeFlat);
       }
-      const netRevenue = totalFees - referralFeeAmount;
+      const netRevenue = totalMargin - referralFeeAmount;
 
       await storage.updateEstimate(estimateId, {
         totalHours: String(totalHours),
@@ -10801,13 +10802,19 @@ export async function registerRoutes(app: Express): Promise<void> {
           const feePercent = req.body.referralFeePercent ?? existingEstimate.referralFeePercent;
           const feeFlat = req.body.referralFeeFlat ?? existingEstimate.referralFeeFlat;
           
+          // Calculate profit (margin) from line items for percentage-based referral fees
+          const lineItems = await storage.getEstimateLineItems(req.params.id);
+          const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+          const profit = totalFees - totalCost;
+          
+          // Referral fee is calculated on PROFIT (margin), not on total revenue
           let referralFeeAmount = 0;
           if (feeType === 'percentage' && feePercent) {
-            referralFeeAmount = totalFees * (Number(feePercent) / 100);
+            referralFeeAmount = profit * (Number(feePercent) / 100);
           } else if (feeType === 'flat' && feeFlat) {
             referralFeeAmount = Number(feeFlat);
           }
-          const netRevenue = totalFees - referralFeeAmount;
+          const netRevenue = profit - referralFeeAmount;
           
           updateData.referralFeeAmount = String(referralFeeAmount);
           updateData.netRevenue = String(netRevenue);

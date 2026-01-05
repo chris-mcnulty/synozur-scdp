@@ -2129,7 +2129,7 @@ function EstimateDetailContent() {
                 {estimate?.referralFeeType && estimate.referralFeeType !== 'none' && (
                   <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
                     <div className="flex justify-between text-sm">
-                      <span>Referral Fee:</span>
+                      <span>Referral Fee{estimate?.referralFeeType === 'percentage' ? ' (on Profit)' : ''}:</span>
                       <span className="font-medium text-amber-700 dark:text-amber-400">
                         -${Math.round(Number(estimate?.referralFeeAmount || 0)).toLocaleString()}
                         {estimate?.referralFeeType === 'percentage' && estimate?.referralFeePercent && 
@@ -2137,9 +2137,9 @@ function EstimateDetailContent() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm mt-1">
-                      <span>Net Revenue:</span>
+                      <span>Net Profit:</span>
                       <span className="font-semibold text-green-700 dark:text-green-400">
-                        ${Math.round(Number(estimate?.netRevenue || (Number(estimate?.presentedTotal || totalAmount) - Number(estimate?.referralFeeAmount || 0)))).toLocaleString()}
+                        ${Math.round(Number(estimate?.netRevenue || 0)).toLocaleString()}
                       </span>
                     </div>
                   </div>
