@@ -202,6 +202,65 @@ async function ensureEstimateIsEditable(estimateId: string, res: Response): Prom
   return true;
 }
 
+// Helper: Recalculate referral fee distribution across line items
+async function recalculateReferralFees(estimateId: string): Promise<void> {
+  const estimate = await storage.getEstimate(estimateId);
+  if (!estimate || !estimate.referralFeeType || estimate.referralFeeType === 'none') {
+    return;
+  }
+  
+  const allLineItems = await storage.getEstimateLineItems(estimateId);
+  const baseTotalFees = allLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+  const totalCost = allLineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  const profit = baseTotalFees - totalCost;
+  
+  let referralFeeAmount = 0;
+  if (estimate.referralFeeType === 'percentage' && estimate.referralFeePercent) {
+    referralFeeAmount = profit * (Number(estimate.referralFeePercent) / 100);
+  } else if (estimate.referralFeeType === 'flat' && estimate.referralFeeFlat) {
+    referralFeeAmount = Number(estimate.referralFeeFlat);
+  }
+  
+  // Distribute referral markup proportionally based on margin contribution
+  const totalPositiveMargin = allLineItems.reduce((sum, item) => {
+    const margin = Number(item.margin || 0);
+    return sum + (margin > 0 ? margin : 0);
+  }, 0);
+
+  let presentedTotal = baseTotalFees;
+  
+  for (const item of allLineItems) {
+    const itemMargin = Number(item.margin || 0);
+    let referralMarkup = 0;
+    
+    if (referralFeeAmount > 0 && totalPositiveMargin > 0) {
+      if (itemMargin > 0) {
+        referralMarkup = referralFeeAmount * (itemMargin / totalPositiveMargin);
+      }
+    } else if (referralFeeAmount > 0 && totalPositiveMargin <= 0) {
+      referralMarkup = referralFeeAmount / allLineItems.length;
+    }
+    
+    const totalAmountWithReferral = Number(item.totalAmount || 0) + referralMarkup;
+    
+    await storage.updateEstimateLineItem(item.id, {
+      referralMarkup: String(referralMarkup),
+      totalAmountWithReferral: String(totalAmountWithReferral)
+    });
+    
+    presentedTotal += referralMarkup;
+  }
+
+  const netRevenue = profit - referralFeeAmount;
+  
+  await storage.updateEstimate(estimateId, {
+    referralFeeAmount: String(referralFeeAmount),
+    netRevenue: String(netRevenue),
+    presentedTotal: String(presentedTotal),
+    totalFees: String(baseTotalFees)
+  });
+}
+
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
 import { requireAuth, requireRole, getAllSessions } from "./session-store";
@@ -5614,6 +5673,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lineItem = await storage.createEstimateLineItem(validatedData);
       console.log("Created line item:", lineItem);
 
+      // Recalculate referral markup after line item creation
+      await recalculateReferralFees(req.params.id);
+
       res.json(lineItem);
     } catch (error) {
       console.error("Line item creation error:", error);
@@ -5688,6 +5750,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
 
+      // Recalculate referral markup after line item changes
+      await recalculateReferralFees(req.params.estimateId);
+
       res.json(lineItem);
     } catch (error) {
       console.error("Line item update error:", error);
@@ -5711,6 +5776,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       await storage.deleteEstimateLineItem(req.params.id);
+      
+      // Recalculate referral markup after line item deletion
+      await recalculateReferralFees(req.params.estimateId);
+      
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete line item" });
@@ -6208,24 +6277,21 @@ export async function registerRoutes(app: Express): Promise<void> {
       const totalMargin = totalFees - totalCost;
       const marginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
 
-      // Calculate referral fee and net revenue
-      // Referral fee is calculated on PROFIT (totalMargin = totalFees - totalCost), not on total revenue
-      let referralFeeAmount = 0;
-      if (estimate.referralFeeType === 'percentage' && estimate.referralFeePercent) {
-        referralFeeAmount = totalMargin * (Number(estimate.referralFeePercent) / 100);
-      } else if (estimate.referralFeeType === 'flat' && estimate.referralFeeFlat) {
-        referralFeeAmount = Number(estimate.referralFeeFlat);
-      }
-      const netRevenue = totalMargin - referralFeeAmount;
-
+      // Update base totals first
       await storage.updateEstimate(estimateId, {
         totalHours: String(totalHours),
         totalFees: String(totalFees),
-        presentedTotal: String(totalFees),
-        margin: String(marginPercent),
-        referralFeeAmount: String(referralFeeAmount),
-        netRevenue: String(netRevenue)
+        margin: String(marginPercent)
       });
+
+      // Use helper to recalculate and distribute referral fees
+      await recalculateReferralFees(estimateId);
+
+      // Fetch updated estimate to get referral-adjusted values
+      const updatedEstimate = await storage.getEstimate(estimateId);
+      const referralFeeAmount = Number(updatedEstimate?.referralFeeAmount || 0);
+      const netRevenue = Number(updatedEstimate?.netRevenue || 0);
+      const presentedTotal = Number(updatedEstimate?.presentedTotal || totalFees);
 
       res.json({ 
         success: true, 
@@ -6237,7 +6303,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           totalMargin,
           marginPercent,
           referralFeeAmount,
-          netRevenue
+          netRevenue,
+          presentedTotal
         }
       });
     } catch (error) {
@@ -10796,16 +10863,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (referralFieldsChanged || totalsChanged) {
         const existingEstimate = await storage.getEstimate(req.params.id);
         if (existingEstimate) {
-          // Use updated totals from request if provided, otherwise use existing
-          const totalFees = Number(req.body.totalFees ?? req.body.presentedTotal ?? existingEstimate.totalFees ?? existingEstimate.presentedTotal ?? 0);
+          // Get line items to calculate margin-based fee
+          const lineItems = await storage.getEstimateLineItems(req.params.id);
+          const baseTotalFees = lineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+          const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+          const profit = baseTotalFees - totalCost;
+          
           const feeType = req.body.referralFeeType ?? existingEstimate.referralFeeType;
           const feePercent = req.body.referralFeePercent ?? existingEstimate.referralFeePercent;
           const feeFlat = req.body.referralFeeFlat ?? existingEstimate.referralFeeFlat;
-          
-          // Calculate profit (margin) from line items for percentage-based referral fees
-          const lineItems = await storage.getEstimateLineItems(req.params.id);
-          const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
-          const profit = totalFees - totalCost;
           
           // Referral fee is calculated on PROFIT (margin), not on total revenue
           let referralFeeAmount = 0;
@@ -10814,10 +10880,43 @@ export async function registerRoutes(app: Express): Promise<void> {
           } else if (feeType === 'flat' && feeFlat) {
             referralFeeAmount = Number(feeFlat);
           }
+          
+          // Distribute referral markup proportionally across line items
+          const totalPositiveMargin = lineItems.reduce((sum, item) => {
+            const margin = Number(item.margin || 0);
+            return sum + (margin > 0 ? margin : 0);
+          }, 0);
+
+          let presentedTotal = baseTotalFees;
+          
+          for (const item of lineItems) {
+            const itemMargin = Number(item.margin || 0);
+            let referralMarkup = 0;
+            
+            if (referralFeeAmount > 0 && totalPositiveMargin > 0) {
+              if (itemMargin > 0) {
+                referralMarkup = referralFeeAmount * (itemMargin / totalPositiveMargin);
+              }
+            } else if (referralFeeAmount > 0 && totalPositiveMargin <= 0) {
+              referralMarkup = referralFeeAmount / lineItems.length;
+            }
+            
+            const totalAmountWithReferral = Number(item.totalAmount || 0) + referralMarkup;
+            
+            await storage.updateEstimateLineItem(item.id, {
+              referralMarkup: String(referralMarkup),
+              totalAmountWithReferral: String(totalAmountWithReferral)
+            });
+            
+            presentedTotal += referralMarkup;
+          }
+
           const netRevenue = profit - referralFeeAmount;
           
           updateData.referralFeeAmount = String(referralFeeAmount);
           updateData.netRevenue = String(netRevenue);
+          updateData.presentedTotal = String(presentedTotal);
+          updateData.totalFees = String(baseTotalFees);
         }
       }
       

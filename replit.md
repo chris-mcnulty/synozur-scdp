@@ -36,8 +36,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Authentication & Authorization
 - **Production SSO**: Azure AD (Microsoft Entra ID).
-- **Development Auth**: Local email/password authentication.
-  - **Dev Credentials**: Email: `admin@synozur.com`, Password: `demo123`
+- **Development Auth**: Local email/password authentication (credentials in environment).
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
 ### Document Storage

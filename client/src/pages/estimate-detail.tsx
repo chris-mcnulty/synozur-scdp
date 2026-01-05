@@ -2165,6 +2165,7 @@ function EstimateDetailContent() {
                 <TabsContent value="epic">
                   {(() => {
                     // Group by epicId to preserve order
+                    const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
                     const epicTotals = lineItems?.reduce((acc: any, item) => {
                       const epicId = item.epicId || 'unassigned';
                       const epicData = epics?.find(e => e.id === item.epicId);
@@ -2175,15 +2176,21 @@ function EstimateDetailContent() {
                           hours: 0, 
                           amount: 0, 
                           cost: 0, 
-                          count: 0 
+                          count: 0,
+                          referralMarkup: 0,
+                          quotedAmount: 0
                         };
                       }
                       acc[epicId].hours += Number(item.adjustedHours || 0);
                       acc[epicId].amount += Number(item.totalAmount || 0);
                       acc[epicId].cost += Number(item.totalCost || 0);
+                      acc[epicId].referralMarkup += Number(item.referralMarkup || 0);
+                      acc[epicId].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
                       acc[epicId].count += 1;
                       return acc;
                     }, {});
+
+                    const totalQuotedAmount = Object.values(epicTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
 
                     return (
                       <div className="space-y-3">
@@ -2205,9 +2212,15 @@ function EstimateDetailContent() {
                                 <span className="text-muted-foreground">${Math.round(data.cost).toLocaleString()}</span>
                               </div>
                               <div>
-                                <span className="text-xs text-muted-foreground block">Billing</span>
-                                <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                                <span className="text-xs text-muted-foreground block">Base</span>
+                                <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
                               </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -2221,9 +2234,15 @@ function EstimateDetailContent() {
                                 <span>${Math.round(totalCost).toLocaleString()}</span>
                               </div>
                               <div>
-                                <span className="text-xs text-muted-foreground block">Billing</span>
+                                <span className="text-xs text-muted-foreground block">Base</span>
                                 <span>${Math.round(totalAmount).toLocaleString()}</span>
                               </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2235,37 +2254,59 @@ function EstimateDetailContent() {
                 <TabsContent value="workstream">
                   {(() => {
                     // Group by workstream
+                    const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
                     const workstreamTotals = lineItems?.reduce((acc: any, item) => {
                       const workstream = item.workstream || "Unassigned";
                       if (!acc[workstream]) {
-                        acc[workstream] = { hours: 0, amount: 0, count: 0 };
+                        acc[workstream] = { hours: 0, amount: 0, count: 0, quotedAmount: 0 };
                       }
                       acc[workstream].hours += Number(item.adjustedHours);
                       acc[workstream].amount += Number(item.totalAmount);
+                      acc[workstream].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
                       acc[workstream].count += 1;
                       return acc;
                     }, {});
 
+                    const totalQuotedAmount = Object.values(workstreamTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
+
                     return (
                       <div className="space-y-3">
                         {Object.entries(workstreamTotals || {}).sort(([a], [b]) => a.localeCompare(b)).map(([workstream, data]: [string, any]) => (
-                          <div key={workstream} className="flex justify-between p-3 bg-gray-50 rounded-lg">
+                          <div key={workstream} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                             <div>
                               <span className="font-medium">{workstream}</span>
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
-                            <div className="flex gap-6">
-                              <span className="text-muted-foreground">{data.hours.toFixed(2)} hrs</span>
-                              <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                            <div className="flex gap-6 text-right">
+                              <span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Base</span>
+                                <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
+                              </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
                         <div className="border-t pt-3">
                           <div className="flex justify-between text-lg font-semibold">
                             <span>Total</span>
-                            <div className="flex gap-6">
-                              <span>{totalHours.toFixed(2)} hrs</span>
-                              <span>${Math.round(totalAmount).toLocaleString()}</span>
+                            <div className="flex gap-6 text-right">
+                              <span>{totalHours.toFixed(1)} hrs</span>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Base</span>
+                                <span>${Math.round(totalAmount).toLocaleString()}</span>
+                              </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2277,6 +2318,7 @@ function EstimateDetailContent() {
                 <TabsContent value="stage">
                   {(() => {
                     // Group by stageId to preserve order
+                    const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
                     const stageTotals = lineItems?.reduce((acc: any, item) => {
                       const stageId = item.stageId || 'unassigned';
                       const stageData = stages?.find(s => s.id === item.stageId);
@@ -2288,14 +2330,18 @@ function EstimateDetailContent() {
                           epicOrder: epicData?.order ?? 999999,
                           hours: 0, 
                           amount: 0, 
-                          count: 0 
+                          count: 0,
+                          quotedAmount: 0
                         };
                       }
                       acc[stageId].hours += Number(item.adjustedHours);
                       acc[stageId].amount += Number(item.totalAmount);
+                      acc[stageId].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
                       acc[stageId].count += 1;
                       return acc;
                     }, {});
+
+                    const totalQuotedAmount = Object.values(stageTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
 
                     return (
                       <div className="space-y-3">
@@ -2310,18 +2356,36 @@ function EstimateDetailContent() {
                               <span className="font-medium">{data.name}</span>
                               <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
                             </div>
-                            <div className="flex gap-6">
-                              <span className="text-muted-foreground">{data.hours.toFixed(2)} hrs</span>
-                              <span className="font-semibold">${Math.round(data.amount).toLocaleString()}</span>
+                            <div className="flex gap-6 text-right">
+                              <span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Base</span>
+                                <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
+                              </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ))}
                         <div className="border-t pt-3">
                           <div className="flex justify-between text-lg font-semibold">
                             <span>Total</span>
-                            <div className="flex gap-6">
-                              <span>{totalHours.toFixed(2)} hrs</span>
-                              <span>${Math.round(totalAmount).toLocaleString()}</span>
+                            <div className="flex gap-6 text-right">
+                              <span>{totalHours.toFixed(1)} hrs</span>
+                              <div>
+                                <span className="text-xs text-muted-foreground block">Base</span>
+                                <span>${Math.round(totalAmount).toLocaleString()}</span>
+                              </div>
+                              {hasReferralFee && (
+                                <div>
+                                  <span className="text-xs text-muted-foreground block">Quoted</span>
+                                  <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
