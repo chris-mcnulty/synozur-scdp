@@ -216,6 +216,8 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   totalCost: decimal("total_cost", { precision: 10, scale: 2 }), // adjusted_hours * costRate (internal cost)
   margin: decimal("margin", { precision: 10, scale: 2 }), // totalAmount - totalCost
   marginPercent: decimal("margin_percent", { precision: 5, scale: 2 }), // (margin / totalAmount) * 100
+  referralMarkup: decimal("referral_markup", { precision: 10, scale: 2 }), // Referral fee allocated to this line item (based on margin contribution)
+  totalAmountWithReferral: decimal("total_amount_with_referral", { precision: 10, scale: 2 }), // totalAmount + referralMarkup (client-facing quoted price)
   comments: text("comments"), // Optional comments
   hasManualRateOverride: boolean("has_manual_rate_override").notNull().default(false), // Track manually edited rates
   sortOrder: integer("sort_order").notNull().default(0),
