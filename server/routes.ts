@@ -5944,11 +5944,22 @@ export async function registerRoutes(app: Express): Promise<void> {
       const totalMargin = totalFees - totalCost;
       const marginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
 
+      // Calculate referral fee and net revenue
+      let referralFeeAmount = 0;
+      if (estimate.referralFeeType === 'percentage' && estimate.referralFeePercent) {
+        referralFeeAmount = totalFees * (Number(estimate.referralFeePercent) / 100);
+      } else if (estimate.referralFeeType === 'flat' && estimate.referralFeeFlat) {
+        referralFeeAmount = Number(estimate.referralFeeFlat);
+      }
+      const netRevenue = totalFees - referralFeeAmount;
+
       await storage.updateEstimate(estimateId, {
         totalHours: String(totalHours),
         totalFees: String(totalFees),
         presentedTotal: String(totalFees),
-        margin: String(marginPercent)
+        margin: String(marginPercent),
+        referralFeeAmount: String(referralFeeAmount),
+        netRevenue: String(netRevenue)
       });
 
       res.json({ 
@@ -5959,7 +5970,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           totalFees,
           totalCost,
           totalMargin,
-          marginPercent
+          marginPercent,
+          referralFeeAmount,
+          netRevenue
         }
       });
     } catch (error) {
