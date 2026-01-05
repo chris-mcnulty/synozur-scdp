@@ -2039,6 +2039,111 @@ function EstimateDetailContent() {
                   </p>
                 </div>
               </div>
+
+              {/* Referral Fee Section */}
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-medium mb-3">Referral Fee</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <Label htmlFor="referral-fee-type">Fee Type</Label>
+                    <Select
+                      value={estimate?.referralFeeType || "none"}
+                      onValueChange={(value) => {
+                        updateEstimateMutation.mutate({ 
+                          referralFeeType: value,
+                          referralFeePercent: value === 'none' ? null : estimate?.referralFeePercent,
+                          referralFeeFlat: value === 'none' ? null : estimate?.referralFeeFlat
+                        });
+                      }}
+                      disabled={!isEditable}
+                    >
+                      <SelectTrigger className="mt-1" data-testid="select-referral-fee-type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="percentage">Percentage</SelectItem>
+                        <SelectItem value="flat">Flat Fee</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {estimate?.referralFeeType === 'percentage' && (
+                    <div>
+                      <Label htmlFor="referral-fee-percent">Fee Percent (%)</Label>
+                      <Input
+                        id="referral-fee-percent"
+                        type="number"
+                        step="0.1"
+                        placeholder="e.g. 10"
+                        defaultValue={estimate?.referralFeePercent || ""}
+                        onBlur={(e) => {
+                          updateEstimateMutation.mutate({ referralFeePercent: e.target.value || null });
+                        }}
+                        disabled={!isEditable}
+                        className="mt-1"
+                        data-testid="input-referral-fee-percent"
+                      />
+                    </div>
+                  )}
+                  
+                  {estimate?.referralFeeType === 'flat' && (
+                    <div>
+                      <Label htmlFor="referral-fee-flat">Flat Fee ($)</Label>
+                      <Input
+                        id="referral-fee-flat"
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 5000"
+                        defaultValue={estimate?.referralFeeFlat || ""}
+                        onBlur={(e) => {
+                          updateEstimateMutation.mutate({ referralFeeFlat: e.target.value || null });
+                        }}
+                        disabled={!isEditable}
+                        className="mt-1"
+                        data-testid="input-referral-fee-flat"
+                      />
+                    </div>
+                  )}
+                  
+                  {estimate?.referralFeeType && estimate.referralFeeType !== 'none' && (
+                    <div>
+                      <Label htmlFor="referral-fee-paid-to">Paid To</Label>
+                      <Input
+                        id="referral-fee-paid-to"
+                        type="text"
+                        placeholder="Seller name"
+                        defaultValue={estimate?.referralFeePaidTo || ""}
+                        onBlur={(e) => {
+                          updateEstimateMutation.mutate({ referralFeePaidTo: e.target.value || null });
+                        }}
+                        disabled={!isEditable}
+                        className="mt-1"
+                        data-testid="input-referral-fee-paid-to"
+                      />
+                    </div>
+                  )}
+                </div>
+                
+                {estimate?.referralFeeType && estimate.referralFeeType !== 'none' && (
+                  <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                    <div className="flex justify-between text-sm">
+                      <span>Referral Fee:</span>
+                      <span className="font-medium text-amber-700 dark:text-amber-400">
+                        -${Math.round(Number(estimate?.referralFeeAmount || 0)).toLocaleString()}
+                        {estimate?.referralFeeType === 'percentage' && estimate?.referralFeePercent && 
+                          ` (${estimate.referralFeePercent}%)`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span>Net Revenue:</span>
+                      <span className="font-semibold text-green-700 dark:text-green-400">
+                        ${Math.round(Number(estimate?.netRevenue || (Number(estimate?.presentedTotal || totalAmount) - Number(estimate?.referralFeeAmount || 0)))).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 

@@ -10521,7 +10521,36 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.id, res)) return;
-      const estimate = await storage.updateEstimate(req.params.id, req.body);
+      
+      let updateData = { ...req.body };
+      
+      // If referral fee settings or totals are being updated, recalculate the fee amount and net revenue
+      const referralFieldsChanged = 'referralFeeType' in req.body || 'referralFeePercent' in req.body || 'referralFeeFlat' in req.body;
+      const totalsChanged = 'totalFees' in req.body || 'presentedTotal' in req.body;
+      
+      if (referralFieldsChanged || totalsChanged) {
+        const existingEstimate = await storage.getEstimate(req.params.id);
+        if (existingEstimate) {
+          // Use updated totals from request if provided, otherwise use existing
+          const totalFees = Number(req.body.totalFees ?? req.body.presentedTotal ?? existingEstimate.totalFees ?? existingEstimate.presentedTotal ?? 0);
+          const feeType = req.body.referralFeeType ?? existingEstimate.referralFeeType;
+          const feePercent = req.body.referralFeePercent ?? existingEstimate.referralFeePercent;
+          const feeFlat = req.body.referralFeeFlat ?? existingEstimate.referralFeeFlat;
+          
+          let referralFeeAmount = 0;
+          if (feeType === 'percentage' && feePercent) {
+            referralFeeAmount = totalFees * (Number(feePercent) / 100);
+          } else if (feeType === 'flat' && feeFlat) {
+            referralFeeAmount = Number(feeFlat);
+          }
+          const netRevenue = totalFees - referralFeeAmount;
+          
+          updateData.referralFeeAmount = String(referralFeeAmount);
+          updateData.netRevenue = String(netRevenue);
+        }
+      }
+      
+      const estimate = await storage.updateEstimate(req.params.id, updateData);
       res.json(estimate);
     } catch (error) {
       res.status(500).json({ message: "Failed to update estimate" });
