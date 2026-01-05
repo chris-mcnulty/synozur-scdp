@@ -1979,10 +1979,11 @@ function EstimateDetailContent() {
       ) : (
       /* Show detailed estimate UI for detailed type estimates */
       <Tabs defaultValue="outputs" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="outputs">Quotes</TabsTrigger>
           <TabsTrigger value="inputs">Inputs</TabsTrigger>
           <TabsTrigger value="resources">Resources</TabsTrigger>
+          <TabsTrigger value="contingency">Contingency</TabsTrigger>
           <TabsTrigger value="management">Structure</TabsTrigger>
         </TabsList>
 
@@ -3541,6 +3542,11 @@ function EstimateDetailContent() {
         {/* Resources Tab */}
         <TabsContent value="resources" className="space-y-6">
           <ResourcesView estimateId={id!} epics={epics} stages={stages} />
+        </TabsContent>
+
+        {/* Contingency Analysis Tab */}
+        <TabsContent value="contingency" className="space-y-6">
+          <ContingencyAnalysisView estimateId={id!} vocabulary={vocabulary} />
         </TabsContent>
 
         {/* Structure Management Tab */}
@@ -5281,6 +5287,282 @@ function ResourcesView({ estimateId, epics, stages }: ResourcesViewProps) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ContingencyAnalysisView Component
+interface ContingencyAnalysisViewProps {
+  estimateId: string;
+  vocabulary: { epic: string; stage: string; workstream: string; activity: string };
+}
+
+interface ContingencyBreakdown {
+  baseHours: number;
+  sizeContingencyHours: number;
+  complexityContingencyHours: number;
+  confidenceContingencyHours: number;
+  totalContingencyHours: number;
+  adjustedHours: number;
+  baseFees: number;
+  sizeContingencyFees: number;
+  complexityContingencyFees: number;
+  confidenceContingencyFees: number;
+  totalContingencyFees: number;
+  adjustedFees: number;
+  baseCost: number;
+  totalContingencyCost: number;
+  adjustedCost: number;
+}
+
+interface ContingencyInsightsResponse {
+  overallTotals: ContingencyBreakdown & { contingencyPercent: string };
+  multipliers: {
+    size: { small: number; medium: number; large: number };
+    complexity: { small: number; medium: number; large: number };
+    confidence: { high: number; medium: number; low: number };
+  };
+  byEpic: Array<{ id: string; name: string; breakdown: ContingencyBreakdown }>;
+  byStage: Array<{ id: string; name: string; epicName: string; breakdown: ContingencyBreakdown }>;
+  byWorkstream: Array<{ id: string; name: string; breakdown: ContingencyBreakdown }>;
+  byRole: Array<{ id: string; name: string; breakdown: ContingencyBreakdown }>;
+}
+
+function ContingencyAnalysisView({ estimateId, vocabulary }: ContingencyAnalysisViewProps) {
+  const [viewBy, setViewBy] = useState<'epic' | 'stage' | 'workstream' | 'role'>('epic');
+
+  const { data: insights, isLoading } = useQuery<ContingencyInsightsResponse>({
+    queryKey: [`/api/estimates/${estimateId}/contingency-insights`],
+  });
+
+  const formatCurrency = (value: number) => `$${Math.round(value).toLocaleString()}`;
+  const formatHours = (value: number) => value.toFixed(1);
+  const formatPercent = (value: number) => `${value.toFixed(1)}%`;
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Contingency Analysis</CardTitle>
+          <CardDescription>Loading factor impact analysis...</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!insights) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Contingency Analysis</CardTitle>
+          <CardDescription>No data available</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  const { overallTotals, multipliers } = insights;
+
+  const getCurrentBreakdown = () => {
+    switch (viewBy) {
+      case 'epic': return insights.byEpic;
+      case 'stage': return insights.byStage;
+      case 'workstream': return insights.byWorkstream;
+      case 'role': return insights.byRole;
+    }
+  };
+
+  const currentBreakdown = getCurrentBreakdown();
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-sm text-muted-foreground">Base Hours</div>
+            <div className="text-2xl font-bold">{formatHours(overallTotals.baseHours)}</div>
+            <div className="text-sm text-muted-foreground mt-1">Before contingency</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-sm text-muted-foreground">Contingency Hours</div>
+            <div className="text-2xl font-bold text-orange-600">+{formatHours(overallTotals.totalContingencyHours)}</div>
+            <div className="text-sm text-muted-foreground mt-1">{overallTotals.contingencyPercent}% added</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-sm text-muted-foreground">Adjusted Hours</div>
+            <div className="text-2xl font-bold text-green-600">{formatHours(overallTotals.adjustedHours)}</div>
+            <div className="text-sm text-muted-foreground mt-1">After contingency</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-sm text-muted-foreground">Contingency Value</div>
+            <div className="text-2xl font-bold text-blue-600">{formatCurrency(overallTotals.totalContingencyFees)}</div>
+            <div className="text-sm text-muted-foreground mt-1">Added to quote</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Factor Breakdown Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Factor Contribution</CardTitle>
+          <CardDescription>How each contingency factor adds to the estimate</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Size Factor */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Size Factor</span>
+                <span className="text-muted-foreground">
+                  +{formatHours(overallTotals.sizeContingencyHours)} hrs ({formatCurrency(overallTotals.sizeContingencyFees)})
+                </span>
+              </div>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 rounded-full transition-all"
+                  style={{ width: `${overallTotals.totalContingencyHours > 0 ? (overallTotals.sizeContingencyHours / overallTotals.totalContingencyHours * 100) : 0}%` }}
+                />
+              </div>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>Small: {multipliers.size.small}x</span>
+                <span>Medium: {multipliers.size.medium}x</span>
+                <span>Large: {multipliers.size.large}x</span>
+              </div>
+            </div>
+
+            {/* Complexity Factor */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Complexity Factor</span>
+                <span className="text-muted-foreground">
+                  +{formatHours(overallTotals.complexityContingencyHours)} hrs ({formatCurrency(overallTotals.complexityContingencyFees)})
+                </span>
+              </div>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-purple-500 rounded-full transition-all"
+                  style={{ width: `${overallTotals.totalContingencyHours > 0 ? (overallTotals.complexityContingencyHours / overallTotals.totalContingencyHours * 100) : 0}%` }}
+                />
+              </div>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>Small: {multipliers.complexity.small}x</span>
+                <span>Medium: {multipliers.complexity.medium}x</span>
+                <span>Large: {multipliers.complexity.large}x</span>
+              </div>
+            </div>
+
+            {/* Confidence Factor */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Confidence Factor</span>
+                <span className="text-muted-foreground">
+                  +{formatHours(overallTotals.confidenceContingencyHours)} hrs ({formatCurrency(overallTotals.confidenceContingencyFees)})
+                </span>
+              </div>
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-orange-500 rounded-full transition-all"
+                  style={{ width: `${overallTotals.totalContingencyHours > 0 ? (overallTotals.confidenceContingencyHours / overallTotals.totalContingencyHours * 100) : 0}%` }}
+                />
+              </div>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>High: {multipliers.confidence.high}x</span>
+                <span>Medium: {multipliers.confidence.medium}x</span>
+                <span>Low: {multipliers.confidence.low}x</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detailed Breakdown by Dimension */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Detailed Breakdown</CardTitle>
+              <CardDescription>Contingency impact by organizational dimension</CardDescription>
+            </div>
+            <Select value={viewBy} onValueChange={(v: 'epic' | 'stage' | 'workstream' | 'role') => setViewBy(v)}>
+              <SelectTrigger className="w-40" data-testid="select-contingency-view">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="epic">By {vocabulary.epic}</SelectItem>
+                <SelectItem value="stage">By {vocabulary.stage}</SelectItem>
+                <SelectItem value="workstream">By Workstream</SelectItem>
+                <SelectItem value="role">By Role</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[200px]">Name</TableHead>
+                  <TableHead className="text-right">Base Hrs</TableHead>
+                  <TableHead className="text-right text-blue-600">+Size</TableHead>
+                  <TableHead className="text-right text-purple-600">+Complexity</TableHead>
+                  <TableHead className="text-right text-orange-600">+Confidence</TableHead>
+                  <TableHead className="text-right font-semibold">Total Hrs</TableHead>
+                  <TableHead className="text-right">Contingency %</TableHead>
+                  <TableHead className="text-right">Contingency $</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentBreakdown.map((item) => {
+                  const contingencyPercent = item.breakdown.baseHours > 0 
+                    ? (item.breakdown.totalContingencyHours / item.breakdown.baseHours * 100) 
+                    : 0;
+                  return (
+                    <TableRow key={item.id} data-testid={`row-contingency-${item.id}`}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="text-right">{formatHours(item.breakdown.baseHours)}</TableCell>
+                      <TableCell className="text-right text-blue-600">
+                        {item.breakdown.sizeContingencyHours > 0 ? `+${formatHours(item.breakdown.sizeContingencyHours)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right text-purple-600">
+                        {item.breakdown.complexityContingencyHours > 0 ? `+${formatHours(item.breakdown.complexityContingencyHours)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right text-orange-600">
+                        {item.breakdown.confidenceContingencyHours > 0 ? `+${formatHours(item.breakdown.confidenceContingencyHours)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">{formatHours(item.breakdown.adjustedHours)}</TableCell>
+                      <TableCell className="text-right">{formatPercent(contingencyPercent)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(item.breakdown.totalContingencyFees)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+                {/* Totals Row */}
+                <TableRow className="border-t-2 font-semibold bg-muted/50">
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-right">{formatHours(overallTotals.baseHours)}</TableCell>
+                  <TableCell className="text-right text-blue-600">+{formatHours(overallTotals.sizeContingencyHours)}</TableCell>
+                  <TableCell className="text-right text-purple-600">+{formatHours(overallTotals.complexityContingencyHours)}</TableCell>
+                  <TableCell className="text-right text-orange-600">+{formatHours(overallTotals.confidenceContingencyHours)}</TableCell>
+                  <TableCell className="text-right">{formatHours(overallTotals.adjustedHours)}</TableCell>
+                  <TableCell className="text-right">{overallTotals.contingencyPercent}%</TableCell>
+                  <TableCell className="text-right">{formatCurrency(overallTotals.totalContingencyFees)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

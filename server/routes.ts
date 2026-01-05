@@ -5779,6 +5779,270 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Contingency insights - breakdown of how size/complexity/confidence factors impact the estimate
+  app.get("/api/estimates/:id/contingency-insights", requireAuth, async (req, res) => {
+    try {
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const lineItems = await storage.getEstimateLineItems(req.params.id);
+      const epics = await storage.getEstimateEpics(req.params.id);
+      const stages = await storage.getEstimateStages(req.params.id);
+      const roles = await storage.getRoles();
+      
+      const epicMap = new Map(epics.map(e => [e.id, e.name]));
+      const stageMap = new Map(stages.map(s => [s.id, s.name]));
+      const roleMap = new Map(roles.map(r => [r.id, r.name]));
+
+      // Get multiplier values from estimate
+      const getMultiplier = (type: string, level: string): number => {
+        if (type === 'size') {
+          if (level === 'small') return Number(estimate.sizeSmallMultiplier || 1);
+          if (level === 'medium') return Number(estimate.sizeMediumMultiplier || 1.05);
+          if (level === 'large') return Number(estimate.sizeLargeMultiplier || 1.10);
+        } else if (type === 'complexity') {
+          if (level === 'small') return Number(estimate.complexitySmallMultiplier || 1);
+          if (level === 'medium') return Number(estimate.complexityMediumMultiplier || 1.05);
+          if (level === 'large') return Number(estimate.complexityLargeMultiplier || 1.10);
+        } else if (type === 'confidence') {
+          if (level === 'high') return Number(estimate.confidenceHighMultiplier || 1);
+          if (level === 'medium') return Number(estimate.confidenceMediumMultiplier || 1.10);
+          if (level === 'low') return Number(estimate.confidenceLowMultiplier || 1.20);
+        }
+        return 1;
+      };
+
+      // Calculate breakdown for each line item
+      interface ContingencyBreakdown {
+        baseHours: number;
+        sizeContingencyHours: number;
+        complexityContingencyHours: number;
+        confidenceContingencyHours: number;
+        totalContingencyHours: number;
+        adjustedHours: number;
+        baseFees: number;
+        sizeContingencyFees: number;
+        complexityContingencyFees: number;
+        confidenceContingencyFees: number;
+        totalContingencyFees: number;
+        adjustedFees: number;
+        baseCost: number;
+        totalContingencyCost: number;
+        adjustedCost: number;
+      }
+
+      const calculateBreakdown = (item: typeof lineItems[0]): ContingencyBreakdown => {
+        const baseHoursRaw = Number(item.baseHours) || 0;
+        const factor = Number(item.factor) || 1;
+        const rate = Number(item.rate) || 0;
+        const costRate = Number(item.costRate) || 0;
+        
+        const sizeMultiplier = getMultiplier('size', item.size || 'small');
+        const complexityMultiplier = getMultiplier('complexity', item.complexity || 'small');
+        const confidenceMultiplier = getMultiplier('confidence', item.confidence || 'high');
+        
+        // Base hours = baseHours * factor (before any multipliers)
+        const baseHours = baseHoursRaw * factor;
+        
+        // Calculate cumulative effect of each multiplier
+        // Size contingency: base * (sizeMultiplier - 1)
+        const sizeContingencyHours = baseHours * (sizeMultiplier - 1);
+        
+        // Complexity contingency: (base * sizeMultiplier) * (complexityMultiplier - 1)
+        const afterSize = baseHours * sizeMultiplier;
+        const complexityContingencyHours = afterSize * (complexityMultiplier - 1);
+        
+        // Confidence contingency: (base * sizeMultiplier * complexityMultiplier) * (confidenceMultiplier - 1)
+        const afterComplexity = afterSize * complexityMultiplier;
+        const confidenceContingencyHours = afterComplexity * (confidenceMultiplier - 1);
+        
+        const totalContingencyHours = sizeContingencyHours + complexityContingencyHours + confidenceContingencyHours;
+        const adjustedHours = baseHours + totalContingencyHours;
+        
+        // Calculate fees
+        const baseFees = baseHours * rate;
+        const sizeContingencyFees = sizeContingencyHours * rate;
+        const complexityContingencyFees = complexityContingencyHours * rate;
+        const confidenceContingencyFees = confidenceContingencyHours * rate;
+        const totalContingencyFees = totalContingencyHours * rate;
+        const adjustedFees = adjustedHours * rate;
+        
+        // Calculate costs
+        const baseCost = baseHours * costRate;
+        const totalContingencyCost = totalContingencyHours * costRate;
+        const adjustedCost = adjustedHours * costRate;
+        
+        return {
+          baseHours,
+          sizeContingencyHours,
+          complexityContingencyHours,
+          confidenceContingencyHours,
+          totalContingencyHours,
+          adjustedHours,
+          baseFees,
+          sizeContingencyFees,
+          complexityContingencyFees,
+          confidenceContingencyFees,
+          totalContingencyFees,
+          adjustedFees,
+          baseCost,
+          totalContingencyCost,
+          adjustedCost
+        };
+      };
+
+      // Aggregate function
+      const aggregateBreakdowns = (breakdowns: ContingencyBreakdown[]): ContingencyBreakdown => {
+        return breakdowns.reduce((acc, b) => ({
+          baseHours: acc.baseHours + b.baseHours,
+          sizeContingencyHours: acc.sizeContingencyHours + b.sizeContingencyHours,
+          complexityContingencyHours: acc.complexityContingencyHours + b.complexityContingencyHours,
+          confidenceContingencyHours: acc.confidenceContingencyHours + b.confidenceContingencyHours,
+          totalContingencyHours: acc.totalContingencyHours + b.totalContingencyHours,
+          adjustedHours: acc.adjustedHours + b.adjustedHours,
+          baseFees: acc.baseFees + b.baseFees,
+          sizeContingencyFees: acc.sizeContingencyFees + b.sizeContingencyFees,
+          complexityContingencyFees: acc.complexityContingencyFees + b.complexityContingencyFees,
+          confidenceContingencyFees: acc.confidenceContingencyFees + b.confidenceContingencyFees,
+          totalContingencyFees: acc.totalContingencyFees + b.totalContingencyFees,
+          adjustedFees: acc.adjustedFees + b.adjustedFees,
+          baseCost: acc.baseCost + b.baseCost,
+          totalContingencyCost: acc.totalContingencyCost + b.totalContingencyCost,
+          adjustedCost: acc.adjustedCost + b.adjustedCost
+        }), {
+          baseHours: 0, sizeContingencyHours: 0, complexityContingencyHours: 0, confidenceContingencyHours: 0,
+          totalContingencyHours: 0, adjustedHours: 0, baseFees: 0, sizeContingencyFees: 0,
+          complexityContingencyFees: 0, confidenceContingencyFees: 0, totalContingencyFees: 0,
+          adjustedFees: 0, baseCost: 0, totalContingencyCost: 0, adjustedCost: 0
+        });
+      };
+
+      // Calculate all breakdowns
+      const itemBreakdowns = lineItems.map(item => ({
+        item,
+        breakdown: calculateBreakdown(item)
+      }));
+
+      // Overall totals
+      const overallTotals = aggregateBreakdowns(itemBreakdowns.map(ib => ib.breakdown));
+
+      // Group by Epic
+      const byEpic: { [key: string]: { name: string; breakdown: ContingencyBreakdown } } = {};
+      for (const { item, breakdown } of itemBreakdowns) {
+        const epicId = item.epicId || 'unassigned';
+        const epicName = item.epicId ? (epicMap.get(item.epicId) || 'Unknown Epic') : 'Unassigned';
+        if (!byEpic[epicId]) {
+          byEpic[epicId] = { name: epicName, breakdown: { ...breakdown } };
+        } else {
+          const agg = byEpic[epicId].breakdown;
+          Object.keys(breakdown).forEach(key => {
+            (agg as any)[key] += (breakdown as any)[key];
+          });
+        }
+      }
+
+      // Group by Stage
+      const byStage: { [key: string]: { name: string; epicName: string; breakdown: ContingencyBreakdown } } = {};
+      for (const { item, breakdown } of itemBreakdowns) {
+        const stageId = item.stageId || 'unassigned';
+        const stageName = item.stageId ? (stageMap.get(item.stageId) || 'Unknown Stage') : 'Unassigned';
+        const epicName = item.epicId ? (epicMap.get(item.epicId) || 'Unknown Epic') : 'Unassigned';
+        if (!byStage[stageId]) {
+          byStage[stageId] = { name: stageName, epicName, breakdown: { ...breakdown } };
+        } else {
+          const agg = byStage[stageId].breakdown;
+          Object.keys(breakdown).forEach(key => {
+            (agg as any)[key] += (breakdown as any)[key];
+          });
+        }
+      }
+
+      // Group by Workstream
+      const byWorkstream: { [key: string]: { name: string; breakdown: ContingencyBreakdown } } = {};
+      for (const { item, breakdown } of itemBreakdowns) {
+        const workstream = item.workstream || 'Unassigned';
+        if (!byWorkstream[workstream]) {
+          byWorkstream[workstream] = { name: workstream, breakdown: { ...breakdown } };
+        } else {
+          const agg = byWorkstream[workstream].breakdown;
+          Object.keys(breakdown).forEach(key => {
+            (agg as any)[key] += (breakdown as any)[key];
+          });
+        }
+      }
+
+      // Group by Role
+      const byRole: { [key: string]: { name: string; breakdown: ContingencyBreakdown } } = {};
+      for (const { item, breakdown } of itemBreakdowns) {
+        const roleId = item.roleId || 'unassigned';
+        const roleName = item.roleId ? (roleMap.get(item.roleId) || item.resourceName || 'Unknown Role') : (item.resourceName || 'Unassigned');
+        if (!byRole[roleId]) {
+          byRole[roleId] = { name: roleName, breakdown: { ...breakdown } };
+        } else {
+          const agg = byRole[roleId].breakdown;
+          Object.keys(breakdown).forEach(key => {
+            (agg as any)[key] += (breakdown as any)[key];
+          });
+        }
+      }
+
+      // Convert to arrays and sort by adjustedFees descending
+      const epicBreakdown = Object.entries(byEpic)
+        .map(([id, data]) => ({ id, ...data }))
+        .sort((a, b) => b.breakdown.adjustedFees - a.breakdown.adjustedFees);
+      
+      const stageBreakdown = Object.entries(byStage)
+        .map(([id, data]) => ({ id, ...data }))
+        .sort((a, b) => b.breakdown.adjustedFees - a.breakdown.adjustedFees);
+      
+      const workstreamBreakdown = Object.entries(byWorkstream)
+        .map(([id, data]) => ({ id, ...data }))
+        .sort((a, b) => b.breakdown.adjustedFees - a.breakdown.adjustedFees);
+      
+      const roleBreakdown = Object.entries(byRole)
+        .map(([id, data]) => ({ id, ...data }))
+        .sort((a, b) => b.breakdown.adjustedFees - a.breakdown.adjustedFees);
+
+      // Calculate percentages
+      const contingencyPercent = overallTotals.baseHours > 0 
+        ? (overallTotals.totalContingencyHours / overallTotals.baseHours * 100) 
+        : 0;
+
+      res.json({
+        overallTotals: {
+          ...overallTotals,
+          contingencyPercent: contingencyPercent.toFixed(1)
+        },
+        multipliers: {
+          size: {
+            small: Number(estimate.sizeSmallMultiplier || 1),
+            medium: Number(estimate.sizeMediumMultiplier || 1.05),
+            large: Number(estimate.sizeLargeMultiplier || 1.10)
+          },
+          complexity: {
+            small: Number(estimate.complexitySmallMultiplier || 1),
+            medium: Number(estimate.complexityMediumMultiplier || 1.05),
+            large: Number(estimate.complexityLargeMultiplier || 1.10)
+          },
+          confidence: {
+            high: Number(estimate.confidenceHighMultiplier || 1),
+            medium: Number(estimate.confidenceMediumMultiplier || 1.10),
+            low: Number(estimate.confidenceLowMultiplier || 1.20)
+          }
+        },
+        byEpic: epicBreakdown,
+        byStage: stageBreakdown,
+        byWorkstream: workstreamBreakdown,
+        byRole: roleBreakdown
+      });
+    } catch (error) {
+      console.error("Error fetching contingency insights:", error);
+      res.status(500).json({ message: "Failed to fetch contingency insights" });
+    }
+  });
+
   // Recalculate all line items for an estimate
   app.post("/api/estimates/:id/recalculate", requireAuth, async (req, res) => {
     try {
