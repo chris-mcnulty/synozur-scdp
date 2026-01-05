@@ -6890,8 +6890,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
       const stageMap = new Map(stages.map(s => [s.id, s.name]));
 
-      // Create CSV header row (excluding cost-sensitive fields: cost rate, margin, profit, total amount)
-      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours"];
+      // Create CSV header row (excluding cost-sensitive fields: cost rate, margin, profit)
+      // Include referral markup columns when referral fees are enabled
+      const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+      const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"];
+      if (hasReferralFee) {
+        headers.push("Referral Markup", "Quoted Amount");
+      }
 
       // Build CSV rows
       const csvRows = [headers];
@@ -6912,8 +6917,13 @@ export async function registerRoutes(app: Express): Promise<void> {
           item.complexity || "simple",
           item.confidence || "high",
           item.comments || "",
-          item.adjustedHours
+          item.adjustedHours,
+          item.totalAmount || "0"
         ];
+        
+        if (hasReferralFee) {
+          row.push(item.referralMarkup || "0", item.totalAmountWithReferral || item.totalAmount || "0");
+        }
 
         csvRows.push(row);
       });
@@ -6958,12 +6968,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
       const canViewCostMargins = ['admin', 'executive'].includes(req.user?.role || '');
 
+      // Check if referral fees are enabled
+      const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+      
       // Create header row based on permissions
       const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate"];
       if (canViewCostMargins) {
         headers.push("Cost Rate");
       }
       headers.push("Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount");
+      if (hasReferralFee) {
+        headers.push("Referral Markup", "Quoted Amount");
+      }
       if (canViewCostMargins) {
         headers.push("Total Cost", "Margin", "Margin %");
       }
@@ -7026,6 +7042,10 @@ export async function registerRoutes(app: Express): Promise<void> {
             adjustedHours,
             totalAmount
           );
+          
+          if (hasReferralFee) {
+            row.push(Number(item.referralMarkup || 0), Number(item.totalAmountWithReferral || totalAmount));
+          }
 
           if (canViewCostMargins) {
             row.push(totalCost, margin, marginPercent);
@@ -7645,6 +7665,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       console.log(`CSV Import summary: ${createdItems.length} items created`);
 
+      // Recalculate referral fees to distribute markup across new line items
+      await recalculateReferralFees(req.params.id);
+
       // Build response
       const response: any = { 
         success: true, 
@@ -7942,6 +7965,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         console.log("- Base Hours in column H (index 7)"); 
         console.log("- Rate in column J (index 9)");
       }
+      
+      // Recalculate referral fees to distribute markup across new line items
+      await recalculateReferralFees(req.params.id);
       
       // Log summary
       console.log(`Import summary:`);
