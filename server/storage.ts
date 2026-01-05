@@ -46,7 +46,7 @@ import {
   type VocabularyTerms, DEFAULT_VOCABULARY
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, desc, and, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
+import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1285,8 +1285,9 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(projects, eq(estimates.projectId, projects.id));
     
     // Filter out archived estimates unless explicitly requested
+    // Include NULL as non-archived (for older estimates before archived field was added)
     if (!includeArchived) {
-      query = query.where(eq(estimates.archived, false)) as any;
+      query = query.where(or(eq(estimates.archived, false), isNull(estimates.archived))) as any;
     }
     
     const rows = await query.orderBy(clients.name, estimates.name);
