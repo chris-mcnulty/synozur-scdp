@@ -3412,7 +3412,7 @@ function EstimateDetailContent() {
                                 <div>
                                   <span className="text-sm text-muted-foreground">Resource Assignment:</span>
                                   <Select 
-                                    value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : "unassigned")} 
+                                    value={item.assignedUserId || (item.roleId ? `role-${item.roleId}` : (item.resourceName ? `generic-${item.resourceName}` : "unassigned"))} 
                                     onValueChange={(value) => {
                                       if (!isEditable) return;
                                       
@@ -3423,6 +3423,9 @@ function EstimateDetailContent() {
                                         updates.resourceName = null;
                                         updates.rate = "0";
                                         updates.costRate = "0";
+                                      } else if (value.startsWith("generic-")) {
+                                        // Generic resource - preserve existing rates, no changes needed
+                                        return;
                                       } else if (value.startsWith("role-")) {
                                         const roleId = value.replace("role-", "");
                                         const role = roles.find((r: any) => r.id === roleId);
@@ -3468,6 +3471,12 @@ function EstimateDetailContent() {
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="unassigned">Unassigned</SelectItem>
+                                      {/* Show current generic resource if it exists and isn't linked to a role/user */}
+                                      {item.resourceName && !item.assignedUserId && !item.roleId && (
+                                        <SelectItem value={`generic-${item.resourceName}`}>
+                                          {item.resourceName} (Generic)
+                                        </SelectItem>
+                                      )}
                                       {roles.map((role: any) => (
                                         <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
                                           {role.name} (Role)
