@@ -5715,10 +5715,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "At least one field must be provided for update" });
       }
 
+      // Track if we're doing a resource assignment (user/role) to avoid manual override flag
+      let isResourceAssignment = false;
+      
       // If assignedUserId is being set, look up the user's rates
       if ('assignedUserId' in validatedData && validatedData.assignedUserId) {
         const user = await storage.getUser(validatedData.assignedUserId);
         if (user) {
+          isResourceAssignment = true;
+          
           // Get the current line item to check for estimate-level or client-level rate overrides
           const currentItem = await storage.getEstimateLineItem(req.params.id);
           const estimate = currentItem ? await storage.getEstimate(currentItem.estimateId) : null;
@@ -5777,12 +5782,29 @@ export async function registerRoutes(app: Express): Promise<void> {
           (validatedData as any).hasManualRateOverride = false;
         }
       }
+      // If roleId is being set directly (from dropdown), look up the role's default rates
+      else if ('roleId' in validatedData && validatedData.roleId && !validatedData.assignedUserId) {
+        const role = await storage.getRole(validatedData.roleId);
+        if (role) {
+          isResourceAssignment = true;
+          
+          // Auto-populate rates from role defaults
+          (validatedData as any).rate = role.defaultRackRate || '0';
+          (validatedData as any).costRate = role.defaultCostRate || '0';
+          (validatedData as any).resourceName = role.name;
+          (validatedData as any).assignedUserId = null;
+          // Don't mark as manual override since we're using role defaults
+          (validatedData as any).hasManualRateOverride = false;
+        }
+      }
       // If resourceName is being changed and no assignedUserId, look up role's default rates
       else if ('resourceName' in validatedData && validatedData.resourceName && !validatedData.assignedUserId) {
         const roles = await storage.getRoles();
         const matchedRole = roles.find(r => r.name.toLowerCase().trim() === validatedData.resourceName!.toLowerCase().trim());
         
         if (matchedRole) {
+          isResourceAssignment = true;
+          
           // Auto-populate rates from role defaults (unless explicitly provided in the request)
           if (!('rate' in req.body) || req.body.rate === null || req.body.rate === '') {
             (validatedData as any).rate = matchedRole.defaultRackRate;
@@ -5798,16 +5820,20 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
-      // If rate or costRate is being explicitly set (not null/empty), mark as manual override
-      // If being cleared (null/''), allow future recalculations by not setting the flag
-      const hasRateValue = 'rate' in req.body && req.body.rate !== null && req.body.rate !== '';
-      const hasCostRateValue = 'costRate' in req.body && req.body.costRate !== null && req.body.costRate !== '';
-      
-      if (hasRateValue || hasCostRateValue) {
-        (validatedData as any).hasManualRateOverride = true;
-      } else if (('rate' in req.body && !hasRateValue) || ('costRate' in req.body && !hasCostRateValue)) {
-        // If clearing rates, remove the override flag to allow future recalculations
-        (validatedData as any).hasManualRateOverride = false;
+      // Only check for manual rate override if this is NOT a resource assignment
+      // Resource assignments use system-resolved rates, not manual overrides
+      if (!isResourceAssignment) {
+        // If rate or costRate is being explicitly set (not null/empty), mark as manual override
+        // If being cleared (null/''), allow future recalculations by not setting the flag
+        const hasRateValue = 'rate' in req.body && req.body.rate !== null && req.body.rate !== '';
+        const hasCostRateValue = 'costRate' in req.body && req.body.costRate !== null && req.body.costRate !== '';
+        
+        if (hasRateValue || hasCostRateValue) {
+          (validatedData as any).hasManualRateOverride = true;
+        } else if (('rate' in req.body && !hasRateValue) || ('costRate' in req.body && !hasCostRateValue)) {
+          // If clearing rates, remove the override flag to allow future recalculations
+          (validatedData as any).hasManualRateOverride = false;
+        }
       }
 
       const lineItem = await storage.updateEstimateLineItem(req.params.id, validatedData);
