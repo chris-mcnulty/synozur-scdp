@@ -121,6 +121,12 @@ For each EPIC, you must address the following key client questions:
 
 6. **Client Dependencies**: What inputs, access, or resources must the client provide for the plan to work? Help them understand their time and resource commitment.
 
+**IMPORTANT**: If assumptions are provided in the input, you MUST include a dedicated "Assumptions and Dependencies" section at the END of the proposal narrative. This section should:
+- List all identified assumptions clearly
+- Group related assumptions logically
+- Indicate which assumptions require client validation or sign-off
+- Note any risks if assumptions prove incorrect
+
 Format the output as professional proposal text with clear headers and sections. Use markdown formatting for rich text (headers, bold, bullets, tables where helpful).`,
 
     general: `You are an AI assistant for SCDP, a consulting delivery management platform. Help users with questions about projects, estimates, resources, expenses, and invoicing.
@@ -231,6 +237,76 @@ Write a professional narrative suitable for the invoice.`;
   async generateEstimateNarrative(input: EstimateNarrativeInput): Promise<string> {
     const provider = getAIProvider();
 
+    // Extract assumptions from all line item comments
+    const assumptionPatterns = [
+      /assumption[s]?:\s*/i,
+      /assume[s]?:\s*/i,
+      /assuming:\s*/i,
+      /\bA:\s*/i,
+      /presume[s]?:\s*/i,
+      /prerequisite[s]?:\s*/i,
+      /depend[s]? on:\s*/i,
+      /require[s]?:\s*/i,
+      /contingent on:\s*/i,
+      /based on:\s*/i
+    ];
+    
+    const assumptions: { epic: string; stage: string; description: string; assumption: string }[] = [];
+    
+    // Scan all line items for assumptions in comments
+    for (const epic of input.epics) {
+      for (const stage of epic.stages) {
+        for (const item of stage.lineItems) {
+          if (item.comments) {
+            // Check if comment contains assumption-like content
+            for (const pattern of assumptionPatterns) {
+              if (pattern.test(item.comments)) {
+                // Extract the assumption text - everything after the pattern
+                const match = item.comments.match(pattern);
+                if (match) {
+                  const assumptionText = item.comments.substring(match.index! + match[0].length).trim();
+                  if (assumptionText) {
+                    assumptions.push({
+                      epic: epic.name,
+                      stage: stage.name,
+                      description: item.description,
+                      assumption: assumptionText
+                    });
+                  }
+                }
+                break; // Only match first pattern per comment
+              }
+            }
+            // Also check for comments that look like assumptions even without explicit keywords
+            // (e.g., comments starting with "Client will..." or "Assumes...")
+            if (!assumptions.find(a => a.description === item.description && a.epic === epic.name)) {
+              const implicitAssumptionPatterns = [
+                /^client will\s+/i,
+                /^customer will\s+/i,
+                /^user will\s+/i,
+                /^team will\s+/i,
+                /^assumes?\s+/i,
+                /^provided that\s+/i,
+                /^given that\s+/i,
+                /^if\s+.*,?\s*then/i
+              ];
+              for (const pattern of implicitAssumptionPatterns) {
+                if (pattern.test(item.comments)) {
+                  assumptions.push({
+                    epic: epic.name,
+                    stage: stage.name,
+                    description: item.description,
+                    assumption: item.comments
+                  });
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Build detailed epic summaries
     const epicSummaries = input.epics
       .sort((a, b) => a.order - b.order)
@@ -265,6 +341,13 @@ ${roleBreakdown}
       ? `\nMILESTONES:\n${input.milestones.map(m => `- ${m.name}${m.dueDate ? ` (Due: ${m.dueDate})` : ''}${m.description ? `: ${m.description}` : ''}`).join('\n')}`
       : '';
 
+    // Build assumptions section
+    const assumptionsSummary = assumptions.length > 0
+      ? `\nKEY ASSUMPTIONS AND DEPENDENCIES:\n${'='.repeat(40)}\nThe following assumptions have been identified from line item notes and must be validated with the client:\n\n${assumptions.map((a, idx) => 
+          `${idx + 1}. [${a.epic} > ${a.stage}] ${a.description}\n   → ${a.assumption}`
+        ).join('\n\n')}\n\nIMPORTANT: Please include a dedicated "Assumptions and Dependencies" section at the END of the proposal narrative that clearly lists these assumptions for client review and acknowledgment.`
+      : '';
+
     const userMessage = `Generate a comprehensive proposal narrative for the following estimate:
 
 ESTIMATE OVERVIEW
@@ -280,8 +363,9 @@ DETAILED BREAKDOWN BY EPIC
 ==========================
 ${epicSummaries}
 ${milestoneSummary}
+${assumptionsSummary}
 
-Please generate a professional proposal narrative that addresses all six key client questions for each Epic (scope, deliverables, duration, staffing, KPIs, and client dependencies). Make it suitable for a formal proposal document.`;
+Please generate a professional proposal narrative that addresses all six key client questions for each Epic (scope, deliverables, duration, staffing, KPIs, and client dependencies). Make it suitable for a formal proposal document.${assumptions.length > 0 ? ' IMPORTANT: End the narrative with a dedicated "Assumptions and Dependencies" section that consolidates all identified assumptions for client acknowledgment.' : ''}`;
 
     const messages: ChatMessage[] = [
       { role: 'system', content: this.systemPrompts.estimateNarrative },
