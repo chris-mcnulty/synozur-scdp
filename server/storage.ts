@@ -288,6 +288,7 @@ export interface IStorage {
   mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
   // Estimate Line Items
+  getEstimateLineItem(id: string): Promise<EstimateLineItem | undefined>;
   getEstimateLineItems(estimateId: string): Promise<EstimateLineItemWithJoins[]>;
   createEstimateLineItem(lineItem: InsertEstimateLineItem): Promise<EstimateLineItem>;
   updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
@@ -1711,6 +1712,11 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(estimateStages)
         .where(eq(estimateStages.id, deleteStageId));
     });
+  }
+
+  async getEstimateLineItem(id: string): Promise<EstimateLineItem | undefined> {
+    const [item] = await db.select().from(estimateLineItems).where(eq(estimateLineItems.id, id));
+    return item;
   }
 
   async getEstimateLineItems(estimateId: string): Promise<EstimateLineItemWithJoins[]> {

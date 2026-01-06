@@ -5715,8 +5715,70 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "At least one field must be provided for update" });
       }
 
+      // If assignedUserId is being set, look up the user's rates
+      if ('assignedUserId' in validatedData && validatedData.assignedUserId) {
+        const user = await storage.getUser(validatedData.assignedUserId);
+        if (user) {
+          // Get the current line item to check for estimate-level or client-level rate overrides
+          const currentItem = await storage.getEstimateLineItem(req.params.id);
+          const estimate = currentItem ? await storage.getEstimate(currentItem.estimateId) : null;
+          
+          // Try to resolve rates using the rate hierarchy
+          let billingRate = user.defaultBillingRate;
+          let costRate = user.defaultCostRate;
+          
+          // Check for estimate-level rate overrides
+          if (estimate) {
+            const estimateOverrides = await storage.getEstimateRateOverrides(estimate.id);
+            const userOverride = estimateOverrides.find(o => o.subjectType === 'user' && o.subjectId === user.id);
+            if (userOverride) {
+              if (userOverride.billingRate != null) billingRate = userOverride.billingRate;
+              if (userOverride.costRate != null) costRate = userOverride.costRate;
+            }
+            
+            // Check for client-level rate overrides
+            if (estimate.clientId) {
+              const clientOverrides = await storage.getClientRateOverrides(estimate.clientId);
+              const clientUserOverride = clientOverrides.find(o => o.subjectType === 'user' && o.subjectId === user.id);
+              if (clientUserOverride) {
+                // Client overrides take precedence over estimate overrides unless estimate has explicit override
+                if (!userOverride?.billingRate && clientUserOverride.billingRate != null) {
+                  billingRate = clientUserOverride.billingRate;
+                }
+                if (!userOverride?.costRate && clientUserOverride.costRate != null) {
+                  costRate = clientUserOverride.costRate;
+                }
+              }
+            }
+          }
+          
+          // Fall back to role defaults if user has no rates
+          if ((billingRate == null || billingRate === '0') && user.roleId) {
+            const role = await storage.getRole(user.roleId);
+            if (role) {
+              if (billingRate == null || billingRate === '0') billingRate = role.defaultRackRate;
+              if (costRate == null || costRate === '0') costRate = role.defaultCostRate;
+            }
+          }
+          
+          // Auto-populate rates from user (unless explicitly provided in the request)
+          if (!('rate' in req.body) || req.body.rate === null || req.body.rate === '') {
+            (validatedData as any).rate = billingRate || '0';
+          }
+          if (!('costRate' in req.body) || req.body.costRate === null || req.body.costRate === '') {
+            (validatedData as any).costRate = costRate || '0';
+          }
+          // Update resourceName to match user's name and roleId
+          (validatedData as any).resourceName = user.name;
+          if (user.roleId) {
+            (validatedData as any).roleId = user.roleId;
+          }
+          // Don't mark as manual override since we're using user/role defaults
+          (validatedData as any).hasManualRateOverride = false;
+        }
+      }
       // If resourceName is being changed and no assignedUserId, look up role's default rates
-      if ('resourceName' in validatedData && validatedData.resourceName && !validatedData.assignedUserId) {
+      else if ('resourceName' in validatedData && validatedData.resourceName && !validatedData.assignedUserId) {
         const roles = await storage.getRoles();
         const matchedRole = roles.find(r => r.name.toLowerCase().trim() === validatedData.resourceName!.toLowerCase().trim());
         
