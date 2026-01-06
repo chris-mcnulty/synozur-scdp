@@ -514,8 +514,12 @@ function EstimateDetailContent() {
         body: JSON.stringify(data),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      // If referral fee fields changed, also refresh line items since they contain referralMarkup
+      if ('referralFeeType' in variables || 'referralFeePercent' in variables || 'referralFeeFlat' in variables) {
+        queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      }
       toast({ title: "Estimate updated successfully" });
     },
     onError: (error: any) => {
