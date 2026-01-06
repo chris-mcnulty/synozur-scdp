@@ -2130,24 +2130,45 @@ function EstimateDetailContent() {
                   )}
                 </div>
                 
-                {estimate?.referralFeeType && estimate.referralFeeType !== 'none' && (
-                  <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                    <div className="flex justify-between text-sm">
-                      <span>Referral Fee{estimate?.referralFeeType === 'percentage' ? ' (on Profit)' : ''}:</span>
-                      <span className="font-medium text-amber-700 dark:text-amber-400">
-                        -${Math.round(Number(estimate?.referralFeeAmount || 0)).toLocaleString()}
-                        {estimate?.referralFeeType === 'percentage' && estimate?.referralFeePercent && 
-                          ` (${estimate.referralFeePercent}%)`}
-                      </span>
+                {estimate?.referralFeeType && estimate.referralFeeType !== 'none' && (() => {
+                  const referralFeeAmount = Number(estimate?.referralFeeAmount || 0);
+                  const netProfit = Number(estimate?.netRevenue || 0);
+                  const baseMargin = netProfit + referralFeeAmount; // Profit before referral deduction
+                  const baseTotalFees = Number(estimate?.totalFees || 0);
+                  const presentedTotal = Number(estimate?.presentedTotal || 0);
+                  const marginPercent = baseTotalFees > 0 ? ((baseMargin / baseTotalFees) * 100).toFixed(1) : '0';
+                  
+                  return (
+                    <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg space-y-2" data-testid="referral-fee-summary">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Base Margin:</span>
+                        <span className="font-medium">
+                          ${Math.round(baseMargin).toLocaleString()} ({marginPercent}%)
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          Referral Fee{estimate?.referralFeePercent ? ` (${estimate.referralFeePercent}% of margin)` : ''}:
+                        </span>
+                        <span className="font-medium text-amber-700 dark:text-amber-400">
+                          +${Math.round(referralFeeAmount).toLocaleString()} added to quote
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm border-t pt-2 mt-2">
+                        <span className="text-muted-foreground">Presented Total:</span>
+                        <span className="font-semibold">
+                          ${Math.round(presentedTotal).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Net Profit (after referral):</span>
+                        <span className="font-semibold text-green-700 dark:text-green-400">
+                          ${Math.round(netProfit).toLocaleString()}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-sm mt-1">
-                      <span>Net Profit:</span>
-                      <span className="font-semibold text-green-700 dark:text-green-400">
-                        ${Math.round(Number(estimate?.netRevenue || 0)).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>
