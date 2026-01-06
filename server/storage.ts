@@ -213,6 +213,7 @@ export interface IStorage {
   // Users
   getUsers(): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
+  getUsersByIds(ids: string[]): Promise<Map<string, User>>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
@@ -240,6 +241,7 @@ export interface IStorage {
   createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation>;
   updateProjectAllocation(id: string, updates: any): Promise<any>;
   deleteProjectAllocation(id: string): Promise<void>;
+  bulkDeleteProjectAllocations(ids: string[]): Promise<void>;
   bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]>;
   
   // Roles
@@ -280,6 +282,7 @@ export interface IStorage {
   createEstimateLineItem(lineItem: InsertEstimateLineItem): Promise<EstimateLineItem>;
   updateEstimateLineItem(id: string, lineItem: Partial<InsertEstimateLineItem>): Promise<EstimateLineItem>;
   deleteEstimateLineItem(id: string): Promise<void>;
+  bulkDeleteEstimateLineItems(ids: string[]): Promise<void>;
   bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]>;
   splitEstimateLineItem(id: string, firstHours: number, secondHours: number): Promise<EstimateLineItem[]>;
   
@@ -589,10 +592,12 @@ export interface IStorage {
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
   getProjectStages(epicId: string): Promise<ProjectStage[]>;
+  getProjectStagesByEpicIds(epicIds: string[]): Promise<Map<string, ProjectStage[]>>;
   createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
   updateProjectEpic(id: string, update: Partial<InsertProjectEpic>): Promise<ProjectEpic>;
   deleteProjectEpic(id: string): Promise<void>;
   getProjectMilestones(projectId: string): Promise<ProjectMilestone[]>;
+  getProjectMilestonesByProjectIds(projectIds: string[]): Promise<Map<string, ProjectMilestone[]>>;
   createProjectMilestone(milestone: InsertProjectMilestone): Promise<ProjectMilestone>;
   updateProjectMilestone(id: string, update: Partial<InsertProjectMilestone>): Promise<ProjectMilestone>;
   deleteProjectMilestone(id: string): Promise<void>;
@@ -895,6 +900,17 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
+  }
+
+  async getUsersByIds(ids: string[]): Promise<Map<string, User>> {
+    if (ids.length === 0) return new Map();
+    
+    const uniqueIds = [...new Set(ids)];
+    const usersList = await db.select()
+      .from(users)
+      .where(inArray(users.id, uniqueIds));
+    
+    return new Map(usersList.map(user => [user.id, user]));
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
@@ -1780,6 +1796,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(estimateLineItems).where(eq(estimateLineItems.id, id));
   }
 
+  async bulkDeleteEstimateLineItems(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(estimateLineItems).where(inArray(estimateLineItems.id, ids));
+  }
+
   async bulkCreateEstimateLineItems(lineItems: InsertEstimateLineItem[]): Promise<EstimateLineItem[]> {
     return await db.insert(estimateLineItems).values(lineItems).returning();
   }
@@ -2338,6 +2359,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(projectStages.order);
   }
 
+  async getProjectStagesByEpicIds(epicIds: string[]): Promise<Map<string, ProjectStage[]>> {
+    if (epicIds.length === 0) return new Map();
+    
+    const uniqueIds = [...new Set(epicIds)];
+    const stagesList = await db.select()
+      .from(projectStages)
+      .where(inArray(projectStages.epicId, uniqueIds))
+      .orderBy(projectStages.order);
+    
+    const result = new Map<string, ProjectStage[]>();
+    for (const stage of stagesList) {
+      const existing = result.get(stage.epicId) || [];
+      existing.push(stage);
+      result.set(stage.epicId, existing);
+    }
+    return result;
+  }
+
   async createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic> {
     const [created] = await db.insert(projectEpics).values(epic).returning();
     return created;
@@ -2360,6 +2399,24 @@ export class DatabaseStorage implements IStorage {
       .from(projectMilestones)
       .where(eq(projectMilestones.projectId, projectId))
       .orderBy(projectMilestones.sortOrder);
+  }
+
+  async getProjectMilestonesByProjectIds(projectIds: string[]): Promise<Map<string, ProjectMilestone[]>> {
+    if (projectIds.length === 0) return new Map();
+    
+    const uniqueIds = [...new Set(projectIds)];
+    const milestonesList = await db.select()
+      .from(projectMilestones)
+      .where(inArray(projectMilestones.projectId, uniqueIds))
+      .orderBy(projectMilestones.sortOrder);
+    
+    const result = new Map<string, ProjectMilestone[]>();
+    for (const milestone of milestonesList) {
+      const existing = result.get(milestone.projectId) || [];
+      existing.push(milestone);
+      result.set(milestone.projectId, existing);
+    }
+    return result;
   }
 
   async getProjectWorkStreams(projectId: string): Promise<ProjectWorkstream[]> {
@@ -4886,6 +4943,11 @@ export class DatabaseStorage implements IStorage {
   async deleteProjectAllocation(id: string): Promise<void> {
     await db.delete(projectAllocations).where(eq(projectAllocations.id, id));
   }
+
+  async bulkDeleteProjectAllocations(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(projectAllocations).where(inArray(projectAllocations.id, ids));
+  }
   
   async bulkUpdateProjectAllocations(projectId: string, updates: any[]): Promise<any[]> {
     return await db.transaction(async (tx) => {
@@ -5261,6 +5323,24 @@ export class DatabaseStorage implements IStorage {
   }): Promise<InvoiceLine> {
     const [newLine] = await db.insert(invoiceLines).values(line).returning();
     return convertDecimalFieldsToNumbers(newLine);
+  }
+
+  async bulkCreateInvoiceLines(lines: Array<{
+    batchId: string;
+    projectId: string;
+    clientId: string;
+    type: string;
+    quantity: string;
+    rate: string;
+    amount: string;
+    description: string;
+    originalAmount?: string;
+    billedAmount?: string;
+    varianceAmount?: string;
+  }>): Promise<InvoiceLine[]> {
+    if (lines.length === 0) return [];
+    const newLines = await db.insert(invoiceLines).values(lines).returning();
+    return newLines.map(line => convertDecimalFieldsToNumbers(line));
   }
 
   async generateInvoicesForBatch(batchId: string, options: {

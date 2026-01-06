@@ -1,8 +1,28 @@
 import express, { type Request, Response, NextFunction, type Express } from "express";
 import { createServer, type Server } from "http";
+import compression from "compression";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
+
+// Enable gzip/deflate compression for all responses
+// This significantly reduces bandwidth usage (typically 70-90% for JSON APIs)
+app.use(compression({
+  // Only compress responses larger than 1KB
+  threshold: 1024,
+  // Compression level (1-9, default 6). Higher = better compression but more CPU
+  level: 6,
+  // Filter which responses to compress
+  filter: (req, res) => {
+    // Don't compress responses with x-no-compression header
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Use default filter (compresses text/*, application/json, application/javascript, etc.)
+    return compression.filter(req, res);
+  }
+}));
+
 app.use(express.json({ limit: '50mb' })); // Increased limit for large JSON payloads (e.g., repair from JSON)
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
