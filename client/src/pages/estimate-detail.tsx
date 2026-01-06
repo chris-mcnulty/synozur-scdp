@@ -3432,7 +3432,7 @@ function EstimateDetailContent() {
                                         updates.assignedUserId = null;
                                         updates.roleId = roleId;
                                         updates.resourceName = role?.name || null;
-                                        updates.rate = role?.rate || "0";
+                                        updates.rate = role?.defaultRackRate || "0";
                                         updates.costRate = role?.defaultCostRate || "0";
                                       } else {
                                         const user = assignableUsers.find((u: any) => u.id === value);
