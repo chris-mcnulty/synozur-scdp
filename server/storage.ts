@@ -279,6 +279,7 @@ export interface IStorage {
   getEstimateEpics(estimateId: string): Promise<EstimateEpic[]>;
   createEstimateEpic(estimateId: string, epic: { name: string }): Promise<EstimateEpic>;
   updateEstimateEpic(epicId: string, update: { name?: string; order?: number }): Promise<EstimateEpic>;
+  deleteEstimateEpic(estimateId: string, epicId: string): Promise<void>;
   
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
@@ -1598,6 +1599,41 @@ export class DatabaseStorage implements IStorage {
       .where(eq(estimateEpics.id, epicId))
       .returning();
     return updatedEpic;
+  }
+
+  async deleteEstimateEpic(estimateId: string, epicId: string): Promise<void> {
+    // Verify epic belongs to this estimate
+    const epic = await db.select()
+      .from(estimateEpics)
+      .where(and(eq(estimateEpics.id, epicId), eq(estimateEpics.estimateId, estimateId)))
+      .limit(1);
+
+    if (epic.length === 0) {
+      throw new Error('Epic not found or does not belong to this estimate');
+    }
+
+    // Check if any stages in this epic have line items
+    const stages = await db.select({ id: estimateStages.id })
+      .from(estimateStages)
+      .where(eq(estimateStages.epicId, epicId));
+
+    if (stages.length > 0) {
+      const stageIds = stages.map(s => s.id);
+      const lineItemsCount = await db.select({ count: sql`count(*)` })
+        .from(estimateLineItems)
+        .where(sql`${estimateLineItems.stageId} IN (${sql.raw(stageIds.map(id => `'${id}'`).join(','))})`);
+      
+      const count = Number(lineItemsCount[0]?.count || 0);
+      if (count > 0) {
+        throw new Error(`Cannot delete epic: ${count} line items are assigned to stages in this epic. Please reassign them first.`);
+      }
+
+      // Delete all stages in this epic
+      await db.delete(estimateStages).where(eq(estimateStages.epicId, epicId));
+    }
+
+    // Delete the epic
+    await db.delete(estimateEpics).where(eq(estimateEpics.id, epicId));
   }
 
   async getEstimateStages(estimateId: string): Promise<EstimateStage[]> {

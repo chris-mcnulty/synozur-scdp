@@ -5549,6 +5549,23 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.delete("/api/estimates/:estimateId/epics/:epicId", requireAuth, async (req, res) => {
+    try {
+      // Check if estimate is editable
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      
+      await storage.deleteEstimateEpic(req.params.estimateId, req.params.epicId);
+      res.json({ message: "Epic deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting epic:", error);
+      if (error.message && (error.message.includes("line items") || error.message.includes("not found") || error.message.includes("does not belong"))) {
+        res.status(400).json({ message: error.message });
+      } else {
+        res.status(500).json({ message: "Failed to delete epic" });
+      }
+    }
+  });
+
   // Estimate stages
   app.get("/api/estimates/:id/stages", requireAuth, async (req, res) => {
     try {
