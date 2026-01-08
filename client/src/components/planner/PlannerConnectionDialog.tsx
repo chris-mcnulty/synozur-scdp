@@ -140,7 +140,12 @@ export function PlannerConnectionDialog({
   const handlePlanSelect = (plan: PlannerPlan) => {
     setSelectedPlan(plan);
     const group = groups?.find(g => g.id === plan.owner);
-    if (group) setSelectedGroup(group);
+    if (group) {
+      setSelectedGroup(group);
+    } else if (plan.owner) {
+      // Fallback: use plan.owner as groupId if group not found in loaded list
+      setSelectedGroup({ id: plan.owner, displayName: "Unknown Group" });
+    }
     setStep("confirm");
   };
 
