@@ -43,6 +43,7 @@ import {
   Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
+import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { format, startOfMonth, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1726,6 +1727,7 @@ export default function ProjectDetail() {
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
             )}
+            <TabsTrigger value="planner" data-testid="tab-planner">Planner</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -3749,6 +3751,13 @@ export default function ProjectDetail() {
               )}
             </TabsContent>
           )}
+          
+          <TabsContent value="planner" className="space-y-6">
+            <PlannerStatusPanel 
+              projectId={id || ""} 
+              projectName={analytics?.project?.name || ""} 
+            />
+          </TabsContent>
         </Tabs>
 
         {/* SOW Dialog */}
