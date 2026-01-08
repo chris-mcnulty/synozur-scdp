@@ -49,6 +49,7 @@ export function PlannerConnectionDialog({
   const { data: plannerStatus, isLoading: checkingStatus } = useQuery<{
     configured: boolean;
     connected: boolean;
+    appConfigured?: boolean;
     error?: string;
     message?: string;
   }>({
@@ -164,7 +165,6 @@ export function PlannerConnectionDialog({
     connectMutation.mutate();
   };
 
-  const isConfigured = plannerStatus?.configured === true;
   const isConnected = plannerStatus?.connected === true;
 
   return (
@@ -187,27 +187,17 @@ export function PlannerConnectionDialog({
           </div>
         )}
 
-        {!checkingStatus && !isConfigured && (
-          <div className="flex flex-col items-center py-8 text-center">
-            <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
-            <p className="font-medium">Planner integration not configured</p>
-            <p className="text-sm text-muted-foreground mt-1 max-w-md">
-              {plannerStatus?.message || 'Please contact your administrator to set up the Planner integration credentials.'}
-            </p>
-          </div>
-        )}
-
-        {!checkingStatus && isConfigured && !isConnected && (
+        {!checkingStatus && !isConnected && (
           <div className="flex flex-col items-center py-8 text-center">
             <AlertCircle className="h-10 w-10 text-destructive mb-3" />
-            <p className="font-medium">Planner connection failed</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {plannerStatus?.error || 'Unable to connect to Microsoft Planner. Please check the integration configuration.'}
+            <p className="font-medium">Microsoft 365 connection required</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              {plannerStatus?.message || plannerStatus?.error || 'Please ensure the Outlook connector is set up and you are signed in.'}
             </p>
           </div>
         )}
 
-        {!checkingStatus && isConfigured && isConnected && (
+        {!checkingStatus && isConnected && (
           <>
             {step === "choose-method" && (
               <div className="space-y-4" data-testid="planner-method-selection">

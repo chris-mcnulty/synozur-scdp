@@ -3125,31 +3125,34 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Microsoft Planner Integration Routes
   // ============================================
 
-  // Check if Planner integration is configured
+  // Check if Planner integration is configured (hybrid auth: Outlook for interactive, app for sync)
   app.get("/api/planner/status", requireAuth, async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { isPlannerConfigured } = await import('./services/planner-graph-client');
       
-      const configured = isPlannerConfigured();
+      // Test delegated (Outlook) connection for interactive operations
+      const delegatedResult = await plannerService.testConnection();
+      const appConfigured = isPlannerConfigured();
       
-      if (configured) {
-        const result = await plannerService.testConnection();
-        res.json({ 
-          configured: true, 
-          connected: result.success,
-          error: result.error 
-        });
-      } else {
-        res.json({ 
-          configured: false, 
-          connected: false,
-          message: 'Planner integration requires PLANNER_TENANT_ID, PLANNER_CLIENT_ID, and PLANNER_CLIENT_SECRET environment variables.' 
-        });
-      }
+      res.json({ 
+        configured: true, // Always true if Outlook connector exists
+        connected: delegatedResult.success,
+        appConfigured: appConfigured, // Background sync credentials
+        error: delegatedResult.error,
+        message: !delegatedResult.success 
+          ? 'Outlook connector not connected. Please set up the Outlook integration.' 
+          : (!appConfigured ? 'Background sync requires PLANNER_TENANT_ID, PLANNER_CLIENT_ID, and PLANNER_CLIENT_SECRET.' : undefined)
+      });
     } catch (error: any) {
       console.error("[PLANNER] Status check failed:", error);
-      res.json({ configured: false, connected: false, error: error.message });
+      res.json({ 
+        configured: false, 
+        connected: false, 
+        appConfigured: false,
+        error: error.message,
+        message: 'Outlook connector not connected. Please set up the Outlook integration.'
+      });
     }
   });
 
