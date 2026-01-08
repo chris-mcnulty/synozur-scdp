@@ -350,8 +350,10 @@ class PlannerService {
   async findUserByEmail(email: string): Promise<AzureUser | null> {
     try {
       const client = await this.getClient();
+      // Normalize email to lowercase for case-insensitive matching
+      const normalizedEmail = email.toLowerCase().trim();
       const response = await client.api('/users')
-        .filter(`mail eq '${email}' or userPrincipalName eq '${email}'`)
+        .filter(`mail eq '${normalizedEmail}' or userPrincipalName eq '${normalizedEmail}'`)
         .select('id,displayName,mail,userPrincipalName')
         .get();
       return response.value?.[0] || null;
