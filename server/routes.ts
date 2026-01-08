@@ -3424,7 +3424,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           
           if (taskPercentComplete === 100) {
             newStatus = 'completed';
-          } else if (taskPercentComplete >= 50) {
+          } else if (taskPercentComplete > 0 && taskPercentComplete < 100) {
+            // Any progress between 1-99% means in progress
             newStatus = 'in_progress';
           } else if (taskPercentComplete === 0) {
             newStatus = 'open';
@@ -3448,17 +3449,16 @@ export async function registerRoutes(app: Express): Promise<void> {
             inboundUpdated++;
           }
           
-          // Sync dates from Planner if they changed
-          if (allocation && task.startDateTime) {
-            const taskStart = task.startDateTime.split('T')[0];
+          // Sync dates from Planner (including clearing dates if removed in Planner)
+          if (allocation) {
+            const taskStart = task.startDateTime ? task.startDateTime.split('T')[0] : null;
+            const taskDue = task.dueDateTime ? task.dueDateTime.split('T')[0] : null;
+            
             if (allocation.plannedStartDate !== taskStart) {
               await storage.updateProjectAllocation(allocation.id, {
                 plannedStartDate: taskStart
               });
             }
-          }
-          if (allocation && task.dueDateTime) {
-            const taskDue = task.dueDateTime.split('T')[0];
             if (allocation.plannedEndDate !== taskDue) {
               await storage.updateProjectAllocation(allocation.id, {
                 plannedEndDate: taskDue

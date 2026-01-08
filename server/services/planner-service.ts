@@ -213,11 +213,22 @@ class PlannerService {
     }
   }
 
-  async getTask(taskId: string): Promise<PlannerTask> {
+  async getTask(taskId: string): Promise<PlannerTask | null> {
     try {
       const client = await this.getClient();
       return await client.api(`/planner/tasks/${taskId}`).get();
     } catch (error: any) {
+      // Return null for 404 (not found) or 410 (gone/deleted)
+      // Handle various error shapes from Microsoft Graph SDK
+      const statusCode = error.statusCode || error.status || error.response?.status;
+      const errorCode = error.code || error.body?.error?.code || error.response?.data?.error?.code;
+      const message = error.message || '';
+      
+      if (statusCode === 404 || statusCode === 410 || 
+          errorCode === 'Request_ResourceNotFound' || errorCode === 'Gone' ||
+          message.includes('does not exist') || message.includes('not found')) {
+        return null;
+      }
       console.error('[PLANNER] Error getting task:', error.message);
       throw new Error(`Failed to get task: ${error.message}`);
     }
