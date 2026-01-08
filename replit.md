@@ -58,7 +58,8 @@ Preferred communication style: Simple, everyday language.
 - **Resource Management & Capacity Planning**: Dual List and Timeline views, capacity summary dashboard, color-coded utilization, conflict detection, enhanced filtering, cross-project resource dashboard, and "My Assignments" for employees.
 - **Budget & SOW Management**: Project budgets tied to explicit SOW uploads.
 - **Time Tracking**: Enhanced with assignment/allocation linking and mobile optimizations. Time reminders are sent only to users with active project engagements (not marked as "complete").
-- **Project Engagement Tracking**: Tracks user's overall involvement status (active/complete) on projects, separate from individual assignment status. Auto-creates engagements when users receive assignments, with manual completion by self/admin/PM. Supports future Microsoft Planner bidirectional sync.
+- **Project Engagement Tracking**: Tracks user's overall involvement status (active/complete) on projects, separate from individual assignment status. Auto-creates engagements when users receive assignments, with manual completion by self/admin/PM.
+- **Microsoft Planner Integration**: Bidirectional sync between project assignments and Microsoft Planner tasks. Uses hybrid authentication: Outlook connector (delegated) for interactive operations (listing groups/plans), and optional app-only credentials for background sync. Multi-tenant ready with `tenant_microsoft_integrations` table supporting publisher app or BYOA (bring-your-own-app) scenarios. Requires `PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, and `PLANNER_CLIENT_SECRET` for background sync.
 - **Vocabulary Management**: Hierarchical terminology management.
 - **Tax Management**: Configurable tax rates per invoice batch (default 9.3%).
 
