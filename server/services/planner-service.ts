@@ -1,5 +1,5 @@
 import { Client } from '@microsoft/microsoft-graph-client';
-import { getUncachableOutlookClient } from './outlook-client';
+import { getPlannerGraphClient, isPlannerConfigured, PlannerCredentials } from './planner-graph-client';
 
 // Types for Microsoft Planner API responses
 export interface PlannerGroup {
@@ -87,8 +87,22 @@ export interface SyncResult {
 }
 
 class PlannerService {
+  private credentials?: PlannerCredentials;
+
+  setCredentials(credentials: PlannerCredentials): void {
+    this.credentials = credentials;
+  }
+
+  clearCredentials(): void {
+    this.credentials = undefined;
+  }
+
+  isConfigured(): boolean {
+    return this.credentials !== undefined || isPlannerConfigured();
+  }
+
   private async getClient(): Promise<Client> {
-    return getUncachableOutlookClient();
+    return getPlannerGraphClient(this.credentials);
   }
 
   // ============ GROUP/TEAM OPERATIONS ============
