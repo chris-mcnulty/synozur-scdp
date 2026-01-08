@@ -2,11 +2,130 @@
 
 ## Overview
 
-This document outlines the design for automatically provisioning Microsoft 365 resources (Teams, Channels, SharePoint Sites, and Planner Plans) when creating new SCDP projects. The feature ensures seamless collaboration by synchronizing project assignments with Microsoft Planner tasks.
+This document outlines the design for integrating Constellation with Microsoft 365, **prioritizing bidirectional Planner synchronization first**, with Teams/Channel provisioning as a secondary feature.
+
+### Priority Order (Revised January 2026)
+
+| Priority | Feature | Description |
+|----------|---------|-------------|
+| **P1** | Bidirectional Planner Sync | Sync assignments ↔ Planner tasks, ask user where to create Plan |
+| **P2** | Team/Channel Creation | Auto-provision Teams workspace with client/project structure |
 
 ---
 
-## 1. Administrative Settings
+## PRIORITY 1: Bidirectional Planner Integration
+
+### Core Concept
+
+When a project is created (or on-demand), users can optionally connect it to a Microsoft Planner plan. The system will:
+1. **Ask where to create/connect the plan** with guided options
+2. **Sync assignments bidirectionally** - SCDP ↔ Planner tasks
+3. **Keep both systems in sync** as changes are made in either place
+
+### Plan Location Options (Guided Dialog)
+
+When enabling Planner for a project, present these options:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Connect to Microsoft Planner                            [X] │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Where should the Planner plan be created?                   │
+│                                                             │
+│ ○ Create new plan in existing Team                          │
+│   [Select a Team...                              ▼]         │
+│   ℹ️ The plan will be added to the selected Team's          │
+│      Planner tab and visible to Team members.               │
+│                                                             │
+│ ○ Connect to existing Planner plan                          │
+│   [Search for a plan...                          ▼]         │
+│   ℹ️ Link to a plan that already exists. Tasks will         │
+│      sync with existing items.                              │
+│                                                             │
+│ ○ Create standalone plan (no Team)                          │
+│   ℹ️ Creates a plan in your personal Planner. You can       │
+│      share it with team members later.                      │
+│                                                             │
+│                              [Cancel]  [Connect Planner]    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Bidirectional Sync Behavior
+
+```
+SCDP → Planner (Outbound)
+───────────────────────────
+• New assignment created → Create Planner task
+• Assignment updated (dates, hours) → Update task details
+• Assignment deleted → Delete task (with confirmation option)
+• Assignment marked complete → Mark task complete
+• User assigned → Set task assignee
+
+Planner → SCDP (Inbound)
+───────────────────────────
+• Task marked complete → Update assignment status to "complete"
+• Task reassigned → Notify PM (don't auto-change assignment)
+• Task deleted → Flag assignment for review, notify PM
+• Task dates changed → Update assignment dates (with PM approval option)
+• New task created in Plan → Create assignment in SCDP (optional)
+```
+
+### Sync Trigger Options
+
+| Trigger | Description |
+|---------|-------------|
+| **On project creation** | Checkbox in project creation dialog |
+| **On-demand** | Button in project detail page: "Connect to Planner" |
+| **Manual sync** | "Sync Now" button for immediate refresh |
+| **Automatic** | Background job checks for changes every 5-15 minutes |
+
+### Webhook vs Polling Strategy
+
+**Phase 1: Polling** (Simpler implementation)
+- Background job runs every 10 minutes
+- Checks for changes in both SCDP and Planner
+- Updates both systems accordingly
+
+**Phase 2: Webhooks** (Better performance)
+- Microsoft Graph webhooks notify of Planner changes
+- Real-time sync instead of polling
+- Requires public endpoint and subscription management
+
+### Known Constraints
+
+| Constraint | Impact |
+|------------|--------|
+| **No CSV import in Planner** | All tasks must be created via Graph API - no bulk import option |
+| **Planner API rate limits** | May need to batch/throttle when syncing many assignments |
+| **Task assignment requires Azure AD user** | External users need guest accounts or manual handling |
+
+---
+
+## PRIORITY 2: Team/Channel Creation (Lower Priority)
+
+### Naming Convention
+
+| M365 Resource | Source | Example |
+|---------------|--------|---------|
+| **Team name** | Client name | "Acme Corporation" |
+| **Channel name** | Project name | "Q1-Website-Redesign" |
+
+### Creation Logic
+
+```
+If Client Team exists:
+  → Add new channel for Project
+  
+If Client Team does NOT exist:
+  → Create Team named "{Client Name}"
+  → Create "General" channel (auto-created by Teams)
+  → Create "{Project Name}" channel
+```
+
+---
+
+## 2. Administrative Settings
 
 ### System Settings Table Addition
 
