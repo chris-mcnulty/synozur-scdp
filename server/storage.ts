@@ -7,6 +7,7 @@ import {
   vocabularyCatalog, organizationVocabulary,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   expenseReports, expenseReportItems, reimbursementBatches,
+  projectPlannerConnections, plannerTaskSync, userAzureMappings,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem, type EstimateLineItemWithJoins,
@@ -43,6 +44,9 @@ import {
   type ExpenseReport, type InsertExpenseReport,
   type ExpenseReportItem, type InsertExpenseReportItem,
   type ReimbursementBatch, type InsertReimbursementBatch,
+  type ProjectPlannerConnection, type InsertProjectPlannerConnection,
+  type PlannerTaskSync, type InsertPlannerTaskSync,
+  type UserAzureMapping, type InsertUserAzureMapping,
   type VocabularyTerms, DEFAULT_VOCABULARY
 } from "@shared/schema";
 import { db } from "./db";
@@ -897,6 +901,26 @@ export interface IStorage {
   }): Promise<Buffer>;
   getDefaultBillingRate(): Promise<number>;
   getDefaultCostRate(): Promise<number>;
+  
+  // Planner Integration Methods
+  getProjectPlannerConnection(projectId: string): Promise<ProjectPlannerConnection | undefined>;
+  createProjectPlannerConnection(connection: InsertProjectPlannerConnection): Promise<ProjectPlannerConnection>;
+  updateProjectPlannerConnection(id: string, updates: Partial<InsertProjectPlannerConnection>): Promise<ProjectPlannerConnection>;
+  deleteProjectPlannerConnection(projectId: string): Promise<void>;
+  
+  getPlannerTaskSync(allocationId: string): Promise<PlannerTaskSync | undefined>;
+  getPlannerTaskSyncsByConnection(connectionId: string): Promise<PlannerTaskSync[]>;
+  createPlannerTaskSync(sync: InsertPlannerTaskSync): Promise<PlannerTaskSync>;
+  updatePlannerTaskSync(id: string, updates: Partial<InsertPlannerTaskSync>): Promise<PlannerTaskSync>;
+  deletePlannerTaskSync(id: string): Promise<void>;
+  deletePlannerTaskSyncByAllocation(allocationId: string): Promise<void>;
+  
+  getUserAzureMapping(userId: string): Promise<UserAzureMapping | undefined>;
+  getUserAzureMappingByAzureId(azureUserId: string): Promise<UserAzureMapping | undefined>;
+  createUserAzureMapping(mapping: InsertUserAzureMapping): Promise<UserAzureMapping>;
+  updateUserAzureMapping(id: string, updates: Partial<InsertUserAzureMapping>): Promise<UserAzureMapping>;
+  deleteUserAzureMapping(id: string): Promise<void>;
+  getAllUserAzureMappings(): Promise<UserAzureMapping[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -9325,6 +9349,114 @@ export class DatabaseStorage implements IStorage {
       console.error("[USER CLIENT ACCESS] Error checking user-client access:", error);
       return false;
     }
+  }
+
+  // ============================================
+  // Planner Integration Methods
+  // ============================================
+
+  async getProjectPlannerConnection(projectId: string): Promise<ProjectPlannerConnection | undefined> {
+    const [connection] = await db.select()
+      .from(projectPlannerConnections)
+      .where(eq(projectPlannerConnections.projectId, projectId));
+    return connection || undefined;
+  }
+
+  async createProjectPlannerConnection(connection: InsertProjectPlannerConnection): Promise<ProjectPlannerConnection> {
+    const [created] = await db.insert(projectPlannerConnections)
+      .values(connection)
+      .returning();
+    return created;
+  }
+
+  async updateProjectPlannerConnection(id: string, updates: Partial<InsertProjectPlannerConnection>): Promise<ProjectPlannerConnection> {
+    const [updated] = await db.update(projectPlannerConnections)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projectPlannerConnections.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteProjectPlannerConnection(projectId: string): Promise<void> {
+    await db.delete(projectPlannerConnections)
+      .where(eq(projectPlannerConnections.projectId, projectId));
+  }
+
+  async getPlannerTaskSync(allocationId: string): Promise<PlannerTaskSync | undefined> {
+    const [sync] = await db.select()
+      .from(plannerTaskSync)
+      .where(eq(plannerTaskSync.allocationId, allocationId));
+    return sync || undefined;
+  }
+
+  async getPlannerTaskSyncsByConnection(connectionId: string): Promise<PlannerTaskSync[]> {
+    return await db.select()
+      .from(plannerTaskSync)
+      .where(eq(plannerTaskSync.connectionId, connectionId));
+  }
+
+  async createPlannerTaskSync(sync: InsertPlannerTaskSync): Promise<PlannerTaskSync> {
+    const [created] = await db.insert(plannerTaskSync)
+      .values(sync)
+      .returning();
+    return created;
+  }
+
+  async updatePlannerTaskSync(id: string, updates: Partial<InsertPlannerTaskSync>): Promise<PlannerTaskSync> {
+    const [updated] = await db.update(plannerTaskSync)
+      .set(updates)
+      .where(eq(plannerTaskSync.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deletePlannerTaskSync(id: string): Promise<void> {
+    await db.delete(plannerTaskSync)
+      .where(eq(plannerTaskSync.id, id));
+  }
+
+  async deletePlannerTaskSyncByAllocation(allocationId: string): Promise<void> {
+    await db.delete(plannerTaskSync)
+      .where(eq(plannerTaskSync.allocationId, allocationId));
+  }
+
+  async getUserAzureMapping(userId: string): Promise<UserAzureMapping | undefined> {
+    const [mapping] = await db.select()
+      .from(userAzureMappings)
+      .where(eq(userAzureMappings.userId, userId));
+    return mapping || undefined;
+  }
+
+  async getUserAzureMappingByAzureId(azureUserId: string): Promise<UserAzureMapping | undefined> {
+    const [mapping] = await db.select()
+      .from(userAzureMappings)
+      .where(eq(userAzureMappings.azureUserId, azureUserId));
+    return mapping || undefined;
+  }
+
+  async createUserAzureMapping(mapping: InsertUserAzureMapping): Promise<UserAzureMapping> {
+    const [created] = await db.insert(userAzureMappings)
+      .values(mapping)
+      .returning();
+    return created;
+  }
+
+  async updateUserAzureMapping(id: string, updates: Partial<InsertUserAzureMapping>): Promise<UserAzureMapping> {
+    const [updated] = await db.update(userAzureMappings)
+      .set(updates)
+      .where(eq(userAzureMappings.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteUserAzureMapping(id: string): Promise<void> {
+    await db.delete(userAzureMappings)
+      .where(eq(userAzureMappings.id, id));
+  }
+
+  async getAllUserAzureMappings(): Promise<UserAzureMapping[]> {
+    return await db.select()
+      .from(userAzureMappings);
   }
 }
 
