@@ -3121,6 +3121,431 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // ============================================
+  // Microsoft Planner Integration Routes
+  // ============================================
+
+  // Test Planner connection
+  app.get("/api/planner/test-connection", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const result = await plannerService.testConnection();
+      res.json(result);
+    } catch (error: any) {
+      console.error("[PLANNER] Connection test failed:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // List user's Microsoft 365 Groups (Teams)
+  app.get("/api/planner/groups", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const groups = await plannerService.listMyGroups();
+      res.json(groups);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list groups:", error);
+      res.status(500).json({ message: "Failed to list groups: " + error.message });
+    }
+  });
+
+  // List plans for a group/team
+  app.get("/api/planner/groups/:groupId/plans", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const plans = await plannerService.listPlansForGroup(req.params.groupId);
+      res.json(plans);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list plans:", error);
+      res.status(500).json({ message: "Failed to list plans: " + error.message });
+    }
+  });
+
+  // List all user's accessible plans
+  app.get("/api/planner/plans", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const plans = await plannerService.listMyPlans();
+      res.json(plans);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list plans:", error);
+      res.status(500).json({ message: "Failed to list plans: " + error.message });
+    }
+  });
+
+  // Get a specific plan
+  app.get("/api/planner/plans/:planId", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const plan = await plannerService.getPlan(req.params.planId);
+      res.json(plan);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to get plan:", error);
+      res.status(500).json({ message: "Failed to get plan: " + error.message });
+    }
+  });
+
+  // Create a new plan in a group
+  app.post("/api/planner/groups/:groupId/plans", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { title } = req.body;
+      if (!title) {
+        return res.status(400).json({ message: "Plan title is required" });
+      }
+      const plan = await plannerService.createPlan(req.params.groupId, title);
+      res.json(plan);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create plan:", error);
+      res.status(500).json({ message: "Failed to create plan: " + error.message });
+    }
+  });
+
+  // Get project's Planner connection
+  app.get("/api/projects/:projectId/planner-connection", requireAuth, async (req, res) => {
+    try {
+      const connection = await storage.getProjectPlannerConnection(req.params.projectId);
+      res.json(connection || null);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to get connection:", error);
+      res.status(500).json({ message: "Failed to get Planner connection" });
+    }
+  });
+
+  // Create/connect project to Planner
+  app.post("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { planId, planTitle, planWebUrl, groupId, groupName, syncDirection } = req.body;
+      const user = req.user as any;
+      
+      if (!planId) {
+        return res.status(400).json({ message: "planId is required" });
+      }
+      
+      // Check if connection already exists
+      const existing = await storage.getProjectPlannerConnection(projectId);
+      if (existing) {
+        return res.status(409).json({ message: "Project already has a Planner connection" });
+      }
+      
+      const connection = await storage.createProjectPlannerConnection({
+        projectId,
+        planId,
+        planTitle: planTitle || null,
+        planWebUrl: planWebUrl || null,
+        groupId: groupId || null,
+        groupName: groupName || null,
+        syncEnabled: true,
+        syncDirection: syncDirection || 'bidirectional',
+        connectedBy: user.id
+      });
+      
+      res.json(connection);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create connection:", error);
+      res.status(500).json({ message: "Failed to connect to Planner: " + error.message });
+    }
+  });
+
+  // Update Planner connection settings
+  app.patch("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const connection = await storage.getProjectPlannerConnection(req.params.projectId);
+      if (!connection) {
+        return res.status(404).json({ message: "Planner connection not found" });
+      }
+      
+      const { syncEnabled, syncDirection } = req.body;
+      const updates: any = {};
+      if (syncEnabled !== undefined) updates.syncEnabled = syncEnabled;
+      if (syncDirection) updates.syncDirection = syncDirection;
+      
+      const updated = await storage.updateProjectPlannerConnection(connection.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to update connection:", error);
+      res.status(500).json({ message: "Failed to update Planner connection" });
+    }
+  });
+
+  // Disconnect project from Planner
+  app.delete("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectPlannerConnection(req.params.projectId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to delete connection:", error);
+      res.status(500).json({ message: "Failed to disconnect from Planner" });
+    }
+  });
+
+  // Trigger sync for a project
+  app.post("/api/projects/:projectId/planner-sync", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { projectId } = req.params;
+      
+      const connection = await storage.getProjectPlannerConnection(projectId);
+      if (!connection) {
+        return res.status(404).json({ message: "Planner connection not found" });
+      }
+      
+      if (!connection.syncEnabled) {
+        return res.status(400).json({ message: "Sync is disabled for this connection" });
+      }
+      
+      // Get project allocations
+      const allocations = await storage.getProjectAllocations(projectId);
+      const existingSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
+      
+      // Get buckets for the plan
+      const buckets = await plannerService.listBuckets(connection.planId);
+      
+      let created = 0;
+      let updated = 0;
+      let errors: string[] = [];
+      
+      for (const allocation of allocations) {
+        try {
+          // Find if we have a sync record for this allocation
+          const syncRecord = existingSyncs.find(s => s.allocationId === allocation.id);
+          
+          // Build task title from allocation data
+          let taskTitle = allocation.taskDescription || '';
+          if (!taskTitle && allocation.workstream) {
+            taskTitle = typeof allocation.workstream === 'string' ? allocation.workstream : allocation.workstream.name;
+          }
+          if (!taskTitle) {
+            taskTitle = `Week ${allocation.weekNumber} Task`;
+          }
+          
+          // Get or create bucket for the week
+          const weekLabel = allocation.plannedStartDate 
+            ? plannerService.getWeekLabel(allocation.plannedStartDate)
+            : `Week ${allocation.weekNumber}`;
+          const bucket = await plannerService.getOrCreateBucket(connection.planId, weekLabel);
+          
+          // Get Azure user ID if person is assigned
+          let assigneeIds: string[] = [];
+          if (allocation.personId) {
+            const azureMapping = await storage.getUserAzureMapping(allocation.personId);
+            if (azureMapping) {
+              assigneeIds = [azureMapping.azureUserId];
+            }
+          }
+          
+          // Determine completion status
+          let percentComplete = 0;
+          if (allocation.status === 'completed') {
+            percentComplete = 100;
+          } else if (allocation.status === 'in_progress') {
+            percentComplete = 50;
+          }
+          
+          if (syncRecord) {
+            // Update existing task
+            const task = await plannerService.getTask(syncRecord.taskId);
+            if (task) {
+              await plannerService.updateTask(syncRecord.taskId, task['@odata.etag'] || '', {
+                title: taskTitle,
+                bucketId: bucket.id,
+                startDateTime: allocation.plannedStartDate || null,
+                dueDateTime: allocation.plannedEndDate || null,
+                percentComplete,
+                assigneeIds
+              });
+              
+              await storage.updatePlannerTaskSync(syncRecord.id, {
+                taskTitle,
+                bucketId: bucket.id,
+                bucketName: weekLabel,
+                lastSyncedAt: new Date(),
+                syncStatus: 'synced',
+                localVersion: syncRecord.localVersion + 1,
+                remoteEtag: task['@odata.etag']
+              });
+              
+              updated++;
+            }
+          } else {
+            // Create new task
+            const newTask = await plannerService.createTask({
+              planId: connection.planId,
+              bucketId: bucket.id,
+              title: taskTitle,
+              startDateTime: allocation.plannedStartDate || undefined,
+              dueDateTime: allocation.plannedEndDate || undefined,
+              assigneeIds,
+              percentComplete
+            });
+            
+            await storage.createPlannerTaskSync({
+              connectionId: connection.id,
+              allocationId: allocation.id,
+              taskId: newTask.id,
+              taskTitle: taskTitle,
+              bucketId: bucket.id,
+              bucketName: weekLabel,
+              syncStatus: 'synced',
+              remoteEtag: newTask['@odata.etag']
+            });
+            
+            created++;
+          }
+        } catch (err: any) {
+          errors.push(`Allocation ${allocation.id}: ${err.message}`);
+        }
+      }
+      
+      // Update connection sync status
+      await storage.updateProjectPlannerConnection(connection.id, {
+        lastSyncAt: new Date(),
+        lastSyncStatus: errors.length > 0 ? 'partial' : 'success',
+        lastSyncError: errors.length > 0 ? errors.join('; ') : null
+      });
+      
+      res.json({ 
+        success: true, 
+        created, 
+        updated, 
+        errors: errors.length > 0 ? errors : undefined 
+      });
+    } catch (error: any) {
+      console.error("[PLANNER] Sync failed:", error);
+      res.status(500).json({ message: "Sync failed: " + error.message });
+    }
+  });
+
+  // Get sync status for a project's allocations
+  app.get("/api/projects/:projectId/planner-sync-status", requireAuth, async (req, res) => {
+    try {
+      const connection = await storage.getProjectPlannerConnection(req.params.projectId);
+      if (!connection) {
+        return res.json({ connected: false });
+      }
+      
+      const syncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
+      
+      res.json({
+        connected: true,
+        connection: {
+          planId: connection.planId,
+          planTitle: connection.planTitle,
+          groupName: connection.groupName,
+          syncEnabled: connection.syncEnabled,
+          syncDirection: connection.syncDirection,
+          lastSyncAt: connection.lastSyncAt,
+          lastSyncStatus: connection.lastSyncStatus
+        },
+        syncedTasks: syncs.length,
+        syncs: syncs.map(s => ({
+          allocationId: s.allocationId,
+          taskId: s.taskId,
+          taskTitle: s.taskTitle,
+          bucketName: s.bucketName,
+          syncStatus: s.syncStatus,
+          lastSyncedAt: s.lastSyncedAt
+        }))
+      });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to get sync status:", error);
+      res.status(500).json({ message: "Failed to get sync status" });
+    }
+  });
+
+  // User Azure AD mapping endpoints
+  app.get("/api/users/:userId/azure-mapping", requireAuth, async (req, res) => {
+    try {
+      const mapping = await storage.getUserAzureMapping(req.params.userId);
+      res.json(mapping || null);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to get Azure mapping:", error);
+      res.status(500).json({ message: "Failed to get Azure mapping" });
+    }
+  });
+
+  app.post("/api/users/:userId/azure-mapping", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { azureUserId, azureUserPrincipalName, azureDisplayName, mappingMethod } = req.body;
+      
+      if (!azureUserId) {
+        return res.status(400).json({ message: "azureUserId is required" });
+      }
+      
+      // Check if mapping already exists
+      const existing = await storage.getUserAzureMapping(req.params.userId);
+      if (existing) {
+        const updated = await storage.updateUserAzureMapping(existing.id, {
+          azureUserId,
+          azureUserPrincipalName,
+          azureDisplayName,
+          mappingMethod: mappingMethod || 'manual',
+          verifiedAt: new Date()
+        });
+        return res.json(updated);
+      }
+      
+      const mapping = await storage.createUserAzureMapping({
+        userId: req.params.userId,
+        azureUserId,
+        azureUserPrincipalName,
+        azureDisplayName,
+        mappingMethod: mappingMethod || 'manual',
+        verifiedAt: new Date()
+      });
+      
+      res.json(mapping);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create Azure mapping:", error);
+      res.status(500).json({ message: "Failed to create Azure mapping" });
+    }
+  });
+
+  // Auto-discover Azure AD user by email
+  app.post("/api/users/:userId/azure-mapping/discover", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      
+      const user = await storage.getUser(req.params.userId);
+      if (!user || !user.email) {
+        return res.status(404).json({ message: "User not found or has no email" });
+      }
+      
+      const azureUser = await plannerService.findUserByEmail(user.email);
+      if (!azureUser) {
+        return res.status(404).json({ message: "Azure AD user not found for this email" });
+      }
+      
+      // Check if mapping already exists
+      const existing = await storage.getUserAzureMapping(req.params.userId);
+      if (existing) {
+        const updated = await storage.updateUserAzureMapping(existing.id, {
+          azureUserId: azureUser.id,
+          azureUserPrincipalName: azureUser.userPrincipalName,
+          azureDisplayName: azureUser.displayName,
+          mappingMethod: 'email',
+          verifiedAt: new Date()
+        });
+        return res.json(updated);
+      }
+      
+      const mapping = await storage.createUserAzureMapping({
+        userId: req.params.userId,
+        azureUserId: azureUser.id,
+        azureUserPrincipalName: azureUser.userPrincipalName,
+        azureDisplayName: azureUser.displayName,
+        mappingMethod: 'email',
+        verifiedAt: new Date()
+      });
+      
+      res.json(mapping);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to discover Azure mapping:", error);
+      res.status(500).json({ message: "Failed to discover Azure user: " + error.message });
+    }
+  });
+
   // Export project allocations to CSV (Planner-compatible format)
   app.get("/api/projects/:projectId/allocations/export", requireAuth, async (req, res) => {
     try {
