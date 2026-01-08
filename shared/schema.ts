@@ -1879,6 +1879,95 @@ export const DEFAULT_VOCABULARY: Required<VocabularyTerms> = {
   workstream: "Workstream",
 };
 
+// ============================================
+// Microsoft Planner Integration
+// ============================================
+
+// Project-to-Planner connection - links a Constellation project to a Microsoft Planner plan
+export const projectPlannerConnections = pgTable("project_planner_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  
+  // Planner plan details
+  planId: varchar("plan_id", { length: 255 }).notNull(), // Microsoft Planner Plan ID
+  planTitle: text("plan_title"), // Cached plan title
+  planWebUrl: text("plan_web_url"), // URL to open in Planner
+  
+  // Group/Team context (optional - for plans in Teams)
+  groupId: varchar("group_id", { length: 255 }), // Microsoft 365 Group ID (Team)
+  groupName: text("group_name"), // Cached group/team name
+  
+  // Connection settings
+  syncEnabled: boolean("sync_enabled").notNull().default(true),
+  syncDirection: text("sync_direction").notNull().default('bidirectional'), // bidirectional, outbound_only, inbound_only
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: text("last_sync_status"), // success, error, partial
+  lastSyncError: text("last_sync_error"),
+  
+  // Metadata
+  connectedBy: varchar("connected_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const insertProjectPlannerConnectionSchema = createInsertSchema(projectPlannerConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProjectPlannerConnection = z.infer<typeof insertProjectPlannerConnectionSchema>;
+export type ProjectPlannerConnection = typeof projectPlannerConnections.$inferSelect;
+
+// Planner task sync tracking - maps Constellation allocations to Planner tasks
+export const plannerTaskSync = pgTable("planner_task_sync", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  connectionId: varchar("connection_id").notNull().references(() => projectPlannerConnections.id, { onDelete: 'cascade' }),
+  allocationId: varchar("allocation_id").notNull().references(() => projectAllocations.id, { onDelete: 'cascade' }),
+  
+  // Planner task details
+  taskId: varchar("task_id", { length: 255 }).notNull(), // Microsoft Planner Task ID
+  taskTitle: text("task_title"), // Cached task title
+  bucketId: varchar("bucket_id", { length: 255 }), // Bucket/column in Planner
+  bucketName: text("bucket_name"), // Cached bucket name (often week label)
+  
+  // Sync tracking
+  lastSyncedAt: timestamp("last_synced_at").notNull().default(sql`now()`),
+  syncStatus: text("sync_status").notNull().default('synced'), // synced, pending_outbound, pending_inbound, conflict, error
+  syncError: text("sync_error"),
+  
+  // Version tracking for conflict detection
+  localVersion: integer("local_version").notNull().default(1),
+  remoteEtag: text("remote_etag"), // Planner's etag for optimistic concurrency
+  
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const insertPlannerTaskSyncSchema = createInsertSchema(plannerTaskSync).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPlannerTaskSync = z.infer<typeof insertPlannerTaskSyncSchema>;
+export type PlannerTaskSync = typeof plannerTaskSync.$inferSelect;
+
+// User-to-Azure AD mapping - maps Constellation users to Azure AD users for task assignment
+export const userAzureMappings = pgTable("user_azure_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  azureUserId: varchar("azure_user_id", { length: 255 }).notNull(), // Azure AD Object ID
+  azureUserPrincipalName: text("azure_upn"), // e.g., user@company.com
+  azureDisplayName: text("azure_display_name"),
+  mappingMethod: text("mapping_method").notNull().default('email'), // email, manual, sso
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const insertUserAzureMappingSchema = createInsertSchema(userAzureMappings).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertUserAzureMapping = z.infer<typeof insertUserAzureMappingSchema>;
+export type UserAzureMapping = typeof userAzureMappings.$inferSelect;
+
 // Sessions - for persistent session storage
 export const sessions = pgTable("sessions", {
   id: varchar("id").primaryKey(), // Session ID (generated randomly)
