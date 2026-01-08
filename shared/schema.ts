@@ -1883,10 +1883,59 @@ export const DEFAULT_VOCABULARY: Required<VocabularyTerms> = {
 // Microsoft Planner Integration
 // ============================================
 
+// Tenant Microsoft 365 integration credentials - stores per-tenant Azure AD app credentials
+// Supports both publisher multi-tenant app and bring-your-own-app (BYOA) scenarios
+export const tenantMicrosoftIntegrations = pgTable("tenant_microsoft_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Tenant identifier (null = system default for single-tenant mode)
+  // Will be populated when multi-tenancy is activated
+  tenantId: varchar("tenant_id", { length: 255 }),
+  
+  // Azure AD tenant info (the customer's Microsoft 365 tenant)
+  azureTenantId: varchar("azure_tenant_id", { length: 255 }).notNull(),
+  azureTenantName: text("azure_tenant_name"), // e.g., "contoso.onmicrosoft.com"
+  
+  // Integration type
+  integrationType: text("integration_type").notNull().default('publisher_app'), // publisher_app, byoa (bring-your-own-app)
+  
+  // Azure app registration credentials
+  // For publisher_app: uses system environment variables (PLANNER_CLIENT_ID, etc.)
+  // For byoa: customer provides their own credentials (stored encrypted)
+  clientId: varchar("client_id", { length: 255 }), // Only for BYOA
+  clientSecretRef: text("client_secret_ref"), // Reference to secret storage (not the actual secret)
+  
+  // Permissions and consent status
+  grantedScopes: text("granted_scopes").array(), // e.g., ['Tasks.ReadWrite.All', 'Group.Read.All']
+  consentGrantedAt: timestamp("consent_granted_at"),
+  consentGrantedBy: varchar("consent_granted_by", { length: 255 }), // Admin who granted consent
+  
+  // Status
+  isActive: boolean("is_active").notNull().default(true),
+  lastValidatedAt: timestamp("last_validated_at"),
+  validationError: text("validation_error"),
+  
+  // Metadata
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const insertTenantMicrosoftIntegrationSchema = createInsertSchema(tenantMicrosoftIntegrations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertTenantMicrosoftIntegration = z.infer<typeof insertTenantMicrosoftIntegrationSchema>;
+export type TenantMicrosoftIntegration = typeof tenantMicrosoftIntegrations.$inferSelect;
+
 // Project-to-Planner connection - links a Constellation project to a Microsoft Planner plan
 export const projectPlannerConnections = pgTable("project_planner_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  
+  // Multi-tenancy support: link to tenant's Microsoft integration
+  // Null = use system default (single-tenant mode or publisher app)
+  integrationId: varchar("integration_id").references(() => tenantMicrosoftIntegrations.id, { onDelete: 'set null' }),
   
   // Planner plan details
   planId: varchar("plan_id", { length: 255 }).notNull(), // Microsoft Planner Plan ID
@@ -1953,6 +2002,11 @@ export type PlannerTaskSync = typeof plannerTaskSync.$inferSelect;
 export const userAzureMappings = pgTable("user_azure_mappings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  
+  // Multi-tenancy support: link to tenant's Microsoft integration
+  // Null = use system default (single-tenant mode)
+  integrationId: varchar("integration_id").references(() => tenantMicrosoftIntegrations.id, { onDelete: 'cascade' }),
+  
   azureUserId: varchar("azure_user_id", { length: 255 }).notNull(), // Azure AD Object ID
   azureUserPrincipalName: text("azure_upn"), // e.g., user@company.com
   azureDisplayName: text("azure_display_name"),
