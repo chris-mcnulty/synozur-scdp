@@ -46,8 +46,13 @@ export function PlannerConnectionDialog({
   const [selectedPlan, setSelectedPlan] = useState<PlannerPlan | null>(null);
   const [newPlanName, setNewPlanName] = useState("");
 
-  const { data: connectionTest, isLoading: testingConnection } = useQuery({
-    queryKey: ["/api/planner/test-connection"],
+  const { data: plannerStatus, isLoading: checkingStatus } = useQuery<{
+    configured: boolean;
+    connected: boolean;
+    error?: string;
+    message?: string;
+  }>({
+    queryKey: ["/api/planner/status"],
     enabled: open,
     retry: false
   });
@@ -159,7 +164,8 @@ export function PlannerConnectionDialog({
     connectMutation.mutate();
   };
 
-  const isConnected = (connectionTest as any)?.success === true;
+  const isConfigured = plannerStatus?.configured === true;
+  const isConnected = plannerStatus?.connected === true;
 
   return (
     <Dialog open={open} onOpenChange={(open) => { onOpenChange(open); if (!open) resetState(); }}>
@@ -174,24 +180,34 @@ export function PlannerConnectionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {testingConnection && (
+        {checkingStatus && (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">Testing connection...</span>
+            <span className="ml-2 text-muted-foreground">Checking Planner configuration...</span>
           </div>
         )}
 
-        {!testingConnection && !isConnected && (
+        {!checkingStatus && !isConfigured && (
           <div className="flex flex-col items-center py-8 text-center">
-            <AlertCircle className="h-10 w-10 text-destructive mb-3" />
-            <p className="font-medium">Microsoft 365 connection required</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Please sign in with your Microsoft account to connect to Planner.
+            <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
+            <p className="font-medium">Planner integration not configured</p>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md">
+              {plannerStatus?.message || 'Please contact your administrator to set up the Planner integration credentials.'}
             </p>
           </div>
         )}
 
-        {!testingConnection && isConnected && (
+        {!checkingStatus && isConfigured && !isConnected && (
+          <div className="flex flex-col items-center py-8 text-center">
+            <AlertCircle className="h-10 w-10 text-destructive mb-3" />
+            <p className="font-medium">Planner connection failed</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {plannerStatus?.error || 'Unable to connect to Microsoft Planner. Please check the integration configuration.'}
+            </p>
+          </div>
+        )}
+
+        {!checkingStatus && isConfigured && isConnected && (
           <>
             {step === "choose-method" && (
               <div className="space-y-4" data-testid="planner-method-selection">

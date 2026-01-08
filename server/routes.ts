@@ -3125,6 +3125,34 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Microsoft Planner Integration Routes
   // ============================================
 
+  // Check if Planner integration is configured
+  app.get("/api/planner/status", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { isPlannerConfigured } = await import('./services/planner-graph-client');
+      
+      const configured = isPlannerConfigured();
+      
+      if (configured) {
+        const result = await plannerService.testConnection();
+        res.json({ 
+          configured: true, 
+          connected: result.success,
+          error: result.error 
+        });
+      } else {
+        res.json({ 
+          configured: false, 
+          connected: false,
+          message: 'Planner integration requires PLANNER_TENANT_ID, PLANNER_CLIENT_ID, and PLANNER_CLIENT_SECRET environment variables.' 
+        });
+      }
+    } catch (error: any) {
+      console.error("[PLANNER] Status check failed:", error);
+      res.json({ configured: false, connected: false, error: error.message });
+    }
+  });
+
   // Test Planner connection
   app.get("/api/planner/test-connection", requireAuth, async (req, res) => {
     try {
