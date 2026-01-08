@@ -3398,6 +3398,86 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
       
+      // ============ INBOUND SYNC (Planner → SCDP) ============
+      // Fetch current state of all synced tasks and update allocations accordingly
+      let inboundUpdated = 0;
+      let inboundDeleted = 0;
+      const refreshedSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
+      
+      for (const syncRecord of refreshedSyncs) {
+        try {
+          const task = await plannerService.getTask(syncRecord.taskId);
+          
+          if (!task) {
+            // Task was deleted in Planner - mark sync record as deleted
+            await storage.updatePlannerTaskSync(syncRecord.id, {
+              syncStatus: 'deleted_remote',
+              lastSyncedAt: new Date()
+            });
+            inboundDeleted++;
+            continue;
+          }
+          
+          // Check if task status changed in Planner
+          const taskPercentComplete = task.percentComplete || 0;
+          let newStatus: string | null = null;
+          
+          if (taskPercentComplete === 100) {
+            newStatus = 'completed';
+          } else if (taskPercentComplete >= 50) {
+            newStatus = 'in_progress';
+          } else if (taskPercentComplete === 0) {
+            newStatus = 'open';
+          }
+          
+          // Get current allocation to compare
+          const allocation = allocations.find(a => a.id === syncRecord.allocationId);
+          if (allocation && newStatus && allocation.status !== newStatus) {
+            // Update allocation status based on Planner task
+            const updateData: any = { status: newStatus };
+            
+            // Set dates based on status change
+            if (newStatus === 'in_progress' && !allocation.startedDate) {
+              updateData.startedDate = new Date().toISOString().split('T')[0];
+            }
+            if (newStatus === 'completed' && !allocation.completedDate) {
+              updateData.completedDate = new Date().toISOString().split('T')[0];
+            }
+            
+            await storage.updateProjectAllocation(allocation.id, updateData);
+            inboundUpdated++;
+          }
+          
+          // Sync dates from Planner if they changed
+          if (allocation && task.startDateTime) {
+            const taskStart = task.startDateTime.split('T')[0];
+            if (allocation.plannedStartDate !== taskStart) {
+              await storage.updateProjectAllocation(allocation.id, {
+                plannedStartDate: taskStart
+              });
+            }
+          }
+          if (allocation && task.dueDateTime) {
+            const taskDue = task.dueDateTime.split('T')[0];
+            if (allocation.plannedEndDate !== taskDue) {
+              await storage.updateProjectAllocation(allocation.id, {
+                plannedEndDate: taskDue
+              });
+            }
+          }
+          
+          // Update sync record with latest etag
+          await storage.updatePlannerTaskSync(syncRecord.id, {
+            remoteEtag: task['@odata.etag'],
+            lastSyncedAt: new Date(),
+            syncStatus: 'synced'
+          });
+          
+        } catch (err: any) {
+          errors.push(`Inbound sync for task ${syncRecord.taskId}: ${err.message}`);
+        }
+      }
+      
       // Update connection sync status
       await storage.updateProjectPlannerConnection(connection.id, {
         lastSyncAt: new Date(),
@@ -3409,6 +3489,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         success: true, 
         created, 
         updated, 
+        inboundUpdated,
+        inboundDeleted,
         errors: errors.length > 0 ? errors : undefined 
       });
     } catch (error: any) {

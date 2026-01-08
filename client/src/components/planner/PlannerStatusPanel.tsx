@@ -76,9 +76,14 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+      const parts = [];
+      if (result.created) parts.push(`${result.created} tasks created`);
+      if (result.updated) parts.push(`${result.updated} tasks updated`);
+      if (result.inboundUpdated) parts.push(`${result.inboundUpdated} assignments updated from Planner`);
+      if (result.inboundDeleted) parts.push(`${result.inboundDeleted} tasks deleted in Planner`);
       toast({ 
         title: "Sync completed",
-        description: `Created ${result.created} tasks, updated ${result.updated} tasks`
+        description: parts.length > 0 ? parts.join(', ') : 'Everything is in sync'
       });
     },
     onError: (error: any) => {
