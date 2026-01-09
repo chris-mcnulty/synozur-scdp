@@ -14,14 +14,22 @@ export interface PlannerCredentials {
   clientSecret: string;
 }
 
+// Clear token cache - call this after permission changes in Azure
+export function clearTokenCache(): void {
+  console.log('[PLANNER-AUTH] Clearing token cache');
+  tokenCaches.clear();
+}
+
 async function getClientCredentialsToken(credentials: PlannerCredentials): Promise<string> {
   const cacheKey = `${credentials.tenantId}:${credentials.clientId}`;
   const cached = tokenCaches.get(cacheKey);
   
   if (cached && cached.expiresAt > Date.now() + 60000) {
+    console.log('[PLANNER-AUTH] Using cached token');
     return cached.accessToken;
   }
 
+  console.log('[PLANNER-AUTH] Requesting new token for tenant:', credentials.tenantId);
   const tokenEndpoint = `https://login.microsoftonline.com/${credentials.tenantId}/oauth2/v2.0/token`;
   
   const params = new URLSearchParams();
@@ -45,6 +53,7 @@ async function getClientCredentialsToken(credentials: PlannerCredentials): Promi
   }
 
   const data = await response.json();
+  console.log('[PLANNER-AUTH] Got new token, expires in:', data.expires_in, 'seconds');
   
   tokenCaches.set(cacheKey, {
     accessToken: data.access_token,

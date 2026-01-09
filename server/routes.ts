@@ -3175,6 +3175,18 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Clear Planner token cache (useful after Azure permission changes)
+  app.post("/api/planner/clear-cache", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { clearTokenCache } = await import('./services/planner-graph-client');
+      clearTokenCache();
+      res.json({ success: true, message: 'Token cache cleared. Next request will use fresh token.' });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to clear cache:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // List user's Microsoft 365 Groups (Teams)
   // Tries to get groups the current user belongs to via their Azure mapping
   // Falls back to all groups if no mapping exists

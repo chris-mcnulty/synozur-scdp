@@ -119,6 +119,7 @@ class PlannerService {
 
   async listMyGroups(): Promise<PlannerGroup[]> {
     try {
+      console.log('[PLANNER] Attempting to list all groups...');
       const client = await this.getClient();
       // With app-only auth, list all Microsoft 365 groups (no /me endpoint available)
       const response = await client.api('/groups')
@@ -126,9 +127,11 @@ class PlannerService {
         .select('id,displayName,description,mail')
         .top(100) // Limit to reasonable number
         .get();
+      console.log('[PLANNER] Successfully listed groups, count:', response.value?.length || 0);
       return response.value || [];
     } catch (error: any) {
       console.error('[PLANNER] Error listing groups:', error.message);
+      console.error('[PLANNER] Full error:', JSON.stringify(error, null, 2));
       throw new Error(`Failed to list groups: ${error.message}`);
     }
   }
@@ -453,14 +456,21 @@ class PlannerService {
 
   async testConnection(): Promise<{ success: boolean; message?: string; error?: string; permissionIssue?: string }> {
     try {
+      console.log('[PLANNER] Testing connection...');
       // Test by fetching organization info (works with app-only auth)
       const client = await this.getClient();
-      await client.api('/organization').select('id,displayName').get();
+      console.log('[PLANNER] Got client, testing /organization endpoint...');
+      const orgResult = await client.api('/organization').select('id,displayName').get();
+      console.log('[PLANNER] Organization result:', orgResult?.value?.[0]?.displayName || 'unknown');
       
       // Also test groups API which requires Group.Read.All
       try {
-        await client.api('/groups').top(1).select('id').get();
+        console.log('[PLANNER] Testing /groups endpoint...');
+        const groupsResult = await client.api('/groups').top(1).select('id').get();
+        console.log('[PLANNER] Groups test successful, found:', groupsResult?.value?.length || 0, 'groups');
       } catch (groupsError: any) {
+        console.error('[PLANNER] Groups test failed:', groupsError.message);
+        console.error('[PLANNER] Full groups error:', JSON.stringify(groupsError, null, 2));
         const errorMsg = groupsError.message || '';
         if (errorMsg.includes('Insufficient privileges') || errorMsg.includes('Authorization_RequestDenied')) {
           return { 
@@ -474,6 +484,8 @@ class PlannerService {
       
       return { success: true, message: 'Connected to Microsoft Graph with required permissions' };
     } catch (error: any) {
+      console.error('[PLANNER] Connection test error:', error.message);
+      console.error('[PLANNER] Full connection error:', JSON.stringify(error, null, 2));
       return { success: false, error: error.message };
     }
   }
