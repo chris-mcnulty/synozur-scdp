@@ -250,7 +250,6 @@ export const requireRole = (roles: string[]) => (req: Request, res: Response, ne
 
 // Run cleanup every 10 minutes (more frequent for better memory management in Replit)
 setInterval(() => {
-  pruneSessionCache();
   cleanupExpiredSessions().catch(console.error);
 }, 10 * 60 * 1000);
 
