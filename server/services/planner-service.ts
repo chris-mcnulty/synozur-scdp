@@ -111,7 +111,8 @@ class PlannerService {
   }
 
   private async getClient(): Promise<Client> {
-    return this.getDelegatedClient();
+    // Use app credentials for all operations (Outlook connector lacks Group/Planner permissions)
+    return this.getAppClient();
   }
 
   // ============ GROUP/TEAM OPERATIONS ============
@@ -119,9 +120,11 @@ class PlannerService {
   async listMyGroups(): Promise<PlannerGroup[]> {
     try {
       const client = await this.getClient();
-      const response = await client.api('/me/memberOf/microsoft.graph.group')
+      // With app-only auth, list all Microsoft 365 groups (no /me endpoint available)
+      const response = await client.api('/groups')
         .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups (Teams)
         .select('id,displayName,description,mail')
+        .top(100) // Limit to reasonable number
         .get();
       return response.value || [];
     } catch (error: any) {
@@ -156,14 +159,10 @@ class PlannerService {
   }
 
   async listMyPlans(): Promise<PlannerPlan[]> {
-    try {
-      const client = await this.getClient();
-      const response = await client.api('/me/planner/plans').get();
-      return response.value || [];
-    } catch (error: any) {
-      console.error('[PLANNER] Error listing my plans:', error.message);
-      throw new Error(`Failed to list plans: ${error.message}`);
-    }
+    // With app-only auth, we can't use /me endpoint
+    // Instead, caller should use listPlansForGroup with specific group ID
+    console.warn('[PLANNER] listMyPlans called but /me not available with app-only auth');
+    return [];
   }
 
   async getPlan(planId: string): Promise<PlannerPlan> {
@@ -397,16 +396,11 @@ class PlannerService {
     }
   }
 
-  async getMe(): Promise<AzureUser> {
-    try {
-      const client = await this.getClient();
-      return await client.api('/me')
-        .select('id,displayName,mail,userPrincipalName')
-        .get();
-    } catch (error: any) {
-      console.error('[PLANNER] Error getting current user:', error.message);
-      throw new Error(`Failed to get current user: ${error.message}`);
-    }
+  async getMe(): Promise<AzureUser | null> {
+    // With app-only auth, /me is not available
+    // Return null to indicate no current user context
+    console.warn('[PLANNER] getMe called but /me not available with app-only auth');
+    return null;
   }
 
   // ============ HELPER METHODS ============
@@ -423,10 +417,12 @@ class PlannerService {
     return `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
 
-  async testConnection(): Promise<{ success: boolean; user?: AzureUser; error?: string }> {
+  async testConnection(): Promise<{ success: boolean; message?: string; error?: string }> {
     try {
-      const user = await this.getMe();
-      return { success: true, user };
+      // Test by fetching organization info (works with app-only auth)
+      const client = await this.getClient();
+      await client.api('/organization').select('id,displayName').get();
+      return { success: true, message: 'Connected to Microsoft Graph' };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

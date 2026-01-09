@@ -59,7 +59,7 @@ Preferred communication style: Simple, everyday language.
 - **Budget & SOW Management**: Project budgets tied to explicit SOW uploads.
 - **Time Tracking**: Enhanced with assignment/allocation linking and mobile optimizations. Time reminders are sent only to users with active project engagements (not marked as "complete").
 - **Project Engagement Tracking**: Tracks user's overall involvement status (active/complete) on projects, separate from individual assignment status. Auto-creates engagements when users receive assignments, with manual completion by self/admin/PM.
-- **Microsoft Planner Integration**: Bidirectional sync between project assignments and Microsoft Planner tasks. Uses hybrid authentication: Outlook connector (delegated) for interactive operations (listing groups/plans), and optional app-only credentials for background sync. Multi-tenant ready with `tenant_microsoft_integrations` table supporting publisher app or BYOA (bring-your-own-app) scenarios. Requires `PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, and `PLANNER_CLIENT_SECRET` for background sync.
+- **Microsoft Planner Integration**: Bidirectional sync between project assignments and Microsoft Planner tasks. Uses app-only authentication (client credentials) for all operations since the Outlook connector lacks Group.Read.All permission. Multi-tenant ready with `tenant_microsoft_integrations` table supporting publisher app or BYOA (bring-your-own-app) scenarios. Requires `PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, and `PLANNER_CLIENT_SECRET` with an Azure app that has Group.Read.All and Tasks.ReadWrite permissions.
 - **Vocabulary Management**: Hierarchical terminology management.
 - **Tax Management**: Configurable tax rates per invoice batch (default 9.3%).
 

@@ -189,10 +189,10 @@ export function PlannerConnectionDialog({
 
         {!checkingStatus && !isConnected && (
           <div className="flex flex-col items-center py-8 text-center">
-            <AlertCircle className="h-10 w-10 text-destructive mb-3" />
-            <p className="font-medium">Microsoft 365 connection required</p>
+            <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
+            <p className="font-medium">Planner integration not configured</p>
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
-              {plannerStatus?.message || plannerStatus?.error || 'Please ensure the Outlook connector is set up and you are signed in.'}
+              {plannerStatus?.message || plannerStatus?.error || 'Please contact your administrator to set up the Planner integration.'}
             </p>
           </div>
         )}
