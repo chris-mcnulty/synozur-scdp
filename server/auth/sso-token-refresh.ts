@@ -221,7 +221,7 @@ async function runTokenRefreshCycle(): Promise<void> {
     }
     
   } catch (error: any) {
-    console.error("[SSO-SCHEDULER] Error in token refresh cycle:", error.message);
+    console.error("[SSO-SCHEDULER] Error in token refresh cycle:", error?.message || error);
   }
 }
 
