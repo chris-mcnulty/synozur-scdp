@@ -225,7 +225,7 @@ export class GraphClient {
   /**
    * Check and update circuit breaker state (thread-safe)
    */
-  private checkCircuitBreaker(): void {
+  private async checkCircuitBreaker(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
       const now = Date.now();
@@ -239,12 +239,13 @@ export class GraphClient {
         }
       }
     });
+    await this.circuitBreakerLock;
   }
   
   /**
    * Record a success for circuit breaker (thread-safe)
    */
-  private recordSuccess(): void {
+  private async recordSuccess(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
       if (this.circuitBreaker.state === 'half-open') {
@@ -258,12 +259,13 @@ export class GraphClient {
         this.circuitBreaker.failures = 0;
       }
     });
+    await this.circuitBreakerLock;
   }
   
   /**
    * Record a failure for circuit breaker (thread-safe)
    */
-  private recordFailure(): void {
+  private async recordFailure(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
       this.circuitBreaker.failures++;
@@ -282,13 +284,14 @@ export class GraphClient {
         console.log(`[GraphClient] Circuit breaker opened after ${this.circuitBreaker.failures} failures`);
       }
     });
+    await this.circuitBreakerLock;
   }
   
   /**
    * Check if request should be allowed through circuit breaker
    */
-  private isCircuitBreakerOpen(): boolean {
-    this.checkCircuitBreaker();
+  private async isCircuitBreakerOpen(): Promise<boolean> {
+    await this.checkCircuitBreaker();
     return this.circuitBreaker.state === 'open';
   }
 
@@ -446,7 +449,7 @@ export class GraphClient {
     retryCount = 0
   ): Promise<T> {
     // Check circuit breaker before attempting request
-    if (this.isCircuitBreakerOpen()) {
+    if (await this.isCircuitBreakerOpen()) {
       const error = new Error(`GraphClient circuit breaker is open - ${operationName} blocked to prevent cascading failures`);
       (error as any).circuitBreakerOpen = true;
       throw error;
@@ -454,7 +457,7 @@ export class GraphClient {
     
     try {
       const result = await operation();
-      this.recordSuccess();
+      await this.recordSuccess();
       return result;
     } catch (error: any) {
       const shouldRetry = this.shouldRetry(error, retryCount);
@@ -468,7 +471,7 @@ export class GraphClient {
       }
       
       // Record failure for circuit breaker
-      this.recordFailure();
+      await this.recordFailure();
       
       console.error(`[GraphClient] ${operationName} failed after ${retryCount + 1} attempts:`, error);
       throw this.normalizeError(error);
