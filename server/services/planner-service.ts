@@ -451,12 +451,28 @@ class PlannerService {
     return `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
 
-  async testConnection(): Promise<{ success: boolean; message?: string; error?: string }> {
+  async testConnection(): Promise<{ success: boolean; message?: string; error?: string; permissionIssue?: string }> {
     try {
       // Test by fetching organization info (works with app-only auth)
       const client = await this.getClient();
       await client.api('/organization').select('id,displayName').get();
-      return { success: true, message: 'Connected to Microsoft Graph' };
+      
+      // Also test groups API which requires Group.Read.All
+      try {
+        await client.api('/groups').top(1).select('id').get();
+      } catch (groupsError: any) {
+        const errorMsg = groupsError.message || '';
+        if (errorMsg.includes('Insufficient privileges') || errorMsg.includes('Authorization_RequestDenied')) {
+          return { 
+            success: false, 
+            error: 'Group.Read.All permission not configured',
+            permissionIssue: 'The Azure app registration needs the "Group.Read.All" Application permission with admin consent granted. Go to Azure Portal > App registrations > API permissions, add "Group.Read.All" as an Application permission (not Delegated), then click "Grant admin consent".'
+          };
+        }
+        throw groupsError;
+      }
+      
+      return { success: true, message: 'Connected to Microsoft Graph with required permissions' };
     } catch (error: any) {
       return { success: false, error: error.message };
     }

@@ -53,6 +53,7 @@ export function PlannerConnectionDialog({
     appConfigured?: boolean;
     error?: string;
     message?: string;
+    permissionIssue?: string;
   }>({
     queryKey: ["/api/planner/status"],
     enabled: open,
@@ -208,10 +209,19 @@ export function PlannerConnectionDialog({
         {!checkingStatus && !isConnected && (
           <div className="flex flex-col items-center py-8 text-center">
             <AlertCircle className="h-10 w-10 text-amber-500 mb-3" />
-            <p className="font-medium">Planner integration not configured</p>
+            <p className="font-medium">
+              {plannerStatus?.configured ? 'Planner permissions issue' : 'Planner integration not configured'}
+            </p>
             <p className="text-sm text-muted-foreground mt-1 max-w-md">
               {plannerStatus?.message || plannerStatus?.error || 'Please contact your administrator to set up the Planner integration.'}
             </p>
+            {plannerStatus?.permissionIssue && (
+              <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-left">
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  <strong>How to fix:</strong> {plannerStatus.permissionIssue}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

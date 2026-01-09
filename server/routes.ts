@@ -3149,7 +3149,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         configured: true,
         connected: connectionResult.success,
         error: connectionResult.error,
-        message: connectionResult.success ? connectionResult.message : connectionResult.error
+        permissionIssue: connectionResult.permissionIssue,
+        message: connectionResult.success ? connectionResult.message : (connectionResult.permissionIssue || connectionResult.error)
       });
     } catch (error: any) {
       console.error("[PLANNER] Status check failed:", error);
