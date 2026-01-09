@@ -3175,14 +3175,63 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // List user's Microsoft 365 Groups (Teams)
+  // Tries to get groups the current user belongs to via their Azure mapping
+  // Falls back to all groups if no mapping exists
   app.get("/api/planner/groups", requireAuth, async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
-      const groups = await plannerService.listMyGroups();
-      res.json(groups);
+      const userId = (req as any).user?.id;
+      
+      // Check if user has an Azure mapping
+      let azureMapping = null;
+      if (userId) {
+        azureMapping = await storage.getUserAzureMapping(userId);
+      }
+      
+      let groups;
+      let source: 'user' | 'all' = 'all';
+      
+      if (azureMapping?.azureUserId) {
+        // Get groups the user belongs to
+        try {
+          groups = await plannerService.listUserGroups(azureMapping.azureUserId);
+          source = 'user';
+        } catch (error: any) {
+          console.warn('[PLANNER] Failed to get user groups, falling back to all groups:', error.message);
+          groups = await plannerService.listMyGroups();
+        }
+      } else {
+        // No Azure mapping - get all groups
+        groups = await plannerService.listMyGroups();
+      }
+      
+      res.json({ 
+        groups, 
+        source,
+        hasAzureMapping: !!azureMapping?.azureUserId
+      });
     } catch (error: any) {
       console.error("[PLANNER] Failed to list groups:", error);
       res.status(500).json({ message: "Failed to list groups: " + error.message });
+    }
+  });
+
+  // Search groups by name
+  app.get("/api/planner/groups/search", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const query = (req.query.q as string) || '';
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      
+      if (!query || query.length < 2) {
+        return res.json({ groups: [], message: 'Enter at least 2 characters to search' });
+      }
+      
+      const groups = await plannerService.searchGroups(query, limit);
+      res.json({ groups });
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to search groups:", error);
+      res.status(500).json({ message: "Failed to search groups: " + error.message });
     }
   });
 

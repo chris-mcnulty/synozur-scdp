@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -45,6 +45,7 @@ export function PlannerConnectionDialog({
   const [selectedGroup, setSelectedGroup] = useState<PlannerGroup | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlannerPlan | null>(null);
   const [newPlanName, setNewPlanName] = useState("");
+  const [groupSearchQuery, setGroupSearchQuery] = useState("");
 
   const { data: plannerStatus, isLoading: checkingStatus } = useQuery<{
     configured: boolean;
@@ -58,11 +59,26 @@ export function PlannerConnectionDialog({
     retry: false
   });
 
-  const { data: groups, isLoading: loadingGroups } = useQuery<PlannerGroup[]>({
+  const { data: groupsResponse, isLoading: loadingGroups } = useQuery<{
+    groups: PlannerGroup[];
+    source: 'user' | 'all';
+    hasAzureMapping: boolean;
+  }>({
     queryKey: ["/api/planner/groups"],
     enabled: open && (step === "select-team" || method === "existing-plan"),
     retry: false
   });
+
+  // Filter groups based on search query
+  const filteredGroups = useMemo(() => {
+    const groups = groupsResponse?.groups || [];
+    if (!groupSearchQuery.trim()) return groups;
+    const query = groupSearchQuery.toLowerCase();
+    return groups.filter(g => 
+      g.displayName.toLowerCase().includes(query) ||
+      g.description?.toLowerCase().includes(query)
+    );
+  }, [groupsResponse?.groups, groupSearchQuery]);
 
   const { data: plans, isLoading: loadingPlans } = useQuery<PlannerPlan[]>({
     queryKey: ["/api/planner/plans"],
@@ -126,6 +142,7 @@ export function PlannerConnectionDialog({
     setSelectedGroup(null);
     setSelectedPlan(null);
     setNewPlanName("");
+    setGroupSearchQuery("");
   };
 
   const handleMethodSelect = (selectedMethod: ConnectionMethod) => {
@@ -235,12 +252,34 @@ export function PlannerConnectionDialog({
 
             {step === "select-team" && (
               <div className="space-y-4" data-testid="planner-team-selection">
-                <Button variant="ghost" size="sm" onClick={() => setStep("choose-method")}>
+                <Button variant="ghost" size="sm" onClick={() => { setStep("choose-method"); setGroupSearchQuery(""); }}>
                   ← Back
                 </Button>
                 <p className="text-sm text-muted-foreground">
                   Select a Team to create the plan in:
                 </p>
+
+                {/* Search input */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search teams..."
+                    value={groupSearchQuery}
+                    onChange={(e) => setGroupSearchQuery(e.target.value)}
+                    className="pl-9"
+                    data-testid="team-search-input"
+                  />
+                </div>
+
+                {/* Source indicator */}
+                {groupsResponse && !loadingGroups && (
+                  <p className="text-xs text-muted-foreground">
+                    {groupsResponse.source === 'user' 
+                      ? `Showing ${filteredGroups.length} team${filteredGroups.length !== 1 ? 's' : ''} you belong to`
+                      : `Showing ${filteredGroups.length} team${filteredGroups.length !== 1 ? 's' : ''} in your organization`
+                    }
+                  </p>
+                )}
                 
                 {loadingGroups && (
                   <div className="flex items-center justify-center py-4">
@@ -248,14 +287,17 @@ export function PlannerConnectionDialog({
                   </div>
                 )}
                 
-                {!loadingGroups && groups && groups.length === 0 && (
+                {!loadingGroups && filteredGroups.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No Microsoft Teams found. Make sure you're a member of at least one team.
+                    {groupSearchQuery 
+                      ? "No teams match your search."
+                      : "No Microsoft Teams found. Make sure you're a member of at least one team."
+                    }
                   </p>
                 )}
                 
                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {groups?.map((group) => (
+                  {filteredGroups.map((group) => (
                     <Card 
                       key={group.id} 
                       className="cursor-pointer hover:bg-accent transition-colors"
