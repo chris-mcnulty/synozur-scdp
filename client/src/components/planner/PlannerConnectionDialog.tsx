@@ -95,11 +95,10 @@ export function PlannerConnectionDialog({
 
   const createPlanMutation = useMutation({
     mutationFn: async ({ groupId, title }: { groupId: string; title: string }) => {
-      const response = await apiRequest(`/api/planner/groups/${groupId}/plans`, {
+      return await apiRequest(`/api/planner/groups/${groupId}/plans`, {
         method: "POST",
         body: JSON.stringify({ title })
       });
-      return response.json();
     },
     onSuccess: (plan) => {
       setSelectedPlan(plan);
@@ -113,7 +112,7 @@ export function PlannerConnectionDialog({
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/projects/${projectId}/planner-connection`, {
+      return await apiRequest(`/api/projects/${projectId}/planner-connection`, {
         method: "POST",
         body: JSON.stringify({
           planId: selectedPlan?.id,
@@ -123,7 +122,6 @@ export function PlannerConnectionDialog({
           syncDirection: "bidirectional"
         })
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-connection"] });
