@@ -185,6 +185,7 @@ export function startTokenRefreshScheduler(): void {
       // Find SSO sessions with tokens expiring within next 10 minutes
       const now = new Date();
       const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
       
       const expiringSessions = await db
         .select()
@@ -193,6 +194,7 @@ export function startTokenRefreshScheduler(): void {
           isNotNull(sessions.ssoRefreshToken),
           isNotNull(sessions.ssoTokenExpiry),
           lt(sessions.ssoTokenExpiry, tenMinutesFromNow),
+          gt(sessions.ssoTokenExpiry, oneHourAgo), // Exclude tokens expired > 1 hour ago
           gt(sessions.expiresAt, now) // Only active sessions
         ))
         .limit(50); // Process in batches to avoid overwhelming the system
