@@ -34,6 +34,64 @@ const CACHE_TTL_MS = 60 * 1000; // Cache for 1 minute to reduce DB calls
 // Session configuration 
 const SESSION_DURATION_HOURS = 48; // Increased for better stability
 
+// Memory management: Maximum cache size to prevent unbounded growth
+const MAX_CACHE_SIZE = 1000;
+const CACHE_CLEANUP_THRESHOLD = 800; // Start cleanup when we hit this threshold
+
+// LRU-style cache cleanup: remove oldest entries when cache gets too large
+function pruneSessionCache(): void {
+  if (sessionCache.size <= CACHE_CLEANUP_THRESHOLD) {
+    return;
+  }
+  
+  const entries = Array.from(sessionCache.entries());
+  const now = Date.now();
+  
+  // First, remove expired entries
+  let removed = 0;
+  for (const [sessionId, cached] of entries) {
+    if (cached.cacheExpiry < now) {
+      sessionCache.delete(sessionId);
+      removed++;
+    }
+  }
+  
+  // If still over threshold, remove oldest entries by cache time
+  if (sessionCache.size > CACHE_CLEANUP_THRESHOLD) {
+    const remainingEntries = Array.from(sessionCache.entries())
+      .sort((a, b) => a[1].cacheExpiry - b[1].cacheExpiry);
+    
+    const toRemove = sessionCache.size - CACHE_CLEANUP_THRESHOLD + 100; // Remove extra buffer
+    for (let i = 0; i < toRemove && i < remainingEntries.length; i++) {
+      sessionCache.delete(remainingEntries[i][0]);
+      removed++;
+    }
+  }
+  
+  if (removed > 0) {
+    console.log(`[SESSION-CACHE] Pruned ${removed} entries, cache size: ${sessionCache.size}`);
+  }
+}
+
+// Export cache stats for monitoring
+export function getSessionCacheStats() {
+  const now = Date.now();
+  let expiredCount = 0;
+  
+  for (const [, cached] of sessionCache.entries()) {
+    if (cached.cacheExpiry < now) {
+      expiredCount++;
+    }
+  }
+  
+  return {
+    size: sessionCache.size,
+    maxSize: MAX_CACHE_SIZE,
+    expiredEntries: expiredCount,
+    utilizationPercent: Math.round((sessionCache.size / MAX_CACHE_SIZE) * 100)
+  };
+}
+
 // Get all sessions (for debugging) - now returns cached sessions
 export function getAllSessions(): Map<string, any> {
   return sessionCache;
@@ -74,6 +132,9 @@ export async function getSession(sessionId: string): Promise<any> {
 // Create a new session - now uses database
 export async function createSession(sessionId: string, userData: any, ssoData?: any): Promise<void> {
   await createDbSession(sessionId, userData, ssoData);
+  
+  // Prune cache if needed before adding new entry
+  pruneSessionCache();
   
   // Add to cache
   const expiresAt = new Date();
@@ -185,11 +246,17 @@ export const requireRole = (roles: string[]) => (req: Request, res: Response, ne
   next();
 };
 
-// Run cleanup every hour
+// Run cleanup every 10 minutes (more frequent for better memory management in Replit)
 setInterval(() => {
+  pruneSessionCache();
   cleanupExpiredSessions().catch(console.error);
-}, 60 * 60 * 1000);
+}, 10 * 60 * 1000);
 
-console.log("[SESSION] Session store initialized with database backing");
+// Also run a quick cache prune every 2 minutes for memory efficiency
+setInterval(() => {
+  pruneSessionCache();
+}, 2 * 60 * 1000);
+
+console.log("[SESSION] Session store initialized with database backing and memory management");
 
 export default sessionCache;

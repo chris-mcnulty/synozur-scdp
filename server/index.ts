@@ -102,6 +102,74 @@ process.on('uncaughtException', (error) => {
       });
     });
     
+    // Comprehensive health monitoring endpoint for production debugging
+    app.get('/health', async (_req, res) => {
+      try {
+        const healthData: any = {
+          status: 'ok',
+          timestamp: new Date().toISOString(),
+          uptime: process.uptime(),
+          memory: {
+            heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+            rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+            external: Math.round(process.memoryUsage().external / 1024 / 1024)
+          },
+          environment: process.env.NODE_ENV || 'unknown'
+        };
+        
+        // Add database health if available
+        try {
+          const { getPoolHealth, testPoolConnection } = await import('./db');
+          healthData.database = {
+            ...getPoolHealth(),
+            connectionTest: await testPoolConnection()
+          };
+        } catch (dbError: any) {
+          healthData.database = { error: dbError.message, healthy: false };
+        }
+        
+        // Add session cache stats if available
+        try {
+          const { getSessionCacheStats } = await import('./session-store');
+          healthData.sessionCache = getSessionCacheStats();
+        } catch {
+          healthData.sessionCache = { available: false };
+        }
+        
+        // Add SSO scheduler status if available
+        try {
+          const { getTokenRefreshStatus } = await import('./auth/sso-token-refresh');
+          healthData.ssoScheduler = getTokenRefreshStatus();
+        } catch {
+          healthData.ssoScheduler = { available: false };
+        }
+        
+        // Add GraphClient circuit breaker status if available
+        try {
+          const { graphClient } = await import('./services/graph-client');
+          healthData.graphClient = {
+            circuitBreaker: graphClient.getCircuitBreakerStatus()
+          };
+        } catch {
+          healthData.graphClient = { available: false };
+        }
+        
+        // Determine overall health status
+        const isHealthy = healthData.database?.healthy !== false && 
+                          healthData.graphClient?.circuitBreaker?.state !== 'open';
+        healthData.status = isHealthy ? 'ok' : 'degraded';
+        
+        res.status(isHealthy ? 200 : 503).json(healthData);
+      } catch (error: any) {
+        res.status(500).json({
+          status: 'error',
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+    
     log('Setting up error handling middleware...');
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -163,6 +231,17 @@ process.on('uncaughtException', (error) => {
       log('Version release date updated successfully');
     } catch (versionError: any) {
       log(`⚠️ Version update failed: ${versionError.message}`);
+      // Don't crash - this is non-critical
+    }
+    
+    // Start SSO token refresh scheduler
+    log('Starting SSO token refresh scheduler...');
+    try {
+      const { startTokenRefreshScheduler } = await import('./auth/sso-token-refresh');
+      startTokenRefreshScheduler();
+      log('SSO token refresh scheduler started successfully');
+    } catch (schedulerError: any) {
+      log(`⚠️ SSO scheduler start failed: ${schedulerError.message}`);
       // Don't crash - this is non-critical
     }
     

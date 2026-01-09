@@ -167,6 +167,14 @@ export interface GraphResponse<T> {
   '@odata.nextLink'?: string;
 }
 
+// Circuit breaker state for preventing cascading failures
+interface CircuitBreakerState {
+  failures: number;
+  lastFailure: number | null;
+  state: 'closed' | 'open' | 'half-open';
+  lastStateChange: number;
+}
+
 // Main GraphClient class for SharePoint Embedded operations
 export class GraphClient {
   private accessToken: string | null = null;
@@ -179,11 +187,97 @@ export class GraphClient {
   private containerCache = new Map<string, FileStorageContainer>();
   private cacheExpiry = new Map<string, number>();
   private readonly cacheLifetime = 5 * 60 * 1000; // 5 minutes
+  
+  // Circuit breaker for preventing cascading failures
+  private circuitBreaker: CircuitBreakerState = {
+    failures: 0,
+    lastFailure: null,
+    state: 'closed',
+    lastStateChange: Date.now()
+  };
+  private readonly circuitBreakerThreshold = 5; // Open after 5 failures
+  private readonly circuitBreakerResetTimeout = 60000; // 60 seconds to half-open
+  private readonly circuitBreakerTestTimeout = 30000; // 30 seconds in half-open before closing
 
   constructor() {
     if (!msalInstance) {
       console.warn('[GraphClient] MSAL instance not configured. Please check Azure AD environment variables.');
     }
+  }
+  
+  /**
+   * Get circuit breaker status for health monitoring
+   */
+  getCircuitBreakerStatus() {
+    return {
+      state: this.circuitBreaker.state,
+      failures: this.circuitBreaker.failures,
+      lastFailure: this.circuitBreaker.lastFailure 
+        ? new Date(this.circuitBreaker.lastFailure).toISOString() 
+        : null,
+      lastStateChange: new Date(this.circuitBreaker.lastStateChange).toISOString()
+    };
+  }
+  
+  /**
+   * Check and update circuit breaker state
+   */
+  private checkCircuitBreaker(): void {
+    const now = Date.now();
+    
+    if (this.circuitBreaker.state === 'open') {
+      // Check if we should transition to half-open
+      if (now - this.circuitBreaker.lastStateChange >= this.circuitBreakerResetTimeout) {
+        this.circuitBreaker.state = 'half-open';
+        this.circuitBreaker.lastStateChange = now;
+        console.log('[GraphClient] Circuit breaker transitioning to half-open');
+      }
+    }
+  }
+  
+  /**
+   * Record a success for circuit breaker
+   */
+  private recordSuccess(): void {
+    if (this.circuitBreaker.state === 'half-open') {
+      // Successful request in half-open state closes the circuit
+      this.circuitBreaker.state = 'closed';
+      this.circuitBreaker.failures = 0;
+      this.circuitBreaker.lastStateChange = Date.now();
+      console.log('[GraphClient] Circuit breaker closed after successful request');
+    } else if (this.circuitBreaker.state === 'closed') {
+      // Reset failure count on success
+      this.circuitBreaker.failures = 0;
+    }
+  }
+  
+  /**
+   * Record a failure for circuit breaker
+   */
+  private recordFailure(): void {
+    this.circuitBreaker.failures++;
+    this.circuitBreaker.lastFailure = Date.now();
+    
+    if (this.circuitBreaker.state === 'half-open') {
+      // Failure in half-open state opens the circuit again
+      this.circuitBreaker.state = 'open';
+      this.circuitBreaker.lastStateChange = Date.now();
+      console.log('[GraphClient] Circuit breaker re-opened after failure in half-open state');
+    } else if (this.circuitBreaker.state === 'closed' && 
+               this.circuitBreaker.failures >= this.circuitBreakerThreshold) {
+      // Too many failures, open the circuit
+      this.circuitBreaker.state = 'open';
+      this.circuitBreaker.lastStateChange = Date.now();
+      console.log(`[GraphClient] Circuit breaker opened after ${this.circuitBreaker.failures} failures`);
+    }
+  }
+  
+  /**
+   * Check if request should be allowed through circuit breaker
+   */
+  private isCircuitBreakerOpen(): boolean {
+    this.checkCircuitBreaker();
+    return this.circuitBreaker.state === 'open';
   }
 
   /**
@@ -332,15 +426,24 @@ export class GraphClient {
   }
 
   /**
-   * Retry mechanism for handling transient failures
+   * Retry mechanism for handling transient failures with circuit breaker
    */
   private async withRetry<T>(
     operation: () => Promise<T>,
     operationName: string,
     retryCount = 0
   ): Promise<T> {
+    // Check circuit breaker before attempting request
+    if (this.isCircuitBreakerOpen()) {
+      const error = new Error(`GraphClient circuit breaker is open - ${operationName} blocked to prevent cascading failures`);
+      (error as any).circuitBreakerOpen = true;
+      throw error;
+    }
+    
     try {
-      return await operation();
+      const result = await operation();
+      this.recordSuccess();
+      return result;
     } catch (error: any) {
       const shouldRetry = this.shouldRetry(error, retryCount);
       
@@ -351,6 +454,9 @@ export class GraphClient {
         await this.sleep(delay);
         return this.withRetry(operation, operationName, retryCount + 1);
       }
+      
+      // Record failure for circuit breaker
+      this.recordFailure();
       
       console.error(`[GraphClient] ${operationName} failed after ${retryCount + 1} attempts:`, error);
       throw this.normalizeError(error);

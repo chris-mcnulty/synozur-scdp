@@ -148,18 +148,91 @@ export async function handleTokenRefresh(req: Request, res: Response): Promise<v
   }
 }
 
+// Track scheduler state
+let schedulerRunning = false;
+let lastSchedulerRun: Date | null = null;
+let tokensRefreshedCount = 0;
+
+// Export scheduler status for monitoring
+export function getTokenRefreshStatus() {
+  return {
+    running: schedulerRunning,
+    lastRun: lastSchedulerRun?.toISOString() || null,
+    tokensRefreshed: tokensRefreshedCount
+  };
+}
+
 // Periodic token refresh for active SSO sessions
 export function startTokenRefreshScheduler(): void {
-  // Check for tokens that need refresh every 10 minutes
+  if (schedulerRunning) {
+    console.log("[SSO] Token refresh scheduler already running");
+    return;
+  }
+  
+  schedulerRunning = true;
+  console.log("[SSO] Starting token refresh scheduler (runs every 5 minutes)");
+  
+  // Check for tokens that need refresh every 5 minutes
   setInterval(async () => {
+    lastSchedulerRun = new Date();
+    
     try {
-      // This would ideally check all active SSO sessions
-      // For now, it's a placeholder for the refresh logic
-      console.log("[SSO] Token refresh scheduler running");
-    } catch (error) {
-      console.error("[SSO] Token refresh scheduler error:", error);
+      // Import db module dynamically to avoid circular dependency
+      const { db } = await import("../db");
+      const { sessions } = await import("@shared/schema");
+      const { gt, isNotNull, and, lt } = await import("drizzle-orm");
+      
+      // Find SSO sessions with tokens expiring within next 10 minutes
+      const now = new Date();
+      const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+      
+      const expiringSessions = await db
+        .select()
+        .from(sessions)
+        .where(and(
+          isNotNull(sessions.ssoRefreshToken),
+          isNotNull(sessions.ssoTokenExpiry),
+          lt(sessions.ssoTokenExpiry, tenMinutesFromNow),
+          gt(sessions.expiresAt, now) // Only active sessions
+        ))
+        .limit(50); // Process in batches to avoid overwhelming the system
+      
+      if (expiringSessions.length === 0) {
+        return; // No sessions need refresh
+      }
+      
+      console.log(`[SSO-SCHEDULER] Found ${expiringSessions.length} sessions with expiring tokens`);
+      
+      let refreshed = 0;
+      let failed = 0;
+      
+      for (const session of expiringSessions) {
+        if (!session.ssoRefreshToken) continue;
+        
+        try {
+          await refreshSsoToken(session.id, session.ssoRefreshToken);
+          refreshed++;
+          tokensRefreshedCount++;
+        } catch (error: any) {
+          failed++;
+          // Don't log every failure - just track count
+          if (error?.message === 'REAUTHENTICATION_REQUIRED') {
+            // User needs to re-login, this is expected for expired refresh tokens
+          }
+        }
+        
+        // Small delay between refreshes to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      if (refreshed > 0 || failed > 0) {
+        console.log(`[SSO-SCHEDULER] Token refresh complete: ${refreshed} refreshed, ${failed} failed`);
+      }
+      
+    } catch (error: any) {
+      console.error("[SSO-SCHEDULER] Error in token refresh cycle:", error.message);
     }
-  }, 10 * 60 * 1000); // Every 10 minutes
+  }, 5 * 60 * 1000); // Every 5 minutes
 }
 
 console.log("[SSO] Token refresh module initialized");
