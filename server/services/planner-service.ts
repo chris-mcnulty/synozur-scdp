@@ -133,6 +133,40 @@ class PlannerService {
     }
   }
 
+  // Get groups that a specific Azure user belongs to (using app-only auth)
+  async listUserGroups(azureUserId: string): Promise<PlannerGroup[]> {
+    try {
+      const client = await this.getClient();
+      // Query groups the user is a member of
+      const response = await client.api(`/users/${azureUserId}/memberOf/microsoft.graph.group`)
+        .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups
+        .select('id,displayName,description,mail')
+        .top(100)
+        .get();
+      return response.value || [];
+    } catch (error: any) {
+      console.error('[PLANNER] Error listing user groups:', error.message);
+      throw new Error(`Failed to list user groups: ${error.message}`);
+    }
+  }
+
+  // Search groups by name (for fallback when user has no Azure mapping)
+  async searchGroups(query: string, limit: number = 50): Promise<PlannerGroup[]> {
+    try {
+      const client = await this.getClient();
+      // Use startsWith filter for search (works without ConsistencyLevel header)
+      const response = await client.api('/groups')
+        .filter(`groupTypes/any(c:c eq 'Unified') and startswith(displayName,'${query.replace(/'/g, "''")}')`)
+        .select('id,displayName,description,mail')
+        .top(limit)
+        .get();
+      return response.value || [];
+    } catch (error: any) {
+      console.error('[PLANNER] Error searching groups:', error.message);
+      throw new Error(`Failed to search groups: ${error.message}`);
+    }
+  }
+
   async getGroup(groupId: string): Promise<PlannerGroup> {
     try {
       const client = await this.getClient();
