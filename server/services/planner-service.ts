@@ -457,17 +457,16 @@ class PlannerService {
   async testConnection(): Promise<{ success: boolean; message?: string; error?: string; permissionIssue?: string }> {
     try {
       console.log('[PLANNER] Testing connection...');
-      // Test by fetching organization info (works with app-only auth)
       const client = await this.getClient();
-      console.log('[PLANNER] Got client, testing /organization endpoint...');
-      const orgResult = await client.api('/organization').select('id,displayName').get();
-      console.log('[PLANNER] Organization result:', orgResult?.value?.[0]?.displayName || 'unknown');
+      console.log('[PLANNER] Got client, testing /groups endpoint (requires Group.Read.All)...');
       
-      // Also test groups API which requires Group.Read.All
+      // Test groups API which requires Group.Read.All - this is the minimum we need
       try {
-        console.log('[PLANNER] Testing /groups endpoint...');
-        const groupsResult = await client.api('/groups').top(1).select('id').get();
+        const groupsResult = await client.api('/groups').top(1).select('id,displayName').get();
         console.log('[PLANNER] Groups test successful, found:', groupsResult?.value?.length || 0, 'groups');
+        if (groupsResult?.value?.length > 0) {
+          console.log('[PLANNER] First group:', groupsResult.value[0].displayName);
+        }
       } catch (groupsError: any) {
         console.error('[PLANNER] Groups test failed:', groupsError.message);
         console.error('[PLANNER] Full groups error:', JSON.stringify(groupsError, null, 2));
@@ -475,8 +474,8 @@ class PlannerService {
         if (errorMsg.includes('Insufficient privileges') || errorMsg.includes('Authorization_RequestDenied')) {
           return { 
             success: false, 
-            error: 'Group.Read.All permission not configured',
-            permissionIssue: 'The Azure app registration needs the "Group.Read.All" Application permission with admin consent granted. Go to Azure Portal > App registrations > API permissions, add "Group.Read.All" as an Application permission (not Delegated), then click "Grant admin consent".'
+            error: 'Group.Read.All permission not configured or not consented',
+            permissionIssue: 'The Azure app needs "Group.Read.All" Application permission with admin consent. Also verify: 1) PLANNER_TENANT_ID matches your Azure tenant ID, 2) PLANNER_CLIENT_ID matches the Application (client) ID, 3) Admin consent is granted (green checkmark in Azure).'
           };
         }
         throw groupsError;

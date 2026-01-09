@@ -29,8 +29,9 @@ async function getClientCredentialsToken(credentials: PlannerCredentials): Promi
     return cached.accessToken;
   }
 
-  console.log('[PLANNER-AUTH] Requesting new token for tenant:', credentials.tenantId);
+  console.log('[PLANNER-AUTH] Requesting new token for tenant:', credentials.tenantId, 'clientId:', credentials.clientId?.substring(0, 8) + '...');
   const tokenEndpoint = `https://login.microsoftonline.com/${credentials.tenantId}/oauth2/v2.0/token`;
+  console.log('[PLANNER-AUTH] Token endpoint:', tokenEndpoint);
   
   const params = new URLSearchParams();
   params.append('client_id', credentials.clientId);
