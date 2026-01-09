@@ -253,8 +253,17 @@ process.on('uncaughtException', (error) => {
     });
     
     // Graceful shutdown handling
-    const gracefulShutdown = (signal: string) => {
+    const gracefulShutdown = async (signal: string) => {
       log(`Received ${signal}, shutting down gracefully...`);
+      
+      // Stop SSO token refresh scheduler
+      try {
+        const { stopTokenRefreshScheduler } = await import('./auth/sso-token-refresh');
+        stopTokenRefreshScheduler();
+      } catch (error: any) {
+        log(`⚠️ Error stopping SSO scheduler: ${error.message}`);
+      }
+      
       server.close(() => {
         log('Server closed');
         process.exit(0);
