@@ -152,6 +152,7 @@ export async function handleTokenRefresh(req: Request, res: Response): Promise<v
 let schedulerRunning = false;
 let lastSchedulerRun: Date | null = null;
 let tokensRefreshedCount = 0;
+let schedulerInterval: NodeJS.Timeout | null = null;
 
 // Export scheduler status for monitoring
 export function getTokenRefreshStatus() {
@@ -236,13 +237,29 @@ export function startTokenRefreshScheduler(): void {
   
   // Run immediately on startup to handle any already-expiring tokens
   runTokenRefreshCycle().catch(error => {
-    console.error("[SSO-SCHEDULER] Error in initial token refresh cycle:", error.message);
+    console.error("[SSO-SCHEDULER] Error in initial token refresh cycle:", error?.message || error);
   });
   
   // Then check for tokens that need refresh every 5 minutes
-  setInterval(async () => {
+  schedulerInterval = setInterval(async () => {
     await runTokenRefreshCycle();
   }, 5 * 60 * 1000); // Every 5 minutes
+}
+
+// Stop the token refresh scheduler
+export function stopTokenRefreshScheduler(): void {
+  if (!schedulerRunning) {
+    console.log("[SSO] Token refresh scheduler not running");
+    return;
+  }
+  
+  if (schedulerInterval) {
+    clearInterval(schedulerInterval);
+    schedulerInterval = null;
+  }
+  
+  schedulerRunning = false;
+  console.log("[SSO] Token refresh scheduler stopped");
 }
 
 console.log("[SSO] Token refresh module initialized");
