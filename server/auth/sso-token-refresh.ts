@@ -148,6 +148,11 @@ export async function handleTokenRefresh(req: Request, res: Response): Promise<v
   }
 }
 
+// Constants for token refresh timing
+const ONE_HOUR_MS = 60 * 60 * 1000;
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
 // Track scheduler state
 let schedulerRunning = false;
 let lastSchedulerRun: Date | null = null;
@@ -184,8 +189,8 @@ export function startTokenRefreshScheduler(): void {
       
       // Find SSO sessions with tokens expiring within next 10 minutes
       const now = new Date();
-      const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const tenMinutesFromNow = new Date(now.getTime() + TEN_MINUTES_MS);
+      const oneHourAgo = new Date(now.getTime() - ONE_HOUR_MS);
       
       const expiringSessions = await db
         .select()
@@ -234,7 +239,7 @@ export function startTokenRefreshScheduler(): void {
     } catch (error: any) {
       console.error("[SSO-SCHEDULER] Error in token refresh cycle:", error.message);
     }
-  }, 5 * 60 * 1000); // Every 5 minutes
+  }, FIVE_MINUTES_MS); // Every 5 minutes
 }
 
 console.log("[SSO] Token refresh module initialized");
