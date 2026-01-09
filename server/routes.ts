@@ -3915,12 +3915,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const epicNameToId = new Map(epics.map((e: any) => [e.name.toLowerCase(), e.id]));
       const stageNameToId = new Map(stages.map((s: any) => [s.name.toLowerCase(), s.id]));
       
-      // If removeExisting is true, delete existing allocations
+      // If removeExisting is true, delete existing allocations in bulk
       if (removeExisting) {
         const existingAllocations = await storage.getProjectAllocations(projectId);
-        for (const allocation of existingAllocations) {
-          await storage.deleteProjectAllocation(allocation.id);
-        }
+        const allocationIds = existingAllocations.map((a: any) => a.id);
+        await storage.bulkDeleteProjectAllocations(allocationIds);
       }
       
       // Process data rows (skip header)
@@ -4614,10 +4613,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Get all projects
       const projects = await storage.getProjects();
       
-      // Get payment milestones for all projects
+      // Batch fetch all milestones for all projects in a single query
+      const projectIds = projects.map(p => p.id);
+      const milestonesMap = await storage.getProjectMilestonesByProjectIds(projectIds);
+      
+      // Filter payment milestones and add project names
       const allPaymentMilestones = [];
       for (const project of projects) {
-        const milestones = await storage.getProjectMilestones(project.id);
+        const milestones = milestonesMap.get(project.id) || [];
         const paymentMilestones = milestones.filter((m: any) => m.isPaymentMilestone === true);
         
         // Add project name to each milestone for display
@@ -4951,10 +4954,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         })
       ]);
 
-      // Get all stages for all epics
+      // Get all stages for all epics in a single batch query
+      const epicIds = epics.map(e => e.id);
+      const stagesMap = await storage.getProjectStagesByEpicIds(epicIds);
       const allStages: any[] = [];
       for (const epic of epics) {
-        const stages = await storage.getProjectStages(epic.id);
+        const stages = stagesMap.get(epic.id) || [];
         allStages.push(...stages.map((s: any) => ({ ...s, epicId: epic.id })));
       }
 
@@ -7419,11 +7424,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
       
-      // If action is 'remove', delete existing PM items
+      // If action is 'remove', delete existing PM items in bulk
       if (action === 'remove') {
-        for (const item of existingPMItems) {
-          await storage.deleteEstimateLineItem(item.id);
-        }
+        const itemIds = existingPMItems.map(item => item.id);
+        await storage.bulkDeleteEstimateLineItems(itemIds);
         return res.json({
           success: true,
           removed: existingPMItems.length,
@@ -8364,12 +8368,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      // Delete existing or append
+      // Delete existing or append (bulk operation)
       if (removeExisting) {
         const existingItems = await storage.getEstimateLineItems(req.params.id);
-        for (const item of existingItems) {
-          await storage.deleteEstimateLineItem(item.id);
-        }
+        const itemIds = existingItems.map(item => item.id);
+        await storage.bulkDeleteEstimateLineItems(itemIds);
       }
 
       // Insert new items
@@ -8662,12 +8665,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      // Delete existing line items if requested, otherwise append
+      // Delete existing line items if requested, otherwise append (bulk operation)
       if (removeExisting) {
         const existingItems = await storage.getEstimateLineItems(req.params.id);
-        for (const item of existingItems) {
-          await storage.deleteEstimateLineItem(item.id);
-        }
+        const itemIds = existingItems.map(item => item.id);
+        await storage.bulkDeleteEstimateLineItems(itemIds);
       }
 
       // Only insert if we have line items
@@ -13110,6 +13112,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const projects = await storage.getProjectsByIds(projectIds);
       const projectMap = new Map(projects.map(p => [p.id, p]));
       
+      // Batch fetch all person names upfront
+      const allPersonIds = [...new Set(timeEntries.map((e: any) => e.personId))] as string[];
+      const usersMap = await storage.getUsersByIds(allPersonIds);
+      
       // Prepare invoice lines to create
       const linesToCreate: Array<{
         batchId: string;
@@ -13134,8 +13140,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           const rate = parseFloat(entry.billingRate || '0');
           const amount = hours * rate;
           
-          // Get person name if available
-          const person = await storage.getUser(entry.personId);
+          // Get person name from batch-fetched map
+          const person = usersMap.get(entry.personId);
           const personName = person?.name || 'Unknown';
           const dateStr = entry.date ? new Date(entry.date).toISOString().split('T')[0] : '';
           
@@ -13180,12 +13186,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         console.log(`[REPAIR] Deleted ${existingLines.length} existing lines`);
       }
       
-      // Create the new invoice lines
-      let createdCount = 0;
-      for (const line of linesToCreate) {
-        await storage.createInvoiceLine(line);
-        createdCount++;
-      }
+      // Create the new invoice lines in bulk
+      const createdLines = await storage.bulkCreateInvoiceLines(linesToCreate);
+      const createdCount = createdLines.length;
       
       const totalAmount = linesToCreate.reduce((sum, line) => sum + parseFloat(line.amount), 0);
       const uniqueClients = new Set(linesToCreate.map(l => l.clientId)).size;
@@ -13260,12 +13263,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       const projects = await storage.getProjectsByIds(projectIds as string[]);
       const projectMap = new Map(projects.map(p => [p.id, p]));
       
-      // Get all unique person IDs and fetch their names
-      const personIds = Array.from(new Set(batchEntries.map((e: any) => e.person_id)));
+      // Get all unique person IDs and fetch their names in a single batch query
+      const personIds = Array.from(new Set(batchEntries.map((e: any) => e.person_id))) as string[];
+      const usersMap = await storage.getUsersByIds(personIds);
       const personMap = new Map<string, string>();
       for (const personId of personIds) {
-        const person = await storage.getUser(personId as string);
-        personMap.set(personId as string, person?.name || 'Unknown');
+        const person = usersMap.get(personId);
+        personMap.set(personId, person?.name || 'Unknown');
       }
       
       // Prepare invoice lines to create
@@ -13339,12 +13343,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         console.log(`[REPAIR-JSON] Deleted ${existingLines.length} existing lines`);
       }
       
-      // Create the new invoice lines
-      let createdCount = 0;
-      for (const line of linesToCreate) {
-        await storage.createInvoiceLine(line);
-        createdCount++;
-      }
+      // Create the new invoice lines in bulk
+      const createdLines = await storage.bulkCreateInvoiceLines(linesToCreate);
+      const createdCount = createdLines.length;
       
       const totalAmount = linesToCreate.reduce((sum, line) => sum + parseFloat(line.amount), 0);
       const uniqueClients = new Set(linesToCreate.map(l => l.clientId)).size;
