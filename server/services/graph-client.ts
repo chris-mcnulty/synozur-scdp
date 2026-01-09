@@ -231,15 +231,19 @@ export class GraphClient {
   private async checkCircuitBreaker(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
-      const now = Date.now();
-      
-      if (this.circuitBreaker.state === 'open') {
-        // Check if we should transition to half-open
-        if (now - this.circuitBreaker.lastStateChange >= this.circuitBreakerResetTimeout) {
-          this.circuitBreaker.state = 'half-open';
-          this.circuitBreaker.lastStateChange = now;
-          console.log('[GraphClient] Circuit breaker transitioning to half-open');
+      try {
+        const now = Date.now();
+        
+        if (this.circuitBreaker.state === 'open') {
+          // Check if we should transition to half-open
+          if (now - this.circuitBreaker.lastStateChange >= this.circuitBreakerResetTimeout) {
+            this.circuitBreaker.state = 'half-open';
+            this.circuitBreaker.lastStateChange = now;
+            console.log('[GraphClient] Circuit breaker transitioning to half-open');
+          }
         }
+      } catch (error) {
+        console.error('[GraphClient] Error in checkCircuitBreaker:', error);
       }
     });
     await this.circuitBreakerLock;
@@ -251,15 +255,19 @@ export class GraphClient {
   private async recordSuccess(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
-      if (this.circuitBreaker.state === 'half-open') {
-        // Successful request in half-open state closes the circuit
-        this.circuitBreaker.state = 'closed';
-        this.circuitBreaker.failures = 0;
-        this.circuitBreaker.lastStateChange = Date.now();
-        console.log('[GraphClient] Circuit breaker closed after successful request');
-      } else if (this.circuitBreaker.state === 'closed') {
-        // Reset failure count on success
-        this.circuitBreaker.failures = 0;
+      try {
+        if (this.circuitBreaker.state === 'half-open') {
+          // Successful request in half-open state closes the circuit
+          this.circuitBreaker.state = 'closed';
+          this.circuitBreaker.failures = 0;
+          this.circuitBreaker.lastStateChange = Date.now();
+          console.log('[GraphClient] Circuit breaker closed after successful request');
+        } else if (this.circuitBreaker.state === 'closed') {
+          // Reset failure count on success
+          this.circuitBreaker.failures = 0;
+        }
+      } catch (error) {
+        console.error('[GraphClient] Error in recordSuccess:', error);
       }
     });
     await this.circuitBreakerLock;
@@ -271,20 +279,24 @@ export class GraphClient {
   private async recordFailure(): Promise<void> {
     // Acquire lock to prevent concurrent state modifications
     this.circuitBreakerLock = this.circuitBreakerLock.then(() => {
-      this.circuitBreaker.failures++;
-      this.circuitBreaker.lastFailure = Date.now();
-      
-      if (this.circuitBreaker.state === 'half-open') {
-        // Failure in half-open state opens the circuit again
-        this.circuitBreaker.state = 'open';
-        this.circuitBreaker.lastStateChange = Date.now();
-        console.log('[GraphClient] Circuit breaker re-opened after failure in half-open state');
-      } else if (this.circuitBreaker.state === 'closed' && 
-                 this.circuitBreaker.failures >= this.circuitBreakerThreshold) {
-        // Too many failures, open the circuit
-        this.circuitBreaker.state = 'open';
-        this.circuitBreaker.lastStateChange = Date.now();
-        console.log(`[GraphClient] Circuit breaker opened after ${this.circuitBreaker.failures} failures`);
+      try {
+        this.circuitBreaker.failures++;
+        this.circuitBreaker.lastFailure = Date.now();
+        
+        if (this.circuitBreaker.state === 'half-open') {
+          // Failure in half-open state opens the circuit again
+          this.circuitBreaker.state = 'open';
+          this.circuitBreaker.lastStateChange = Date.now();
+          console.log('[GraphClient] Circuit breaker re-opened after failure in half-open state');
+        } else if (this.circuitBreaker.state === 'closed' && 
+                   this.circuitBreaker.failures >= this.circuitBreakerThreshold) {
+          // Too many failures, open the circuit
+          this.circuitBreaker.state = 'open';
+          this.circuitBreaker.lastStateChange = Date.now();
+          console.log(`[GraphClient] Circuit breaker opened after ${this.circuitBreaker.failures} failures`);
+        }
+      } catch (error) {
+        console.error('[GraphClient] Error in recordFailure:', error);
       }
     });
     await this.circuitBreakerLock;
