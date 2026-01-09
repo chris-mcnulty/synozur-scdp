@@ -245,8 +245,8 @@ export class GraphClient {
       } catch (error) {
         console.error('[GraphClient] Error in checkCircuitBreaker:', error);
       }
-    }).catch((error) => {
-      // Ensure the promise chain continues even if there's an error
+    }, (error) => {
+      // Recover from rejected promise to keep chain alive
       console.error('[GraphClient] Fatal error in circuit breaker lock chain:', error);
     });
     await this.circuitBreakerLock;
@@ -272,8 +272,8 @@ export class GraphClient {
       } catch (error) {
         console.error('[GraphClient] Error in recordSuccess:', error);
       }
-    }).catch((error) => {
-      // Ensure the promise chain continues even if there's an error
+    }, (error) => {
+      // Recover from rejected promise to keep chain alive
       console.error('[GraphClient] Fatal error in circuit breaker lock chain:', error);
     });
     await this.circuitBreakerLock;
@@ -304,8 +304,8 @@ export class GraphClient {
       } catch (error) {
         console.error('[GraphClient] Error in recordFailure:', error);
       }
-    }).catch((error) => {
-      // Ensure the promise chain continues even if there's an error
+    }, (error) => {
+      // Recover from rejected promise to keep chain alive
       console.error('[GraphClient] Fatal error in circuit breaker lock chain:', error);
     });
     await this.circuitBreakerLock;
