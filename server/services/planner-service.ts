@@ -87,6 +87,25 @@ export interface SyncResult {
   errors: string[];
 }
 
+export interface TeamChannel {
+  id: string;
+  displayName: string;
+  description?: string;
+  membershipType?: 'standard' | 'private' | 'unknownFutureValue';
+}
+
+export interface TeamsTab {
+  id: string;
+  displayName: string;
+  webUrl?: string;
+  configuration?: {
+    entityId?: string;
+    contentUrl?: string;
+    websiteUrl?: string;
+    removeUrl?: string;
+  };
+}
+
 class PlannerService {
   private credentials?: PlannerCredentials;
 
@@ -179,6 +198,60 @@ class PlannerService {
     } catch (error: any) {
       console.error('[PLANNER] Error getting group:', error.message);
       throw new Error(`Failed to get group: ${error.message}`);
+    }
+  }
+
+  // ============ CHANNEL OPERATIONS ============
+
+  async listChannels(teamId: string): Promise<TeamChannel[]> {
+    try {
+      console.log('[PLANNER] Listing channels for team:', teamId);
+      const client = await this.getClient();
+      const response = await client.api(`/teams/${teamId}/channels`)
+        .select('id,displayName,description,membershipType')
+        .get();
+      console.log('[PLANNER] Found channels:', response.value?.length || 0);
+      return response.value || [];
+    } catch (error: any) {
+      console.error('[PLANNER] Error listing channels:', error.message);
+      // If permission not granted, return empty array with General channel fallback
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        console.warn('[PLANNER] Channel.ReadBasic.All permission not granted, returning General channel fallback');
+        return [{ id: 'general', displayName: 'General', description: 'Default channel', membershipType: 'standard' }];
+      }
+      throw new Error(`Failed to list channels: ${error.message}`);
+    }
+  }
+
+  async createPlannerTab(teamId: string, channelId: string, planId: string, planTitle: string): Promise<TeamsTab> {
+    try {
+      console.log('[PLANNER] Creating Planner tab in channel:', channelId, 'for plan:', planId);
+      const client = await this.getClient();
+      
+      // The Planner app ID in Teams
+      const plannerAppId = 'com.microsoft.teamspace.tab.planner';
+      
+      const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
+        displayName: planTitle,
+        'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${plannerAppId}`,
+        configuration: {
+          entityId: planId,
+          contentUrl: `https://tasks.office.com/{tenantId}/Home/PlannerFrame?page=7&planId=${planId}`,
+          websiteUrl: `https://tasks.office.com/{tenantId}/Home/PlanViews/${planId}`,
+          removeUrl: `https://tasks.office.com/{tenantId}/Home/PlannerFrame?page=13&planId=${planId}`
+        }
+      });
+      
+      console.log('[PLANNER] Tab created successfully:', tab.id);
+      return tab;
+    } catch (error: any) {
+      console.error('[PLANNER] Error creating tab:', error.message);
+      // Don't fail the whole operation if tab creation fails
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        console.warn('[PLANNER] TeamsTab.Create permission not granted, skipping tab creation');
+        throw new Error('Tab creation requires TeamsTab.Create permission. The plan was created but not pinned to the channel.');
+      }
+      throw new Error(`Failed to create tab: ${error.message}`);
     }
   }
 

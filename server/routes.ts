@@ -3260,6 +3260,39 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // List channels for a team (requires Channel.ReadBasic.All permission)
+  app.get("/api/planner/teams/:teamId/channels", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const channels = await plannerService.listChannels(req.params.teamId);
+      res.json(channels);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list channels:", error);
+      res.status(500).json({ message: "Failed to list channels: " + error.message });
+    }
+  });
+
+  // Create a Planner tab in a channel (requires TeamsTab.Create permission)
+  app.post("/api/planner/teams/:teamId/channels/:channelId/tabs", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { planId, planTitle } = req.body;
+      if (!planId || !planTitle) {
+        return res.status(400).json({ message: "planId and planTitle are required" });
+      }
+      const tab = await plannerService.createPlannerTab(
+        req.params.teamId,
+        req.params.channelId,
+        planId,
+        planTitle
+      );
+      res.json(tab);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create tab:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // List all user's accessible plans
   app.get("/api/planner/plans", requireAuth, async (req, res) => {
     try {
