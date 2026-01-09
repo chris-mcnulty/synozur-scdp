@@ -149,7 +149,7 @@ process.on('uncaughtException', (error) => {
         try {
           const { graphClient } = await import('./services/graph-client');
           healthData.graphClient = {
-            circuitBreaker: graphClient.getCircuitBreakerStatus()
+            circuitBreaker: await graphClient.getCircuitBreakerStatus()
           };
         } catch {
           healthData.graphClient = { available: false };

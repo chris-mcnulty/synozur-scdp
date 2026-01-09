@@ -209,9 +209,12 @@ export class GraphClient {
   }
   
   /**
-   * Get circuit breaker status for health monitoring
+   * Get circuit breaker status for health monitoring (thread-safe)
    */
-  getCircuitBreakerStatus() {
+  async getCircuitBreakerStatus() {
+    // Wait for any pending state modifications to complete
+    await this.circuitBreakerLock;
+    
     return {
       state: this.circuitBreaker.state,
       failures: this.circuitBreaker.failures,
