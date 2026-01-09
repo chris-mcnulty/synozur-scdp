@@ -162,7 +162,8 @@ export function PlannerConnectionDialog({
 
   const handlePlanSelect = (plan: PlannerPlan) => {
     setSelectedPlan(plan);
-    const group = groups?.find(g => g.id === plan.owner);
+    const groups = groupsResponse?.groups || [];
+    const group = groups.find((g: PlannerGroup) => g.id === plan.owner);
     if (group) {
       setSelectedGroup(group);
     } else if (plan.owner) {
