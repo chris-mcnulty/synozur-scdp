@@ -43,31 +43,33 @@ function pruneSessionCache(): void {
   if (sessionCache.size <= CACHE_CLEANUP_THRESHOLD) {
     return;
   }
-  
-  const entries = Array.from(sessionCache.entries());
+
   const now = Date.now();
-  
-  // First, remove expired entries
+
+  // First, remove expired entries and collect non-expired ones for potential LRU pruning
   let removed = 0;
-  for (const [sessionId, cached] of entries) {
+  const candidates: [string, any][] = [];
+  for (const [sessionId, cached] of sessionCache.entries()) {
     if (cached.cacheExpiry < now) {
       sessionCache.delete(sessionId);
       removed++;
+    } else {
+      candidates.push([sessionId, cached]);
     }
   }
-  
+
   // If still over threshold, remove oldest entries by cache time
   if (sessionCache.size > CACHE_CLEANUP_THRESHOLD) {
-    const remainingEntries = Array.from(sessionCache.entries())
-      .sort((a, b) => a[1].cacheExpiry - b[1].cacheExpiry);
-    
+    candidates.sort((a, b) => a[1].cacheExpiry - b[1].cacheExpiry);
+
     const toRemove = sessionCache.size - CACHE_CLEANUP_THRESHOLD + 100; // Remove extra buffer
-    for (let i = 0; i < toRemove && i < remainingEntries.length; i++) {
-      sessionCache.delete(remainingEntries[i][0]);
-      removed++;
+    for (let i = 0; i < toRemove && i < candidates.length; i++) {
+      const sessionId = candidates[i][0];
+      if (sessionCache.delete(sessionId)) {
+        removed++;
+      }
     }
   }
-  
   if (removed > 0) {
     console.log(`[SESSION-CACHE] Pruned ${removed} entries, cache size: ${sessionCache.size}`);
   }
