@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -18,7 +19,7 @@ interface PlannerConnectionDialogProps {
   projectName: string;
 }
 
-type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "confirm";
+type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "select-channel" | "confirm";
 type ConnectionMethod = "existing-plan" | "create-in-team" | "standalone";
 
 interface PlannerGroup {
@@ -33,6 +34,13 @@ interface PlannerPlan {
   owner: string;
 }
 
+interface TeamChannel {
+  id: string;
+  displayName: string;
+  description?: string;
+  membershipType?: string;
+}
+
 export function PlannerConnectionDialog({
   open,
   onOpenChange,
@@ -44,6 +52,8 @@ export function PlannerConnectionDialog({
   const [method, setMethod] = useState<ConnectionMethod | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<PlannerGroup | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlannerPlan | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<TeamChannel | null>(null);
+  const [pinToChannel, setPinToChannel] = useState(true);
   const [newPlanName, setNewPlanName] = useState("");
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
 
@@ -93,6 +103,33 @@ export function PlannerConnectionDialog({
     retry: false
   });
 
+  // Fetch channels for the selected team (for pinning the plan as a tab)
+  const { data: channels, isLoading: loadingChannels } = useQuery<TeamChannel[]>({
+    queryKey: ["/api/planner/teams", selectedGroup?.id, "channels"],
+    enabled: open && selectedGroup !== null && step === "select-channel",
+    retry: false
+  });
+
+  const createTabMutation = useMutation({
+    mutationFn: async ({ teamId, channelId, planId, planTitle }: { teamId: string; channelId: string; planId: string; planTitle: string }) => {
+      return await apiRequest(`/api/planner/teams/${teamId}/channels/${channelId}/tabs`, {
+        method: "POST",
+        body: JSON.stringify({ planId, planTitle })
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Plan pinned to channel", description: "The Planner tab has been added to the selected channel." });
+    },
+    onError: (error: any) => {
+      // Don't fail the whole flow, just notify
+      toast({ 
+        title: "Could not pin plan to channel", 
+        description: error.message || "The plan was connected but the tab was not created. You can manually add it in Teams.",
+        variant: "destructive" 
+      });
+    }
+  });
+
   const createPlanMutation = useMutation({
     mutationFn: async ({ groupId, title }: { groupId: string; title: string }) => {
       return await apiRequest(`/api/planner/groups/${groupId}/plans`, {
@@ -102,7 +139,8 @@ export function PlannerConnectionDialog({
     },
     onSuccess: (plan) => {
       setSelectedPlan(plan);
-      setStep("confirm");
+      // After creating plan, ask if user wants to pin it to a channel
+      setStep("select-channel");
       toast({ title: "Plan created in Microsoft Planner" });
     },
     onError: (error: any) => {
@@ -140,6 +178,8 @@ export function PlannerConnectionDialog({
     setMethod(null);
     setSelectedGroup(null);
     setSelectedPlan(null);
+    setSelectedChannel(null);
+    setPinToChannel(true);
     setNewPlanName("");
     setGroupSearchQuery("");
   };
@@ -178,8 +218,21 @@ export function PlannerConnectionDialog({
     }
   };
 
-  const handleConnect = () => {
-    connectMutation.mutate();
+  const handleConnect = async () => {
+    // First connect to Planner
+    connectMutation.mutate(undefined, {
+      onSuccess: async () => {
+        // After successful connection, create tab if channel was selected
+        if (pinToChannel && selectedChannel && selectedGroup && selectedPlan) {
+          createTabMutation.mutate({
+            teamId: selectedGroup.id,
+            channelId: selectedChannel.id,
+            planId: selectedPlan.id,
+            planTitle: selectedPlan.title
+          });
+        }
+      }
+    });
   };
 
   const isConnected = plannerStatus?.connected === true;
@@ -423,6 +476,84 @@ export function PlannerConnectionDialog({
               </div>
             )}
 
+            {step === "select-channel" && selectedGroup && selectedPlan && (
+              <div className="space-y-4" data-testid="planner-select-channel">
+                <div className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">Plan created: {selectedPlan.title}</span>
+                </div>
+
+                <div className="flex items-start space-x-3 p-4 border rounded-lg bg-muted/50">
+                  <Checkbox 
+                    id="pin-to-channel"
+                    checked={pinToChannel}
+                    onCheckedChange={(checked) => setPinToChannel(checked === true)}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="pin-to-channel" className="font-medium cursor-pointer flex items-center gap-2">
+                      <Pin className="h-4 w-4" />
+                      Pin plan as a tab in Teams
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Add this plan as a tab in a Teams channel for easy access
+                    </p>
+                  </div>
+                </div>
+
+                {pinToChannel && (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Select a channel to pin the plan to:
+                    </p>
+                    
+                    {loadingChannels && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    )}
+                    
+                    {!loadingChannels && channels && channels.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No channels found. The plan will be connected without a tab.
+                      </p>
+                    )}
+                    
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {channels?.map((channel) => (
+                        <Card 
+                          key={channel.id} 
+                          className={`cursor-pointer hover:bg-accent transition-colors ${
+                            selectedChannel?.id === channel.id ? 'ring-2 ring-primary' : ''
+                          }`}
+                          onClick={() => setSelectedChannel(channel)}
+                          data-testid={`channel-option-${channel.id}`}
+                        >
+                          <CardContent className="p-3 flex items-center gap-3">
+                            <Hash className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium">{channel.displayName}</p>
+                              {channel.membershipType === 'private' && (
+                                <span className="text-xs text-muted-foreground">Private</span>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </>
+                )}
+                
+                <Button 
+                  onClick={() => setStep("confirm")}
+                  disabled={pinToChannel && !selectedChannel && channels && channels.length > 0}
+                  className="w-full"
+                  data-testid="button-continue-to-confirm"
+                >
+                  Continue
+                </Button>
+              </div>
+            )}
+
             {step === "confirm" && selectedPlan && (
               <div className="space-y-4" data-testid="planner-confirm">
                 <div className="flex items-center gap-2 text-green-600">
@@ -444,6 +575,15 @@ export function PlannerConnectionDialog({
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Team:</span>
                         <span className="font-medium">{selectedGroup.displayName}</span>
+                      </div>
+                    )}
+                    {pinToChannel && selectedChannel && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Pin to channel:</span>
+                        <span className="font-medium flex items-center gap-1">
+                          <Hash className="h-3 w-3" />
+                          {selectedChannel.displayName}
+                        </span>
                       </div>
                     )}
                     <div className="flex justify-between">
@@ -468,11 +608,11 @@ export function PlannerConnectionDialog({
                   </Button>
                   <Button 
                     onClick={handleConnect}
-                    disabled={connectMutation.isPending}
+                    disabled={connectMutation.isPending || createTabMutation.isPending}
                     className="flex-1"
                     data-testid="button-connect"
                   >
-                    {connectMutation.isPending ? (
+                    {(connectMutation.isPending || createTabMutation.isPending) ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Connecting...
