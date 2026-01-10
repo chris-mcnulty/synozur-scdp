@@ -228,6 +228,9 @@ class PlannerService {
       console.log('[PLANNER] Creating Planner tab in channel:', channelId, 'for plan:', planId);
       const client = await this.getClient();
       
+      // Get the tenant ID from environment
+      const tenantId = process.env.PLANNER_TENANT_ID || '';
+      
       // The Planner app ID in Teams
       const plannerAppId = 'com.microsoft.teamspace.tab.planner';
       
@@ -236,9 +239,9 @@ class PlannerService {
         'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${plannerAppId}`,
         configuration: {
           entityId: planId,
-          contentUrl: `https://tasks.office.com/{tenantId}/Home/PlannerFrame?page=7&planId=${planId}`,
-          websiteUrl: `https://tasks.office.com/{tenantId}/Home/PlanViews/${planId}`,
-          removeUrl: `https://tasks.office.com/{tenantId}/Home/PlannerFrame?page=13&planId=${planId}`
+          contentUrl: `https://tasks.office.com/${tenantId}/Home/PlannerFrame?page=7&planId=${planId}`,
+          websiteUrl: `https://tasks.office.com/${tenantId}/Home/PlanViews/${planId}`,
+          removeUrl: `https://tasks.office.com/${tenantId}/Home/PlannerFrame?page=13&planId=${planId}`
         }
       });
       

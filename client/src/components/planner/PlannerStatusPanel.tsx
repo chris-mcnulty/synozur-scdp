@@ -69,10 +69,9 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/projects/${projectId}/planner-sync`, {
+      return await apiRequest(`/api/projects/${projectId}/planner-sync`, {
         method: "POST"
       });
-      return response.json();
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
@@ -93,11 +92,10 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
 
   const toggleSyncMutation = useMutation({
     mutationFn: async (syncEnabled: boolean) => {
-      const response = await apiRequest(`/api/projects/${projectId}/planner-connection`, {
+      return await apiRequest(`/api/projects/${projectId}/planner-connection`, {
         method: "PATCH",
         body: JSON.stringify({ syncEnabled })
       });
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
