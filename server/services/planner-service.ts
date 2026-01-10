@@ -146,18 +146,24 @@ class PlannerService {
         // Use the full nextLink URL for pagination
         request = client.api(skipToken);
       } else {
+        // Note: orderby not supported when filtering by groupTypes
         request = client.api('/groups')
           .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups (Teams)
           .select('id,displayName,description,mail')
-          .orderby('displayName')
           .top(pageSize);
       }
       
       const response = await request.get();
       console.log('[PLANNER] Successfully listed groups, count:', response.value?.length || 0);
       
+      // Sort results client-side since server-side sorting not supported with this filter
+      const groups = response.value || [];
+      groups.sort((a: PlannerGroup, b: PlannerGroup) => 
+        a.displayName.localeCompare(b.displayName)
+      );
+      
       return {
-        groups: response.value || [],
+        groups,
         nextLink: response['@odata.nextLink']
       };
     } catch (error: any) {
@@ -176,16 +182,23 @@ class PlannerService {
       if (skipToken) {
         request = client.api(skipToken);
       } else {
+        // Note: orderby not supported when filtering by groupTypes
         request = client.api(`/users/${azureUserId}/memberOf/microsoft.graph.group`)
           .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups
           .select('id,displayName,description,mail')
-          .orderby('displayName')
           .top(pageSize);
       }
       
       const response = await request.get();
+      
+      // Sort results client-side since server-side sorting not supported with this filter
+      const groups = response.value || [];
+      groups.sort((a: PlannerGroup, b: PlannerGroup) => 
+        a.displayName.localeCompare(b.displayName)
+      );
+      
       return {
-        groups: response.value || [],
+        groups,
         nextLink: response['@odata.nextLink']
       };
     } catch (error: any) {
@@ -199,13 +212,18 @@ class PlannerService {
     try {
       const client = await this.getClient();
       // Use startsWith filter for search (works without ConsistencyLevel header)
+      // Note: orderby not supported when filtering by groupTypes
       const response = await client.api('/groups')
         .filter(`groupTypes/any(c:c eq 'Unified') and startswith(displayName,'${query.replace(/'/g, "''")}')`)
         .select('id,displayName,description,mail')
-        .orderby('displayName')
         .top(limit)
         .get();
-      return response.value || [];
+      // Sort results client-side since server-side sorting not supported with this filter
+      const groups = response.value || [];
+      groups.sort((a: PlannerGroup, b: PlannerGroup) => 
+        a.displayName.localeCompare(b.displayName)
+      );
+      return groups;
     } catch (error: any) {
       console.error('[PLANNER] Error searching groups:', error.message);
       throw new Error(`Failed to search groups: ${error.message}`);
