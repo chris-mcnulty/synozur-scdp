@@ -212,6 +212,11 @@ export default function ProjectDetail() {
     personId: "all",
     billableFilter: "all" as "all" | "billable" | "non-billable"
   });
+  
+  // Team assignments filter state
+  const [allocationStatusFilter, setAllocationStatusFilter] = useState<string>('all');
+  const [allocationResourceFilter, setAllocationResourceFilter] = useState<string>('all');
+  const [allocationStageFilter, setAllocationStageFilter] = useState<string>('all');
   const [selectedTimeEntry, setSelectedTimeEntry] = useState<any>(null);
   const [timeEntryDialogOpen, setTimeEntryDialogOpen] = useState(false);
   const [timeEntryToDelete, setTimeEntryToDelete] = useState<any>(null);
@@ -1727,7 +1732,6 @@ export default function ProjectDetail() {
             {canViewTime && (
               <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
             )}
-            <TabsTrigger value="planner" data-testid="tab-planner">Planner</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -2234,6 +2238,12 @@ export default function ProjectDetail() {
 
           {/* Team & Assignments Tab */}
           <TabsContent value="allocations" className="space-y-6">
+            {/* Planner Integration Panel */}
+            <PlannerStatusPanel 
+              projectId={id || ""} 
+              projectName={analytics?.project?.name || ""} 
+            />
+            
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -2294,6 +2304,87 @@ export default function ProjectDetail() {
                 </div>
               </CardHeader>
               <CardContent>
+                {/* Filters */}
+                <div className="flex flex-wrap gap-3 mb-4 pb-4 border-b">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Filters:</span>
+                  </div>
+                  <Select
+                    value={allocationStatusFilter}
+                    onValueChange={setAllocationStatusFilter}
+                  >
+                    <SelectTrigger className="w-[140px] h-8" data-testid="filter-allocation-status">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={allocationResourceFilter}
+                    onValueChange={setAllocationResourceFilter}
+                  >
+                    <SelectTrigger className="w-[160px] h-8" data-testid="filter-allocation-resource">
+                      <SelectValue placeholder="Resource" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Resources</SelectItem>
+                      {Array.from(new Set(allocations.map((a: any) => a.person?.id || a.resourceName)))
+                        .filter(Boolean)
+                        .map((resourceId: any) => {
+                          const allocation = allocations.find((a: any) => 
+                            (a.person?.id || a.resourceName) === resourceId
+                          );
+                          const name = allocation?.person?.name || allocation?.resourceName || 'Unknown';
+                          return (
+                            <SelectItem key={resourceId} value={resourceId}>
+                              {name}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={allocationStageFilter}
+                    onValueChange={setAllocationStageFilter}
+                  >
+                    <SelectTrigger className="w-[160px] h-8" data-testid="filter-allocation-stage">
+                      <SelectValue placeholder="Stage" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Stages</SelectItem>
+                      {Array.from(new Set(allocations.map((a: any) => a.stage?.id)))
+                        .filter(Boolean)
+                        .map((stageId: any) => {
+                          const allocation = allocations.find((a: any) => a.stage?.id === stageId);
+                          return (
+                            <SelectItem key={stageId} value={stageId}>
+                              {allocation?.stage?.name || 'Unknown'}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
+                  </Select>
+                  {(allocationStatusFilter !== 'all' || allocationResourceFilter !== 'all' || allocationStageFilter !== 'all') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8"
+                      onClick={() => {
+                        setAllocationStatusFilter('all');
+                        setAllocationResourceFilter('all');
+                        setAllocationStageFilter('all');
+                      }}
+                    >
+                      <X className="w-3 h-3 mr-1" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
                 {allocationsLoading ? (
                   <div className="space-y-4">
                     {[1, 2, 3].map((i) => (
@@ -2326,7 +2417,17 @@ export default function ProjectDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {allocations.map((allocation: any) => (
+                      {allocations
+                        .filter((allocation: any) => {
+                          if (allocationStatusFilter !== 'all' && allocation.status !== allocationStatusFilter) return false;
+                          if (allocationResourceFilter !== 'all') {
+                            const resourceId = allocation.person?.id || allocation.resourceName;
+                            if (resourceId !== allocationResourceFilter) return false;
+                          }
+                          if (allocationStageFilter !== 'all' && allocation.stage?.id !== allocationStageFilter) return false;
+                          return true;
+                        })
+                        .map((allocation: any) => (
                         <TableRow key={allocation.id} data-testid={`allocation-row-${allocation.id}`}>
                           <TableCell className="font-medium">
                             {allocation.person ? (
@@ -3795,12 +3896,6 @@ export default function ProjectDetail() {
             </TabsContent>
           )}
           
-          <TabsContent value="planner" className="space-y-6">
-            <PlannerStatusPanel 
-              projectId={id || ""} 
-              projectName={analytics?.project?.name || ""} 
-            />
-          </TabsContent>
         </Tabs>
 
         {/* SOW Dialog */}
