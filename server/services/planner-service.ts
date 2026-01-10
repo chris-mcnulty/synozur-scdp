@@ -231,17 +231,21 @@ class PlannerService {
       // Get the tenant ID from environment
       const tenantId = process.env.PLANNER_TENANT_ID || '';
       
-      // The Planner app ID in Teams
+      // The Planner app ID in Teams - use the official Tasks by Planner app
       const plannerAppId = 'com.microsoft.teamspace.tab.planner';
+      
+      // Planner tab URLs require locale (mkt) parameter
+      // Using en-US as default locale
+      const locale = 'en-US';
       
       const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
         displayName: planTitle,
         'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${plannerAppId}`,
         configuration: {
           entityId: planId,
-          contentUrl: `https://tasks.office.com/${tenantId}/Home/PlannerFrame?page=7&planId=${planId}`,
-          websiteUrl: `https://tasks.office.com/${tenantId}/Home/PlanViews/${planId}`,
-          removeUrl: `https://tasks.office.com/${tenantId}/Home/PlannerFrame?page=13&planId=${planId}`
+          contentUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner/#/plantaskboard?groupId=${teamId}&planId=${planId}`,
+          websiteUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner/#/plantaskboard?groupId=${teamId}&planId=${planId}`,
+          removeUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner`
         }
       });
       

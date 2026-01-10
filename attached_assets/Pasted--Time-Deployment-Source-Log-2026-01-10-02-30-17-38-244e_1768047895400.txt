@@ -1,0 +1,281 @@
+
+Time
+Deployment
+Source
+Log
+2026-01-10 02:30:17.38
+244ee4b7
+User
+vary: 'Accept-Encoding',
+2026-01-10 03:10:24.87
+244ee4b7
+User
+'client-request-id': 'eede604c-d66f-43e9-94bd-da726bfa1e68'
+2026-01-10 03:20:23.22
+244ee4b7
+User
+[SSO] Token refresh scheduler running
+2026-01-10 03:30:23.25
+244ee4b7
+User
+[SSO] Token refresh scheduler running
+2026-01-10 03:40:23.26
+244ee4b7
+User
+[SSO] Token refresh scheduler running
+2026-01-10 03:49:39.45
+244ee4b7
+User
+11:49:39 AM [express] GET /api/auth/user 304 in 748ms
+2026-01-10 03:49:39.52
+244ee4b7
+User
+11:49:39 AM [express] GET /api/auth/user 304 in 1ms
+2026-01-10 03:50:22.35
+244ee4b7
+User
+11:50:22 AM [express] GET /api/auth/user 304 in 1ms
+2026-01-10 03:50:22.46
+244ee4b7
+User
+11:50:22 AM [express] GET /api/auth/user 304 in 0ms
+2026-01-10 03:50:23.26
+244ee4b7
+User
+[SSO] Token refresh scheduler running
+2026-01-10 03:50:28.25
+244ee4b7
+User
+11:50:28 AM [express] GET /api/auth/user 304 in 0ms
+2026-01-10 03:50:28.38
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/analytics',
+2026-01-10 03:50:28.38
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.38
+244ee4b7
+User
+}
+2026-01-10 03:50:28.38
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.38
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.38
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.38
+244ee4b7
+User
+}
+2026-01-10 03:50:28.38
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.38
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.38
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/sows',
+2026-01-10 03:50:28.39
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.39
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.39
+244ee4b7
+User
+}
+2026-01-10 03:50:28.39
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/milestones',
+2026-01-10 03:50:28.39
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.41
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/payment-milestones',
+2026-01-10 03:50:28.41
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.41
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.41
+244ee4b7
+User
+}
+2026-01-10 03:50:28.41
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.42
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.42
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/workstreams',
+2026-01-10 03:50:28.42
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.42
+244ee4b7
+User
+}
+2026-01-10 03:50:28.42
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.42
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.42
+244ee4b7
+User
+path: '/api/vocabulary/catalog',
+2026-01-10 03:50:28.42
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.42
+244ee4b7
+User
+}
+2026-01-10 03:50:28.42
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.43
+244ee4b7
+User
+[AUTH] Session check: { sessionId: 'abeb5578...', path: '/api/users', method: 'GET' }
+2026-01-10 03:50:28.44
+244ee4b7
+User
+[AUTH] Session check: { sessionId: 'abeb5578...', path: '/api/clients', method: 'GET' }
+2026-01-10 03:50:28.44
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/epics',
+2026-01-10 03:50:28.44
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.44
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.44
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.44
+244ee4b7
+User
+}
+2026-01-10 03:50:28.44
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.44
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.44
+244ee4b7
+User
+}
+2026-01-10 03:50:28.44
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.44
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/stages',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.45
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.45
+244ee4b7
+User
+path: '/api/vocabulary/organization',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+}
+2026-01-10 03:50:28.45
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+}
+2026-01-10 03:50:28.45
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.45
+244ee4b7
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/budget-history',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.45
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+sessionId: 'abeb5578...',
+2026-01-10 03:50:28.45
+244ee4b7
+User
+}
+2026-01-10 03:50:28.45
+244ee4b7
+User
+method: 'GET'
+2026-01-10 03:50:28.45
+244ee4b7
+User
+[AUTH] Session check: {
+2026-01-10 03:50:28.46
+244ee4b7
+User
+}
+2026-01-10 03:50:28.46
+244ee4b7
+User
+[AUTH] Session check: {
