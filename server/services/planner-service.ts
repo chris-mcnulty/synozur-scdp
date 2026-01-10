@@ -441,6 +441,16 @@ class PlannerService {
     }
   }
 
+  async getTaskDetails(taskId: string): Promise<PlannerTaskDetails | null> {
+    try {
+      const client = await this.getClient();
+      return await client.api(`/planner/tasks/${taskId}/details`).get();
+    } catch (error: any) {
+      console.error('[PLANNER] Error getting task details:', error.message);
+      return null;
+    }
+  }
+
   async createTask(task: {
     planId: string;
     bucketId?: string;

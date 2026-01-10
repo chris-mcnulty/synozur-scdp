@@ -922,6 +922,7 @@ export interface IStorage {
   
   getUserAzureMapping(userId: string): Promise<UserAzureMapping | undefined>;
   getUserAzureMappingByAzureId(azureUserId: string): Promise<UserAzureMapping | undefined>;
+  getUserAzureMappingByEmail(email: string): Promise<UserAzureMapping | undefined>;
   createUserAzureMapping(mapping: InsertUserAzureMapping): Promise<UserAzureMapping>;
   updateUserAzureMapping(id: string, updates: Partial<InsertUserAzureMapping>): Promise<UserAzureMapping>;
   deleteUserAzureMapping(id: string): Promise<void>;
@@ -9511,6 +9512,15 @@ export class DatabaseStorage implements IStorage {
     const [mapping] = await db.select()
       .from(userAzureMappings)
       .where(eq(userAzureMappings.azureUserId, azureUserId));
+    return mapping || undefined;
+  }
+
+  async getUserAzureMappingByEmail(email: string): Promise<UserAzureMapping | undefined> {
+    if (!email) return undefined;
+    // Case-insensitive email lookup via azureUserPrincipalName (UPN)
+    const [mapping] = await db.select()
+      .from(userAzureMappings)
+      .where(sql`LOWER(${userAzureMappings.azureUserPrincipalName}) = LOWER(${email})`);
     return mapping || undefined;
   }
 

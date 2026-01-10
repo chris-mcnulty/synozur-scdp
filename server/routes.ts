@@ -3455,20 +3455,34 @@ export async function registerRoutes(app: Express): Promise<void> {
             taskTitle = `Week ${allocation.weekNumber} Task`;
           }
           
-          // Get or create bucket for the week
-          const weekLabel = allocation.plannedStartDate 
-            ? plannerService.getWeekLabel(allocation.plannedStartDate)
-            : `Week ${allocation.weekNumber}`;
-          const bucket = await plannerService.getOrCreateBucket(connection.planId, weekLabel);
+          // Use Stage as bucket (or fallback to "Unassigned" if no stage)
+          const stageName = allocation.stage?.name || 'Unassigned';
+          const bucket = await plannerService.getOrCreateBucket(connection.planId, stageName);
           
-          // Get Azure user ID if person is assigned
+          // Get Azure user ID if person is assigned - look up by email (case-insensitive)
           let assigneeIds: string[] = [];
-          if (allocation.personId) {
+          if (allocation.person?.email) {
+            // First try to find Azure mapping by user email (case-insensitive)
+            const azureMapping = await storage.getUserAzureMappingByEmail(allocation.person.email);
+            if (azureMapping) {
+              assigneeIds = [azureMapping.azureUserId];
+            } else if (allocation.personId) {
+              // Fallback to direct user ID mapping
+              const directMapping = await storage.getUserAzureMapping(allocation.personId);
+              if (directMapping) {
+                assigneeIds = [directMapping.azureUserId];
+              }
+            }
+          } else if (allocation.personId) {
+            // No email on person object, try direct user mapping
             const azureMapping = await storage.getUserAzureMapping(allocation.personId);
             if (azureMapping) {
               assigneeIds = [azureMapping.azureUserId];
             }
           }
+          
+          // Get task notes from activity description
+          const taskNotes = allocation.notes || allocation.taskDescription || '';
           
           // Determine completion status
           let percentComplete = 0;
@@ -3491,10 +3505,22 @@ export async function registerRoutes(app: Express): Promise<void> {
                 assigneeIds
               });
               
+              // Update task notes/description if present
+              if (taskNotes) {
+                try {
+                  const taskDetails = await plannerService.getTaskDetails(syncRecord.taskId);
+                  if (taskDetails) {
+                    await plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes);
+                  }
+                } catch (notesErr: any) {
+                  console.warn('[PLANNER] Failed to update task notes:', notesErr.message);
+                }
+              }
+              
               await storage.updatePlannerTaskSync(syncRecord.id, {
                 taskTitle,
                 bucketId: bucket.id,
-                bucketName: weekLabel,
+                bucketName: stageName,
                 lastSyncedAt: new Date(),
                 syncStatus: 'synced',
                 localVersion: syncRecord.localVersion + 1,
@@ -3515,13 +3541,25 @@ export async function registerRoutes(app: Express): Promise<void> {
               percentComplete
             });
             
+            // Add task notes/description if present
+            if (taskNotes) {
+              try {
+                const taskDetails = await plannerService.getTaskDetails(newTask.id);
+                if (taskDetails) {
+                  await plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes);
+                }
+              } catch (notesErr: any) {
+                console.warn('[PLANNER] Failed to add task notes:', notesErr.message);
+              }
+            }
+            
             await storage.createPlannerTaskSync({
               connectionId: connection.id,
               allocationId: allocation.id,
               taskId: newTask.id,
               taskTitle: taskTitle,
               bucketId: bucket.id,
-              bucketName: weekLabel,
+              bucketName: stageName,
               syncStatus: 'synced',
               remoteEtag: newTask['@odata.etag']
             });
