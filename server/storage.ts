@@ -4953,7 +4953,7 @@ export class DatabaseStorage implements IStorage {
               plannedStartDate: startDate, // Changed from startDate to plannedStartDate
               plannedEndDate: endDate, // Changed from endDate to plannedEndDate
               weekNumber: lineItem.week || 0, // Ensure weekNumber is not null
-              notes: null, // Add notes field
+              notes: lineItem.comments || null, // Copy comments from estimate line item to notes
               projectActivityId: null, // Will be linked later when activities are assigned
               projectMilestoneId: null,
               projectWorkstreamId,

@@ -3461,24 +3461,39 @@ export async function registerRoutes(app: Express): Promise<void> {
           
           // Get Azure user ID if person is assigned - look up by email (case-insensitive)
           let assigneeIds: string[] = [];
+          console.log('[PLANNER] Looking up Azure user for allocation:', {
+            personId: allocation.personId,
+            personEmail: allocation.person?.email,
+            personName: allocation.person?.name
+          });
+          
           if (allocation.person?.email) {
             // First try to find Azure mapping by user email (case-insensitive)
             const azureMapping = await storage.getUserAzureMappingByEmail(allocation.person.email);
             if (azureMapping) {
+              console.log('[PLANNER] Found Azure mapping by email:', azureMapping.azureUserId);
               assigneeIds = [azureMapping.azureUserId];
             } else if (allocation.personId) {
               // Fallback to direct user ID mapping
               const directMapping = await storage.getUserAzureMapping(allocation.personId);
               if (directMapping) {
+                console.log('[PLANNER] Found Azure mapping by userId:', directMapping.azureUserId);
                 assigneeIds = [directMapping.azureUserId];
+              } else {
+                console.log('[PLANNER] No Azure mapping found for user:', allocation.person.email);
               }
             }
           } else if (allocation.personId) {
             // No email on person object, try direct user mapping
             const azureMapping = await storage.getUserAzureMapping(allocation.personId);
             if (azureMapping) {
+              console.log('[PLANNER] Found Azure mapping by personId:', azureMapping.azureUserId);
               assigneeIds = [azureMapping.azureUserId];
+            } else {
+              console.log('[PLANNER] No email on person and no Azure mapping found for personId:', allocation.personId);
             }
+          } else {
+            console.log('[PLANNER] No person assigned to allocation:', allocation.id);
           }
           
           // Get task notes from activity description
