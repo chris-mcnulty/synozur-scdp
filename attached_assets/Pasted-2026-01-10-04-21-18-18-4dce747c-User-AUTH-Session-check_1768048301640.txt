@@ -1,0 +1,224 @@
+2026-01-10 04:21:18.18
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.18
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/epics',
+2026-01-10 04:21:18.18
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.18
+4dce747c
+User
+[AUTH] Session check: { sessionId: 'abeb5578...', path: '/api/time-entries', method: 'GET' }
+2026-01-10 04:21:18.19
+4dce747c
+User
+[AUTH] Session check: { sessionId: 'abeb5578...', path: '/api/clients', method: 'GET' }
+2026-01-10 04:21:18.19
+4dce747c
+User
+}
+2026-01-10 04:21:18.19
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/milestones',
+2026-01-10 04:21:18.19
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.19
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.19
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.20
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.20
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.20
+4dce747c
+User
+}
+2026-01-10 04:21:18.20
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.20
+4dce747c
+User
+path: '/api/vocabulary/catalog',
+2026-01-10 04:21:18.20
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.20
+4dce747c
+User
+path: '/api/vocabulary/organization',
+2026-01-10 04:21:18.20
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.20
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.20
+4dce747c
+User
+}
+2026-01-10 04:21:18.20
+4dce747c
+User
+[AUTH] Session check: { sessionId: 'abeb5578...', path: '/api/roles', method: 'GET' }
+2026-01-10 04:21:18.21
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/workstreams',
+2026-01-10 04:21:18.21
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.21
+4dce747c
+User
+}
+2026-01-10 04:21:18.21
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.21
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.21
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.21
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.21
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/engagements',
+2026-01-10 04:21:18.21
+4dce747c
+User
+}
+2026-01-10 04:21:18.21
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.21
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.21
+4dce747c
+User
+}
+2026-01-10 04:21:18.21
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/allocations',
+2026-01-10 04:21:18.21
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.21
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.22
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.22
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.22
+4dce747c
+User
+}
+2026-01-10 04:21:18.22
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.22
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/sows',
+2026-01-10 04:21:18.22
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.22
+4dce747c
+User
+}
+2026-01-10 04:21:18.22
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.22
+4dce747c
+User
+}
+2026-01-10 04:21:18.22
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.22
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/budget-history',
+2026-01-10 04:21:18.22
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/payment-milestones',
+2026-01-10 04:21:18.22
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:18.22
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:18.22
+4dce747c
+User
+method: 'GET'
+2026-01-10 04:21:18.24
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:22.83
+4dce747c
+User
+12:21:22 PM [express] GET /api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/planner-sync-status 200 …
+2026-01-10 04:21:30.02
+4dce747c
+User
+sessionId: 'abeb5578...',
+2026-01-10 04:21:30.02
+4dce747c
+User
+[AUTH] Session check: {
+2026-01-10 04:21:30.02
+4dce747c
+User
+path: '/api/projects/6526f154-1c85-4219-98a9-fdba441c9a4a/planner-connection',

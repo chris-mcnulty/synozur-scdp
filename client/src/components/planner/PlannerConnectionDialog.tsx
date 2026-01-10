@@ -56,6 +56,9 @@ export function PlannerConnectionDialog({
   const [pinToChannel, setPinToChannel] = useState(true);
   const [newPlanName, setNewPlanName] = useState("");
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
+  const [allGroups, setAllGroups] = useState<PlannerGroup[]>([]);
+  const [nextLink, setNextLink] = useState<string | undefined>();
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const { data: plannerStatus, isLoading: checkingStatus } = useQuery<{
     configured: boolean;
@@ -74,22 +77,46 @@ export function PlannerConnectionDialog({
     groups: PlannerGroup[];
     source: 'user' | 'all';
     hasAzureMapping: boolean;
+    nextLink?: string;
   }>({
     queryKey: ["/api/planner/groups"],
     enabled: open && (step === "select-team" || method === "existing-plan"),
     retry: false
   });
 
+  // Accumulate groups when initial data loads
+  useMemo(() => {
+    if (groupsResponse?.groups) {
+      setAllGroups(groupsResponse.groups);
+      setNextLink(groupsResponse.nextLink);
+    }
+  }, [groupsResponse]);
+
+  // Load more groups
+  const loadMoreGroups = async () => {
+    if (!nextLink || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const skipToken = encodeURIComponent(nextLink);
+      const response = await apiRequest(`/api/planner/groups?skipToken=${skipToken}`);
+      setAllGroups(prev => [...prev, ...(response.groups || [])]);
+      setNextLink(response.nextLink);
+    } catch (error: any) {
+      toast({ title: "Failed to load more teams", description: error.message, variant: "destructive" });
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   // Filter groups based on search query
   const filteredGroups = useMemo(() => {
-    const groups = groupsResponse?.groups || [];
-    if (!groupSearchQuery.trim()) return groups;
+    if (!groupSearchQuery.trim()) return allGroups;
     const query = groupSearchQuery.toLowerCase();
-    return groups.filter(g => 
+    return allGroups.filter(g => 
       g.displayName.toLowerCase().includes(query) ||
       g.description?.toLowerCase().includes(query)
     );
-  }, [groupsResponse?.groups, groupSearchQuery]);
+  }, [allGroups, groupSearchQuery]);
 
   const { data: plans, isLoading: loadingPlans } = useQuery<PlannerPlan[]>({
     queryKey: ["/api/planner/plans"],
@@ -182,6 +209,8 @@ export function PlannerConnectionDialog({
     setPinToChannel(true);
     setNewPlanName("");
     setGroupSearchQuery("");
+    setAllGroups([]);
+    setNextLink(undefined);
   };
 
   const handleMethodSelect = (selectedMethod: ConnectionMethod) => {
@@ -379,6 +408,25 @@ export function PlannerConnectionDialog({
                       </CardContent>
                     </Card>
                   ))}
+                  
+                  {/* Load More button */}
+                  {nextLink && !groupSearchQuery && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={loadMoreGroups}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        "Load More Teams"
+                      )}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

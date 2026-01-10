@@ -3187,13 +3187,15 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // List user's Microsoft 365 Groups (Teams)
+  // List user's Microsoft 365 Groups (Teams) with pagination
   // Tries to get groups the current user belongs to via their Azure mapping
   // Falls back to all groups if no mapping exists
   app.get("/api/planner/groups", requireAuth, async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const userId = (req as any).user?.id;
+      const pageSize = Math.min(parseInt(req.query.pageSize as string) || 50, 100);
+      const skipToken = req.query.skipToken as string | undefined;
       
       // Check if user has an Azure mapping
       let azureMapping = null;
@@ -3201,27 +3203,28 @@ export async function registerRoutes(app: Express): Promise<void> {
         azureMapping = await storage.getUserAzureMapping(userId);
       }
       
-      let groups;
+      let result: { groups: any[]; nextLink?: string };
       let source: 'user' | 'all' = 'all';
       
       if (azureMapping?.azureUserId) {
         // Get groups the user belongs to
         try {
-          groups = await plannerService.listUserGroups(azureMapping.azureUserId);
+          result = await plannerService.listUserGroups(azureMapping.azureUserId, pageSize, skipToken);
           source = 'user';
         } catch (error: any) {
           console.warn('[PLANNER] Failed to get user groups, falling back to all groups:', error.message);
-          groups = await plannerService.listMyGroups();
+          result = await plannerService.listMyGroups(pageSize, skipToken);
         }
       } else {
         // No Azure mapping - get all groups
-        groups = await plannerService.listMyGroups();
+        result = await plannerService.listMyGroups(pageSize, skipToken);
       }
       
       res.json({ 
-        groups, 
+        groups: result.groups, 
         source,
-        hasAzureMapping: !!azureMapping?.azureUserId
+        hasAzureMapping: !!azureMapping?.azureUserId,
+        nextLink: result.nextLink
       });
     } catch (error: any) {
       console.error("[PLANNER] Failed to list groups:", error);

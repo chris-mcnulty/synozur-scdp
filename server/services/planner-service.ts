@@ -136,18 +136,30 @@ class PlannerService {
 
   // ============ GROUP/TEAM OPERATIONS ============
 
-  async listMyGroups(): Promise<PlannerGroup[]> {
+  async listMyGroups(pageSize: number = 50, skipToken?: string): Promise<{ groups: PlannerGroup[]; nextLink?: string }> {
     try {
-      console.log('[PLANNER] Attempting to list all groups...');
+      console.log('[PLANNER] Attempting to list all groups, pageSize:', pageSize, 'skipToken:', skipToken ? 'yes' : 'no');
       const client = await this.getClient();
-      // With app-only auth, list all Microsoft 365 groups (no /me endpoint available)
-      const response = await client.api('/groups')
-        .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups (Teams)
-        .select('id,displayName,description,mail')
-        .top(100) // Limit to reasonable number
-        .get();
+      
+      let request;
+      if (skipToken) {
+        // Use the full nextLink URL for pagination
+        request = client.api(skipToken);
+      } else {
+        request = client.api('/groups')
+          .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups (Teams)
+          .select('id,displayName,description,mail')
+          .orderby('displayName')
+          .top(pageSize);
+      }
+      
+      const response = await request.get();
       console.log('[PLANNER] Successfully listed groups, count:', response.value?.length || 0);
-      return response.value || [];
+      
+      return {
+        groups: response.value || [],
+        nextLink: response['@odata.nextLink']
+      };
     } catch (error: any) {
       console.error('[PLANNER] Error listing groups:', error.message);
       console.error('[PLANNER] Full error:', JSON.stringify(error, null, 2));
@@ -156,16 +168,26 @@ class PlannerService {
   }
 
   // Get groups that a specific Azure user belongs to (using app-only auth)
-  async listUserGroups(azureUserId: string): Promise<PlannerGroup[]> {
+  async listUserGroups(azureUserId: string, pageSize: number = 50, skipToken?: string): Promise<{ groups: PlannerGroup[]; nextLink?: string }> {
     try {
       const client = await this.getClient();
-      // Query groups the user is a member of
-      const response = await client.api(`/users/${azureUserId}/memberOf/microsoft.graph.group`)
-        .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups
-        .select('id,displayName,description,mail')
-        .top(100)
-        .get();
-      return response.value || [];
+      
+      let request;
+      if (skipToken) {
+        request = client.api(skipToken);
+      } else {
+        request = client.api(`/users/${azureUserId}/memberOf/microsoft.graph.group`)
+          .filter("groupTypes/any(c:c eq 'Unified')") // Only Microsoft 365 groups
+          .select('id,displayName,description,mail')
+          .orderby('displayName')
+          .top(pageSize);
+      }
+      
+      const response = await request.get();
+      return {
+        groups: response.value || [],
+        nextLink: response['@odata.nextLink']
+      };
     } catch (error: any) {
       console.error('[PLANNER] Error listing user groups:', error.message);
       throw new Error(`Failed to list user groups: ${error.message}`);
@@ -173,13 +195,14 @@ class PlannerService {
   }
 
   // Search groups by name (for fallback when user has no Azure mapping)
-  async searchGroups(query: string, limit: number = 50): Promise<PlannerGroup[]> {
+  async searchGroups(query: string, limit: number = 100): Promise<PlannerGroup[]> {
     try {
       const client = await this.getClient();
       // Use startsWith filter for search (works without ConsistencyLevel header)
       const response = await client.api('/groups')
         .filter(`groupTypes/any(c:c eq 'Unified') and startswith(displayName,'${query.replace(/'/g, "''")}')`)
         .select('id,displayName,description,mail')
+        .orderby('displayName')
         .top(limit)
         .get();
       return response.value || [];
