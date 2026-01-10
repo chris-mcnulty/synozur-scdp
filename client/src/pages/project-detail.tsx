@@ -2321,6 +2321,7 @@ export default function ProjectDetail() {
                         <TableHead>Start Date</TableHead>
                         <TableHead>End Date</TableHead>
                         <TableHead>Week</TableHead>
+                        <TableHead>Status</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2383,6 +2384,48 @@ export default function ProjectDetail() {
                               `Week ${allocation.weekNumber}` : 
                               '—'
                             }
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={allocation.status || 'open'}
+                              onValueChange={(value) => {
+                                const updates: any = { status: value };
+                                if (value === 'in_progress' && !allocation.startedDate) {
+                                  updates.startedDate = new Date().toISOString().split('T')[0];
+                                }
+                                if (value === 'completed' && !allocation.completedDate) {
+                                  updates.completedDate = new Date().toISOString().split('T')[0];
+                                }
+                                updateAssignmentMutation.mutate({ 
+                                  allocationId: allocation.id, 
+                                  data: updates 
+                                });
+                              }}
+                            >
+                              <SelectTrigger className="h-8 w-[130px]" data-testid={`select-status-${allocation.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="open">
+                                  <div className="flex items-center gap-2">
+                                    <AlertCircle className="w-3 h-3 text-muted-foreground" />
+                                    Open
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="in_progress">
+                                  <div className="flex items-center gap-2">
+                                    <Clock className="w-3 h-3 text-blue-500" />
+                                    In Progress
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="completed">
+                                  <div className="flex items-center gap-2">
+                                    <CheckCircle className="w-3 h-3 text-green-500" />
+                                    Completed
+                                  </div>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">

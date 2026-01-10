@@ -3577,12 +3577,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       let inboundDeleted = 0;
       const refreshedSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
       
+      console.log('[PLANNER] Inbound sync: checking', refreshedSyncs.length, 'synced tasks');
+      
       for (const syncRecord of refreshedSyncs) {
         try {
           const task = await plannerService.getTask(syncRecord.taskId);
           
           if (!task) {
             // Task was deleted in Planner - mark sync record as deleted
+            console.log('[PLANNER] Task deleted in Planner:', syncRecord.taskId);
             await storage.updatePlannerTaskSync(syncRecord.id, {
               syncStatus: 'deleted_remote',
               lastSyncedAt: new Date()
@@ -3604,8 +3607,12 @@ export async function registerRoutes(app: Express): Promise<void> {
             newStatus = 'open';
           }
           
+          console.log('[PLANNER] Task', syncRecord.taskId, 'percentComplete:', taskPercentComplete, '→ status:', newStatus);
+          
           // Get current allocation to compare
           const allocation = allocations.find(a => a.id === syncRecord.allocationId);
+          console.log('[PLANNER] Allocation', syncRecord.allocationId, 'current status:', allocation?.status, 'new status:', newStatus);
+          
           if (allocation && newStatus && allocation.status !== newStatus) {
             // Update allocation status based on Planner task
             const updateData: any = { status: newStatus };
