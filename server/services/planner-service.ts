@@ -257,18 +257,31 @@ class PlannerService {
       // The Planner app ID in Teams - use the official Tasks by Planner app
       const plannerAppId = 'com.microsoft.teamspace.tab.planner';
       
-      // Planner tab URLs require locale (mkt) parameter
-      // Using en-US as default locale
-      const locale = 'en-US';
+      // Generate unique timestamp for entityId (required format since 2024 Planner update)
+      const timestamp = Date.now();
+      
+      // EntityId must follow the pattern: tt.c_{channelId}_p_{planId}_h_{timestamp}
+      // This is the format required after the new Planner rollout in 2024
+      const entityId = `tt.c_${channelId}_p_${planId}_h_${timestamp}`;
+      
+      // Content URL uses the new tasks.teams.microsoft.com format with placeholder parameters
+      // Teams will resolve placeholders like {tid}, {userPrincipalName}, etc.
+      const contentUrl = `https://tasks.teams.microsoft.com/teamsui/{tid}/Home/PlannerFrame?page=7&auth_pvr=OrgId&auth_upn={userPrincipalName}&groupId=${teamId}&planId=${planId}&channelId=${channelId}&entityId=${encodeURIComponent(entityId)}&tid={tid}&userObjectId={userObjectId}&subEntityId={subEntityId}&sessionId={sessionId}&theme={theme}&mkt={locale}&ringId={ringId}&PlannerRouteHint={tid}`;
+      
+      // Remove URL for tab removal
+      const removeUrl = `https://tasks.teams.microsoft.com/teamsui/{tid}/Home/PlannerFrame?page=13&auth_pvr=OrgId&auth_upn={userPrincipalName}&groupId=${teamId}&planId=${planId}&channelId=${channelId}&entityId=${encodeURIComponent(entityId)}&tid={tid}&userObjectId={userObjectId}&subEntityId={subEntityId}&sessionId={sessionId}&theme={theme}&mkt={locale}&ringId={ringId}&PlannerRouteHint={tid}`;
+      
+      // Website URL for opening in browser (uses tasks.office.com)
+      const websiteUrl = `https://tasks.office.com/${tenantId}/Home/PlanViews/${planId}`;
       
       const tab = await client.api(`/teams/${teamId}/channels/${channelId}/tabs`).post({
         displayName: planTitle,
         'teamsApp@odata.bind': `https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${plannerAppId}`,
         configuration: {
-          entityId: planId,
-          contentUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner/#/plantaskboard?groupId=${teamId}&planId=${planId}`,
-          websiteUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner/#/plantaskboard?groupId=${teamId}&planId=${planId}`,
-          removeUrl: `https://tasks.office.com/${tenantId}/${locale}/Home/Planner`
+          entityId: entityId,
+          contentUrl: contentUrl,
+          websiteUrl: websiteUrl,
+          removeUrl: removeUrl
         }
       });
       
