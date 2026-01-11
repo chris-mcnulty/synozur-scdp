@@ -37,6 +37,7 @@ export const users = pgTable("users", {
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  shortName: text("short_name"), // Abbreviated name for display (e.g., "MSFT" for Microsoft)
   status: text("status").notNull().default("pending"), // pending, active, inactive, archived
   currency: text("currency").notNull().default("USD"),
   billingContact: text("billing_contact"),
