@@ -4,6 +4,7 @@ import { SynozurTextLogo } from "@/components/icons/synozur-logo";
 import { getRoleDisplayName } from "@/lib/auth";
 import { Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, setSessionId } from "@/lib/queryClient";
@@ -99,6 +100,7 @@ export function Header() {
               </div>
             </>
           )}
+          <ThemeToggle />
           <Button 
             variant="ghost" 
             size="sm" 
