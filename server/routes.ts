@@ -2890,6 +2890,61 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { name, description } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Epic name is required" });
+      }
+      
+      const existingEpics = await storage.getProjectEpics(req.params.projectId);
+      const maxOrder = existingEpics.length > 0 
+        ? Math.max(...existingEpics.map(e => e.order ?? 0)) 
+        : 0;
+      
+      const epic = await storage.createProjectEpic({
+        projectId: req.params.projectId,
+        name,
+        description: description || null,
+        order: maxOrder + 1
+      });
+      res.json(epic);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to create project epic:", error);
+      res.status(500).json({ message: "Failed to create project epic" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { name, description, order } = req.body;
+      if (!name && description === undefined && order === undefined) {
+        return res.status(400).json({ message: "Epic name, description, or order is required" });
+      }
+      
+      const updateData: { name?: string; description?: string | null; order?: number } = {};
+      if (name) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (order !== undefined) updateData.order = order;
+      
+      const epic = await storage.updateProjectEpic(req.params.epicId, updateData);
+      res.json(epic);
+    } catch (error: any) {
+      console.error("[ERROR] Failed to update project epic:", error);
+      res.status(500).json({ message: "Failed to update project epic" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      await storage.deleteProjectEpic(req.params.epicId);
+      res.json({ message: "Epic deleted successfully" });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to delete project epic:", error);
+      res.status(500).json({ message: "Failed to delete project epic" });
+    }
+  });
+
   // Project Stages endpoints
   app.get("/api/projects/:projectId/stages/:epicId", requireAuth, async (req, res) => {
     try {
