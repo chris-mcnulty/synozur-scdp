@@ -3693,6 +3693,74 @@ export async function registerRoutes(app: Express): Promise<void> {
             }
           }
           
+          // Sync assignment from Planner - if someone was assigned in Planner
+          if (allocation && task.assignments) {
+            const assigneeIds = Object.keys(task.assignments).filter(
+              id => task.assignments![id]['@odata.type'] === '#microsoft.graph.plannerAssignment'
+            );
+            
+            if (assigneeIds.length > 0 && !allocation.personId) {
+              // Task has assignee in Planner but not in Constellation - sync it
+              const plannerAssigneeId = assigneeIds[0]; // Take first assignee
+              console.log('[PLANNER] Task has assignee in Planner:', plannerAssigneeId, 'but no personId in Constellation');
+              
+              // Check if we have an Azure mapping for this user
+              let existingMapping = await storage.getUserAzureMappingByAzureId(plannerAssigneeId);
+              
+              if (existingMapping) {
+                // We have a Constellation user for this Azure user - assign them
+                console.log('[PLANNER] Found existing user mapping, assigning to allocation:', existingMapping.userId);
+                await storage.updateProjectAllocation(allocation.id, {
+                  personId: existingMapping.userId,
+                  pricingMode: 'person'
+                });
+                inboundUpdated++;
+              } else if (connection.autoAddMembers) {
+                // No mapping - try to look up user in Azure AD and create as named resource
+                try {
+                  const azureUser = await plannerService.findUserById(plannerAssigneeId);
+                  if (azureUser) {
+                    console.log('[PLANNER] Auto-creating named resource for Azure user:', azureUser.displayName, azureUser.mail);
+                    
+                    // Create user as named resource (canLogin: false)
+                    const newUser = await storage.createUser({
+                      email: azureUser.mail || azureUser.userPrincipalName,
+                      name: azureUser.displayName || 'Unknown User',
+                      firstName: azureUser.displayName?.split(' ')[0] || '',
+                      lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
+                      role: 'employee',
+                      canLogin: false, // Named resource - no login
+                      isAssignable: true,
+                      isActive: true
+                    });
+                    
+                    // Create Azure mapping
+                    await storage.createUserAzureMapping({
+                      userId: newUser.id,
+                      azureUserId: azureUser.id,
+                      azureUserPrincipalName: azureUser.userPrincipalName,
+                      azureDisplayName: azureUser.displayName,
+                      mappingMethod: 'auto_created_from_planner',
+                      verifiedAt: new Date()
+                    });
+                    
+                    // Assign to allocation
+                    await storage.updateProjectAllocation(allocation.id, {
+                      personId: newUser.id,
+                      pricingMode: 'person'
+                    });
+                    
+                    console.log('[PLANNER] Created named resource and assigned:', newUser.id, newUser.name);
+                    inboundUpdated++;
+                  }
+                } catch (createErr: any) {
+                  console.warn('[PLANNER] Failed to auto-create user from Planner:', createErr.message);
+                  errors.push(`Could not create user from Planner assignee: ${createErr.message}`);
+                }
+              }
+            }
+          }
+          
           // Update sync record with latest etag
           await storage.updatePlannerTaskSync(syncRecord.id, {
             remoteEtag: task['@odata.etag'],

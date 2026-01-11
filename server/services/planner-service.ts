@@ -651,6 +651,19 @@ class PlannerService {
     }
   }
 
+  async findUserById(azureUserId: string): Promise<AzureUser | null> {
+    try {
+      const client = await this.getClient();
+      const user = await client.api(`/users/${azureUserId}`)
+        .select('id,displayName,mail,userPrincipalName')
+        .get();
+      return user || null;
+    } catch (error: any) {
+      console.error('[PLANNER] Error finding user by ID:', error.message);
+      return null;
+    }
+  }
+
   async getMe(): Promise<AzureUser | null> {
     // With app-only auth, /me is not available
     // Return null to indicate no current user context
