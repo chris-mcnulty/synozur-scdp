@@ -34,6 +34,8 @@ import {
 interface PlannerStatusPanelProps {
   projectId: string;
   projectName: string;
+  clientName?: string;
+  clientTeamId?: string;
 }
 
 interface SyncStatus {
@@ -60,7 +62,7 @@ interface SyncStatus {
   }>;
 }
 
-export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPanelProps) {
+export function PlannerStatusPanel({ projectId, projectName, clientName, clientTeamId }: PlannerStatusPanelProps) {
   const { toast } = useToast();
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
@@ -179,6 +181,8 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
           onOpenChange={setShowConnectDialog}
           projectId={projectId}
           projectName={projectName}
+          clientName={clientName}
+          clientTeamId={clientTeamId}
         />
       </>
     );

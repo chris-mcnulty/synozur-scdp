@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -17,10 +18,12 @@ interface PlannerConnectionDialogProps {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectName: string;
+  clientName?: string;
+  clientTeamId?: string;
 }
 
-type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "select-channel" | "confirm";
-type ConnectionMethod = "existing-plan" | "create-in-team" | "standalone";
+type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "select-channel" | "create-team" | "create-channel" | "confirm";
+type ConnectionMethod = "existing-plan" | "create-in-team" | "create-new-team" | "create-channel-in-team";
 
 interface PlannerGroup {
   id: string;
@@ -41,11 +44,19 @@ interface TeamChannel {
   membershipType?: string;
 }
 
+interface TeamTemplate {
+  id: string;
+  displayName: string;
+  shortDescription?: string;
+}
+
 export function PlannerConnectionDialog({
   open,
   onOpenChange,
   projectId,
-  projectName
+  projectName,
+  clientName,
+  clientTeamId
 }: PlannerConnectionDialogProps) {
   const { toast } = useToast();
   const [step, setStep] = useState<ConnectionStep>("choose-method");
@@ -59,6 +70,12 @@ export function PlannerConnectionDialog({
   const [allGroups, setAllGroups] = useState<PlannerGroup[]>([]);
   const [nextLink, setNextLink] = useState<string | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
+  
+  const [newTeamName, setNewTeamName] = useState(clientName || "");
+  const [newTeamDescription, setNewTeamDescription] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [newChannelName, setNewChannelName] = useState(projectName || "");
+  const [newChannelDescription, setNewChannelDescription] = useState("");
 
   const { data: plannerStatus, isLoading: checkingStatus } = useQuery<{
     configured: boolean;
@@ -133,8 +150,55 @@ export function PlannerConnectionDialog({
   // Fetch channels for the selected team (for pinning the plan as a tab)
   const { data: channels, isLoading: loadingChannels } = useQuery<TeamChannel[]>({
     queryKey: ["/api/planner/teams", selectedGroup?.id, "channels"],
-    enabled: open && selectedGroup !== null && step === "select-channel",
+    enabled: open && selectedGroup !== null && (step === "select-channel" || step === "create-channel"),
     retry: false
+  });
+
+  // Fetch team templates for creating new teams
+  const { data: teamTemplates, isLoading: loadingTemplates } = useQuery<TeamTemplate[]>({
+    queryKey: ["/api/planner/team-templates"],
+    enabled: open && step === "create-team",
+    retry: false
+  });
+
+  // Mutation to create a new Team
+  const createTeamMutation = useMutation({
+    mutationFn: async ({ displayName, description, templateId }: { displayName: string; description?: string; templateId?: string }) => {
+      return await apiRequest(`/api/planner/teams`, {
+        method: "POST",
+        body: JSON.stringify({ displayName, description, templateId })
+      });
+    },
+    onSuccess: (team) => {
+      setSelectedGroup({ id: team.id, displayName: team.displayName, description: team.description });
+      toast({ title: "Team created", description: `"${team.displayName}" was created successfully.` });
+      // Now ask about creating a channel for the project
+      setNewChannelName(projectName || "");
+      setStep("create-channel");
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create team", description: error.message, variant: "destructive" });
+    }
+  });
+
+  // Mutation to create a new Channel
+  const createChannelMutation = useMutation({
+    mutationFn: async ({ teamId, displayName, description }: { teamId: string; displayName: string; description?: string }) => {
+      return await apiRequest(`/api/planner/teams/${teamId}/channels`, {
+        method: "POST",
+        body: JSON.stringify({ displayName, description, membershipType: 'standard' })
+      });
+    },
+    onSuccess: (channel) => {
+      setSelectedChannel(channel);
+      toast({ title: "Channel created", description: `"${channel.displayName}" was created successfully.` });
+      // Now create a plan in this channel
+      setNewPlanName(projectName || "");
+      setStep("create-plan");
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create channel", description: error.message, variant: "destructive" });
+    }
   });
 
   const createTabMutation = useMutation({
@@ -184,6 +248,8 @@ export function PlannerConnectionDialog({
           planTitle: selectedPlan?.title,
           groupId: selectedGroup?.id,
           groupName: selectedGroup?.displayName,
+          channelId: selectedChannel?.id,
+          channelName: selectedChannel?.displayName,
           syncDirection: "bidirectional"
         })
       });
@@ -211,6 +277,11 @@ export function PlannerConnectionDialog({
     setGroupSearchQuery("");
     setAllGroups([]);
     setNextLink(undefined);
+    setNewTeamName(clientName || "");
+    setNewTeamDescription("");
+    setSelectedTemplateId(null);
+    setNewChannelName(projectName || "");
+    setNewChannelDescription("");
   };
 
   const handleMethodSelect = (selectedMethod: ConnectionMethod) => {
@@ -219,13 +290,24 @@ export function PlannerConnectionDialog({
       setStep("select-plan");
     } else if (selectedMethod === "create-in-team") {
       setStep("select-team");
+    } else if (selectedMethod === "create-new-team") {
+      setNewTeamName(clientName || "");
+      setStep("create-team");
+    } else if (selectedMethod === "create-channel-in-team") {
+      setStep("select-team");
     }
   };
 
   const handleTeamSelect = (group: PlannerGroup) => {
     setSelectedGroup(group);
-    setStep("create-plan");
-    setNewPlanName(projectName);
+    if (method === "create-channel-in-team") {
+      // Go to channel creation step
+      setNewChannelName(projectName || "");
+      setStep("create-channel");
+    } else {
+      setStep("create-plan");
+      setNewPlanName(projectName);
+    }
   };
 
   const handlePlanSelect = (plan: PlannerPlan) => {
@@ -330,10 +412,36 @@ export function PlannerConnectionDialog({
                     <RadioGroupItem value="create-in-team" id="create-team" />
                     <div className="flex-1">
                       <Label htmlFor="create-team" className="font-medium cursor-pointer">
-                        Create new plan in a Team
+                        Create new plan in existing Team
                       </Label>
                       <p className="text-sm text-muted-foreground">
-                        Create a new plan inside a Microsoft Teams team
+                        Create a new plan inside an existing Microsoft Team
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent cursor-pointer">
+                    <RadioGroupItem value="create-channel-in-team" id="create-channel" />
+                    <div className="flex-1">
+                      <Label htmlFor="create-channel" className="font-medium cursor-pointer flex items-center gap-2">
+                        <Hash className="h-4 w-4" />
+                        Create new channel in existing Team
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Add a new channel for this project in an existing Team
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-accent cursor-pointer border-blue-200 dark:border-blue-800">
+                    <RadioGroupItem value="create-new-team" id="new-team" />
+                    <div className="flex-1">
+                      <Label htmlFor="new-team" className="font-medium cursor-pointer flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        Create new Team {clientName && `for "${clientName}"`}
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Create a new Microsoft Team, channel, and plan for this project
                       </p>
                     </div>
                   </div>
@@ -472,9 +580,186 @@ export function PlannerConnectionDialog({
               </div>
             )}
 
+            {step === "create-team" && (
+              <div className="space-y-4" data-testid="planner-create-team">
+                <Button variant="ghost" size="sm" onClick={() => setStep("choose-method")}>
+                  ← Back
+                </Button>
+                
+                <p className="text-sm text-muted-foreground">
+                  Create a new Microsoft Team for this client:
+                </p>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="team-name">Team Name</Label>
+                    <Input
+                      id="team-name"
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      placeholder={clientName || "Enter team name"}
+                      data-testid="input-team-name"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default: Client name
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="team-description">Description (optional)</Label>
+                    <Textarea
+                      id="team-description"
+                      value={newTeamDescription}
+                      onChange={(e) => setNewTeamDescription(e.target.value)}
+                      placeholder="Enter team description"
+                      rows={2}
+                    />
+                  </div>
+
+                  {loadingTemplates && (
+                    <div className="flex items-center justify-center py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="ml-2 text-sm text-muted-foreground">Loading templates...</span>
+                    </div>
+                  )}
+
+                  {!loadingTemplates && teamTemplates && teamTemplates.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Team Template (optional)</Label>
+                      <Select value={selectedTemplateId || ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Standard template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Standard template</SelectItem>
+                          {teamTemplates.map((template) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              {template.displayName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedTemplateId && teamTemplates.find(t => t.id === selectedTemplateId)?.shortDescription && (
+                        <p className="text-xs text-muted-foreground">
+                          {teamTemplates.find(t => t.id === selectedTemplateId)?.shortDescription}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <Button 
+                  onClick={() => createTeamMutation.mutate({ 
+                    displayName: newTeamName.trim(), 
+                    description: newTeamDescription.trim() || undefined,
+                    templateId: selectedTemplateId || undefined
+                  })}
+                  disabled={!newTeamName.trim() || createTeamMutation.isPending}
+                  className="w-full"
+                  data-testid="button-create-team"
+                >
+                  {createTeamMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Team...
+                    </>
+                  ) : (
+                    <>
+                      <Building2 className="mr-2 h-4 w-4" />
+                      Create Team
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {step === "create-channel" && selectedGroup && (
+              <div className="space-y-4" data-testid="planner-create-channel">
+                <Button variant="ghost" size="sm" onClick={() => {
+                  if (method === "create-new-team") {
+                    setStep("create-team");
+                  } else {
+                    setStep("select-team");
+                  }
+                }}>
+                  ← Back
+                </Button>
+                
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Creating channel in
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      <span className="font-medium">{selectedGroup.displayName}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="channel-name">Channel Name</Label>
+                    <Input
+                      id="channel-name"
+                      value={newChannelName}
+                      onChange={(e) => setNewChannelName(e.target.value)}
+                      placeholder={projectName || "Enter channel name"}
+                      data-testid="input-channel-name"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default: Project name
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="channel-description">Description (optional)</Label>
+                    <Textarea
+                      id="channel-description"
+                      value={newChannelDescription}
+                      onChange={(e) => setNewChannelDescription(e.target.value)}
+                      placeholder="Enter channel description"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={() => createChannelMutation.mutate({ 
+                    teamId: selectedGroup.id,
+                    displayName: newChannelName.trim(), 
+                    description: newChannelDescription.trim() || undefined
+                  })}
+                  disabled={!newChannelName.trim() || createChannelMutation.isPending}
+                  className="w-full"
+                  data-testid="button-create-channel"
+                >
+                  {createChannelMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating Channel...
+                    </>
+                  ) : (
+                    <>
+                      <Hash className="mr-2 h-4 w-4" />
+                      Create Channel
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
             {step === "create-plan" && selectedGroup && (
               <div className="space-y-4" data-testid="planner-create-plan">
-                <Button variant="ghost" size="sm" onClick={() => setStep("select-team")}>
+                <Button variant="ghost" size="sm" onClick={() => {
+                  if (selectedChannel && (method === "create-new-team" || method === "create-channel-in-team")) {
+                    setStep("create-channel");
+                  } else {
+                    setStep("select-team");
+                  }
+                }}>
                   ← Back
                 </Button>
                 

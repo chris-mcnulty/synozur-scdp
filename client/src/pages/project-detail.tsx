@@ -2242,6 +2242,8 @@ export default function ProjectDetail() {
             <PlannerStatusPanel 
               projectId={id || ""} 
               projectName={analytics?.project?.name || ""} 
+              clientName={analytics?.project?.client?.name}
+              clientTeamId={analytics?.project?.client?.microsoftTeamId}
             />
             
             <Card>
