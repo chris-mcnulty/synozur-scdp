@@ -41,9 +41,11 @@ interface SyncStatus {
   connection?: {
     planId: string;
     planTitle: string;
+    groupId?: string;
     groupName?: string;
     syncEnabled: boolean;
     syncDirection: string;
+    autoAddMembers?: boolean;
     lastSyncAt?: string;
     lastSyncStatus?: string;
   };
@@ -99,6 +101,25 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update settings", description: error.message, variant: "destructive" });
+    }
+  });
+  
+  const toggleAutoAddMutation = useMutation({
+    mutationFn: async (autoAddMembers: boolean) => {
+      return await apiRequest(`/api/projects/${projectId}/planner-connection`, {
+        method: "PATCH",
+        body: JSON.stringify({ autoAddMembers })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "planner-sync-status"] });
+      toast({ 
+        title: "Settings updated",
+        description: "Auto-add team members setting has been updated"
+      });
     },
     onError: (error: any) => {
       toast({ title: "Failed to update settings", description: error.message, variant: "destructive" });
@@ -234,20 +255,36 @@ export function PlannerStatusPanel({ projectId, projectName }: PlannerStatusPane
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t">
-            <div className="flex items-center gap-2">
-              <Switch
-                id="sync-enabled"
-                checked={connection.syncEnabled}
-                onCheckedChange={(checked) => toggleSyncMutation.mutate(checked)}
-                disabled={toggleSyncMutation.isPending}
-              />
-              <Label htmlFor="sync-enabled">
-                Auto-sync enabled
-              </Label>
+          <div className="space-y-3 pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="sync-enabled"
+                  checked={connection.syncEnabled}
+                  onCheckedChange={(checked) => toggleSyncMutation.mutate(checked)}
+                  disabled={toggleSyncMutation.isPending}
+                />
+                <Label htmlFor="sync-enabled">
+                  Auto-sync enabled
+                </Label>
+              </div>
+              
+              {connection.groupId && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="auto-add-members"
+                    checked={connection.autoAddMembers || false}
+                    onCheckedChange={(checked) => toggleAutoAddMutation.mutate(checked)}
+                    disabled={toggleAutoAddMutation.isPending}
+                  />
+                  <Label htmlFor="auto-add-members" className="text-sm">
+                    Auto-add missing team members
+                  </Label>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Button
                 variant="ghost"
                 size="sm"

@@ -1949,6 +1949,7 @@ export const projectPlannerConnections = pgTable("project_planner_connections", 
   // Connection settings
   syncEnabled: boolean("sync_enabled").notNull().default(true),
   syncDirection: text("sync_direction").notNull().default('bidirectional'), // bidirectional, outbound_only, inbound_only
+  autoAddMembers: boolean("auto_add_members").notNull().default(false), // Auto-add missing users to the Team/Group
   lastSyncAt: timestamp("last_sync_at"),
   lastSyncStatus: text("last_sync_status"), // success, error, partial
   lastSyncError: text("last_sync_error"),

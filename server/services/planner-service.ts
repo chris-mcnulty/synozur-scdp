@@ -559,6 +559,80 @@ class PlannerService {
     return this.updateTask(taskId, etag, { percentComplete: 50 });
   }
 
+  // ============ GROUP MEMBERSHIP OPERATIONS ============
+
+  async isUserGroupMember(groupId: string, userId: string): Promise<boolean> {
+    try {
+      const client = await this.getClient();
+      const response = await client.api(`/groups/${groupId}/members`)
+        .filter(`id eq '${userId}'`)
+        .select('id')
+        .get();
+      return response.value?.length > 0;
+    } catch (error: any) {
+      console.error('[PLANNER] Error checking group membership:', error.message);
+      return false;
+    }
+  }
+
+  async addUserToGroup(groupId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const client = await this.getClient();
+      
+      // Check if already a member
+      const isMember = await this.isUserGroupMember(groupId, userId);
+      if (isMember) {
+        console.log('[PLANNER] User already a member of group:', userId);
+        return { success: true };
+      }
+      
+      // Add user as member using the members/$ref endpoint
+      await client.api(`/groups/${groupId}/members/$ref`)
+        .post({
+          '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${userId}`
+        });
+      
+      console.log('[PLANNER] Successfully added user to group:', userId);
+      return { success: true };
+    } catch (error: any) {
+      console.error('[PLANNER] Error adding user to group:', error.message);
+      
+      // Check for common error conditions
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        return { 
+          success: false, 
+          error: 'Permission denied - GroupMember.ReadWrite.All permission required' 
+        };
+      }
+      if (error.message?.includes('already exist')) {
+        // Already a member
+        return { success: true };
+      }
+      if (error.message?.includes('Request_Broker_InvalidUser')) {
+        return { 
+          success: false, 
+          error: 'User not found in Azure AD or is a guest that has not been invited' 
+        };
+      }
+      
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getGroupMembers(groupId: string): Promise<AzureUser[]> {
+    try {
+      const client = await this.getClient();
+      const response = await client.api(`/groups/${groupId}/members`)
+        .select('id,displayName,mail,userPrincipalName')
+        .top(999)
+        .get();
+      return response.value || [];
+    } catch (error: any) {
+      console.error('[PLANNER] Error getting group members:', error.message);
+      return [];
+    }
+  }
+
   // ============ USER OPERATIONS ============
 
   async findUserByEmail(email: string): Promise<AzureUser | null> {

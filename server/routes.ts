@@ -3391,10 +3391,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Planner connection not found" });
       }
       
-      const { syncEnabled, syncDirection } = req.body;
+      const { syncEnabled, syncDirection, autoAddMembers } = req.body;
       const updates: any = {};
       if (syncEnabled !== undefined) updates.syncEnabled = syncEnabled;
       if (syncDirection) updates.syncDirection = syncDirection;
+      if (autoAddMembers !== undefined) updates.autoAddMembers = autoAddMembers;
       
       const updated = await storage.updateProjectPlannerConnection(connection.id, updates);
       res.json(updated);
@@ -3495,6 +3496,18 @@ export async function registerRoutes(app: Express): Promise<void> {
                     verifiedAt: new Date()
                   });
                   assigneeIds = [azureUser.id];
+                  
+                  // Auto-add to Team if enabled and we have a groupId
+                  if (connection.autoAddMembers && connection.groupId) {
+                    console.log('[PLANNER] Auto-add enabled, adding user to Team:', azureUser.id);
+                    const addResult = await plannerService.addUserToGroup(connection.groupId, azureUser.id);
+                    if (addResult.success) {
+                      console.log('[PLANNER] Successfully added user to Team');
+                    } else {
+                      console.warn('[PLANNER] Failed to add user to Team:', addResult.error);
+                      errors.push(`Could not add ${azureUser.displayName} to Team: ${addResult.error}`);
+                    }
+                  }
                 } else {
                   console.log('[PLANNER] Auto-discovery failed - no Azure AD user found for:', allocation.person.email);
                 }
@@ -3728,9 +3741,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         connection: {
           planId: connection.planId,
           planTitle: connection.planTitle,
+          groupId: connection.groupId,
           groupName: connection.groupName,
           syncEnabled: connection.syncEnabled,
           syncDirection: connection.syncDirection,
+          autoAddMembers: connection.autoAddMembers,
           lastSyncAt: connection.lastSyncAt,
           lastSyncStatus: connection.lastSyncStatus
         },
