@@ -20,6 +20,7 @@ interface PlannerConnectionDialogProps {
   projectName: string;
   clientName?: string;
   clientTeamId?: string;
+  clientId?: string;
 }
 
 type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "select-channel" | "create-team" | "create-channel" | "confirm";
@@ -56,7 +57,8 @@ export function PlannerConnectionDialog({
   projectId,
   projectName,
   clientName,
-  clientTeamId
+  clientTeamId,
+  clientId
 }: PlannerConnectionDialogProps) {
   const { toast } = useToast();
   const [step, setStep] = useState<ConnectionStep>("choose-method");
@@ -163,10 +165,10 @@ export function PlannerConnectionDialog({
 
   // Mutation to create a new Team
   const createTeamMutation = useMutation({
-    mutationFn: async ({ displayName, description, templateId }: { displayName: string; description?: string; templateId?: string }) => {
+    mutationFn: async ({ displayName, description, templateId, clientId: cId }: { displayName: string; description?: string; templateId?: string; clientId?: string }) => {
       return await apiRequest(`/api/planner/teams`, {
         method: "POST",
-        body: JSON.stringify({ displayName, description, templateId })
+        body: JSON.stringify({ displayName, description, templateId, clientId: cId })
       });
     },
     onSuccess: (team) => {
@@ -652,7 +654,8 @@ export function PlannerConnectionDialog({
                   onClick={() => createTeamMutation.mutate({ 
                     displayName: newTeamName.trim(), 
                     description: newTeamDescription.trim() || undefined,
-                    templateId: selectedTemplateId || undefined
+                    templateId: selectedTemplateId || undefined,
+                    clientId
                   })}
                   disabled={!newTeamName.trim() || createTeamMutation.isPending}
                   className="w-full"

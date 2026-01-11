@@ -2244,6 +2244,7 @@ export default function ProjectDetail() {
               projectName={analytics?.project?.name || ""} 
               clientName={analytics?.project?.client?.name}
               clientTeamId={analytics?.project?.client?.microsoftTeamId}
+              clientId={analytics?.project?.clientId}
             />
             
             <Card>

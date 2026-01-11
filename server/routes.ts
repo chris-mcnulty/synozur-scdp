@@ -3352,7 +3352,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/planner/teams", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
-      const { displayName, description, templateId, ownerIds } = req.body;
+      const { displayName, description, templateId, ownerIds, clientId } = req.body;
       
       if (!displayName) {
         return res.status(400).json({ message: "Team name is required" });
@@ -3364,6 +3364,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         templateId,
         ownerIds
       });
+      
+      // If a clientId was provided, persist the team ID/name to the client record
+      if (clientId && team.id) {
+        await storage.updateClient(clientId, {
+          microsoftTeamId: team.id,
+          microsoftTeamName: team.displayName || displayName
+        });
+        console.log(`[PLANNER] Associated team ${team.id} with client ${clientId}`);
+      }
       
       res.json(team);
     } catch (error: any) {
