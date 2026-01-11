@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { 
-  FolderKanban, 
   RefreshCw, 
   ExternalLink, 
   Settings, 
@@ -16,6 +15,7 @@ import {
   Clock,
   Loader2
 } from "lucide-react";
+import plannerLogo from "@assets/IMG_7112_1768138938013.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PlannerConnectionDialog } from "./PlannerConnectionDialog";
@@ -162,7 +162,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
         <Card data-testid="planner-not-connected">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5" />
+              <img src={plannerLogo} alt="Planner" className="h-5 w-5" />
               Microsoft Planner
             </CardTitle>
             <CardDescription>
@@ -171,7 +171,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
           </CardHeader>
           <CardContent>
             <Button onClick={() => setShowConnectDialog(true)} data-testid="button-connect-planner">
-              <FolderKanban className="mr-2 h-4 w-4" />
+              <img src={plannerLogo} alt="Planner" className="mr-2 h-4 w-4" />
               Connect to Planner
             </Button>
           </CardContent>
@@ -214,7 +214,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FolderKanban className="h-5 w-5" />
+              <img src={plannerLogo} alt="Planner" className="h-5 w-5" />
               <CardTitle>Microsoft Planner</CardTitle>
               <Badge variant="outline" className="text-green-600 border-green-600">
                 Connected

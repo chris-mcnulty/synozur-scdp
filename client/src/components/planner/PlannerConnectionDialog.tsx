@@ -9,8 +9,9 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Users, Plus, Search, Hash, Pin } from "lucide-react";
 import teamsLogo from "@assets/Teams_512_1768138765687.png";
+import plannerLogo from "@assets/IMG_7112_1768138938013.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -356,7 +357,7 @@ export function PlannerConnectionDialog({
       <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderKanban className="h-5 w-5" />
+            <img src={plannerLogo} alt="Planner" className="h-5 w-5" />
             Connect to Microsoft Planner
           </DialogTitle>
           <DialogDescription>
@@ -572,7 +573,7 @@ export function PlannerConnectionDialog({
                       data-testid={`plan-option-${plan.id}`}
                     >
                       <CardContent className="p-4 flex items-center gap-3">
-                        <FolderKanban className="h-5 w-5 text-muted-foreground" />
+                        <img src={plannerLogo} alt="Planner" className="h-5 w-5 opacity-50" />
                         <div>
                           <p className="font-medium">{plan.title}</p>
                         </div>
