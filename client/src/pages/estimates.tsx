@@ -67,7 +67,7 @@ export default function Estimates() {
   const [estimateToCopy, setEstimateToCopy] = useState<Estimate | null>(null);
   const [copyMode, setCopyMode] = useState<'same' | 'different' | 'new'>('same');
   const [estimateType, setEstimateType] = useState<string>('detailed');
-  const [showArchived, setShowArchived] = useState(false);
+  const [activeTab, setActiveTab] = useState<'draft' | 'approved' | 'archive' | 'all'>('draft');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -99,8 +99,8 @@ export default function Estimates() {
     },
   });
 
-  const { data: estimates = [], isLoading } = useQuery<Estimate[]>({
-    queryKey: ["/api/estimates", showArchived],
+  const { data: allEstimates = [], isLoading } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates"],
     queryFn: async () => {
       const sessionId = localStorage.getItem('sessionId');
       const headers: Record<string, string> = {};
@@ -108,7 +108,7 @@ export default function Estimates() {
         headers['X-Session-Id'] = sessionId;
       }
       
-      const res = await fetch(`/api/estimates?includeArchived=${showArchived}`, {
+      const res = await fetch(`/api/estimates?includeArchived=true`, {
         headers,
         credentials: 'include'
       });
@@ -118,6 +118,20 @@ export default function Estimates() {
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     },
+  });
+
+  const estimates = allEstimates.filter((estimate) => {
+    switch (activeTab) {
+      case 'draft':
+        return !estimate.archived && (estimate.status === 'draft' || estimate.status === 'sent' || estimate.status === 'rejected');
+      case 'approved':
+        return !estimate.archived && estimate.status === 'approved';
+      case 'archive':
+        return estimate.archived;
+      case 'all':
+      default:
+        return true;
+    }
   });
 
   const { data: clients = [] } = useQuery<any[]>({
@@ -283,8 +297,8 @@ export default function Estimates() {
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{estimates.length}</div>
-              <p className="text-xs text-muted-foreground">All time</p>
+              <div className="text-2xl font-bold">{allEstimates.filter(e => !e.archived).length}</div>
+              <p className="text-xs text-muted-foreground">Active (not archived)</p>
             </CardContent>
           </Card>
 
@@ -295,7 +309,7 @@ export default function Estimates() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {estimates.filter(e => e.status === 'sent').length}
+                {allEstimates.filter(e => !e.archived && e.status === 'sent').length}
               </div>
               <p className="text-xs text-muted-foreground">Awaiting client response</p>
             </CardContent>
@@ -308,7 +322,7 @@ export default function Estimates() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {estimates.filter(e => e.status === 'approved').length}
+                {allEstimates.filter(e => !e.archived && e.status === 'approved').length}
               </div>
               <p className="text-xs text-muted-foreground">Ready to start</p>
             </CardContent>
@@ -321,9 +335,9 @@ export default function Estimates() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ${estimates.reduce((sum, e) => sum + (e.presentedTotal || e.totalAmount || e.totalCost || 0), 0).toLocaleString()}
+                ${allEstimates.filter(e => !e.archived).reduce((sum, e) => sum + (e.presentedTotal || e.totalAmount || e.totalCost || 0), 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">All estimates (quote totals)</p>
+              <p className="text-xs text-muted-foreground">Active estimates (quote totals)</p>
             </CardContent>
           </Card>
         </div>
@@ -332,28 +346,45 @@ export default function Estimates() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Estimate List</CardTitle>
-              <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="show-archived" 
-                  checked={showArchived}
-                  onCheckedChange={(checked) => setShowArchived(checked as boolean)}
-                  data-testid="checkbox-show-archived"
-                />
-                <label 
-                  htmlFor="show-archived" 
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  Show Archived
-                </label>
-              </div>
             </div>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="mt-4">
+              <TabsList>
+                <TabsTrigger value="draft" data-testid="tab-draft">
+                  Draft
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.filter(e => !e.archived && (e.status === 'draft' || e.status === 'sent' || e.status === 'rejected')).length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="approved" data-testid="tab-approved">
+                  Approved
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.filter(e => !e.archived && e.status === 'approved').length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="archive" data-testid="tab-archive">
+                  Archive
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.filter(e => e.archived).length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="all" data-testid="tab-all">
+                  All
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.length}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading estimates...</div>
             ) : estimates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                No estimates yet. Create your first estimate to get started.
+                {activeTab === 'draft' && "No draft estimates. Create a new estimate to get started."}
+                {activeTab === 'approved' && "No approved estimates yet."}
+                {activeTab === 'archive' && "No archived estimates."}
+                {activeTab === 'all' && "No estimates yet. Create your first estimate to get started."}
               </div>
             ) : (
               <Table>
