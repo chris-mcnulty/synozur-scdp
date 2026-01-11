@@ -58,6 +58,9 @@ export const clients = pgTable("clients", {
   ndaDate: date("nda_date"), // Date NDA was signed
   ndaDocument: text("nda_document"), // File path/name for uploaded NDA document
   hasNda: boolean("has_nda").default(false), // Track if NDA exists
+  // Microsoft Teams integration
+  microsoftTeamId: text("microsoft_team_id"), // Azure Group/Team ID for this client
+  microsoftTeamName: text("microsoft_team_name"), // Display name of the Team
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -1945,6 +1948,10 @@ export const projectPlannerConnections = pgTable("project_planner_connections", 
   // Group/Team context (optional - for plans in Teams)
   groupId: varchar("group_id", { length: 255 }), // Microsoft 365 Group ID (Team)
   groupName: text("group_name"), // Cached group/team name
+  
+  // Channel context (for plans in specific channels)
+  channelId: varchar("channel_id", { length: 255 }), // Microsoft Teams Channel ID
+  channelName: text("channel_name"), // Cached channel name
   
   // Connection settings
   syncEnabled: boolean("sync_enabled").notNull().default(true),

@@ -3448,7 +3448,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const { projectId } = req.params;
-      const { planId, planTitle, planWebUrl, groupId, groupName, syncDirection } = req.body;
+      const { planId, planTitle, planWebUrl, groupId, groupName, channelId, channelName, syncDirection } = req.body;
       const user = req.user as any;
       
       if (!planId) {
@@ -3468,6 +3468,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         planWebUrl: planWebUrl || null,
         groupId: groupId || null,
         groupName: groupName || null,
+        channelId: channelId || null,
+        channelName: channelName || null,
         syncEnabled: true,
         syncDirection: syncDirection || 'bidirectional',
         connectedBy: user.id
