@@ -9,7 +9,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin, Building2 } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Users, FolderKanban, Plus, Search, Hash, Pin } from "lucide-react";
+import teamsLogo from "@assets/Teams_512_1768138765687.png";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -439,7 +440,7 @@ export function PlannerConnectionDialog({
                     <RadioGroupItem value="create-new-team" id="new-team" />
                     <div className="flex-1">
                       <Label htmlFor="new-team" className="font-medium cursor-pointer flex items-center gap-2">
-                        <Building2 className="h-4 w-4" />
+                        <img src={teamsLogo} alt="Teams" className="h-4 w-4" />
                         Create new Team {clientName && `for "${clientName}"`}
                       </Label>
                       <p className="text-sm text-muted-foreground">
@@ -668,7 +669,7 @@ export function PlannerConnectionDialog({
                     </>
                   ) : (
                     <>
-                      <Building2 className="mr-2 h-4 w-4" />
+                      <img src={teamsLogo} alt="Teams" className="mr-2 h-4 w-4" />
                       Create Team
                     </>
                   )}
