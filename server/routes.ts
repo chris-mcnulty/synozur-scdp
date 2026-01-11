@@ -3469,18 +3469,37 @@ export async function registerRoutes(app: Express): Promise<void> {
           
           if (allocation.person?.email) {
             // First try to find Azure mapping by user email (case-insensitive)
-            const azureMapping = await storage.getUserAzureMappingByEmail(allocation.person.email);
-            if (azureMapping) {
-              console.log('[PLANNER] Found Azure mapping by email:', azureMapping.azureUserId);
-              assigneeIds = [azureMapping.azureUserId];
-            } else if (allocation.personId) {
+            let azureMapping = await storage.getUserAzureMappingByEmail(allocation.person.email);
+            
+            if (!azureMapping && allocation.personId) {
               // Fallback to direct user ID mapping
-              const directMapping = await storage.getUserAzureMapping(allocation.personId);
-              if (directMapping) {
-                console.log('[PLANNER] Found Azure mapping by userId:', directMapping.azureUserId);
-                assigneeIds = [directMapping.azureUserId];
-              } else {
-                console.log('[PLANNER] No Azure mapping found for user:', allocation.person.email);
+              azureMapping = await storage.getUserAzureMapping(allocation.personId);
+            }
+            
+            if (azureMapping) {
+              console.log('[PLANNER] Found Azure mapping:', azureMapping.azureUserId);
+              assigneeIds = [azureMapping.azureUserId];
+            } else {
+              // Auto-discover: Try to find Azure AD user by email and create mapping
+              console.log('[PLANNER] No mapping found, attempting auto-discovery for:', allocation.person.email);
+              try {
+                const azureUser = await plannerService.findUserByEmail(allocation.person.email);
+                if (azureUser && allocation.personId) {
+                  console.log('[PLANNER] Found Azure AD user, creating mapping:', azureUser.id, azureUser.displayName);
+                  await storage.createUserAzureMapping({
+                    userId: allocation.personId,
+                    azureUserId: azureUser.id,
+                    azureUserPrincipalName: azureUser.userPrincipalName,
+                    azureDisplayName: azureUser.displayName,
+                    mappingMethod: 'auto_discovered',
+                    verifiedAt: new Date()
+                  });
+                  assigneeIds = [azureUser.id];
+                } else {
+                  console.log('[PLANNER] Auto-discovery failed - no Azure AD user found for:', allocation.person.email);
+                }
+              } catch (discoverErr: any) {
+                console.warn('[PLANNER] Auto-discovery error:', discoverErr.message);
               }
             }
           } else if (allocation.personId) {

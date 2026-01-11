@@ -9517,11 +9517,23 @@ export class DatabaseStorage implements IStorage {
 
   async getUserAzureMappingByEmail(email: string): Promise<UserAzureMapping | undefined> {
     if (!email) return undefined;
-    // Case-insensitive email lookup via azureUserPrincipalName (UPN)
-    const [mapping] = await db.select()
+    
+    // First try: Case-insensitive email lookup via azureUserPrincipalName (UPN)
+    const [directMapping] = await db.select()
       .from(userAzureMappings)
       .where(sql`LOWER(${userAzureMappings.azureUserPrincipalName}) = LOWER(${email})`);
-    return mapping || undefined;
+    
+    if (directMapping) return directMapping;
+    
+    // Second try: Look up by joining to users table where user email matches
+    const [userJoinMapping] = await db.select({
+      mapping: userAzureMappings
+    })
+      .from(userAzureMappings)
+      .innerJoin(users, eq(userAzureMappings.userId, users.id))
+      .where(sql`LOWER(${users.email}) = LOWER(${email})`);
+    
+    return userJoinMapping?.mapping || undefined;
   }
 
   async createUserAzureMapping(mapping: InsertUserAzureMapping): Promise<UserAzureMapping> {

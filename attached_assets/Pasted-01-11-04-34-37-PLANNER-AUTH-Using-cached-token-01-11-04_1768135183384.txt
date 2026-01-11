@@ -1,0 +1,60 @@
+01-11 04:34:37
+[PLANNER-AUTH] Using cached token
+01-11 04:34:37
+[PLANNER-AUTH] Using cached token
+01-11 04:34:37
+[PLANNER-AUTH] Using cached token
+01-11 04:34:37
+[PLANNER] Looking up Azure user for allocation: {
+01-11 04:34:37
+personId: '2041e7f2-d44c-41ba-aac2-4f516e4540cc',
+01-11 04:34:37
+personEmail: 'chris.mcnulty@synozur.com',
+01-11 04:34:37
+[PLANNER-AUTH] Using cached token
+01-11 04:34:38
+[PLANNER-AUTH] Using cached token
+01-11 04:34:38
+[PLANNER-AUTH] Using cached token
+01-11 04:34:38
+personEmail: 'joshua.christensen@synozur.com',
+01-11 04:34:40
+[PLANNER] Inbound sync: checking 58 synced tasks
+01-11 04:34:40
+[PLANNER-AUTH] Using cached token
+01-11 04:34:40
+[PLANNER] Task mDtrT_PfjkKitJB7o3hUpWUAFS5D percentComplete: 0 → status: open
+01-11 04:34:40
+[PLANNER] Allocation 86a3bf71-dd62-4c89-b928-24548e6bfae0 current status: open new status: open
+01-11 04:34:40
+[PLANNER-AUTH] Using cached token
+01-11 04:34:40
+[PLANNER] Task so-nXcI9JkeKnQwoszUSh2UADupV percentComplete: 0 → status: open
+01-11 04:34:40
+[PLANNER] Allocation 5f37ff1f-1f6a-44be-8768-cb8759b242cf current status: open new status: open
+01-11 04:34:40
+[PLANNER-AUTH] Using cached token
+01-11 04:34:40
+[PLANNER] Allocation 22c20d48-d050-4989-b0ab-645186ad4e52 current status: open new status: open
+01-11 04:34:40
+[PLANNER] Task UC9OKdZBBEOAYsmR8q9k1mUAGYfL percentComplete: 0 → status: open
+01-11 04:34:40
+[PLANNER-AUTH] Using cached token
+01-11 04:34:40
+[PLANNER] Task OEHhvkTSbkisTF9cqMfNpmUAOK0s percentComplete: 0 → status: open
+01-11 04:34:40
+[PLANNER] Allocation 79a21b20-156c-4b63-866d-7a916fa7692f current status: open new status: open
+01-11 04:34:41
+[PLANNER-AUTH] Using cached token
+01-11 04:34:41
+[PLANNER] Task pDCqo4HUR0-HBc1sl_oKFWUAAWM7 percentComplete: 0 → status: open
+01-11 04:34:41
+[PLANNER] Allocation ba826acb-8e44-494e-8345-90b263cdd4e9 current status: open new status: open
+01-11 04:34:41
+[PLANNER-AUTH] Using cached token
+01-11 04:34:41
+[PLANNER] Task 61Njma_GO0SLZ5yW3ZjnoWUAFO2A percentComplete: 0 → status: open
+01-11 04:34:41
+[PLANNER] Allocation 5cef2c2a-c929-4176-852a-20a499a10e9e current status: open new status: open
+01-11 04:34:41
+[PLANNER-AUTH] Using cached token
