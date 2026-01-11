@@ -2988,13 +2988,53 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post("/api/projects/:projectId/allocations", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
+      // Validate required hours
+      const hours = typeof req.body.hours === 'string' ? parseFloat(req.body.hours) : req.body.hours;
+      if (!hours || isNaN(hours) || hours <= 0) {
+        return res.status(400).json({ message: "Hours is required and must be greater than 0" });
+      }
+      
+      // Derive rack rate from role or person if not provided
+      let rackRate = req.body.rackRate;
+      let costRate = req.body.costRate;
+      const pricingMode = req.body.pricingMode || 'role';
+      
+      if (!rackRate || rackRate === '0' || rackRate === 0) {
+        if (pricingMode === 'person' && req.body.personId) {
+          // Get rate from person
+          const userRates = await storage.getUserRates(req.body.personId);
+          rackRate = userRates.billingRate?.toString();
+          costRate = costRate || userRates.costRate?.toString();
+        } else if (pricingMode === 'role' && req.body.roleId) {
+          // Get rate from role
+          const role = await storage.getRole(req.body.roleId);
+          if (role) {
+            rackRate = role.defaultRackRate?.toString();
+            costRate = costRate || role.defaultCostRate?.toString();
+          }
+        }
+        
+        // If still no rate and pricingMode is resource_name or derivation failed
+        if (!rackRate || rackRate === '0') {
+          // For resource_name mode or when role/person has no rate, require explicit rate
+          if (pricingMode === 'resource_name') {
+            return res.status(400).json({ 
+              message: "Rack rate is required when using resource name pricing mode" 
+            });
+          }
+          // Allow 0 rate for role/person modes when no rate is configured (billable assignments to be set later)
+          rackRate = '0';
+        }
+      }
+      
       const allocationData = {
         ...req.body,
         projectId: req.params.projectId,
-        // Default weekNumber to 0 for manually created assignments (not from estimate import)
         weekNumber: req.body.weekNumber ?? 0,
-        // Ensure hours is a number
-        hours: typeof req.body.hours === 'string' ? parseFloat(req.body.hours) : req.body.hours
+        hours: hours,
+        rackRate: rackRate,
+        costRate: costRate || null,
+        pricingMode: pricingMode
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
       const created = await storage.createProjectAllocation(validatedData);
@@ -3007,6 +3047,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(201).json(created);
     } catch (error: any) {
       if (error instanceof z.ZodError) {
+        console.error("[ERROR] Allocation validation errors:", error.errors);
         return res.status(400).json({ message: "Invalid allocation data", errors: error.errors });
       }
       console.error("[ERROR] Failed to create project allocation:", error);

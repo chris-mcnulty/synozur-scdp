@@ -158,8 +158,9 @@ const assignmentFormSchema = z.object({
   projectWorkstreamId: z.string().optional(),
   projectEpicId: z.string().optional(),
   projectStageId: z.string().optional(),
-  hours: z.string().optional(),
+  hours: z.string().min(1, "Hours is required"),
   pricingMode: z.enum(["role", "person", "resource_name"]),
+  rackRate: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   taskDescription: z.string().optional(),
@@ -1025,15 +1026,16 @@ export default function ProjectDetail() {
       const processedData = {
         ...data,
         projectId: id,
-        hours: data.hours ? parseFloat(data.hours) : null,
-        roleId: data.roleId || null,
-        projectWorkstreamId: data.projectWorkstreamId || null,
-        projectEpicId: data.projectEpicId || null,
-        projectStageId: data.projectStageId || null,
+        hours: data.hours ? parseFloat(data.hours) : undefined,
+        roleId: data.roleId === 'none' ? null : (data.roleId || null),
+        projectWorkstreamId: data.projectWorkstreamId === 'none' ? null : (data.projectWorkstreamId || null),
+        projectEpicId: data.projectEpicId === 'none' ? null : (data.projectEpicId || null),
+        projectStageId: data.projectStageId === 'none' ? null : (data.projectStageId || null),
         plannedStartDate: data.startDate || null,
         plannedEndDate: data.endDate || null,
         taskDescription: data.taskDescription || null,
         notes: data.notes || null,
+        pricingMode: data.pricingMode || 'role',
         status: 'open'
       };
       return apiRequest(`/api/projects/${id}/allocations`, {
