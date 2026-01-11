@@ -106,6 +106,27 @@ export interface TeamsTab {
   };
 }
 
+export interface TeamTemplate {
+  id: string;
+  displayName: string;
+  shortDescription?: string;
+  description?: string;
+}
+
+export interface CreatedTeam {
+  id: string;
+  displayName: string;
+  description?: string;
+  webUrl?: string;
+}
+
+export interface CreatedChannel {
+  id: string;
+  displayName: string;
+  description?: string;
+  webUrl?: string;
+}
+
 class PlannerService {
   private credentials?: PlannerCredentials;
 
@@ -313,6 +334,237 @@ class PlannerService {
         throw new Error('Tab creation requires TeamsTab.Create permission. The plan was created but not pinned to the channel.');
       }
       throw new Error(`Failed to create tab: ${error.message}`);
+    }
+  }
+
+  // ============ TEAM CREATION OPERATIONS ============
+
+  async listTeamTemplates(): Promise<TeamTemplate[]> {
+    try {
+      console.log('[PLANNER] Listing team templates...');
+      const client = await this.getClient();
+      const response = await client.api('/teamwork/teamTemplates')
+        .select('id,displayName,shortDescription,description')
+        .get();
+      console.log('[PLANNER] Found templates:', response.value?.length || 0);
+      return response.value || [];
+    } catch (error: any) {
+      console.error('[PLANNER] Error listing team templates:', error.message);
+      // Templates require specific permissions - return empty if not available
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('NotFound')) {
+        console.warn('[PLANNER] Team templates not available, returning empty list');
+        return [];
+      }
+      throw new Error(`Failed to list team templates: ${error.message}`);
+    }
+  }
+
+  async createTeam(options: {
+    displayName: string;
+    description?: string;
+    templateId?: string;
+    ownerIds?: string[]; // Azure user IDs to add as owners
+  }): Promise<CreatedTeam> {
+    try {
+      console.log('[PLANNER] Creating team:', options.displayName);
+      const client = await this.getClient();
+      
+      let teamBody: any;
+      
+      if (options.templateId) {
+        // Create from template
+        console.log('[PLANNER] Using template:', options.templateId);
+        teamBody = {
+          'template@odata.bind': `https://graph.microsoft.com/v1.0/teamwork/teamTemplates/${options.templateId}`,
+          displayName: options.displayName,
+          description: options.description || ''
+        };
+      } else {
+        // Create standard team
+        teamBody = {
+          'template@odata.bind': 'https://graph.microsoft.com/v1.0/teamsTemplates(\'standard\')',
+          displayName: options.displayName,
+          description: options.description || ''
+        };
+      }
+
+      // Add members/owners if specified
+      if (options.ownerIds && options.ownerIds.length > 0) {
+        teamBody.members = options.ownerIds.map((userId, index) => ({
+          '@odata.type': '#microsoft.graph.aadUserConversationMember',
+          'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${userId}')`,
+          roles: index === 0 ? ['owner'] : ['member'] // First user is owner
+        }));
+      }
+
+      // Create the team - this is an async operation
+      const response = await client.api('/teams').post(teamBody);
+      
+      // The POST returns a 202 with a Location header for the async operation
+      // For now, we need to poll or wait for completion
+      // In Graph SDK, we can get the team ID from the response
+      if (response && response.id) {
+        console.log('[PLANNER] Team created successfully:', response.id);
+        return {
+          id: response.id,
+          displayName: options.displayName,
+          description: options.description,
+          webUrl: response.webUrl
+        };
+      }
+
+      // If async, the response may have a header we need to parse
+      // For Graph client, it usually returns the created team
+      throw new Error('Team creation response did not contain team ID');
+    } catch (error: any) {
+      console.error('[PLANNER] Error creating team:', error.message);
+      
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        throw new Error('Team creation requires Team.Create and Group.Create permissions with admin consent');
+      }
+      
+      // Handle async creation (202 response)
+      if (error.statusCode === 202) {
+        // Get the Location header for polling
+        const locationHeader = error.headers?.get?.('Location') || error.headers?.location;
+        if (locationHeader) {
+          console.log('[PLANNER] Team creation is async, polling location:', locationHeader);
+          return await this.waitForTeamCreation(locationHeader);
+        }
+      }
+      
+      throw new Error(`Failed to create team: ${error.message}`);
+    }
+  }
+
+  private async waitForTeamCreation(operationUrl: string, maxAttempts: number = 30): Promise<CreatedTeam> {
+    const client = await this.getClient();
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between polls
+      
+      try {
+        const result = await client.api(operationUrl).get();
+        
+        if (result.status === 'succeeded' && result.targetResourceId) {
+          console.log('[PLANNER] Team creation succeeded:', result.targetResourceId);
+          // Fetch the team details
+          const team = await client.api(`/teams/${result.targetResourceId}`).get();
+          return {
+            id: team.id,
+            displayName: team.displayName,
+            description: team.description,
+            webUrl: team.webUrl
+          };
+        } else if (result.status === 'failed') {
+          throw new Error(`Team creation failed: ${result.error?.message || 'Unknown error'}`);
+        }
+        // Still in progress, continue polling
+        console.log('[PLANNER] Team creation in progress, attempt', attempt + 1);
+      } catch (pollError: any) {
+        if (pollError.statusCode === 404) {
+          // Operation completed, try to extract team ID from URL
+          const teamId = operationUrl.match(/teams\/([^/]+)/)?.[1];
+          if (teamId) {
+            const team = await client.api(`/teams/${teamId}`).get();
+            return {
+              id: team.id,
+              displayName: team.displayName,
+              description: team.description,
+              webUrl: team.webUrl
+            };
+          }
+        }
+        throw pollError;
+      }
+    }
+    
+    throw new Error('Team creation timed out');
+  }
+
+  async createChannel(teamId: string, options: {
+    displayName: string;
+    description?: string;
+    membershipType?: 'standard' | 'private' | 'shared';
+  }): Promise<CreatedChannel> {
+    try {
+      console.log('[PLANNER] Creating channel:', options.displayName, 'in team:', teamId);
+      const client = await this.getClient();
+      
+      const channelBody = {
+        displayName: options.displayName,
+        description: options.description || '',
+        membershipType: options.membershipType || 'standard'
+      };
+      
+      const channel = await client.api(`/teams/${teamId}/channels`).post(channelBody);
+      
+      console.log('[PLANNER] Channel created successfully:', channel.id);
+      return {
+        id: channel.id,
+        displayName: channel.displayName,
+        description: channel.description,
+        webUrl: channel.webUrl
+      };
+    } catch (error: any) {
+      console.error('[PLANNER] Error creating channel:', error.message);
+      
+      if (error.message?.includes('Insufficient privileges') || error.message?.includes('Authorization_RequestDenied')) {
+        throw new Error('Channel creation requires Channel.Create permission with admin consent');
+      }
+      
+      throw new Error(`Failed to create channel: ${error.message}`);
+    }
+  }
+
+  async isUserTeamMember(teamId: string, azureUserId: string): Promise<boolean> {
+    try {
+      const client = await this.getClient();
+      const response = await client.api(`/teams/${teamId}/members`)
+        .filter(`microsoft.graph.aadUserConversationMember/userId eq '${azureUserId}'`)
+        .get();
+      return response.value && response.value.length > 0;
+    } catch (error: any) {
+      console.error('[PLANNER] Error checking team membership:', error.message);
+      return false;
+    }
+  }
+
+  async addTeamMember(teamId: string, azureUserId: string, role: 'member' | 'owner' = 'member'): Promise<boolean> {
+    try {
+      console.log('[PLANNER] Adding member to team:', teamId, 'user:', azureUserId, 'role:', role);
+      const client = await this.getClient();
+      
+      await client.api(`/teams/${teamId}/members`).post({
+        '@odata.type': '#microsoft.graph.aadUserConversationMember',
+        'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${azureUserId}')`,
+        roles: role === 'owner' ? ['owner'] : []
+      });
+      
+      console.log('[PLANNER] Member added successfully');
+      return true;
+    } catch (error: any) {
+      console.error('[PLANNER] Error adding team member:', error.message);
+      
+      if (error.message?.includes('already exists')) {
+        console.log('[PLANNER] User already a member');
+        return true;
+      }
+      
+      return false;
+    }
+  }
+
+  async getTeam(teamId: string): Promise<CreatedTeam | null> {
+    try {
+      const client = await this.getClient();
+      const team = await client.api(`/teams/${teamId}`)
+        .select('id,displayName,description,webUrl')
+        .get();
+      return team;
+    } catch (error: any) {
+      console.error('[PLANNER] Error getting team:', error.message);
+      return null;
     }
   }
 
