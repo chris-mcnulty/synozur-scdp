@@ -3336,6 +3336,103 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // List available team templates
+  app.get("/api/planner/team-templates", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const templates = await plannerService.listTeamTemplates();
+      res.json(templates);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to list team templates:", error);
+      res.status(500).json({ message: "Failed to list team templates: " + error.message });
+    }
+  });
+
+  // Create a new Team
+  app.post("/api/planner/teams", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { displayName, description, templateId, ownerIds } = req.body;
+      
+      if (!displayName) {
+        return res.status(400).json({ message: "Team name is required" });
+      }
+      
+      const team = await plannerService.createTeam({
+        displayName,
+        description,
+        templateId,
+        ownerIds
+      });
+      
+      res.json(team);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create team:", error);
+      res.status(500).json({ message: "Failed to create team: " + error.message });
+    }
+  });
+
+  // Get a specific Team
+  app.get("/api/planner/teams/:teamId", requireAuth, async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const team = await plannerService.getTeam(req.params.teamId);
+      if (!team) {
+        return res.status(404).json({ message: "Team not found" });
+      }
+      res.json(team);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to get team:", error);
+      res.status(500).json({ message: "Failed to get team: " + error.message });
+    }
+  });
+
+  // Create a new Channel in a Team
+  app.post("/api/planner/teams/:teamId/channels", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { displayName, description, membershipType } = req.body;
+      
+      if (!displayName) {
+        return res.status(400).json({ message: "Channel name is required" });
+      }
+      
+      const channel = await plannerService.createChannel(req.params.teamId, {
+        displayName,
+        description,
+        membershipType
+      });
+      
+      res.json(channel);
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to create channel:", error);
+      res.status(500).json({ message: "Failed to create channel: " + error.message });
+    }
+  });
+
+  // Add a member to a Team
+  app.post("/api/planner/teams/:teamId/members", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { plannerService } = await import('./services/planner-service');
+      const { azureUserId, role } = req.body;
+      
+      if (!azureUserId) {
+        return res.status(400).json({ message: "Azure user ID is required" });
+      }
+      
+      const success = await plannerService.addTeamMember(req.params.teamId, azureUserId, role || 'member');
+      
+      if (success) {
+        res.json({ success: true, message: "Member added to team" });
+      } else {
+        res.status(500).json({ message: "Failed to add member to team" });
+      }
+    } catch (error: any) {
+      console.error("[PLANNER] Failed to add team member:", error);
+      res.status(500).json({ message: "Failed to add team member: " + error.message });
+    }
+  });
+
   // Get project's Planner connection
   app.get("/api/projects/:projectId/planner-connection", requireAuth, async (req, res) => {
     try {
