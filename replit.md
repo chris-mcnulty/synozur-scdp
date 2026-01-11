@@ -15,7 +15,9 @@ Preferred communication style: Simple, everyday language.
 - **Routing**: Wouter.
 - **State Management**: TanStack Query.
 - **Form Handling**: React Hook Form with Zod validation.
-- **UI/UX Decisions**: Refactored estimate detail tables, mobile-optimized interfaces, responsive navigation, alphabetically sorted dropdowns, reorganized navigation by user persona, prominent quote total displays with visual cues for overrides.
+- **UI/UX Decisions**: Refactored estimate detail tables, mobile-optimized interfaces, responsive navigation, alphabetically sorted dropdowns, reorganized navigation by user persona, prominent quote total displays with visual cues for overrides, dark/light mode toggle.
+- **Project Selectors**: Standardized project dropdown format using "CLIENTSHORTNAME | Project name" (e.g., "MSFT | AI Enablement") for disambiguation across similar project names. Defaults to active projects only. Client shortName stored in database with auto-generation fallback.
+- **My Projects Dashboard**: 3-tab structure (Overview, Delivery, Financials) providing action items, active assignments, and financial summary at a glance.
 
 ### Backend
 - **Runtime**: Node.js with Express.js.

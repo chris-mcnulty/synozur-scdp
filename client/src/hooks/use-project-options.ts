@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project, Client } from "@shared/schema";
+import { formatProjectLabel as formatLabel, getClientShortName } from "@/lib/project-utils";
 
 type ProjectWithClient = Project & { client: Client };
 
@@ -9,21 +10,13 @@ export interface ProjectOption {
   label: string;
   projectName: string;
   clientName: string;
-  clientShortName: string | null;
+  clientShortName: string;
   status: string;
 }
 
 interface UseProjectOptionsParams {
   includeArchived?: boolean;
   defaultToActive?: boolean;
-}
-
-function generateShortName(clientName: string): string {
-  const words = clientName.trim().split(/\s+/);
-  if (words.length === 1) {
-    return clientName.substring(0, 4).toUpperCase();
-  }
-  return words.map(w => w[0]).join('').toUpperCase().substring(0, 5);
 }
 
 export function useProjectOptions(params: UseProjectOptionsParams = {}) {
@@ -44,10 +37,10 @@ export function useProjectOptions(params: UseProjectOptionsParams = {}) {
 
     return filtered
       .map(project => {
-        const clientShortName = project.client?.shortName || generateShortName(project.client?.name || 'UNK');
+        const clientShortName = getClientShortName(project.client);
         return {
           value: project.id,
-          label: `${clientShortName} | ${project.name}`,
+          label: formatLabel(project),
           projectName: project.name,
           clientName: project.client?.name || 'Unknown',
           clientShortName,
@@ -61,15 +54,15 @@ export function useProjectOptions(params: UseProjectOptionsParams = {}) {
       });
   }, [projects, includeArchived, defaultToActive]);
 
-  const activeProjects = useMemo(() => 
+  const activeProjects = useMemo<ProjectOption[]>(() => 
     projectOptions.filter(p => p.status === 'active'),
     [projectOptions]
   );
 
-  const getProjectById = (projectId: string) => 
+  const getProjectById = (projectId: string): ProjectOption | undefined => 
     projectOptions.find(p => p.value === projectId);
 
-  const formatProjectLabel = (projectId: string) => {
+  const formatProjectLabel = (projectId: string): string => {
     const project = getProjectById(projectId);
     return project?.label || projectId;
   };

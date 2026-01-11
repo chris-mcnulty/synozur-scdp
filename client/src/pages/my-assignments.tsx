@@ -16,6 +16,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useVocabulary } from "@/lib/vocabulary-context";
+import { formatProjectLabel } from "@/lib/project-utils";
 
 // Type for assignment with joined data
 interface Assignment {
@@ -105,15 +106,20 @@ export function MyAssignments() {
   const assignments = assignmentsData?.assignments || [];
   const summary = assignmentsData?.summary;
 
-  // Get unique projects for filter
+  // Get unique projects for filter with client shortname format
   const projects = useMemo(() => {
     const projectMap = new Map();
     assignments.forEach((assignment: Assignment) => {
       if (assignment.project && !projectMap.has(assignment.project.id)) {
-        projectMap.set(assignment.project.id, assignment.project);
+        projectMap.set(assignment.project.id, {
+          ...assignment.project,
+          displayLabel: formatProjectLabel(assignment.project)
+        });
       }
     });
-    return Array.from(projectMap.values());
+    return Array.from(projectMap.values()).sort((a, b) => 
+      a.displayLabel.localeCompare(b.displayLabel)
+    );
   }, [assignments]);
 
   // Filter assignments
@@ -400,7 +406,7 @@ export function MyAssignments() {
                   <SelectItem value="all">All Projects</SelectItem>
                   {projects.map(project => (
                     <SelectItem key={project.id} value={project.id}>
-                      {project.name}
+                      {project.displayLabel}
                     </SelectItem>
                   ))}
                 </SelectContent>

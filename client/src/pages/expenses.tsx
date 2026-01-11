@@ -24,6 +24,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
+import { formatProjectLabel } from "@/lib/project-utils";
 
 const expenseFormSchema = insertExpenseSchema.omit({
   personId: true, // Server-side only
@@ -149,15 +150,15 @@ export default function Expenses() {
     queryKey: ["/api/expenses"],
   });
 
-  // Filter and sort projects: only active, alphabetically by client then project name
+  // Filter and format projects: only active, with CLIENTSHORTNAME | Project name format
   const activeProjects = useMemo(() => {
     return projects
       .filter(p => p.status === 'active')
-      .sort((a, b) => {
-        const clientCompare = a.client.name.localeCompare(b.client.name);
-        if (clientCompare !== 0) return clientCompare;
-        return a.name.localeCompare(b.name);
-      });
+      .map(p => ({
+        ...p,
+        displayLabel: formatProjectLabel(p)
+      }))
+      .sort((a, b) => a.displayLabel.localeCompare(b.displayLabel));
   }, [projects]);
 
   // Fetch users for person assignment (only for admin/PM roles)
@@ -1206,7 +1207,7 @@ export default function Expenses() {
                           <SelectContent>
                             {activeProjects.map((project) => (
                               <SelectItem key={project.id} value={project.id}>
-                                {project.client.name} - {project.name}
+                                {project.displayLabel}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1773,7 +1774,7 @@ export default function Expenses() {
                       <SelectContent>
                         {activeProjects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
-                            {project.client.name} - {project.name}
+                            {project.displayLabel}
                           </SelectItem>
                         ))}
                       </SelectContent>

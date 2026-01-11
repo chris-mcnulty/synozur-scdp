@@ -23,6 +23,7 @@ import RateManagement from "@/pages/rate-management";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
 import { MyAssignments } from "@/pages/my-assignments";
+import MyProjectsDashboard from "@/pages/my-projects-dashboard";
 import ResourceManagement from "@/pages/resource-management";
 import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
@@ -136,7 +137,7 @@ function Router() {
         {user ? <Dashboard /> : <Redirect to="/login" />}
       </Route>
       <Route path="/my-projects">
-        {user ? <Projects /> : <Redirect to="/login" />}
+        {user ? <MyProjectsDashboard /> : <Redirect to="/login" />}
       </Route>
       <Route path="/projects">
         {user ? <Projects /> : <Redirect to="/login" />}

@@ -417,6 +417,18 @@ export default function ClientDetail() {
                           />
                         </div>
                         <div className="space-y-2">
+                          <Label htmlFor="shortName">Short Name</Label>
+                          <Input
+                            id="shortName"
+                            value={editForm.shortName || ""}
+                            onChange={(e) => setEditForm({ ...editForm, shortName: e.target.value })}
+                            placeholder="e.g., MSFT, GOOG"
+                            maxLength={10}
+                            data-testid="input-edit-client-short-name"
+                          />
+                          <p className="text-xs text-muted-foreground">Abbreviated name for project dropdowns</p>
+                        </div>
+                        <div className="space-y-2">
                           <Label htmlFor="currency">Currency</Label>
                           <Select 
                             value={editForm.currency || "USD"}
@@ -618,7 +630,12 @@ export default function ClientDetail() {
                             <Building2 className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">Client Name</span>
                           </div>
-                          <p className="font-medium" data-testid="text-client-name">{client.name}</p>
+                          <p className="font-medium" data-testid="text-client-name">
+                            {client.name}
+                            {client.shortName && (
+                              <span className="ml-2 text-sm text-muted-foreground">({client.shortName})</span>
+                            )}
+                          </p>
                           
                           <div className="flex items-center space-x-2">
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
