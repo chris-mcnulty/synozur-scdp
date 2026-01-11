@@ -3977,6 +3977,189 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
       
+      // ============ IMPORT NEW TASKS FROM PLANNER ============
+      // Fetch all tasks from Planner plan and create allocations for tasks not yet synced
+      let tasksImported = 0;
+      let tasksSkipped = 0;
+      
+      if (connection.syncDirection === 'bidirectional' || connection.syncDirection === 'planner_to_constellation') {
+        try {
+          console.log('[PLANNER] Importing new tasks from Planner plan:', connection.planId);
+          const planTasks = await plannerService.listTasks(connection.planId);
+          
+          // Get project details for allocation creation
+          const project = await storage.getProject(projectId);
+          if (!project) {
+            errors.push('Project not found for task import');
+          } else {
+            // Pre-validate: ensure we have a default role for imported tasks
+            const roles = await storage.getRoles();
+            const defaultRole = roles.find(r => r.name === 'Consultant') || roles[0];
+            
+            if (!defaultRole) {
+              console.warn('[PLANNER] No default role available for task import - skipping imports');
+              errors.push('No roles configured - cannot import Planner tasks. Please configure at least one role.');
+            } else {
+              // Get default rack rate from role
+              const defaultRackRate = defaultRole.defaultRackRate?.toString() || '0';
+              const defaultCostRate = defaultRole.defaultCostRate?.toString() || null;
+              
+              for (const task of planTasks) {
+                // Use getPlannerTaskSyncByTaskId to check if already synced (idempotent)
+                const existingSync = await storage.getPlannerTaskSyncByTaskId(task.id);
+                if (existingSync) {
+                  continue; // Already synced, skip
+                }
+                
+                // Skip completed tasks by default (don't import old done tasks)
+                if (task.percentComplete === 100) {
+                  console.log('[PLANNER] Skipping completed Planner task:', task.id, task.title);
+                  tasksSkipped++;
+                  continue;
+                }
+                
+                console.log('[PLANNER] Importing new task from Planner:', task.id, task.title);
+                
+                try {
+                  // Find Constellation user from Planner assignee
+                  let personId: string | null = null;
+                  let roleId = defaultRole.id;
+                  let rackRate = defaultRackRate;
+                  let costRate = defaultCostRate;
+                  
+                  if (task.assignments) {
+                    const assigneeIds = Object.keys(task.assignments).filter(
+                      id => task.assignments![id]['@odata.type'] === '#microsoft.graph.plannerAssignment'
+                    );
+                    
+                    if (assigneeIds.length > 0) {
+                      const azureAssigneeId = assigneeIds[0];
+                      const mapping = await storage.getUserAzureMappingByAzureId(azureAssigneeId);
+                      
+                      if (mapping) {
+                        personId = mapping.userId;
+                        // Get user's role and rates if available
+                        const user = await storage.getUser(mapping.userId);
+                        if (user?.roleId) {
+                          roleId = user.roleId;
+                        }
+                        // Get person's billing rate
+                        const userRates = await storage.getUserRates(mapping.userId);
+                        if (userRates.billingRate) {
+                          rackRate = userRates.billingRate.toString();
+                        }
+                        if (userRates.costRate) {
+                          costRate = userRates.costRate.toString();
+                        }
+                      } else if (connection.autoAddMembers) {
+                        // Auto-create user from Azure AD
+                        try {
+                          const azureUser = await plannerService.findUserById(azureAssigneeId);
+                          if (azureUser) {
+                            console.log('[PLANNER] Auto-creating resource for Planner task assignee:', azureUser.displayName);
+                            const newUser = await storage.createUser({
+                              email: azureUser.mail || azureUser.userPrincipalName,
+                              name: azureUser.displayName || 'Unknown User',
+                              firstName: azureUser.displayName?.split(' ')[0] || '',
+                              lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
+                              role: 'employee',
+                              canLogin: false,
+                              isAssignable: true,
+                              isActive: true
+                            });
+                            
+                            await storage.createUserAzureMapping({
+                              userId: newUser.id,
+                              azureUserId: azureUser.id,
+                              azureUserPrincipalName: azureUser.userPrincipalName,
+                              azureDisplayName: azureUser.displayName,
+                              mappingMethod: 'auto_created_from_planner_import',
+                              verifiedAt: new Date()
+                            });
+                            
+                            personId = newUser.id;
+                          }
+                        } catch (createErr: any) {
+                          console.warn('[PLANNER] Failed to auto-create user for task import:', createErr.message);
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Determine task status from percentComplete
+                  let status = 'open';
+                  if (task.percentComplete > 0 && task.percentComplete < 100) {
+                    status = 'in_progress';
+                  }
+                  
+                  // Create new allocation with properly derived rates
+                  const allocationData = {
+                    projectId,
+                    taskDescription: task.title,
+                    personId,
+                    roleId,
+                    hours: '8', // Default 8 hours for imported tasks
+                    rackRate,
+                    costRate,
+                    pricingMode: personId ? 'person' as const : 'role' as const,
+                    status,
+                    plannedStartDate: task.startDateTime ? task.startDateTime.split('T')[0] : null,
+                    plannedEndDate: task.dueDateTime ? task.dueDateTime.split('T')[0] : null,
+                    notes: `Imported from Microsoft Planner`,
+                    weekNumber: 0
+                  };
+                  
+                  const newAllocation = await storage.createProjectAllocation(allocationData);
+                  
+                  // Create sync record to prevent re-importing
+                  await storage.createPlannerTaskSync({
+                    connectionId: connection.id,
+                    allocationId: newAllocation.id,
+                    taskId: task.id,
+                    taskTitle: task.title,
+                    bucketId: task.bucketId || null,
+                    syncStatus: 'synced',
+                    remoteEtag: task['@odata.etag'] || null
+                  });
+                  
+                  // Auto-create engagement if person is assigned
+                  if (personId) {
+                    await storage.ensureProjectEngagement(projectId, personId);
+                  }
+                  
+                  tasksImported++;
+                  console.log('[PLANNER] Successfully imported task:', task.title, '→ allocation:', newAllocation.id);
+                } catch (importErr: any) {
+                  console.error('[PLANNER] Failed to import task:', task.id, importErr.message);
+                  errors.push(`Failed to import task "${task.title}": ${importErr.message}`);
+                  
+                  // Create sync record with null allocationId to mark this task as attempted
+                  // This prevents retry spam on subsequent syncs
+                  try {
+                    await storage.createPlannerTaskSync({
+                      connectionId: connection.id,
+                      allocationId: null, // No allocation - just tracking the failure
+                      taskId: task.id,
+                      taskTitle: task.title,
+                      bucketId: task.bucketId || null,
+                      syncStatus: 'import_failed',
+                      syncError: importErr.message,
+                      remoteEtag: task['@odata.etag'] || null
+                    });
+                    console.log('[PLANNER] Recorded failed import for task:', task.id);
+                  } catch (syncRecordErr: any) {
+                    console.warn('[PLANNER] Could not record failed task:', syncRecordErr.message);
+                  }
+                }
+              }
+            }
+          }
+        } catch (importListErr: any) {
+          console.error('[PLANNER] Failed to fetch tasks for import:', importListErr.message);
+          errors.push(`Failed to fetch Planner tasks: ${importListErr.message}`);
+        }
+      }
+      
       // Update connection sync status
       await storage.updateProjectPlannerConnection(connection.id, {
         lastSyncAt: new Date(),
@@ -3990,6 +4173,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         updated, 
         inboundUpdated,
         inboundDeleted,
+        tasksImported,
         errors: errors.length > 0 ? errors : undefined 
       });
     } catch (error: any) {

@@ -914,6 +914,7 @@ export interface IStorage {
   deleteProjectPlannerConnection(projectId: string): Promise<void>;
   
   getPlannerTaskSync(allocationId: string): Promise<PlannerTaskSync | undefined>;
+  getPlannerTaskSyncByTaskId(taskId: string): Promise<PlannerTaskSync | undefined>;
   getPlannerTaskSyncsByConnection(connectionId: string): Promise<PlannerTaskSync[]>;
   createPlannerTaskSync(sync: InsertPlannerTaskSync): Promise<PlannerTaskSync>;
   updatePlannerTaskSync(id: string, updates: Partial<InsertPlannerTaskSync>): Promise<PlannerTaskSync>;
@@ -9467,6 +9468,13 @@ export class DatabaseStorage implements IStorage {
     const [sync] = await db.select()
       .from(plannerTaskSync)
       .where(eq(plannerTaskSync.allocationId, allocationId));
+    return sync || undefined;
+  }
+
+  async getPlannerTaskSyncByTaskId(taskId: string): Promise<PlannerTaskSync | undefined> {
+    const [sync] = await db.select()
+      .from(plannerTaskSync)
+      .where(eq(plannerTaskSync.taskId, taskId));
     return sync || undefined;
   }
 

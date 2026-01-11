@@ -1977,10 +1977,11 @@ export type InsertProjectPlannerConnection = z.infer<typeof insertProjectPlanner
 export type ProjectPlannerConnection = typeof projectPlannerConnections.$inferSelect;
 
 // Planner task sync tracking - maps Constellation allocations to Planner tasks
+// allocationId is nullable to allow tracking failed imports without creating allocations
 export const plannerTaskSync = pgTable("planner_task_sync", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   connectionId: varchar("connection_id").notNull().references(() => projectPlannerConnections.id, { onDelete: 'cascade' }),
-  allocationId: varchar("allocation_id").notNull().references(() => projectAllocations.id, { onDelete: 'cascade' }),
+  allocationId: varchar("allocation_id").references(() => projectAllocations.id, { onDelete: 'cascade' }), // Nullable for failed imports
   
   // Planner task details
   taskId: varchar("task_id", { length: 255 }).notNull(), // Microsoft Planner Task ID
@@ -1990,7 +1991,7 @@ export const plannerTaskSync = pgTable("planner_task_sync", {
   
   // Sync tracking
   lastSyncedAt: timestamp("last_synced_at").notNull().default(sql`now()`),
-  syncStatus: text("sync_status").notNull().default('synced'), // synced, pending_outbound, pending_inbound, conflict, error
+  syncStatus: text("sync_status").notNull().default('synced'), // synced, pending_outbound, pending_inbound, conflict, error, import_failed
   syncError: text("sync_error"),
   
   // Version tracking for conflict detection
