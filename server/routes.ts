@@ -12351,7 +12351,11 @@ export async function registerRoutes(app: Express): Promise<void> {
             presentedTotal += referralMarkup;
           }
 
-          const netRevenue = profit - referralFeeAmount;
+          // Net revenue stays the same as base profit because:
+          // - The referral fee is ADDED to the client quote (presentedTotal)
+          // - The referral fee is PAID to the referrer (a pass-through expense)
+          // - These cancel out, so profit remains unchanged
+          const netRevenue = profit; // Profit stays the same - referral is a pass-through
           
           updateData.referralFeeAmount = String(referralFeeAmount);
           updateData.netRevenue = String(netRevenue);
