@@ -2470,6 +2470,265 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Comprehensive Financial Comparison Report - Revenue, Cost, Profit by Client/Project
+  app.get("/api/reports/financial-comparison", requireAuth, async (req, res) => {
+    try {
+      // Only executives, admins, and billing-admins can view financial comparison reports
+      if (!["admin", "billing-admin", "executive", "pm"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view financial reports" });
+      }
+
+      const { startDate, endDate, clientIds, status, pmId, quickFilter } = req.query;
+      
+      // Parse client IDs if provided
+      const clientIdList = clientIds ? (clientIds as string).split(',') : [];
+      
+      // Fetch all necessary data
+      const allProjects = await db.select({
+        id: projects.id,
+        name: projects.name,
+        status: projects.status,
+        clientId: projects.clientId,
+        clientName: clients.name,
+        clientShortName: clients.shortName,
+        pm: projects.pm,
+        pmName: users.name,
+        budget: projects.budget,
+        createdAt: projects.createdAt,
+        startDate: projects.startDate,
+        endDate: projects.endDate,
+        estimateId: projects.estimateId
+      })
+      .from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(users, eq(projects.pm, users.id));
+      
+      // Apply filters
+      let filteredProjects = allProjects;
+      
+      if (clientIdList.length > 0) {
+        filteredProjects = filteredProjects.filter(p => clientIdList.includes(p.clientId || ''));
+      }
+      
+      if (status && status !== 'all') {
+        filteredProjects = filteredProjects.filter(p => p.status === status);
+      }
+      
+      if (pmId && pmId !== 'all') {
+        filteredProjects = filteredProjects.filter(p => p.pm === pmId);
+      }
+      
+      // Fetch invoice lines for billed amounts (grouped by project)
+      const invoiceData = await db.select({
+        projectId: invoiceLines.projectId,
+        amount: invoiceLines.amount,
+        billedAmount: invoiceLines.billedAmount,
+        batchStatus: invoiceBatches.status,
+        createdAt: invoiceBatches.startDate
+      })
+      .from(invoiceLines)
+      .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId));
+      
+      // Fetch time entries for labor cost calculation
+      const timeData = await db.select({
+        projectId: timeEntries.projectId,
+        personId: timeEntries.personId,
+        hours: timeEntries.hours,
+        date: timeEntries.date,
+        personName: users.name,
+        roleName: roles.name,
+        costRate: users.costRate
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.personId, users.id))
+      .leftJoin(roles, eq(users.roleId, roles.id));
+      
+      // Fetch expenses
+      const expenseData = await db.select({
+        projectId: expenses.projectId,
+        amount: expenses.amount,
+        status: expenses.status,
+        date: expenses.date
+      })
+      .from(expenses);
+      
+      // Fetch estimates for original estimate amounts
+      const estimateData = await db.select({
+        id: estimates.id,
+        totalFees: estimates.totalFees,
+        totalCost: estimates.totalCost,
+        totalMargin: estimates.totalMargin
+      })
+      .from(estimates);
+      
+      // Fetch project milestones for completion tracking
+      const milestoneData = await db.select({
+        projectId: projectMilestones.projectId,
+        status: projectMilestones.status
+      })
+      .from(projectMilestones);
+      
+      // Build project financial data
+      const projectFinancials = filteredProjects.map(project => {
+        // Calculate billed amount from finalized invoices
+        const projectInvoices = invoiceData.filter(i => 
+          i.projectId === project.id && 
+          i.batchStatus === 'finalized'
+        );
+        const billedAmount = projectInvoices.reduce((sum, inv) => 
+          sum + Number(inv.billedAmount || inv.amount || 0), 0
+        );
+        
+        // Calculate labor cost from time entries
+        const projectTimeEntries = timeData.filter(t => t.projectId === project.id);
+        let laborCost = 0;
+        projectTimeEntries.forEach(entry => {
+          const hours = Number(entry.hours || 0);
+          const costRate = Number(entry.costRate || 75); // Default cost rate if not set
+          laborCost += hours * costRate;
+        });
+        
+        // Calculate expense cost (approved expenses only)
+        const projectExpenses = expenseData.filter(e => 
+          e.projectId === project.id && 
+          e.status === 'approved'
+        );
+        const expenseCost = projectExpenses.reduce((sum, exp) => 
+          sum + Number(exp.amount || 0), 0
+        );
+        
+        // Total actual cost
+        const actualCost = laborCost + expenseCost;
+        
+        // Get estimate data
+        const estimate = estimateData.find(e => e.id === project.estimateId);
+        const originalEstimate = estimate ? Number(estimate.totalFees || 0) : 0;
+        const estimatedCost = estimate ? Number(estimate.totalCost || 0) : 0;
+        
+        // SOW amount is the project budget
+        const sowAmount = Number(project.budget || 0);
+        
+        // Current estimate (could be updated from estimate or budget)
+        const currentEstimate = sowAmount > 0 ? sowAmount : originalEstimate;
+        
+        // Calculate profit/margin
+        const profit = billedAmount - actualCost;
+        const profitMargin = billedAmount > 0 ? (profit / billedAmount) * 100 : 0;
+        
+        // Budget utilization
+        const budgetUtilization = currentEstimate > 0 ? (actualCost / currentEstimate) * 100 : 0;
+        
+        // Calculate unbilled amount
+        const unbilledAmount = Math.max(0, currentEstimate - billedAmount);
+        
+        // Variance from estimate
+        const variance = currentEstimate - billedAmount;
+        
+        // Milestone completion tracking
+        const projectMilestonesData = milestoneData.filter(m => m.projectId === project.id);
+        const totalMilestones = projectMilestonesData.length;
+        const completedMilestones = projectMilestonesData.filter(m => 
+          m.status === 'completed' || m.status === 'invoiced'
+        ).length;
+        const completionPercentage = totalMilestones > 0 
+          ? Math.round((completedMilestones / totalMilestones) * 100) 
+          : 0;
+        
+        // Determine health score
+        let healthScore: 'green' | 'yellow' | 'red' = 'green';
+        if (budgetUtilization > 100 || profitMargin < 0) {
+          healthScore = 'red';
+        } else if (budgetUtilization > 80 || profitMargin < 15) {
+          healthScore = 'yellow';
+        }
+        
+        // Determine trend (simplified - based on recent vs older cost accumulation)
+        const trend: 'up' | 'down' | 'stable' = 'stable';
+        
+        // Team breakdown by person
+        const teamMap = new Map<string, { personId: string; personName: string; hours: number; cost: number; billed: number }>();
+        projectTimeEntries.forEach(entry => {
+          const personId = entry.personId || 'unknown';
+          const existing = teamMap.get(personId) || { 
+            personId, 
+            personName: entry.personName || 'Unknown', 
+            hours: 0, 
+            cost: 0, 
+            billed: 0 
+          };
+          const hours = Number(entry.hours || 0);
+          existing.hours += hours;
+          existing.cost += hours * Number(entry.costRate || 75);
+          teamMap.set(personId, existing);
+        });
+        
+        return {
+          projectId: project.id,
+          projectName: project.name,
+          clientName: project.clientName || 'Unknown Client',
+          status: project.status || 'active',
+          pmName: project.pmName || 'Unassigned',
+          originalEstimate,
+          currentEstimate,
+          sowAmount,
+          actualCost,
+          billedAmount,
+          unbilledAmount,
+          variance,
+          profitMargin: Math.round(profitMargin * 10) / 10,
+          budgetUtilization: Math.round(budgetUtilization * 10) / 10,
+          completionPercentage,
+          timeEntries: projectTimeEntries.length,
+          expenses: projectExpenses.length,
+          adjustments: 0,
+          lastActivity: project.createdAt ? new Date(project.createdAt).toISOString() : new Date().toISOString(),
+          healthScore,
+          trend,
+          milestones: {
+            total: totalMilestones,
+            completed: completedMilestones
+          },
+          teamBreakdown: Array.from(teamMap.values()),
+          monthlyData: []
+        };
+      });
+      
+      // Apply quick filters
+      let finalProjects = projectFinancials;
+      if (quickFilter === 'at-risk') {
+        finalProjects = projectFinancials.filter(p => p.healthScore === 'red');
+      } else if (quickFilter === 'on-track') {
+        finalProjects = projectFinancials.filter(p => p.healthScore === 'green');
+      } else if (quickFilter === 'unbilled') {
+        finalProjects = projectFinancials.filter(p => p.unbilledAmount > 0);
+      }
+      
+      // Calculate summary metrics
+      const summary = {
+        totalEstimated: finalProjects.reduce((sum, p) => sum + p.currentEstimate, 0),
+        totalContracted: finalProjects.reduce((sum, p) => sum + p.sowAmount, 0),
+        totalActualCost: finalProjects.reduce((sum, p) => sum + p.actualCost, 0),
+        totalBilled: finalProjects.reduce((sum, p) => sum + p.billedAmount, 0),
+        totalProfit: finalProjects.reduce((sum, p) => sum + (p.billedAmount - p.actualCost), 0),
+        averageMargin: finalProjects.length > 0 
+          ? finalProjects.reduce((sum, p) => sum + p.profitMargin, 0) / finalProjects.length 
+          : 0,
+        projectsAtRisk: finalProjects.filter(p => p.healthScore === 'red').length,
+        projectsOnTrack: finalProjects.filter(p => p.healthScore === 'green').length,
+        unbilledAmount: finalProjects.reduce((sum, p) => sum + p.unbilledAmount, 0),
+        overdueAmount: 0 // Would require payment tracking
+      };
+      
+      res.json({
+        summary,
+        projects: finalProjects
+      });
+    } catch (error) {
+      console.error("Error fetching financial comparison data:", error);
+      res.status(500).json({ message: "Failed to fetch financial comparison data" });
+    }
+  });
+
   // Comprehensive Resource Utilization API - Cross-project view with vocabulary integration
   app.get("/api/reports/resource-utilization", requireAuth, async (req, res) => {
     try {
