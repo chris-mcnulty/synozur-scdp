@@ -4041,26 +4041,32 @@ export async function registerRoutes(app: Express): Promise<void> {
                       
                       if (mapping) {
                         personId = mapping.userId;
-                        // Get user's role - this is the primary source for role assignment
                         const user = await storage.getUser(mapping.userId);
+                        console.log('[PLANNER] Found matching user:', user?.name, 'roleId:', user?.roleId);
+                        
+                        // PRIORITY 1: Person's specific rates ALWAYS take precedence
+                        const userRates = await storage.getUserRates(mapping.userId);
+                        if (userRates.billingRate && userRates.billingRate > 0) {
+                          rackRate = userRates.billingRate.toString();
+                          console.log('[PLANNER] Using person-specific billing rate:', rackRate);
+                        }
+                        if (userRates.costRate && userRates.costRate > 0) {
+                          costRate = userRates.costRate.toString();
+                          console.log('[PLANNER] Using person-specific cost rate:', costRate);
+                        }
+                        
+                        // PRIORITY 2: Person's assigned role
                         if (user?.roleId) {
                           roleId = user.roleId;
-                          console.log('[PLANNER] Using person role:', roleId, 'for user:', user.name);
-                          // Get role's rates as baseline
                           const userRole = roles.find(r => r.id === user.roleId);
-                          if (userRole) {
-                            rackRate = userRole.defaultRackRate?.toString() || '0';
-                            costRate = userRole.defaultCostRate?.toString() || null;
+                          console.log('[PLANNER] Using person role:', userRole?.name, 'for user:', user.name);
+                          // Only use role rates if person doesn't have specific rates
+                          if (!rackRate && userRole?.defaultRackRate) {
+                            rackRate = userRole.defaultRackRate.toString();
                           }
-                        }
-                        // Override with person-specific rates if they have them
-                        const userRates = await storage.getUserRates(mapping.userId);
-                        if (userRates.billingRate) {
-                          rackRate = userRates.billingRate.toString();
-                          console.log('[PLANNER] Using person billing rate:', rackRate);
-                        }
-                        if (userRates.costRate) {
-                          costRate = userRates.costRate.toString();
+                          if (!costRate && userRole?.defaultCostRate) {
+                            costRate = userRole.defaultCostRate.toString();
+                          }
                         }
                       } else if (connection.autoAddMembers) {
                         // Auto-create user from Azure AD
