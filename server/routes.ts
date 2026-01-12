@@ -3992,17 +3992,20 @@ export async function registerRoutes(app: Express): Promise<void> {
           if (!project) {
             errors.push('Project not found for task import');
           } else {
-            // Pre-validate: ensure we have a default role for imported tasks
+            // Pre-validate: ensure we have a fallback role for imported tasks (only used if person has no role)
             const roles = await storage.getRoles();
-            const defaultRole = roles.find(r => r.name === 'Consultant') || roles[0];
+            // Prefer common consulting roles in order of preference
+            const fallbackRole = roles.find(r => r.name === 'Consultant') || 
+                                 roles.find(r => r.name === 'Senior Consultant') ||
+                                 roles.find(r => r.name === 'Developer') ||
+                                 roles.find(r => r.name === 'Analyst') ||
+                                 roles[roles.length - 1]; // Last resort: last role in list
             
-            if (!defaultRole) {
-              console.warn('[PLANNER] No default role available for task import - skipping imports');
+            if (!fallbackRole) {
+              console.warn('[PLANNER] No fallback role available for task import - skipping imports');
               errors.push('No roles configured - cannot import Planner tasks. Please configure at least one role.');
             } else {
-              // Get default rack rate from role
-              const defaultRackRate = defaultRole.defaultRackRate?.toString() || '0';
-              const defaultCostRate = defaultRole.defaultCostRate?.toString() || null;
+              console.log('[PLANNER] Fallback role for imports (if person has no role):', fallbackRole.name);
               
               for (const task of planTasks) {
                 // Use getPlannerTaskSyncByTaskId to check if already synced (idempotent)
@@ -4023,9 +4026,9 @@ export async function registerRoutes(app: Express): Promise<void> {
                 try {
                   // Find Constellation user from Planner assignee
                   let personId: string | null = null;
-                  let roleId = defaultRole.id;
-                  let rackRate = defaultRackRate;
-                  let costRate = defaultCostRate;
+                  let roleId: string | null = null; // Start with null - derive from person or fallback
+                  let rackRate: string | null = null;
+                  let costRate: string | null = null;
                   
                   if (task.assignments) {
                     const assigneeIds = Object.keys(task.assignments).filter(
@@ -4038,15 +4041,23 @@ export async function registerRoutes(app: Express): Promise<void> {
                       
                       if (mapping) {
                         personId = mapping.userId;
-                        // Get user's role and rates if available
+                        // Get user's role - this is the primary source for role assignment
                         const user = await storage.getUser(mapping.userId);
                         if (user?.roleId) {
                           roleId = user.roleId;
+                          console.log('[PLANNER] Using person role:', roleId, 'for user:', user.name);
+                          // Get role's rates as baseline
+                          const userRole = roles.find(r => r.id === user.roleId);
+                          if (userRole) {
+                            rackRate = userRole.defaultRackRate?.toString() || '0';
+                            costRate = userRole.defaultCostRate?.toString() || null;
+                          }
                         }
-                        // Get person's billing rate
+                        // Override with person-specific rates if they have them
                         const userRates = await storage.getUserRates(mapping.userId);
                         if (userRates.billingRate) {
                           rackRate = userRates.billingRate.toString();
+                          console.log('[PLANNER] Using person billing rate:', rackRate);
                         }
                         if (userRates.costRate) {
                           costRate = userRates.costRate.toString();
@@ -4078,12 +4089,24 @@ export async function registerRoutes(app: Express): Promise<void> {
                             });
                             
                             personId = newUser.id;
+                            // New user - use fallback role
+                            roleId = fallbackRole.id;
+                            rackRate = fallbackRole.defaultRackRate?.toString() || '0';
+                            costRate = fallbackRole.defaultCostRate?.toString() || null;
                           }
                         } catch (createErr: any) {
                           console.warn('[PLANNER] Failed to auto-create user for task import:', createErr.message);
                         }
                       }
                     }
+                  }
+                  
+                  // If no role derived from person, use fallback role
+                  if (!roleId) {
+                    roleId = fallbackRole.id;
+                    rackRate = fallbackRole.defaultRackRate?.toString() || '0';
+                    costRate = fallbackRole.defaultCostRate?.toString() || null;
+                    console.log('[PLANNER] Using fallback role:', fallbackRole.name);
                   }
                   
                   // Determine task status from percentComplete
