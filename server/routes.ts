@@ -3919,47 +3919,72 @@ export async function registerRoutes(app: Express): Promise<void> {
                   pricingMode: 'person'
                 });
                 inboundUpdated++;
-              } else if (connection.autoAddMembers) {
-                // No mapping - try to look up user in Azure AD and create as named resource
+              } else {
+                // No mapping - try to look up user in Azure AD and match to existing Constellation user
                 try {
                   const azureUser = await plannerService.findUserById(plannerAssigneeId);
                   if (azureUser) {
-                    console.log('[PLANNER] Auto-creating named resource for Azure user:', azureUser.displayName, azureUser.mail);
+                    const email = azureUser.mail || azureUser.userPrincipalName;
+                    console.log('[PLANNER] Looking up Azure user by email:', azureUser.displayName, email);
                     
-                    // Create user as named resource (canLogin: false)
-                    const newUser = await storage.createUser({
-                      email: azureUser.mail || azureUser.userPrincipalName,
-                      name: azureUser.displayName || 'Unknown User',
-                      firstName: azureUser.displayName?.split(' ')[0] || '',
-                      lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
-                      role: 'employee',
-                      canLogin: false, // Named resource - no login
-                      isAssignable: true,
-                      isActive: true
-                    });
-                    
-                    // Create Azure mapping
-                    await storage.createUserAzureMapping({
-                      userId: newUser.id,
-                      azureUserId: azureUser.id,
-                      azureUserPrincipalName: azureUser.userPrincipalName,
-                      azureDisplayName: azureUser.displayName,
-                      mappingMethod: 'auto_created_from_planner',
-                      verifiedAt: new Date()
-                    });
-                    
-                    // Assign to allocation
-                    await storage.updateProjectAllocation(allocation.id, {
-                      personId: newUser.id,
-                      pricingMode: 'person'
-                    });
-                    
-                    console.log('[PLANNER] Created named resource and assigned:', newUser.id, newUser.name);
-                    inboundUpdated++;
+                    // First check if user already exists in Constellation by email
+                    const existingUser = await storage.getUserByEmail(email);
+                    if (existingUser) {
+                      console.log('[PLANNER] Found existing Constellation user by email:', existingUser.name);
+                      
+                      // Create Azure mapping for future syncs
+                      await storage.createUserAzureMapping({
+                        userId: existingUser.id,
+                        azureUserId: azureUser.id,
+                        azureUserPrincipalName: azureUser.userPrincipalName,
+                        azureDisplayName: azureUser.displayName,
+                        mappingMethod: 'auto_discovered_from_planner_sync',
+                        verifiedAt: new Date()
+                      });
+                      
+                      // Assign to allocation
+                      await storage.updateProjectAllocation(allocation.id, {
+                        personId: existingUser.id,
+                        pricingMode: 'person'
+                      });
+                      inboundUpdated++;
+                    } else if (connection.autoAddMembers) {
+                      // No existing user - create as named resource
+                      console.log('[PLANNER] Auto-creating named resource for Azure user:', azureUser.displayName);
+                      const newUser = await storage.createUser({
+                        email: email,
+                        name: azureUser.displayName || 'Unknown User',
+                        firstName: azureUser.displayName?.split(' ')[0] || '',
+                        lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
+                        role: 'employee',
+                        canLogin: false, // Named resource - no login
+                        isAssignable: true,
+                        isActive: true
+                      });
+                      
+                      // Create Azure mapping
+                      await storage.createUserAzureMapping({
+                        userId: newUser.id,
+                        azureUserId: azureUser.id,
+                        azureUserPrincipalName: azureUser.userPrincipalName,
+                        azureDisplayName: azureUser.displayName,
+                        mappingMethod: 'auto_created_from_planner',
+                        verifiedAt: new Date()
+                      });
+                      
+                      // Assign to allocation
+                      await storage.updateProjectAllocation(allocation.id, {
+                        personId: newUser.id,
+                        pricingMode: 'person'
+                      });
+                      
+                      console.log('[PLANNER] Created named resource and assigned:', newUser.id, newUser.name);
+                      inboundUpdated++;
+                    }
                   }
-                } catch (createErr: any) {
-                  console.warn('[PLANNER] Failed to auto-create user from Planner:', createErr.message);
-                  errors.push(`Could not create user from Planner assignee: ${createErr.message}`);
+                } catch (lookupErr: any) {
+                  console.warn('[PLANNER] Failed to lookup/create user from Planner:', lookupErr.message);
+                  errors.push(`Could not match/create user from Planner assignee: ${lookupErr.message}`);
                 }
               }
             }
