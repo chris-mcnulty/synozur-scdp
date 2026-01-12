@@ -4042,7 +4042,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                       if (mapping) {
                         personId = mapping.userId;
                         const user = await storage.getUser(mapping.userId);
-                        console.log('[PLANNER] Found matching user:', user?.name, 'roleId:', user?.roleId);
+                        console.log('[PLANNER] Found matching user via Azure mapping:', user?.name, 'roleId:', user?.roleId);
                         
                         // PRIORITY 1: Person's specific rates ALWAYS take precedence
                         const userRates = await storage.getUserRates(mapping.userId);
@@ -4068,40 +4068,85 @@ export async function registerRoutes(app: Express): Promise<void> {
                             costRate = userRole.defaultCostRate.toString();
                           }
                         }
-                      } else if (connection.autoAddMembers) {
-                        // Auto-create user from Azure AD
+                      } else {
+                        // No Azure mapping - try to find user by email from Azure AD
+                        console.log('[PLANNER] No Azure mapping for:', azureAssigneeId, '- attempting email match');
                         try {
                           const azureUser = await plannerService.findUserById(azureAssigneeId);
                           if (azureUser) {
-                            console.log('[PLANNER] Auto-creating resource for Planner task assignee:', azureUser.displayName);
-                            const newUser = await storage.createUser({
-                              email: azureUser.mail || azureUser.userPrincipalName,
-                              name: azureUser.displayName || 'Unknown User',
-                              firstName: azureUser.displayName?.split(' ')[0] || '',
-                              lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
-                              role: 'employee',
-                              canLogin: false,
-                              isAssignable: true,
-                              isActive: true
-                            });
+                            const email = azureUser.mail || azureUser.userPrincipalName;
+                            console.log('[PLANNER] Azure user email:', email);
                             
-                            await storage.createUserAzureMapping({
-                              userId: newUser.id,
-                              azureUserId: azureUser.id,
-                              azureUserPrincipalName: azureUser.userPrincipalName,
-                              azureDisplayName: azureUser.displayName,
-                              mappingMethod: 'auto_created_from_planner_import',
-                              verifiedAt: new Date()
-                            });
-                            
-                            personId = newUser.id;
-                            // New user - use fallback role
-                            roleId = fallbackRole.id;
-                            rackRate = fallbackRole.defaultRackRate?.toString() || '0';
-                            costRate = fallbackRole.defaultCostRate?.toString() || null;
+                            // Try to find existing Constellation user by email
+                            const existingUser = await storage.getUserByEmail(email);
+                            if (existingUser) {
+                              console.log('[PLANNER] Found existing Constellation user by email:', existingUser.name);
+                              personId = existingUser.id;
+                              
+                              // Create the Azure mapping for future syncs
+                              await storage.createUserAzureMapping({
+                                userId: existingUser.id,
+                                azureUserId: azureUser.id,
+                                azureUserPrincipalName: azureUser.userPrincipalName,
+                                azureDisplayName: azureUser.displayName,
+                                mappingMethod: 'auto_discovered_from_planner_import',
+                                verifiedAt: new Date()
+                              });
+                              
+                              // Get user's rates
+                              const existingUserRates = await storage.getUserRates(existingUser.id);
+                              if (existingUserRates.billingRate && existingUserRates.billingRate > 0) {
+                                rackRate = existingUserRates.billingRate.toString();
+                                console.log('[PLANNER] Using person-specific billing rate:', rackRate);
+                              }
+                              if (existingUserRates.costRate && existingUserRates.costRate > 0) {
+                                costRate = existingUserRates.costRate.toString();
+                              }
+                              
+                              // Get user's role
+                              if (existingUser.roleId) {
+                                roleId = existingUser.roleId;
+                                const existingUserRole = roles.find(r => r.id === existingUser.roleId);
+                                console.log('[PLANNER] Using person role:', existingUserRole?.name);
+                                if (!rackRate && existingUserRole?.defaultRackRate) {
+                                  rackRate = existingUserRole.defaultRackRate.toString();
+                                }
+                                if (!costRate && existingUserRole?.defaultCostRate) {
+                                  costRate = existingUserRole.defaultCostRate.toString();
+                                }
+                              }
+                            } else if (connection.autoAddMembers) {
+                              // No existing user found - auto-create from Azure AD
+                              console.log('[PLANNER] Auto-creating resource for Planner task assignee:', azureUser.displayName);
+                              const newUser = await storage.createUser({
+                                email: azureUser.mail || azureUser.userPrincipalName,
+                                name: azureUser.displayName || 'Unknown User',
+                                firstName: azureUser.displayName?.split(' ')[0] || '',
+                                lastName: azureUser.displayName?.split(' ').slice(1).join(' ') || '',
+                                role: 'employee',
+                                canLogin: false,
+                                isAssignable: true,
+                                isActive: true
+                              });
+                              
+                              await storage.createUserAzureMapping({
+                                userId: newUser.id,
+                                azureUserId: azureUser.id,
+                                azureUserPrincipalName: azureUser.userPrincipalName,
+                                azureDisplayName: azureUser.displayName,
+                                mappingMethod: 'auto_created_from_planner_import',
+                                verifiedAt: new Date()
+                              });
+                              
+                              personId = newUser.id;
+                              // New user - use fallback role
+                              roleId = fallbackRole.id;
+                              rackRate = fallbackRole.defaultRackRate?.toString() || '0';
+                              costRate = fallbackRole.defaultCostRate?.toString() || null;
+                            }
                           }
-                        } catch (createErr: any) {
-                          console.warn('[PLANNER] Failed to auto-create user for task import:', createErr.message);
+                        } catch (lookupErr: any) {
+                          console.warn('[PLANNER] Failed to lookup/create user for task import:', lookupErr.message);
                         }
                       }
                     }
