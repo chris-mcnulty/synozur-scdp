@@ -256,6 +256,7 @@ export interface IStorage {
   getUserActiveEngagements(userId: string): Promise<(ProjectEngagement & { project: Project })[]>;
   createProjectEngagement(engagement: InsertProjectEngagement): Promise<ProjectEngagement>;
   updateProjectEngagement(id: string, updates: Partial<InsertProjectEngagement>): Promise<ProjectEngagement>;
+  deleteProjectEngagement(id: string): Promise<void>;
   ensureProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement>;
   markEngagementComplete(projectId: string, userId: string, completedBy: string, notes?: string): Promise<ProjectEngagement>;
   checkUserHasActiveAllocations(projectId: string, userId: string): Promise<boolean>;
@@ -5141,6 +5142,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(projectEngagements.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteProjectEngagement(id: string): Promise<void> {
+    await db.delete(projectEngagements).where(eq(projectEngagements.id, id));
   }
 
   async ensureProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement> {

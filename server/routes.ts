@@ -3182,6 +3182,17 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Delete a team membership (for cleaning up erroneous entries like "Unknown User")
+  app.delete("/api/projects/:projectId/engagements/:engagementId", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      await storage.deleteProjectEngagement(req.params.engagementId);
+      res.status(204).send();
+    } catch (error: any) {
+      console.error("[ERROR] Failed to delete engagement:", error);
+      res.status(500).json({ message: "Failed to delete team membership" });
+    }
+  });
+
   // Get user's active engagements (projects they're actively working on)
   app.get("/api/users/:userId/active-engagements", requireAuth, async (req, res) => {
     try {

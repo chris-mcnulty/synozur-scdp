@@ -1239,6 +1239,28 @@ export default function ProjectDetail() {
     }
   });
 
+  const deleteEngagementMutation = useMutation({
+    mutationFn: async (engagementId: string) => {
+      return apiRequest(`/api/projects/${id}/engagements/${engagementId}`, {
+        method: "DELETE"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+      toast({
+        title: "Membership Deleted",
+        description: "Team membership has been removed"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete membership",
+        variant: "destructive"
+      });
+    }
+  });
+
   const handleImportFile = async () => {
     if (!importFile) {
       setImportError("Please select a file");
@@ -2627,29 +2649,45 @@ export default function ProjectDetail() {
                             {engagement.completedAt ? format(new Date(engagement.completedAt), "MMM d, yyyy") : '—'}
                           </TableCell>
                           <TableCell>
-                            {engagement.status === 'active' ? (
+                            <div className="flex items-center gap-2">
+                              {engagement.status === 'active' ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleCompleteEngagement(engagement.userId, engagement.user?.name || 'Unknown User')}
+                                  disabled={completeEngagementMutation.isPending}
+                                  data-testid={`button-complete-engagement-${engagement.userId}`}
+                                >
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                  Mark Complete
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => reactivateEngagementMutation.mutate(engagement.userId)}
+                                  disabled={reactivateEngagementMutation.isPending}
+                                  data-testid={`button-reactivate-engagement-${engagement.userId}`}
+                                >
+                                  <Activity className="w-3 h-3 mr-1" />
+                                  Reactivate
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
-                                variant="outline"
-                                onClick={() => handleCompleteEngagement(engagement.userId, engagement.user?.name || 'Unknown User')}
-                                disabled={completeEngagementMutation.isPending}
-                                data-testid={`button-complete-engagement-${engagement.userId}`}
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (confirm(`Delete membership for ${engagement.user?.name || 'Unknown User'}? This cannot be undone.`)) {
+                                    deleteEngagementMutation.mutate(engagement.id);
+                                  }
+                                }}
+                                disabled={deleteEngagementMutation.isPending}
+                                data-testid={`button-delete-engagement-${engagement.userId}`}
                               >
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Mark Complete
+                                <Trash2 className="w-3 h-3" />
                               </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => reactivateEngagementMutation.mutate(engagement.userId)}
-                                disabled={reactivateEngagementMutation.isPending}
-                                data-testid={`button-reactivate-engagement-${engagement.userId}`}
-                              >
-                                <Activity className="w-3 h-3 mr-1" />
-                                Reactivate
-                              </Button>
-                            )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
