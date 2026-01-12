@@ -4800,10 +4800,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           taskName = "Task";
         }
 
-        // Determine assignee
+        // Determine assignee - use lowercase email for named resources
         let assignedTo = "";
-        if (allocation.person) {
-          assignedTo = allocation.person.email || allocation.person.name;
+        if (allocation.person?.email) {
+          assignedTo = allocation.person.email.toLowerCase();
         } else if (allocation.resourceName) {
           assignedTo = allocation.resourceName;
         }
@@ -4927,6 +4927,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const stages = await storage.getProjectStages(projectId);
       
       // Create lookup maps (case-insensitive)
+      // Support both email and name lookup for users
+      const userEmailToId = new Map(users.filter((u: any) => u.email).map((u: any) => [u.email.toLowerCase(), u.id]));
       const userNameToId = new Map(users.map((u: any) => [u.name.toLowerCase(), u.id]));
       const roleNameToId = new Map(roles.map((r: any) => [r.name.toLowerCase(), r.id]));
       const workstreamNameToId = new Map(workstreams.map((w: any) => [w.name.toLowerCase(), w.id]));
@@ -4964,9 +4966,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           continue;
         }
         
-        // Lookup person
-        const personName = String(row[0]).trim().toLowerCase();
-        const personId = userNameToId.get(personName);
+        // Lookup person - try email first (lowercase), then name
+        const personIdentifier = String(row[0]).trim().toLowerCase();
+        const personId = userEmailToId.get(personIdentifier) || userNameToId.get(personIdentifier);
         if (!personId) {
           errors.push({ row: i + 1, message: `Person not found: ${row[0]}` });
           continue;
