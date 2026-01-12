@@ -64,6 +64,7 @@ Preferred communication style: Simple, everyday language.
 - **Microsoft Planner Integration**: Full bidirectional sync between project assignments and Microsoft Planner tasks. Sync modes: `bidirectional` (Constellation ↔ Planner), `constellation_to_planner` (outbound only), `planner_to_constellation` (inbound only). Features: auto-creates allocations from Planner tasks, syncs task status/dates/assignees both ways, auto-discovers Azure users and creates named resources, auto-adds members to Teams. Uses app-only authentication (client credentials). Multi-tenant ready with `tenant_microsoft_integrations` table. Requires `PLANNER_TENANT_ID`, `PLANNER_CLIENT_ID`, and `PLANNER_CLIENT_SECRET` with Azure app permissions: Group.Read.All, Tasks.ReadWrite.
 - **Vocabulary Management**: Hierarchical terminology management.
 - **Tax Management**: Configurable tax rates per invoice batch (default 9.3%).
+- **Financial Reporting**: Comprehensive financial comparison reports showing revenue, cost, profit, and margins by client/project. Features include KPI summary cards, project health scoring (green/yellow/red), filtering by client/status/PM/date range, quick filters for at-risk projects, and Excel/CSV export. API: `/api/reports/financial-comparison`. Key calculations: Revenue from finalized invoice line amounts, cost from time entries (using captured costRate) + approved expenses, profit = revenue - cost. Referral fees are pass-through (not deducted from profit).
 
 ## External Dependencies
 

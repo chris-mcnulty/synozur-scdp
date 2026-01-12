@@ -2518,18 +2518,57 @@ export async function registerRoutes(app: Express): Promise<void> {
         filteredProjects = filteredProjects.filter(p => p.pm === pmId);
       }
       
-      // Fetch invoice lines for billed amounts (grouped by project)
-      const invoiceData = await db.select({
+      // Revenue calculation: Use authoritative batch header totals apportioned to projects
+      // Formula: totalAmount + aggregateAdjustmentTotal - discountAmount (excludes tax, which is a liability)
+      // Step 1: Get finalized batches with their total amounts and adjustments
+      const finalizedBatches = await db.select({
+        batchId: invoiceBatches.batchId,
+        totalAmount: invoiceBatches.totalAmount,
+        aggregateAdjustmentTotal: invoiceBatches.aggregateAdjustmentTotal,
+        discountAmount: invoiceBatches.discountAmount
+      })
+      .from(invoiceBatches)
+      .where(eq(invoiceBatches.status, 'finalized'));
+      
+      // Step 2: Get line amounts grouped by batch and project for apportioning
+      const batchProjectLines = await db.select({
+        batchId: invoiceLines.batchId,
         projectId: invoiceLines.projectId,
-        amount: invoiceLines.amount,
-        billedAmount: invoiceLines.billedAmount,
-        batchStatus: invoiceBatches.status,
-        createdAt: invoiceBatches.startDate
+        lineTotal: sql<string>`SUM(COALESCE(${invoiceLines.amount}, 0))`.as('line_total')
       })
       .from(invoiceLines)
-      .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId));
+      .groupBy(invoiceLines.batchId, invoiceLines.projectId);
+      
+      // Step 3: For each batch, apportion the batch total to projects based on line share
+      // This uses the authoritative batch header total (adjusted, net of discounts, excluding tax)
+      const projectRevenueMap = new Map<string, number>();
+      
+      for (const batch of finalizedBatches) {
+        // Calculate authoritative revenue: totalAmount + adjustments - discounts (exclude tax)
+        const baseTotal = Number(batch.totalAmount || 0);
+        const adjustments = Number(batch.aggregateAdjustmentTotal || 0);
+        const discounts = Number(batch.discountAmount || 0);
+        const batchTotal = baseTotal + adjustments - discounts;
+        
+        if (batchTotal === 0) continue;
+        
+        // Get all projects in this batch and their line totals
+        const batchLines = batchProjectLines.filter(l => l.batchId === batch.batchId);
+        const batchLineSum = batchLines.reduce((sum, l) => sum + Number(l.lineTotal || 0), 0);
+        
+        if (batchLineSum === 0) continue;
+        
+        // Apportion batch total to each project based on their share of line amounts
+        for (const line of batchLines) {
+          const projectShare = Number(line.lineTotal || 0) / batchLineSum;
+          const projectRevenue = batchTotal * projectShare;
+          const existing = projectRevenueMap.get(line.projectId) || 0;
+          projectRevenueMap.set(line.projectId, existing + projectRevenue);
+        }
+      }
       
       // Fetch time entries for labor cost calculation
+      // Use the time entry's own costRate (captured at entry time) for accurate historical costing
       const timeData = await db.select({
         projectId: timeEntries.projectId,
         personId: timeEntries.personId,
@@ -2537,7 +2576,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         date: timeEntries.date,
         personName: users.name,
         roleName: roles.name,
-        costRate: users.costRate
+        entryCostRate: timeEntries.costRate,
+        userCostRate: users.costRate
       })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
@@ -2570,21 +2610,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Build project financial data
       const projectFinancials = filteredProjects.map(project => {
-        // Calculate billed amount from finalized invoices
-        const projectInvoices = invoiceData.filter(i => 
-          i.projectId === project.id && 
-          i.batchStatus === 'finalized'
-        );
-        const billedAmount = projectInvoices.reduce((sum, inv) => 
-          sum + Number(inv.billedAmount || inv.amount || 0), 0
-        );
+        // Get billed amount from authoritative batch totals (apportioned by project)
+        const billedAmount = projectRevenueMap.get(project.id) || 0;
         
-        // Calculate labor cost from time entries
+        // Calculate labor cost from time entries using the entry's captured costRate
         const projectTimeEntries = timeData.filter(t => t.projectId === project.id);
         let laborCost = 0;
         projectTimeEntries.forEach(entry => {
           const hours = Number(entry.hours || 0);
-          const costRate = Number(entry.costRate || 75); // Default cost rate if not set
+          // Use time entry's captured costRate first, then user's default, then fallback
+          const costRate = Number(entry.entryCostRate || entry.userCostRate || 75);
           laborCost += hours * costRate;
         });
         
@@ -2657,8 +2692,10 @@ export async function registerRoutes(app: Express): Promise<void> {
             billed: 0 
           };
           const hours = Number(entry.hours || 0);
+          // Use time entry's captured costRate first, then user's default, then fallback
+          const costRate = Number(entry.entryCostRate || entry.userCostRate || 75);
           existing.hours += hours;
-          existing.cost += hours * Number(entry.costRate || 75);
+          existing.cost += hours * costRate;
           teamMap.set(personId, existing);
         });
         
