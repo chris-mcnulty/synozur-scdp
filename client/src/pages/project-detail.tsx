@@ -40,7 +40,8 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building,
+  PanelRightClose, PanelRight, ChevronRight, Info
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
@@ -173,7 +174,8 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
   const [, navigate] = useLocation();
-  const [selectedTab, setSelectedTab] = useState("overview");
+  const [selectedTab, setSelectedTab] = useState("dashboard"); // Changed default tab
+  const [showInfoSidebar, setShowInfoSidebar] = useState(true); // Project info sidebar
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
   const [deletingSowId, setDeletingSowId] = useState<string | null>(null);
@@ -1740,27 +1742,62 @@ export default function ProjectDetail() {
           </Alert>
         )}
 
-        {/* Tabs */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-          <TabsList>
-            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="monthly" data-testid="tab-monthly">Monthly Trends</TabsTrigger>
-            <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
-            <TabsTrigger value="structure" data-testid="tab-structure">Structure</TabsTrigger>
-            <TabsTrigger value="allocations" data-testid="tab-allocations">Team & Assignments</TabsTrigger>
-            <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
-            <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
-            <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
-            <TabsTrigger value="payment-milestones" data-testid="tab-payment-milestones">Payment Milestones</TabsTrigger>
-            <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
-            {canViewTime && (
-              <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
-            )}
-          </TabsList>
+        {/* Main Content with Optional Sidebar */}
+        <div className="flex gap-6">
+          {/* Main Content Area */}
+          <div className={`flex-1 min-w-0 ${showInfoSidebar ? 'xl:pr-0' : ''}`}>
+            {/* Tabs - Consolidated from 11 to 6 */}
+            <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+              <div className="flex items-center justify-between mb-4">
+                <TabsList className="flex-wrap h-auto gap-1">
+                  {/* Primary consolidated tabs */}
+                  <TabsTrigger value="dashboard" data-testid="tab-dashboard">Dashboard</TabsTrigger>
+                  <TabsTrigger value="structure" data-testid="tab-structure">Structure</TabsTrigger>
+                  <TabsTrigger value="allocations" data-testid="tab-allocations">Team</TabsTrigger>
+                  <TabsTrigger value="contracts" data-testid="tab-contracts">Contracts & Budget</TabsTrigger>
+                  <TabsTrigger value="billing" data-testid="tab-billing">Billing</TabsTrigger>
+                  {canViewTime && (
+                    <TabsTrigger value="time" data-testid="tab-time">Time Log</TabsTrigger>
+                  )}
+                </TabsList>
+                {/* Dropdown for additional views */}
+                <div className="hidden md:flex items-center gap-2">
+                  <Select value="" onValueChange={(value) => value && setSelectedTab(value)}>
+                    <SelectTrigger className="w-36 h-8 text-xs">
+                      <SelectValue placeholder="More views..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="overview">Overview Charts</SelectItem>
+                      <SelectItem value="monthly">Monthly Trends</SelectItem>
+                      <SelectItem value="team">Team Performance</SelectItem>
+                      <SelectItem value="burndown">Burn Rate Details</SelectItem>
+                      <SelectItem value="sows">SOWs & Change Orders</SelectItem>
+                      <SelectItem value="budget-history">Budget History</SelectItem>
+                      <SelectItem value="payment-milestones">Payment Milestones</SelectItem>
+                      <SelectItem value="invoices">Invoices</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowInfoSidebar(!showInfoSidebar)}
+                  className="hidden xl:flex"
+                  title={showInfoSidebar ? "Hide project info" : "Show project info"}
+                >
+                  {showInfoSidebar ? (
+                    <PanelRightClose className="w-4 h-4" />
+                  ) : (
+                    <PanelRight className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
 
-          <TabsContent value="overview" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Hours Distribution */}
+              {/* Dashboard Tab - Consolidated from Overview, Monthly, Team, Burndown */}
+              <TabsContent value="dashboard" className="space-y-6">
+                {/* Section: Key Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Hours Distribution */}
               <Card>
                 <CardHeader>
                   <CardTitle>Hours Distribution</CardTitle>
@@ -2797,6 +2834,118 @@ export default function ProjectDetail() {
             </div>
           </TabsContent>
 
+          {/* Contracts & Budget Tab - Consolidated view */}
+          <TabsContent value="contracts" className="space-y-6">
+            {/* Budget Overview Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Budget Overview</CardTitle>
+                <CardDescription>SOW values, budget consumption, and payment milestones</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Total SOW Value</p>
+                    <p className="text-2xl font-bold">
+                      ${sows.filter((s: Sow) => s.status === 'approved').reduce((sum, s) => sum + Number(s.value || 0), 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Budget Consumed</p>
+                    <p className="text-2xl font-bold">${(burnRate.consumedBudget || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Pending Milestones</p>
+                    <p className="text-2xl font-bold">
+                      {paymentMilestones.filter((pm: any) => pm.invoiceStatus !== 'paid').length}
+                    </p>
+                  </div>
+                  <div className="text-center p-4 bg-muted/50 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Change Orders</p>
+                    <p className="text-2xl font-bold">
+                      {sows.filter((s: Sow) => s.type === 'change_order').length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Links to Detailed Views */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedTab('sows')}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <FileText className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">SOWs & Change Orders</p>
+                    <p className="text-sm text-muted-foreground">{sows.length} document{sows.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
+              
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedTab('budget-history')}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-blue-500/10 rounded-lg">
+                    <Activity className="w-5 h-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Budget History</p>
+                    <p className="text-sm text-muted-foreground">{budgetHistory.length} change{budgetHistory.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
+              
+              <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedTab('payment-milestones')}>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-green-500/10 rounded-lg">
+                    <DollarSign className="w-5 h-5 text-green-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Payment Milestones</p>
+                    <p className="text-sm text-muted-foreground">{paymentMilestones.length} milestone{paymentMilestones.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent SOWs Preview */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Recent SOWs</CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedTab('sows')}>
+                    View All
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {sows.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">No SOWs created yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sows.slice(0, 3).map((sow: Sow) => (
+                      <div key={sow.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                        <div>
+                          <p className="font-medium">{sow.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {sow.type === 'initial' ? 'Initial SOW' : 'Change Order'} • ${Number(sow.value).toLocaleString()}
+                          </p>
+                        </div>
+                        <Badge variant={sow.status === 'approved' ? 'default' : 'secondary'}>
+                          {sow.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="sows" className="space-y-6">
             {/* SOW Summary Card */}
             <Card>
@@ -3469,6 +3618,116 @@ export default function ProjectDetail() {
             </Card>
           </TabsContent>
 
+          {/* Billing Tab - Alias for Invoices with enhanced header */}
+          <TabsContent value="billing" className="space-y-6">
+            {/* Billing Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Total Invoiced</p>
+                  <p className="text-2xl font-bold">
+                    ${invoiceBatches.reduce((sum: number, b: any) => sum + Number(b.totalAmount || 0), 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Paid</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    ${invoiceBatches.filter((b: any) => b.paymentStatus === 'paid').reduce((sum: number, b: any) => sum + Number(b.totalAmount || 0), 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Outstanding</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    ${invoiceBatches.filter((b: any) => b.paymentStatus !== 'paid').reduce((sum: number, b: any) => sum + Number(b.totalAmount || 0), 0).toLocaleString()}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Invoice Count</p>
+                  <p className="text-2xl font-bold">{invoiceBatches.length}</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick Milestone Invoice Card - same as invoices */}
+            {paymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').length > 0 && 
+              ['admin', 'billing-admin'].includes(user?.role || '') && (
+              <Card className="border-blue-200 bg-blue-50/30 dark:bg-blue-950/20">
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <DollarSign className="w-5 h-5" />
+                    Ready for Invoicing
+                  </CardTitle>
+                  <CardDescription>
+                    Payment milestones marked as "Planned" that can be invoiced
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {paymentMilestones.filter((pm: any) => pm.invoiceStatus === 'planned').map((pm: any) => (
+                      <div key={pm.id} className="flex items-center justify-between p-3 bg-background rounded-lg border">
+                        <div>
+                          <p className="font-medium">{pm.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            ${Number(pm.amount || 0).toLocaleString()}
+                            {pm.targetDate && ` • Due ${format(new Date(pm.targetDate), 'MMM d, yyyy')}`}
+                          </p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => setSelectedTab('payment-milestones')}>
+                          Create Invoice
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Invoice List */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Invoices</CardTitle>
+                    <CardDescription>All invoices for this project's client</CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedTab('invoices')}>
+                    Detailed View
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {invoiceBatches.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">No invoices created yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {invoiceBatches.slice(0, 5).map((batch: any) => (
+                      <div key={batch.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                        <div>
+                          <p className="font-medium">{batch.batchId}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">${Number(batch.totalAmount || 0).toLocaleString()}</p>
+                          <Badge variant={batch.paymentStatus === 'paid' ? 'default' : 'secondary'} className="text-xs">
+                            {batch.paymentStatus || 'unpaid'}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           {/* Invoices Tab */}
           <TabsContent value="invoices" className="space-y-6">
             {/* Quick Milestone Invoice Card */}
@@ -3939,7 +4198,197 @@ export default function ProjectDetail() {
             </TabsContent>
           )}
           
-        </Tabs>
+            </Tabs>
+          </div>
+
+          {/* Project Info Sidebar */}
+          {showInfoSidebar && (
+            <aside className="hidden xl:block w-80 flex-shrink-0">
+              <Card className="sticky top-4">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <Info className="w-4 h-4" />
+                      Project Info
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setProjectToEdit(analytics.project);
+                        setEditDialogOpen(true);
+                      }}
+                      className="h-6 w-6 p-0"
+                      title="Edit project"
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  {/* Basic Info Section */}
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Basic Info</h4>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Code</span>
+                        <span className="font-medium">{project.code}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <Badge variant={project.status === "active" ? "default" : "secondary"} className="text-xs">
+                          {project.status}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Client</span>
+                        <Link href={`/clients/${project.clientId}`}>
+                          <span className="font-medium hover:underline cursor-pointer">{project.client.name}</span>
+                        </Link>
+                      </div>
+                      {project.pm && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">PM</span>
+                          <span className="font-medium">
+                            {users.find(u => u.id === project.pm)?.name || 'Unknown'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Timeline Section */}
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Timeline</h4>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Start</span>
+                        <span className="font-medium">
+                          {project.startDate ? format(new Date(project.startDate), "MMM d, yyyy") : 'Not set'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">End</span>
+                        <span className="font-medium">
+                          {project.endDate ? format(new Date(project.endDate), "MMM d, yyyy") : 'Ongoing'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Financials Section */}
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Financials</h4>
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Scheme</span>
+                        <span className="font-medium capitalize">
+                          {project.commercialScheme?.replace(/-/g, ' ') || 'N/A'}
+                        </span>
+                      </div>
+                      {canViewPricing && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Budget</span>
+                            <span className="font-medium">${(burnRate.totalBudget || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Consumed</span>
+                            <span className="font-medium">${(burnRate.consumedBudget || 0).toLocaleString()}</span>
+                          </div>
+                          {project.retainerTotal && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Retainer</span>
+                              <span className="font-medium">${Number(project.retainerTotal).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">SOW</span>
+                        <span className={`font-medium ${project.hasSow ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                          {project.hasSow ? (
+                            <span className="flex items-center gap-1">
+                              <FileCheck className="w-3 h-3" /> Signed
+                            </span>
+                          ) : 'Not signed'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Health & Progress */}
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Health</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-muted-foreground">Budget Used</span>
+                          <span className="font-medium">{burnRate.burnRatePercentage.toFixed(0)}%</span>
+                        </div>
+                        <Progress value={burnRate.burnRatePercentage} className="h-2" />
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Project Health</span>
+                        <Badge className={`${health.color} text-white text-xs`}>
+                          <health.icon className="w-3 h-3 mr-1" />
+                          {health.status}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Team Size</span>
+                        <span className="font-medium">{teamHours.length} contributors</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  {project.description && (
+                    <>
+                      <Separator />
+                      <div className="space-y-2">
+                        <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Description</h4>
+                        <p className="text-muted-foreground text-xs leading-relaxed line-clamp-4">
+                          {project.description}
+                        </p>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Quick Actions */}
+                  <Separator />
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Quick Actions</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedTab('time')}>
+                        <Clock className="w-3 h-3 mr-1" />
+                        Log Time
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedTab('contracts')}>
+                        <FileText className="w-3 h-3 mr-1" />
+                        SOWs
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedTab('allocations')}>
+                        <Users className="w-3 h-3 mr-1" />
+                        Team
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowExportDialog(true)}>
+                        <Download className="w-3 h-3 mr-1" />
+                        Export
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </aside>
+          )}
+        </div>
 
         {/* SOW Dialog */}
         <Dialog open={showSowDialog} onOpenChange={setShowSowDialog}>

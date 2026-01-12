@@ -7,9 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, LayoutGrid, List, Rows3, ChevronDown, ChevronRight, Building2, ArrowUpDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
@@ -28,7 +30,10 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
 
 export default function Projects() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active"); // Default to active projects
+  const [sortBy, setSortBy] = useState<"client" | "name" | "date" | "status">("client"); // Default sort by client
+  const [viewMode, setViewMode] = useState<"grouped" | "list" | "cards">("grouped"); // Default to grouped view
+  const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -174,10 +179,62 @@ export default function Projects() {
 
   const filteredProjects = projects?.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.client.name.toLowerCase().includes(searchTerm.toLowerCase());
+                         project.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         project.code.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || project.status === statusFilter;
     return matchesSearch && matchesStatus;
+  }).sort((a, b) => {
+    switch (sortBy) {
+      case "client":
+        // Sort by client name, then by project name
+        const clientCompare = a.client.name.localeCompare(b.client.name);
+        return clientCompare !== 0 ? clientCompare : a.name.localeCompare(b.name);
+      case "name":
+        return a.name.localeCompare(b.name);
+      case "date":
+        // Sort by start date, most recent first
+        const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return dateB - dateA;
+      case "status":
+        return a.status.localeCompare(b.status);
+      default:
+        return 0;
+    }
   }) || [];
+
+  // Group projects by client for grouped view
+  const projectsByClient = filteredProjects.reduce((acc, project) => {
+    const clientId = project.clientId;
+    if (!acc[clientId]) {
+      acc[clientId] = {
+        clientId,
+        clientName: project.client.name,
+        projects: [],
+        totalBudget: 0,
+      };
+    }
+    acc[clientId].projects.push(project);
+    acc[clientId].totalBudget += project.totalBudget || 0;
+    return acc;
+  }, {} as Record<string, { clientId: string; clientName: string; projects: ProjectWithBillableInfo[]; totalBudget: number }>);
+
+  // Sort client groups alphabetically
+  const sortedClientGroups = Object.values(projectsByClient).sort((a, b) => 
+    a.clientName.localeCompare(b.clientName)
+  );
+
+  const toggleClientCollapse = (clientId: string) => {
+    setCollapsedClients(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(clientId)) {
+        newSet.delete(clientId);
+      } else {
+        newSet.add(clientId);
+      }
+      return newSet;
+    });
+  };
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
     setProjectToEdit(project);
@@ -215,181 +272,445 @@ export default function Projects() {
         {/* Filters */}
         <Card>
           <CardContent className="p-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  placeholder="Search projects or clients..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-projects"
-                />
+            <div className="flex flex-col gap-4">
+              {/* First row: Search and primary filters */}
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    placeholder="Search projects, clients, or codes..."
+                    className="pl-10"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    data-testid="input-search-projects"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-40" data-testid="select-status-filter">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="on-hold">On Hold</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sortBy} onValueChange={(value: "client" | "name" | "date" | "status") => setSortBy(value)}>
+                  <SelectTrigger className="w-44" data-testid="select-sort-by">
+                    <ArrowUpDown className="w-4 h-4 mr-2" />
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client">By Client</SelectItem>
+                    <SelectItem value="name">By Name</SelectItem>
+                    <SelectItem value="date">By Date</SelectItem>
+                    <SelectItem value="status">By Status</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48" data-testid="select-status-filter">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on-hold">On Hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" data-testid="button-advanced-filter">
-                <Filter className="w-4 h-4 mr-2" />
-                Advanced
-              </Button>
+              
+              {/* Second row: View mode toggle and count */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {filteredProjects.length} project{filteredProjects.length !== 1 ? 's' : ''}
+                    {statusFilter !== 'all' && ` (${statusFilter})`}
+                    {sortedClientGroups.length > 0 && viewMode === 'grouped' && ` across ${sortedClientGroups.length} client${sortedClientGroups.length !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 border rounded-lg p-1">
+                  <Button
+                    variant={viewMode === 'grouped' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('grouped')}
+                    title="Grouped by Client"
+                    data-testid="view-mode-grouped"
+                  >
+                    <Rows3 className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                    title="List View"
+                    data-testid="view-mode-list"
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === 'cards' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('cards')}
+                    title="Card View"
+                    data-testid="view-mode-cards"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Projects Grid */}
-        <div className="grid grid-cols-1 gap-6">
+        {/* Projects Display */}
+        <div className="space-y-4">
           {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <CardContent className="p-6">
-                  <div className="space-y-3">
-                    <div className="h-4 bg-muted rounded"></div>
-                    <div className="h-3 bg-muted rounded w-3/4"></div>
-                    <div className="h-3 bg-muted rounded w-1/2"></div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+            <div className="grid grid-cols-1 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardContent className="p-6">
+                    <div className="space-y-3">
+                      <div className="h-4 bg-muted rounded"></div>
+                      <div className="h-3 bg-muted rounded w-3/4"></div>
+                      <div className="h-3 bg-muted rounded w-1/2"></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           ) : filteredProjects.length === 0 ? (
-            <div className="col-span-full">
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <div className="text-muted-foreground">
-                    <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium mb-2">No projects found</h3>
-                    <p>Create your first project to get started with SCDP.</p>
-                  </div>
-                  <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
+            <Card>
+              <CardContent className="p-12 text-center">
+                <div className="text-muted-foreground">
+                  <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium mb-2">No projects found</h3>
+                  <p>{statusFilter === 'active' ? 'No active projects. Try changing the status filter or create a new project.' : 'Create your first project to get started with SCDP.'}</p>
+                </div>
+                <div className="flex gap-2 justify-center mt-4">
+                  {statusFilter !== 'all' && (
+                    <Button variant="outline" onClick={() => setStatusFilter('all')}>
+                      Show All Projects
+                    </Button>
+                  )}
+                  <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
                     <Plus className="w-4 h-4 mr-2" />
                     Create Project
                   </Button>
-                </CardContent>
-              </Card>
+                </div>
+              </CardContent>
+            </Card>
+          ) : viewMode === 'grouped' ? (
+            /* Grouped View - Projects organized by Client */
+            <div className="space-y-4">
+              {sortedClientGroups.map((group) => (
+                <Card key={group.clientId} className="overflow-hidden">
+                  {/* Client Header */}
+                  <div 
+                    className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                    onClick={() => toggleClientCollapse(group.clientId)}
+                  >
+                    <div className="flex items-center gap-3">
+                      {collapsedClients.has(group.clientId) ? (
+                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                      )}
+                      <Building2 className="w-5 h-5 text-primary" />
+                      <div>
+                        <h3 className="font-semibold">{group.clientName}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {group.projects.length} project{group.projects.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">${group.totalBudget.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Total Budget</p>
+                    </div>
+                  </div>
+                  
+                  {/* Projects List */}
+                  {!collapsedClients.has(group.clientId) && (
+                    <div className="divide-y">
+                      {group.projects.map((project) => (
+                        <div 
+                          key={project.id} 
+                          className="p-4 hover:bg-accent/30 transition-colors"
+                          data-testid={`project-row-${project.id}`}
+                        >
+                          <div className="flex items-center justify-between gap-4">
+                            {/* Project Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Link href={`/projects/${project.id}`}>
+                                  <span className="font-medium hover:underline cursor-pointer" data-testid={`project-name-${project.id}`}>
+                                    {project.name}
+                                  </span>
+                                </Link>
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  project.status === 'active' 
+                                    ? 'bg-chart-4/10 text-chart-4' 
+                                    : project.status === 'completed'
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : 'bg-muted text-muted-foreground'
+                                }`}>
+                                  {project.status}
+                                </span>
+                                {project.hasSow && (
+                                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                                    <FileText className="h-3 w-3" />
+                                    <span className="text-xs">SOW</span>
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-muted-foreground" data-testid={`project-code-${project.id}`}>
+                                {project.code}
+                                {project.startDate && (
+                                  <> • {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}</>
+                                )}
+                              </p>
+                            </div>
+                            
+                            {/* Metrics */}
+                            <div className="hidden md:flex items-center gap-6 text-sm">
+                              <div className="text-right w-24">
+                                <p className="font-medium">${(project.totalBudget || 0).toLocaleString()}</p>
+                                <p className="text-xs text-muted-foreground">Budget</p>
+                              </div>
+                              <div className="text-right w-24">
+                                <p className="font-medium">${(project.burnedAmount || 0).toLocaleString()}</p>
+                                <p className="text-xs text-muted-foreground">Burned</p>
+                              </div>
+                              <div className="text-right w-16">
+                                <p className={`font-medium ${
+                                  (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                                  (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                                  'text-green-600 dark:text-green-400'
+                                }`}>
+                                  {project.utilizationRate || 0}%
+                                </p>
+                                <p className="text-xs text-muted-foreground">Used</p>
+                              </div>
+                            </div>
+                            
+                            {/* Actions */}
+                            <div className="flex items-center gap-1">
+                              <Link href={`/projects/${project.id}`}>
+                                <Button variant="ghost" size="sm" data-testid={`button-view-project-${project.id}`}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => handleEditProject(project)}
+                                data-testid={`button-edit-project-${project.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleDeleteProject(project)}
+                                data-testid={`button-delete-project-${project.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              ))}
             </div>
+          ) : viewMode === 'list' ? (
+            /* List View - Table-like compact view */
+            <Card>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Project</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Client</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Budget</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Burned</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Used</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {filteredProjects.map((project) => (
+                      <tr key={project.id} className="hover:bg-accent/30 transition-colors" data-testid={`project-row-${project.id}`}>
+                        <td className="px-4 py-3">
+                          <Link href={`/projects/${project.id}`}>
+                            <span className="font-medium hover:underline cursor-pointer">{project.name}</span>
+                          </Link>
+                          <p className="text-xs text-muted-foreground">{project.code}</p>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{project.client.name}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            project.status === 'active' 
+                              ? 'bg-chart-4/10 text-chart-4' 
+                              : project.status === 'completed'
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                              : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {project.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-medium">
+                          ${(project.totalBudget || 0).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right">
+                          ${(project.burnedAmount || 0).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={`font-medium ${
+                            (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                            (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                            'text-green-600 dark:text-green-400'
+                          }`}>
+                            {project.utilizationRate || 0}%
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link href={`/projects/${project.id}`}>
+                              <Button variant="ghost" size="sm">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button variant="ghost" size="sm" onClick={() => handleEditProject(project)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteProject(project)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           ) : (
-            filteredProjects.map((project) => (
-              <Card key={project.id} className="hover:shadow-lg transition-all duration-200" data-testid={`project-card-${project.id}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg" data-testid={`project-name-${project.id}`}>
-                        {project.name}
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground" data-testid={`project-code-${project.id}`}>
-                        {project.code}
-                      </p>
-                    </div>
-                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      project.status === 'active' 
-                        ? 'bg-chart-4/10 text-chart-4' 
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {project.status}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Client</p>
-                      <p className="font-medium" data-testid={`project-client-${project.id}`}>
-                        {project.client.name}
-                      </p>
-                    </div>
-                    
-                    {project.startDate && (
+            /* Cards View - Original card-based grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredProjects.map((project) => (
+                <Card key={project.id} className="hover:shadow-lg transition-all duration-200" data-testid={`project-card-${project.id}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground">Timeline</p>
-                        <p className="text-sm" data-testid={`project-timeline-${project.id}`}>
-                          {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}
+                        <CardTitle className="text-lg" data-testid={`project-name-${project.id}`}>
+                          {project.name}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground" data-testid={`project-code-${project.id}`}>
+                          {project.code}
                         </p>
                       </div>
-                    )}
-                    
-                    {project.commercialScheme === 'retainer' && project.retainerTotal && (
+                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        project.status === 'active' 
+                          ? 'bg-chart-4/10 text-chart-4' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {project.status}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-sm text-muted-foreground">Retainer Value</p>
-                        <p className="font-medium text-sm">
-                          ${Number(project.retainerTotal).toLocaleString()}
+                        <p className="text-sm text-muted-foreground">Client</p>
+                        <p className="font-medium" data-testid={`project-client-${project.id}`}>
+                          {project.client.name}
                         </p>
                       </div>
-                    )}
+                      
+                      {project.startDate && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Timeline</p>
+                          <p className="text-sm" data-testid={`project-timeline-${project.id}`}>
+                            {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                     
-                    {project.hasSow && (
-                      <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                        <FileText className="h-3 w-3" />
-                        <span className="text-xs font-medium">SOW Signed</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {project.commercialScheme === 'retainer' && project.retainerTotal && (
+                        <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded">
+                          Retainer: ${Number(project.retainerTotal).toLocaleString()}
+                        </span>
+                      )}
+                      {project.hasSow && (
+                        <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+                          <FileText className="h-3 w-3" />
+                          SOW Signed
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Billable Information */}
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Budget</p>
+                        <p className="font-medium text-sm" data-testid={`project-budget-${project.id}`}>
+                          ${(project.totalBudget || 0).toLocaleString()}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                  
-                  {/* Billable Information */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Budget</p>
-                      <p className="font-medium" data-testid={`project-budget-${project.id}`}>
-                        ${(project.totalBudget || 0).toLocaleString()}
-                      </p>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Burned</p>
+                        <p className="font-medium text-sm" data-testid={`project-burned-${project.id}`}>
+                          ${(project.burnedAmount || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-xs text-muted-foreground">Used</p>
+                        <p className={`font-medium text-sm ${
+                          (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                          (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                          'text-green-600 dark:text-green-400'
+                        }`} data-testid={`project-utilization-${project.id}`}>
+                          {project.utilizationRate || 0}%
+                        </p>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Burned</p>
-                      <p className="font-medium" data-testid={`project-burned-${project.id}`}>
-                        ${(project.burnedAmount || 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Utilization</p>
-                      <p className={`font-medium ${
-                        (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
-                        (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
-                        'text-green-600 dark:text-green-400'
-                      }`} data-testid={`project-utilization-${project.id}`}>
-                        {project.utilizationRate || 0}%
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2 pt-2">
-                    <Link href={`/projects/${project.id}`} className="flex-1">
+                    
+                    <div className="flex space-x-2 pt-2">
+                      <Link href={`/projects/${project.id}`} className="flex-1">
+                        <Button 
+                          size="sm" 
+                          className="w-full"
+                          data-testid={`button-view-project-${project.id}`}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                      </Link>
                       <Button 
                         size="sm" 
-                        className="w-full"
-                        data-testid={`button-view-project-${project.id}`}
+                        variant="outline"
+                        onClick={() => handleEditProject(project)}
+                        data-testid={`button-edit-project-${project.id}`}
                       >
-                        <Eye className="h-3 w-3 mr-1" />
-                        View Analytics
+                        <Edit className="h-3 w-3" />
                       </Button>
-                    </Link>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleEditProject(project)}
-                      data-testid={`button-edit-project-${project.id}`}
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteProject(project)}
-                      data-testid={`button-delete-project-${project.id}`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteProject(project)}
+                        data-testid={`button-delete-project-${project.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
 
@@ -661,11 +982,14 @@ export default function Projects() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Project Dialog */}
+        {/* Edit Project Dialog - Accordion-based sections */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Edit Project</DialogTitle>
+              <DialogTitle>Edit Project: {projectToEdit?.name}</DialogTitle>
+              <DialogDescription>
+                Update project settings organized by category. Click each section to expand.
+              </DialogDescription>
             </DialogHeader>
             {projectToEdit && (
               <form name="edit-project-overview-form" onSubmit={(e) => {
@@ -698,229 +1022,288 @@ export default function Projects() {
                   }
                 });
               }}>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-name">Project Name</Label>
-                    <Input
-                      id="edit-name"
-                      name="name"
-                      defaultValue={projectToEdit.name}
-                      required
-                      data-testid="input-edit-project-name"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-description">Description / Summary</Label>
-                    <textarea
-                      id="edit-description"
-                      name="description"
-                      defaultValue={projectToEdit.description || ""}
-                      placeholder="Vision statement or project overview"
-                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      data-testid="textarea-edit-description"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-code">Project Code</Label>
-                    <Input
-                      id="edit-code"
-                      name="code"
-                      defaultValue={projectToEdit.code}
-                      required
-                      data-testid="input-edit-project-code"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-clientId">Client</Label>
-                    <Select name="clientId" defaultValue={projectToEdit.clientId} required>
-                      <SelectTrigger data-testid="select-edit-client">
-                        <SelectValue placeholder="Select a client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map(client => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-status">Status</Label>
-                    <Select name="status" defaultValue={projectToEdit.status} required>
-                      <SelectTrigger data-testid="select-edit-status">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="on track">On Track</SelectItem>
-                        <SelectItem value="at risk">At Risk</SelectItem>
-                        <SelectItem value="delayed">Delayed</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="on hold">On Hold</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-pm">Project Manager</Label>
-                    <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
-                      <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
-                        <SelectValue placeholder="Select project manager" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No PM Assigned</SelectItem>
-                        {users.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
-                    <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
-                      <SelectTrigger data-testid="select-edit-commercial-scheme">
-                        <SelectValue placeholder="Select scheme" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="time-and-materials">Time & Materials</SelectItem>
-                        <SelectItem value="fixed-price">Fixed Price</SelectItem>
-                        <SelectItem value="retainer">Retainer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-startDate">Start Date</Label>
-                      <Input
-                        id="edit-startDate"
-                        name="startDate"
-                        type="date"
-                        defaultValue={projectToEdit.startDate ? new Date(projectToEdit.startDate).toISOString().split('T')[0] : ""}
-                        data-testid="input-edit-start-date"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-endDate">End Date</Label>
-                      <Input
-                        id="edit-endDate"
-                        name="endDate"
-                        type="date"
-                        defaultValue={projectToEdit.endDate ? new Date(projectToEdit.endDate).toISOString().split('T')[0] : ""}
-                        data-testid="input-edit-end-date"
-                      />
-                    </div>
-                  </div>
-
-                  {projectToEdit.commercialScheme === 'retainer' && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
-                      <Input
-                        id="edit-retainerTotal"
-                        name="retainerTotal"
-                        type="number"
-                        defaultValue={projectToEdit.retainerTotal || ""}
-                        data-testid="input-edit-retainer-total"
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="edit-hasSow"
-                      name="hasSow"
-                      value="true"
-                      defaultChecked={projectToEdit.hasSow}
-                      data-testid="checkbox-edit-has-sow"
-                    />
-                    <Label htmlFor="edit-hasSow">SOW Signed</Label>
-                  </div>
-
-                  {catalogTerms.length > 0 && (
-                    <div className="pt-4 border-t">
-                      <h4 className="text-sm font-medium mb-2">Terminology Customization (Optional)</h4>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Override default terminology for this project. Select from predefined options. Leave unset to use client or organization defaults.
-                      </p>
-                      <div className="grid grid-cols-2 gap-4">
+                <Accordion type="multiple" defaultValue={["basic-info"]} className="w-full">
+                  {/* Basic Info Section - Expanded by default */}
+                  <AccordionItem value="basic-info">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="w-4 h-4" />
+                        Basic Information
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-4">
+                      <div className="grid gap-4">
                         <div className="grid gap-2">
-                          <Label htmlFor="epicTermId">Epic Term</Label>
-                          <Select name="epicTermId" defaultValue={projectToEdit.epicTermId || "__default__"}>
-                            <SelectTrigger data-testid="select-edit-vocab-epic">
-                              <SelectValue placeholder="Use default" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">Use client/organization default</SelectItem>
-                              {catalogTerms.filter((t: any) => t.category === 'epic').map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Label htmlFor="edit-name">Project Name *</Label>
+                          <Input
+                            id="edit-name"
+                            name="name"
+                            defaultValue={projectToEdit.name}
+                            required
+                            data-testid="input-edit-project-name"
+                          />
                         </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="stageTermId">Stage Term</Label>
-                          <Select name="stageTermId" defaultValue={projectToEdit.stageTermId || "__default__"}>
-                            <SelectTrigger data-testid="select-edit-vocab-stage">
-                              <SelectValue placeholder="Use default" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">Use client/organization default</SelectItem>
-                              {catalogTerms.filter((t: any) => t.category === 'stage').map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-code">Project Code *</Label>
+                            <Input
+                              id="edit-code"
+                              name="code"
+                              defaultValue={projectToEdit.code}
+                              required
+                              data-testid="input-edit-project-code"
+                            />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-status">Status *</Label>
+                            <Select name="status" defaultValue={projectToEdit.status} required>
+                              <SelectTrigger data-testid="select-edit-status">
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="active">Active</SelectItem>
+                                <SelectItem value="on track">On Track</SelectItem>
+                                <SelectItem value="at risk">At Risk</SelectItem>
+                                <SelectItem value="delayed">Delayed</SelectItem>
+                                <SelectItem value="completed">Completed</SelectItem>
+                                <SelectItem value="on hold">On Hold</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <div className="grid gap-2">
-                          <Label htmlFor="activityTermId">Activity Term</Label>
-                          <Select name="activityTermId" defaultValue={projectToEdit.activityTermId || "__default__"}>
-                            <SelectTrigger data-testid="select-edit-vocab-activity">
-                              <SelectValue placeholder="Use default" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">Use client/organization default</SelectItem>
-                              {catalogTerms.filter((t: any) => t.category === 'activity').map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-clientId">Client *</Label>
+                            <Select name="clientId" defaultValue={projectToEdit.clientId} required>
+                              <SelectTrigger data-testid="select-edit-client">
+                                <SelectValue placeholder="Select a client" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {clients.map(client => (
+                                  <SelectItem key={client.id} value={client.id}>
+                                    {client.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-pm">Project Manager</Label>
+                            <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
+                              <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
+                                <SelectValue placeholder="Select project manager" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No PM Assigned</SelectItem>
+                                {users.map((user) => (
+                                  <SelectItem key={user.id} value={user.id}>
+                                    {user.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
+                        
                         <div className="grid gap-2">
-                          <Label htmlFor="workstreamTermId">Workstream Term</Label>
-                          <Select name="workstreamTermId" defaultValue={projectToEdit.workstreamTermId || "__default__"}>
-                            <SelectTrigger data-testid="select-edit-vocab-workstream">
-                              <SelectValue placeholder="Use default" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">Use client/organization default</SelectItem>
-                              {catalogTerms.filter((t: any) => t.category === 'workstream').map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Label htmlFor="edit-description">Description / Summary</Label>
+                          <textarea
+                            id="edit-description"
+                            name="description"
+                            defaultValue={projectToEdit.description || ""}
+                            placeholder="Vision statement or project overview"
+                            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            data-testid="textarea-edit-description"
+                          />
                         </div>
                       </div>
-                    </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Timeline Section */}
+                  <AccordionItem value="timeline">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Timeline
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-startDate">Start Date</Label>
+                          <Input
+                            id="edit-startDate"
+                            name="startDate"
+                            type="date"
+                            defaultValue={projectToEdit.startDate ? new Date(projectToEdit.startDate).toISOString().split('T')[0] : ""}
+                            data-testid="input-edit-start-date"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-endDate">End Date</Label>
+                          <Input
+                            id="edit-endDate"
+                            name="endDate"
+                            type="date"
+                            defaultValue={projectToEdit.endDate ? new Date(projectToEdit.endDate).toISOString().split('T')[0] : ""}
+                            data-testid="input-edit-end-date"
+                          />
+                          <p className="text-xs text-muted-foreground">Leave blank for open-ended projects</p>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Commercial Settings Section */}
+                  <AccordionItem value="commercial">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        Commercial Settings
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-4">
+                      <div className="grid gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
+                          <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
+                            <SelectTrigger data-testid="select-edit-commercial-scheme">
+                              <SelectValue placeholder="Select scheme" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="tm">Time & Materials</SelectItem>
+                              <SelectItem value="time-and-materials">Time & Materials (legacy)</SelectItem>
+                              <SelectItem value="fixed-price">Fixed Price</SelectItem>
+                              <SelectItem value="retainer">Retainer</SelectItem>
+                              <SelectItem value="milestone">Milestone</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {(projectToEdit.commercialScheme === 'retainer' || projectToEdit.retainerTotal) && (
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
+                            <Input
+                              id="edit-retainerTotal"
+                              name="retainerTotal"
+                              type="number"
+                              defaultValue={projectToEdit.retainerTotal || ""}
+                              data-testid="input-edit-retainer-total"
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex items-center space-x-2 pt-2">
+                          <input
+                            type="checkbox"
+                            id="edit-hasSow"
+                            name="hasSow"
+                            value="true"
+                            defaultChecked={projectToEdit.hasSow}
+                            className="h-4 w-4 rounded border-gray-300"
+                            data-testid="checkbox-edit-has-sow"
+                          />
+                          <Label htmlFor="edit-hasSow" className="text-sm font-normal">
+                            SOW Signed
+                          </Label>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Vocabulary Customization Section */}
+                  {catalogTerms.length > 0 && (
+                    <AccordionItem value="vocabulary">
+                      <AccordionTrigger className="text-base font-semibold">
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                          </svg>
+                          Terminology Customization
+                          <span className="text-xs font-normal text-muted-foreground ml-2">(Optional)</span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-4 pt-4">
+                        <p className="text-sm text-muted-foreground">
+                          Override default terminology for this project. Leave unset to use client or organization defaults.
+                        </p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="epicTermId">Epic Term</Label>
+                            <Select name="epicTermId" defaultValue={projectToEdit.epicTermId || "__default__"}>
+                              <SelectTrigger data-testid="select-edit-vocab-epic">
+                                <SelectValue placeholder="Use default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Use client/organization default</SelectItem>
+                                {catalogTerms.filter((t: any) => t.category === 'epic').map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="stageTermId">Stage Term</Label>
+                            <Select name="stageTermId" defaultValue={projectToEdit.stageTermId || "__default__"}>
+                              <SelectTrigger data-testid="select-edit-vocab-stage">
+                                <SelectValue placeholder="Use default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Use client/organization default</SelectItem>
+                                {catalogTerms.filter((t: any) => t.category === 'stage').map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="activityTermId">Activity Term</Label>
+                            <Select name="activityTermId" defaultValue={projectToEdit.activityTermId || "__default__"}>
+                              <SelectTrigger data-testid="select-edit-vocab-activity">
+                                <SelectValue placeholder="Use default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Use client/organization default</SelectItem>
+                                {catalogTerms.filter((t: any) => t.category === 'activity').map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label htmlFor="workstreamTermId">Workstream Term</Label>
+                            <Select name="workstreamTermId" defaultValue={projectToEdit.workstreamTermId || "__default__"}>
+                              <SelectTrigger data-testid="select-edit-vocab-workstream">
+                                <SelectValue placeholder="Use default" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">Use client/organization default</SelectItem>
+                                {catalogTerms.filter((t: any) => t.category === 'workstream').map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
                   )}
-                </div>
-                <DialogFooter>
+                </Accordion>
+                
+                <DialogFooter className="mt-6 pt-4 border-t">
                   <Button 
                     type="button" 
                     variant="outline" 
