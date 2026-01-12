@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -202,6 +202,17 @@ async function ensureEstimateIsEditable(estimateId: string, res: Response): Prom
   return true;
 }
 
+// Helper: Check if a line item represents a salaried resource
+// A resource is salaried if: user.isSalaried = true OR role.isAlwaysSalaried = true
+function isLineItemSalaried(item: any): boolean {
+  // Check if the assigned user is salaried directly
+  if (item.assignedUser?.isSalaried === true) return true;
+  // Check if the role is always salaried (via joined role object or assignedUser's role)
+  if (item.role?.isAlwaysSalaried === true) return true;
+  if (item.assignedUser?.role?.isAlwaysSalaried === true) return true;
+  return false;
+}
+
 // Helper: Recalculate referral fee distribution across line items
 async function recalculateReferralFees(estimateId: string): Promise<void> {
   const estimate = await storage.getEstimate(estimateId);
@@ -211,7 +222,11 @@ async function recalculateReferralFees(estimateId: string): Promise<void> {
   
   const allLineItems = await storage.getEstimateLineItems(estimateId);
   const baseTotalFees = allLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
-  const totalCost = allLineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  // Exclude salaried resources from cost calculation - their time doesn't count as direct project cost
+  const totalCost = allLineItems.reduce((sum, item) => {
+    if (isLineItemSalaried(item)) return sum; // Skip salaried resources
+    return sum + Number(item.totalCost || 0);
+  }, 0);
   const profit = baseTotalFees - totalCost;
   
   let referralFeeAmount = 0;
@@ -2569,6 +2584,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Fetch time entries for labor cost calculation
       // Use the time entry's own costRate (captured at entry time) for accurate historical costing
+      // Include salaried status to exclude salaried resources from cost
       const timeData = await db.select({
         projectId: timeEntries.projectId,
         personId: timeEntries.personId,
@@ -2577,7 +2593,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         personName: users.name,
         roleName: roles.name,
         entryCostRate: timeEntries.costRate,
-        userCostRate: users.costRate
+        userCostRate: users.defaultCostRate,
+        isSalaried: users.isSalaried,
+        roleIsAlwaysSalaried: roles.isAlwaysSalaried
       })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
@@ -2614,9 +2632,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         const billedAmount = projectRevenueMap.get(project.id) || 0;
         
         // Calculate labor cost from time entries using the entry's captured costRate
+        // Exclude salaried resources - their time doesn't count as direct project cost
         const projectTimeEntries = timeData.filter(t => t.projectId === project.id);
         let laborCost = 0;
         projectTimeEntries.forEach(entry => {
+          // Skip salaried resources (either user is salaried or role is always salaried)
+          const isSalaried = entry.isSalaried === true || entry.roleIsAlwaysSalaried === true;
+          if (isSalaried) return;
+          
           const hours = Number(entry.hours || 0);
           // Use time entry's captured costRate first, then user's default, then fallback
           const costRate = Number(entry.entryCostRate || entry.userCostRate || 75);

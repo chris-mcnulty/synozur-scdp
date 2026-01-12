@@ -103,6 +103,7 @@ export default function RateManagement() {
       name: "",
       defaultRackRate: "0",
       defaultCostRate: "0",
+      isAlwaysSalaried: false,
     },
   });
 
@@ -418,6 +419,28 @@ export default function RateManagement() {
                               />
                             </div>
 
+                            <FormField
+                              control={roleForm.control}
+                              name="isAlwaysSalaried"
+                              render={({ field }) => (
+                                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                                  <div className="space-y-0.5">
+                                    <FormLabel>Always Salaried</FormLabel>
+                                    <FormDescription>
+                                      Resources with this role are salaried and their time is not counted as direct project cost
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <Switch
+                                      checked={field.value}
+                                      onCheckedChange={field.onChange}
+                                      data-testid="switch-always-salaried"
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
                             <div className="flex justify-end space-x-3">
                               <Button
                                 type="button"
@@ -539,6 +562,7 @@ export default function RateManagement() {
                               name: formData.get('name') as string,
                               defaultRackRate: formData.get('defaultRackRate') as string,
                               defaultCostRate: formData.get('defaultCostRate') as string,
+                              isAlwaysSalaried: formData.get('isAlwaysSalaried') === 'on',
                             }
                           });
                         }} 
@@ -579,6 +603,20 @@ export default function RateManagement() {
                               data-testid="input-edit-default-cost-rate"
                             />
                           </div>
+                        </div>
+
+                        <div className="flex flex-row items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <label className="text-sm font-medium">Always Salaried</label>
+                            <p className="text-sm text-muted-foreground">
+                              Resources with this role are salaried and their time is not counted as direct project cost
+                            </p>
+                          </div>
+                          <Switch
+                            name="isAlwaysSalaried"
+                            defaultChecked={editingRole.isAlwaysSalaried}
+                            data-testid="switch-edit-always-salaried"
+                          />
                         </div>
 
                         <div className="flex justify-end space-x-3">

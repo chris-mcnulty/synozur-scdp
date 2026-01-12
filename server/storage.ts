@@ -2133,6 +2133,7 @@ export class DatabaseStorage implements IStorage {
         customRole: null,
         defaultBillingRate: null,
         defaultCostRate: null,
+        isSalaried: false,
         isActive: false,
         receiveTimeReminders: true,
         createdAt: new Date()
@@ -2177,6 +2178,7 @@ export class DatabaseStorage implements IStorage {
       customRole: null,
       defaultBillingRate: null,
       defaultCostRate: null,
+      isSalaried: false,
       isActive: false,
       receiveTimeReminders: true,
       createdAt: new Date()
@@ -2922,10 +2924,23 @@ export class DatabaseStorage implements IStorage {
     }
     
     // Calculate cost from all time entries (billable and non-billable)
+    // Exclude salaried resources - their time doesn't count as direct project cost
+    // A resource is salaried if: user.isSalaried = true OR role.isAlwaysSalaried = true
+    // Cost rate fallback chain: entry.costRate → user.defaultCostRate → 75
     const [costData] = await db.select({
-      totalCost: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.costRate} AS NUMERIC)), 0)`
+      totalCost: sql<number>`COALESCE(SUM(
+        CASE 
+          WHEN COALESCE(${users.isSalaried}, false) = true THEN 0
+          WHEN COALESCE(${roles.isAlwaysSalaried}, false) = true THEN 0
+          ELSE CAST(${timeEntries.hours} AS NUMERIC) * CAST(
+            COALESCE(${timeEntries.costRate}, ${users.defaultCostRate}, 75) AS NUMERIC
+          )
+        END
+      ), 0)`
     })
     .from(timeEntries)
+    .leftJoin(users, eq(timeEntries.personId, users.id))
+    .leftJoin(roles, eq(users.roleId, roles.id))
     .where(eq(timeEntries.projectId, projectId));
     
     const cost = Number(costData?.totalCost || 0);
@@ -3013,6 +3028,7 @@ export class DatabaseStorage implements IStorage {
         customRole: null,
         defaultBillingRate: null,
         defaultCostRate: null,
+        isSalaried: false,
         isActive: false,
         receiveTimeReminders: true,
         createdAt: new Date()

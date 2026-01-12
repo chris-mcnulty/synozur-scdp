@@ -251,6 +251,7 @@ export default function Users() {
                 isAssignable: formData.get('isAssignable') === 'true',
                 defaultBillingRate: formData.get('defaultBillingRate'),
                 defaultCostRate: formData.get('defaultCostRate'),
+                isSalaried: formData.get('isSalaried') === 'on',
                 isActive: true,
               });
             }}>
@@ -360,6 +361,14 @@ export default function Users() {
                     />
                   </div>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="isSalaried"
+                    name="isSalaried"
+                    defaultChecked={false}
+                  />
+                  <Label htmlFor="isSalaried">Salaried (Time not counted as direct project cost)</Label>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
@@ -399,6 +408,7 @@ export default function Users() {
                     isAssignable: formData.get('isAssignable') === 'true',
                     defaultBillingRate: formData.get('defaultBillingRate'),
                     defaultCostRate: formData.get('defaultCostRate'),
+                    isSalaried: formData.get('isSalaried') === 'on',
                     isActive: formData.get('isActive') === 'on',
                   }
                 });
@@ -502,6 +512,14 @@ export default function Users() {
                         step="0.01"
                       />
                     </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="edit-isSalaried"
+                      name="isSalaried"
+                      defaultChecked={editingUser.isSalaried}
+                    />
+                    <Label htmlFor="edit-isSalaried">Salaried (Time not counted as direct project cost)</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Switch
