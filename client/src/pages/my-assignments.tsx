@@ -176,7 +176,7 @@ export function MyAssignments() {
     return grouped;
   }, [filteredAssignments]);
 
-  // Mutation to complete engagement (mark user as done with the project)
+  // Mutation to complete membership (mark user as done with the project)
   const completeEngagementMutation = useMutation({
     mutationFn: async ({ projectId }: { projectId: string }) => {
       return apiRequest(`/api/projects/${projectId}/engagements/${currentUser?.id}/complete`, {
@@ -188,14 +188,14 @@ export function MyAssignments() {
       queryClient.invalidateQueries({ queryKey: ['/api/my-assignments'] });
       setEngagementDialog(null);
       toast({
-        title: "Engagement Marked Complete",
+        title: "Membership Marked Complete",
         description: "You've been marked as finished with this project. You won't receive time reminders for it."
       });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to complete engagement",
+        description: error.message || "Failed to complete membership",
         variant: "destructive"
       });
     }
@@ -606,26 +606,26 @@ export function MyAssignments() {
         </div>
       </div>
 
-      {/* Engagement Completion Dialog */}
+      {/* Membership Completion Dialog */}
       <Dialog open={engagementDialog?.open || false} onOpenChange={(open) => !open && setEngagementDialog(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserCheck className="w-5 h-5 text-primary" />
-              Mark Your Engagement Complete?
+              Mark Your Membership Complete?
             </DialogTitle>
             <DialogDescription>
               You've completed your last assignment on <span className="font-semibold">{engagementDialog?.projectName}</span>.
-              Would you like to mark your engagement with this project as complete?
+              Would you like to mark your membership on this project as complete?
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-muted-foreground">
-              Marking your engagement complete means:
+              Marking your membership complete means:
             </p>
             <ul className="text-sm text-muted-foreground mt-2 space-y-1 ml-4 list-disc">
               <li>You won't receive time entry reminders for this project</li>
-              <li>If you're assigned new work on this project, your engagement will automatically reactivate</li>
+              <li>If you're assigned new work on this project, your membership will automatically reactivate</li>
             </ul>
           </div>
           <DialogFooter>

@@ -1155,7 +1155,7 @@ export default function ProjectDetail() {
     }
   });
 
-  // Engagement mutations for marking team members as complete/reactivating
+  // Membership mutations for marking team members as complete/reactivating
   const completeEngagementMutation = useMutation({
     mutationFn: async ({ userId, force }: { userId: string; force?: boolean }) => {
       return apiRequest(`/api/projects/${id}/engagements/${userId}/complete`, {
@@ -1168,7 +1168,7 @@ export default function ProjectDetail() {
       setEngagementToComplete(null);
       setLastCompletionAttempt(null);
       toast({
-        title: "Engagement Marked Complete",
+        title: "Membership Marked Complete",
         description: "Team member has been marked as complete on this project"
       });
     },
@@ -1188,7 +1188,7 @@ export default function ProjectDetail() {
       } else {
         toast({
           title: "Error",
-          description: error.message || "Failed to complete engagement",
+          description: error.message || "Failed to complete membership",
           variant: "destructive"
         });
         setLastCompletionAttempt(null);
@@ -1196,7 +1196,7 @@ export default function ProjectDetail() {
     }
   });
 
-  // Handler to initiate engagement completion with pre-check
+  // Handler to initiate membership completion with pre-check
   const handleCompleteEngagement = async (userId: string, userName: string) => {
     // Store attempt info for error recovery in case of race condition
     setLastCompletionAttempt({ userId, userName });
@@ -1226,14 +1226,14 @@ export default function ProjectDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
       toast({
-        title: "Engagement Reactivated",
+        title: "Membership Reactivated",
         description: "Team member is now active on this project again"
       });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to reactivate engagement",
+        description: error.message || "Failed to reactivate membership",
         variant: "destructive"
       });
     }
@@ -2564,12 +2564,12 @@ export default function ProjectDetail() {
               </CardContent>
             </Card>
 
-            {/* Team Engagements Card - Shows team member engagement status */}
+            {/* Team Membership Card - Shows team member status */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Users className="w-5 h-5" />
-                  Team Engagements
+                  Team Membership
                 </CardTitle>
                 <CardDescription>
                   Track which team members are actively working on this project. 
@@ -2586,9 +2586,9 @@ export default function ProjectDetail() {
                 ) : engagements.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No team engagements yet</p>
+                    <p>No team members yet</p>
                     <p className="text-sm mt-2">
-                      Engagements are created automatically when team members are assigned to tasks
+                      Team membership is created automatically when members are assigned to tasks
                     </p>
                   </div>
                 ) : (
@@ -5570,7 +5570,7 @@ export default function ProjectDetail() {
           </DialogContent>
         </Dialog>
 
-        {/* Engagement Completion Confirmation Dialog - Only shows when user has active allocations */}
+        {/* Membership Completion Confirmation Dialog - Only shows when user has active allocations */}
         <AlertDialog open={!!engagementToComplete} onOpenChange={(open) => !open && setEngagementToComplete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -5580,7 +5580,7 @@ export default function ProjectDetail() {
               </AlertDialogTitle>
               <AlertDialogDescription>
                 <strong>{engagementToComplete?.userName}</strong> still has active assignments on this project. 
-                Are you sure you want to mark their engagement as complete?
+                Are you sure you want to mark their membership as complete?
                 <div className="mt-3 p-3 bg-muted rounded-md text-sm">
                   <p className="font-medium mb-1">What happens when you mark complete:</p>
                   <ul className="list-disc ml-4 space-y-1">
