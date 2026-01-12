@@ -28,6 +28,7 @@ export const users = pgTable("users", {
   customRole: text("custom_role"), // For non-standard roles
   defaultBillingRate: decimal("default_billing_rate", { precision: 10, scale: 2 }), // Default billing rate
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate (internal)
+  isSalaried: boolean("is_salaried").notNull().default(false), // Salaried resources don't contribute to direct project costs
   isActive: boolean("is_active").notNull().default(true),
   receiveTimeReminders: boolean("receive_time_reminders").notNull().default(true), // Opt-in for weekly time entry reminders
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -71,6 +72,7 @@ export const roles = pgTable("roles", {
   name: text("name").notNull().unique(),
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }).notNull(),
   defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate for margin calculations
+  isAlwaysSalaried: boolean("is_always_salaried").notNull().default(false), // Roles like "principal" are always salaried
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
