@@ -203,13 +203,15 @@ async function ensureEstimateIsEditable(estimateId: string, res: Response): Prom
 }
 
 // Helper: Check if a line item represents a salaried resource
-// A resource is salaried if: user.isSalaried = true OR role.isAlwaysSalaried = true
+// Individual employee setting takes precedence over role configuration
+// Role is a fallback used in estimates when specific staffing isn't decided
 function isLineItemSalaried(item: any): boolean {
-  // Check if the assigned user is salaried directly
-  if (item.assignedUser?.isSalaried === true) return true;
-  // Check if the role is always salaried (via joined role object or assignedUser's role)
+  if (item.assignedUser) {
+    // Specific person assigned - use only their individual salaried setting
+    return item.assignedUser.isSalaried === true;
+  }
+  // No specific person assigned - use role's isAlwaysSalaried as fallback for estimate planning
   if (item.role?.isAlwaysSalaried === true) return true;
-  if (item.assignedUser?.role?.isAlwaysSalaried === true) return true;
   return false;
 }
 
