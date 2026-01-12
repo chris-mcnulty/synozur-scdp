@@ -3743,8 +3743,13 @@ export async function registerRoutes(app: Express): Promise<void> {
             console.log('[PLANNER] No person assigned to allocation:', allocation.id);
           }
           
-          // Get task notes from activity description
-          const taskNotes = allocation.notes || allocation.taskDescription || '';
+          // Get task notes with Constellation project link
+          const baseUrl = process.env.APP_PUBLIC_URL || process.env.REPL_SLUG 
+            ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
+            : 'https://constellation.replit.app';
+          const projectLink = `${baseUrl}/projects/${projectId}`;
+          const originalNotes = allocation.notes || allocation.taskDescription || '';
+          const taskNotes = `🔗 View in Constellation: ${projectLink}\n\n${originalNotes}`.trim();
           
           // Determine completion status
           let percentComplete = 0;
@@ -3767,16 +3772,14 @@ export async function registerRoutes(app: Express): Promise<void> {
                 assigneeIds
               });
               
-              // Update task notes/description if present
-              if (taskNotes) {
-                try {
-                  const taskDetails = await plannerService.getTaskDetails(syncRecord.taskId);
-                  if (taskDetails) {
-                    await plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes);
-                  }
-                } catch (notesErr: any) {
-                  console.warn('[PLANNER] Failed to update task notes:', notesErr.message);
+              // Always update task notes/description (includes Constellation link)
+              try {
+                const taskDetails = await plannerService.getTaskDetails(syncRecord.taskId);
+                if (taskDetails) {
+                  await plannerService.updateTaskDetails(syncRecord.taskId, taskDetails['@odata.etag'] || '', taskNotes);
                 }
+              } catch (notesErr: any) {
+                console.warn('[PLANNER] Failed to update task notes:', notesErr.message);
               }
               
               await storage.updatePlannerTaskSync(syncRecord.id, {
@@ -3803,16 +3806,14 @@ export async function registerRoutes(app: Express): Promise<void> {
               percentComplete
             });
             
-            // Add task notes/description if present
-            if (taskNotes) {
-              try {
-                const taskDetails = await plannerService.getTaskDetails(newTask.id);
-                if (taskDetails) {
-                  await plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes);
-                }
-              } catch (notesErr: any) {
-                console.warn('[PLANNER] Failed to add task notes:', notesErr.message);
+            // Add task notes/description with Constellation link
+            try {
+              const taskDetails = await plannerService.getTaskDetails(newTask.id);
+              if (taskDetails) {
+                await plannerService.updateTaskDetails(newTask.id, taskDetails['@odata.etag'] || '', taskNotes);
               }
+            } catch (notesErr: any) {
+              console.warn('[PLANNER] Failed to add task notes:', notesErr.message);
             }
             
             await storage.createPlannerTaskSync({

@@ -295,11 +295,12 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  window.open(`https://tasks.office.com/`, '_blank');
+                  const planUrl = `https://tasks.office.com/Home/PlanViews/${connection.planId}`;
+                  window.open(planUrl, '_blank');
                 }}
               >
                 <ExternalLink className="h-4 w-4 mr-1" />
-                Open in Planner
+                Open Plan in Planner
               </Button>
               <Button
                 variant="ghost"
