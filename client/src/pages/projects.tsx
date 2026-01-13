@@ -398,7 +398,16 @@ export default function Projects() {
                   {/* Client Header */}
                   <div 
                     className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!collapsedClients.has(group.clientId)}
                     onClick={() => toggleClientCollapse(group.clientId)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleClientCollapse(group.clientId);
+                      }
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       {collapsedClients.has(group.clientId) ? (
