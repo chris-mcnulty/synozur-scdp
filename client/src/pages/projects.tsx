@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, LayoutGrid, List, Rows3, ChevronDown, ChevronRight, Building2, ArrowUpDown } from "lucide-react";
+import { Plus, Search, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, LayoutGrid, List, Rows3, ChevronDown, ChevronRight, Building2, ArrowUpDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
