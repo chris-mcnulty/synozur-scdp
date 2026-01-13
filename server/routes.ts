@@ -4828,19 +4828,20 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Convert allocations to CSV rows
       const rows = allocations.map((allocation: any) => {
-        // Build task name from epic/stage/workstream or taskDescription
+        // Task Name: Use taskDescription first (the actual task name)
+        // Fall back to structured name only if no taskDescription exists
         let taskName = "";
         
-        // First try to build from structure
-        if (allocation.epic?.name && allocation.stage?.name) {
+        // Primary: use taskDescription (the actual task name entered by user)
+        if (allocation.taskDescription) {
+          taskName = allocation.taskDescription;
+        }
+        // Secondary: build from structure if no taskDescription
+        else if (allocation.epic?.name && allocation.stage?.name) {
           const workstreamName = allocation.workstream?.name || allocation.workstream || "";
           taskName = workstreamName 
             ? `${allocation.epic.name} - ${allocation.stage.name}: ${workstreamName}`
             : `${allocation.epic.name} - ${allocation.stage.name}`;
-        } 
-        // Try taskDescription if no structure
-        else if (allocation.taskDescription) {
-          taskName = allocation.taskDescription;
         }
         // Fall back to workstream or activity
         else if (allocation.workstream?.name || allocation.workstream) {
