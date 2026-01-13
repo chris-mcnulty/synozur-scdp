@@ -1767,7 +1767,6 @@ export default function ProjectDetail() {
                       <SelectValue placeholder="More views..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="overview">Overview Charts</SelectItem>
                       <SelectItem value="monthly">Monthly Trends</SelectItem>
                       <SelectItem value="team">Team Performance</SelectItem>
                       <SelectItem value="burndown">Burn Rate Details</SelectItem>
