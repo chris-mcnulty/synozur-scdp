@@ -5086,6 +5086,30 @@ export async function registerRoutes(app: Express): Promise<void> {
         const taskDescription = isPlannerFormat && taskNameValue ? String(taskNameValue) : null;
         const finalNotes = notesValue ? String(notesValue) : null;
         
+        // Parse dates first so we can calculate week number
+        const parsedStartDate = parseDate(startDateValue);
+        const parsedEndDate = parseDate(endDateValue);
+        
+        // Calculate ISO week number from start date
+        const getISOWeekNumber = (dateStr: string | null): number => {
+          if (!dateStr) return 1;
+          const date = new Date(dateStr);
+          if (isNaN(date.getTime())) return 1;
+          
+          // ISO week calculation
+          const tempDate = new Date(date.valueOf());
+          const dayNum = (date.getDay() + 6) % 7; // Make Monday = 0
+          tempDate.setDate(tempDate.getDate() - dayNum + 3); // Set to nearest Thursday
+          const firstThursday = tempDate.valueOf();
+          tempDate.setMonth(0, 1); // Jan 1
+          if (tempDate.getDay() !== 4) {
+            tempDate.setMonth(0, 1 + ((4 - tempDate.getDay()) + 7) % 7);
+          }
+          return 1 + Math.ceil((firstThursday - tempDate.valueOf()) / 604800000);
+        };
+        
+        const weekNumber = getISOWeekNumber(parsedStartDate);
+        
         const allocation = {
           projectId,
           personId: personId || null, // null if person not found
@@ -5095,12 +5119,12 @@ export async function registerRoutes(app: Express): Promise<void> {
           projectStageId: stageId || null, // Stage from CSV
           projectActivityId: null, // We don't have activities in import yet
           projectMilestoneId: null, // We don't have milestones in import yet
-          weekNumber: 1, // Default week number, could be parsed from file
+          weekNumber, // Calculated from start date
           hours: String(hoursValue),
           pricingMode,
           rackRate: "0", // Default rack rate, will be calculated based on role/person
-          plannedStartDate: parseDate(startDateValue),
-          plannedEndDate: parseDate(endDateValue),
+          plannedStartDate: parsedStartDate,
+          plannedEndDate: parsedEndDate,
           resourceName, // Store person name if not found in system
           billingRate: null, // Will be calculated based on role/person
           costRate: null, // Will be calculated based on role/person
