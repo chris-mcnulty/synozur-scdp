@@ -4343,6 +4343,14 @@ export async function registerRoutes(app: Express): Promise<void> {
           console.log('[PLANNER] Importing new tasks from Planner plan:', connection.planId);
           const planTasks = await plannerService.listTasks(connection.planId);
           
+          // Fetch buckets upfront for bucket → stage mapping
+          const planBuckets = await plannerService.listBuckets(connection.planId);
+          const bucketMap = new Map<string, string>();
+          for (const bucket of planBuckets) {
+            bucketMap.set(bucket.id, bucket.name);
+          }
+          console.log('[PLANNER] Loaded buckets for stage mapping:', Array.from(bucketMap.entries()));
+          
           // Get project details for allocation creation
           const project = await storage.getProject(projectId);
           if (!project) {
@@ -4522,10 +4530,52 @@ export async function registerRoutes(app: Express): Promise<void> {
                     status = 'in_progress';
                   }
                   
+                  // Fetch task details to get the description field
+                  let taskDescriptionText = task.title; // Fallback to title
+                  try {
+                    const taskDetails = await plannerService.getTaskDetails(task.id);
+                    if (taskDetails?.description && taskDetails.description.trim()) {
+                      taskDescriptionText = taskDetails.description.trim();
+                      console.log('[PLANNER] Using task description:', taskDescriptionText);
+                    } else {
+                      console.log('[PLANNER] No description, using title:', task.title);
+                    }
+                  } catch (detailsErr: any) {
+                    console.warn('[PLANNER] Could not fetch task details, using title:', detailsErr.message);
+                  }
+                  
+                  // Map bucket to stage - bucket name → stage
+                  let projectStageId: string | null = null;
+                  if (task.bucketId) {
+                    const bucketName = bucketMap.get(task.bucketId);
+                    if (bucketName) {
+                      console.log('[PLANNER] Looking for stage matching bucket:', bucketName);
+                      // Find existing stage with matching name
+                      const projectStages = await storage.getProjectStages(projectId);
+                      const matchingStage = projectStages.find(s => 
+                        s.name.toLowerCase() === bucketName.toLowerCase()
+                      );
+                      if (matchingStage) {
+                        projectStageId = matchingStage.id;
+                        console.log('[PLANNER] Mapped bucket to existing stage:', matchingStage.name);
+                      } else {
+                        // Create new stage based on bucket name
+                        console.log('[PLANNER] Creating new stage from bucket:', bucketName);
+                        const newStage = await storage.createProjectStage({
+                          projectId,
+                          name: bucketName,
+                          description: `Imported from Planner bucket`,
+                          sortOrder: projectStages.length + 1
+                        });
+                        projectStageId = newStage.id;
+                      }
+                    }
+                  }
+                  
                   // Create new allocation with properly derived rates
                   const allocationData = {
                     projectId,
-                    taskDescription: task.title,
+                    taskDescription: taskDescriptionText,
                     personId,
                     roleId,
                     hours: '8', // Default 8 hours for imported tasks
@@ -4533,6 +4583,7 @@ export async function registerRoutes(app: Express): Promise<void> {
                     costRate,
                     pricingMode: personId ? 'person' as const : 'role' as const,
                     status,
+                    projectStageId, // Map bucket → stage
                     plannedStartDate: task.startDateTime ? task.startDateTime.split('T')[0] : null,
                     plannedEndDate: task.dueDateTime ? task.dueDateTime.split('T')[0] : null,
                     notes: `Imported from Microsoft Planner`,
@@ -4542,12 +4593,14 @@ export async function registerRoutes(app: Express): Promise<void> {
                   const newAllocation = await storage.createProjectAllocation(allocationData);
                   
                   // Create sync record to prevent re-importing
+                  const taskBucketName = task.bucketId ? bucketMap.get(task.bucketId) : null;
                   await storage.createPlannerTaskSync({
                     connectionId: connection.id,
                     allocationId: newAllocation.id,
                     taskId: task.id,
                     taskTitle: task.title,
                     bucketId: task.bucketId || null,
+                    bucketName: taskBucketName || null,
                     syncStatus: 'synced',
                     remoteEtag: task['@odata.etag'] || null
                   });
@@ -4566,12 +4619,14 @@ export async function registerRoutes(app: Express): Promise<void> {
                   // Create sync record with null allocationId to mark this task as attempted
                   // This prevents retry spam on subsequent syncs
                   try {
+                    const failedBucketName = task.bucketId ? bucketMap.get(task.bucketId) : null;
                     await storage.createPlannerTaskSync({
                       connectionId: connection.id,
                       allocationId: null, // No allocation - just tracking the failure
                       taskId: task.id,
                       taskTitle: task.title,
                       bucketId: task.bucketId || null,
+                      bucketName: failedBucketName || null,
                       syncStatus: 'import_failed',
                       syncError: importErr.message,
                       remoteEtag: task['@odata.etag'] || null
