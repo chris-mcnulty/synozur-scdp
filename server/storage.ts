@@ -5105,11 +5105,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Project Engagements
-  async getProjectEngagements(projectId: string): Promise<ProjectEngagement[]> {
-    return await db
-      .select()
+  async getProjectEngagements(projectId: string): Promise<(ProjectEngagement & { user: { id: string; name: string; email: string | null } | null })[]> {
+    const results = await db
+      .select({
+        engagement: projectEngagements,
+        user: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        }
+      })
       .from(projectEngagements)
+      .leftJoin(users, eq(projectEngagements.userId, users.id))
       .where(eq(projectEngagements.projectId, projectId));
+    
+    return results.map(row => ({
+      ...row.engagement,
+      user: row.user
+    }));
   }
 
   async getProjectEngagement(projectId: string, userId: string): Promise<ProjectEngagement | undefined> {
