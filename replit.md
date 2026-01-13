@@ -17,6 +17,13 @@ Preferred communication style: Simple, everyday language.
 - **Form Handling**: React Hook Form with Zod validation.
 - **UI/UX Decisions**: Refactored estimate detail tables, mobile-optimized interfaces, responsive navigation, alphabetically sorted dropdowns, reorganized navigation by user persona, prominent quote total displays with visual cues for overrides, dark/light mode toggle.
 - **Projects List UX**: Three view modes (Grouped by client with collapsible sections, List/table view, Cards/grid view), defaults to Active status filter, client-then-project sorting by default, localStorage persistence for all filter/sort/view preferences.
+- **Project Detail UX (Phase 2)**: Consolidated tabs from 11 to 6 with nested sub-tabs for better organization:
+  - **Overview**: Project summary and KPIs with info sidebar
+  - **Analytics**: Sub-tabs for Monthly Trends, Team Performance, Burn Rate
+  - **Delivery**: Sub-tabs for Project Structure, Team & Assignments
+  - **Contracts**: Sub-tabs for SOWs & Change Orders, Budget History, Payment Milestones
+  - **Time**: Time entry management
+  - **Invoices**: Invoice management and generation
 - **Project Selectors**: Standardized project dropdown format using "CLIENTSHORTNAME | Project name" (e.g., "MSFT | AI Enablement") for disambiguation across similar project names. Defaults to active projects only. Client shortName stored in database with auto-generation fallback.
 - **My Projects Dashboard**: 3-tab structure (Overview, Delivery, Financials) providing action items, active assignments, and financial summary at a glance.
 

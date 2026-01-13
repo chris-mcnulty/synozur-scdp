@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle 
 } from "@/components/ui/dialog";
@@ -1740,23 +1741,123 @@ export default function ProjectDetail() {
           </Alert>
         )}
 
-        {/* Tabs */}
-        <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-          <TabsList>
-            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="monthly" data-testid="tab-monthly">Monthly Trends</TabsTrigger>
-            <TabsTrigger value="team" data-testid="tab-team">Team Performance</TabsTrigger>
-            <TabsTrigger value="structure" data-testid="tab-structure">Structure</TabsTrigger>
-            <TabsTrigger value="allocations" data-testid="tab-allocations">Team & Assignments</TabsTrigger>
-            <TabsTrigger value="burndown" data-testid="tab-burndown">Burn Rate</TabsTrigger>
-            <TabsTrigger value="sows" data-testid="tab-sows">SOWs & Change Orders</TabsTrigger>
-            <TabsTrigger value="budget-history" data-testid="tab-budget-history">Budget History</TabsTrigger>
-            <TabsTrigger value="payment-milestones" data-testid="tab-payment-milestones">Payment Milestones</TabsTrigger>
-            <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
-            {canViewTime && (
-              <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
-            )}
-          </TabsList>
+        {/* Main Content with Sidebar */}
+        <div className="flex gap-6">
+          {/* Project Info Sidebar */}
+          <div className="w-64 shrink-0 hidden lg:block">
+            <Card className="sticky top-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Project Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Client</p>
+                  <p className="font-medium flex items-center gap-2">
+                    <Building className="h-4 w-4 text-muted-foreground" />
+                    {project.client.name}
+                  </p>
+                </div>
+                
+                <Separator />
+                
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Project Manager</p>
+                  <p className="font-medium flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    {project.pm || "Not assigned"}
+                  </p>
+                </div>
+                
+                <Separator />
+                
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Timeline</p>
+                  <div className="text-sm space-y-1">
+                    <p className="flex items-center gap-2">
+                      <Calendar className="h-3 w-3 text-muted-foreground" />
+                      {project.startDate ? format(new Date(project.startDate), "MMM d, yyyy") : "Not set"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      to {project.endDate ? format(new Date(project.endDate), "MMM d, yyyy") : "Ongoing"}
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Commercial</p>
+                  <p className="text-sm">{project.commercialScheme || "Not set"}</p>
+                  {project.hasSow && (
+                    <Badge variant="outline" className="mt-1 text-xs">
+                      <FileCheck className="h-3 w-3 mr-1" />
+                      SOW Signed
+                    </Badge>
+                  )}
+                </div>
+                
+                <Separator />
+                
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Budget Summary</p>
+                  <div className="space-y-2 mt-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Total</span>
+                      <span className="font-medium">${(burnRate.totalBudget || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Burned</span>
+                      <span className="font-medium">${(burnRate.consumedBudget || 0).toLocaleString()}</span>
+                    </div>
+                    <Progress value={burnRate.burnRatePercentage} className="h-2" />
+                    <p className="text-xs text-center text-muted-foreground">
+                      {burnRate.burnRatePercentage.toFixed(1)}% used
+                    </p>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                <div className="space-y-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start"
+                    onClick={() => {
+                      setProjectToEdit(analytics.project);
+                      setEditDialogOpen(true);
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Project
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start"
+                    onClick={() => setShowExportDialog(true)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Export Report
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Tabs Content */}
+          <div className="flex-1 min-w-0">
+            <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+              <TabsList className="w-full justify-start flex-wrap h-auto gap-1 p-1">
+                <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+                <TabsTrigger value="delivery" data-testid="tab-delivery">Delivery</TabsTrigger>
+                <TabsTrigger value="analytics" data-testid="tab-analytics">Analytics</TabsTrigger>
+                <TabsTrigger value="contracts" data-testid="tab-contracts">Contracts</TabsTrigger>
+                {canViewTime && (
+                  <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
+                )}
+                <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
+              </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1867,7 +1968,15 @@ export default function ProjectDetail() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="monthly" className="space-y-6">
+          <TabsContent value="analytics" className="space-y-6">
+            <Tabs defaultValue="monthly" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="monthly" data-testid="tab-analytics-monthly">Monthly Trends</TabsTrigger>
+                <TabsTrigger value="team" data-testid="tab-analytics-team">Team Performance</TabsTrigger>
+                <TabsTrigger value="burndown" data-testid="tab-analytics-burndown">Burn Rate</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="monthly" className="space-y-6">
             {/* Monthly Hours Chart */}
             <Card>
               <CardHeader>
@@ -1921,9 +2030,9 @@ export default function ProjectDetail() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="team" className="space-y-6">
+              </TabsContent>
+              
+              <TabsContent value="team" className="space-y-6">
             {/* Team Hours Chart */}
             <Card>
               <CardHeader>
@@ -1982,10 +2091,119 @@ export default function ProjectDetail() {
                 </Table>
               </CardContent>
             </Card>
+              </TabsContent>
+              
+              <TabsContent value="burndown" className="space-y-6">
+                {/* Cumulative Burn Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Budget Burn Rate</CardTitle>
+                    <CardDescription>Cumulative budget consumption over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={400}>
+                      <AreaChart data={cumulativeBurnData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="month" />
+                        <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                        <Tooltip formatter={(value: any) => `$${Number(value).toLocaleString()}`} />
+                        <Legend />
+                        <Area 
+                          type="monotone" 
+                          dataKey="cumulative" 
+                          name="Actual Spend" 
+                          stroke="hsl(var(--primary))" 
+                          fill="hsl(var(--primary))" 
+                          fillOpacity={0.6}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="budget" 
+                          name="Total Budget" 
+                          stroke="hsl(var(--destructive))" 
+                          strokeDasharray="5 5"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Burn Rate Analysis */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Burn Rate Analysis</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Budget Allocated</span>
+                        <span className="font-semibold">${burnRate.totalBudget.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Budget Consumed</span>
+                        <span className="font-semibold">${burnRate.consumedBudget.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Budget Remaining</span>
+                        <span className="font-semibold">
+                          ${Math.max(0, burnRate.totalBudget - burnRate.consumedBudget).toLocaleString()}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Burn Rate</span>
+                        <Badge variant={burnRate.burnRatePercentage > 80 ? "destructive" : "default"}>
+                          {burnRate.burnRatePercentage.toFixed(1)}% consumed
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Hours Analysis</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Estimated Hours</span>
+                        <span className="font-semibold">{burnRate.estimatedHours.toFixed(0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Actual Hours</span>
+                        <span className="font-semibold">{burnRate.actualHours.toFixed(0)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Hours Remaining</span>
+                        <span className="font-semibold">
+                          {Math.max(0, burnRate.estimatedHours - burnRate.actualHours).toFixed(0)}
+                        </span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Variance</span>
+                        <Badge variant={burnRate.hoursVariance > 0 ? "destructive" : "default"}>
+                          {burnRate.hoursVariance > 0 ? '+' : ''}{burnRate.hoursVariance.toFixed(0)} hours
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+              
+            </Tabs>
           </TabsContent>
 
-          {/* Structure Tab - Unified view of Epics, Stages, Workstreams, and Milestones */}
-          <TabsContent value="structure" className="space-y-6">
+          {/* Delivery Tab - Unified view of Structure and Team Allocations */}
+          <TabsContent value="delivery" className="space-y-6">
+            <Tabs defaultValue="structure" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="structure" data-testid="tab-delivery-structure">Project Structure</TabsTrigger>
+                <TabsTrigger value="allocations" data-testid="tab-delivery-allocations">Team & Assignments</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="structure" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -2258,10 +2476,9 @@ export default function ProjectDetail() {
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Team & Assignments Tab */}
-          <TabsContent value="allocations" className="space-y-6">
+              </TabsContent>
+              
+              <TabsContent value="allocations" className="space-y-6">
             {/* Planner Integration Panel */}
             <PlannerStatusPanel 
               projectId={id || ""} 
@@ -2696,108 +2913,21 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
+              </TabsContent>
+              
+            </Tabs>
           </TabsContent>
 
-          <TabsContent value="burndown" className="space-y-6">
-            {/* Cumulative Burn Chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Budget Burn Rate</CardTitle>
-                <CardDescription>Cumulative budget consumption over time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={400}>
-                  <AreaChart data={cumulativeBurnData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
-                    <Tooltip formatter={(value: any) => `$${Number(value).toLocaleString()}`} />
-                    <Legend />
-                    <Area 
-                      type="monotone" 
-                      dataKey="cumulative" 
-                      name="Actual Spend" 
-                      stroke="hsl(var(--primary))" 
-                      fill="hsl(var(--primary))" 
-                      fillOpacity={0.6}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="budget" 
-                      name="Total Budget" 
-                      stroke="hsl(var(--destructive))" 
-                      strokeDasharray="5 5"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Burn Rate Analysis */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Burn Rate Analysis</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Budget Allocated</span>
-                    <span className="font-semibold">${burnRate.totalBudget.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Budget Consumed</span>
-                    <span className="font-semibold">${burnRate.consumedBudget.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Budget Remaining</span>
-                    <span className="font-semibold">
-                      ${Math.max(0, burnRate.totalBudget - burnRate.consumedBudget).toLocaleString()}
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Burn Rate</span>
-                    <Badge className={health.color}>
-                      {burnRate.burnRatePercentage.toFixed(1)}%
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Hours Analysis</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Estimated Hours</span>
-                    <span className="font-semibold">{burnRate.estimatedHours.toFixed(0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Actual Hours</span>
-                    <span className="font-semibold">{burnRate.actualHours.toFixed(0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Hours Remaining</span>
-                    <span className="font-semibold">
-                      {Math.max(0, burnRate.estimatedHours - burnRate.actualHours).toFixed(0)}
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Variance</span>
-                    <Badge variant={burnRate.hoursVariance > 0 ? "destructive" : "default"}>
-                      {burnRate.hoursVariance > 0 ? '+' : ''}{burnRate.hoursVariance.toFixed(0)} hours
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="sows" className="space-y-6">
+          {/* Contracts Tab - SOWs, Budget History, Payment Milestones */}
+          <TabsContent value="contracts" className="space-y-6">
+            <Tabs defaultValue="sows" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="sows" data-testid="tab-contracts-sows">SOWs & Change Orders</TabsTrigger>
+                <TabsTrigger value="budget-history" data-testid="tab-contracts-budget">Budget History</TabsTrigger>
+                <TabsTrigger value="payment-milestones" data-testid="tab-contracts-milestones">Payment Milestones</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="sows" className="space-y-6">
             {/* SOW Summary Card */}
             <Card>
               <CardHeader>
@@ -3051,10 +3181,9 @@ export default function ProjectDetail() {
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Budget History Tab */}
-          <TabsContent value="budget-history" className="space-y-6">
+              </TabsContent>
+              
+              <TabsContent value="budget-history" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Budget History</CardTitle>
@@ -3314,10 +3443,9 @@ export default function ProjectDetail() {
                 </Table>
               </CardContent>
             </Card>
-          </TabsContent>
-
-          {/* Payment Milestones Tab */}
-          <TabsContent value="payment-milestones" className="space-y-6">
+              </TabsContent>
+              
+              <TabsContent value="payment-milestones" className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -3467,6 +3595,9 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
+              </TabsContent>
+              
+            </Tabs>
           </TabsContent>
 
           {/* Invoices Tab */}
@@ -3939,7 +4070,9 @@ export default function ProjectDetail() {
             </TabsContent>
           )}
           
-        </Tabs>
+            </Tabs>
+          </div>
+        </div>
 
         {/* SOW Dialog */}
         <Dialog open={showSowDialog} onOpenChange={setShowSowDialog}>
@@ -5239,9 +5372,12 @@ export default function ProjectDetail() {
 
         {/* Edit Project Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Project</DialogTitle>
+              <DialogDescription>
+                Update project details across different sections below.
+              </DialogDescription>
             </DialogHeader>
             {projectToEdit && (
               <form name="edit-project-form" onSubmit={(e) => {
@@ -5265,7 +5401,6 @@ export default function ProjectDetail() {
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
                     retainerTotal: formData.get('retainerTotal') || undefined,
-                    // Convert empty strings and __default__ to null for vocabulary term IDs
                     epicTermId: epicTermIdValue && epicTermIdValue !== '__default__' ? epicTermIdValue : null,
                     stageTermId: stageTermIdValue && stageTermIdValue !== '__default__' ? stageTermIdValue : null,
                     activityTermId: activityTermIdValue && activityTermIdValue !== '__default__' ? activityTermIdValue : null,
@@ -5273,245 +5408,305 @@ export default function ProjectDetail() {
                   }
                 });
               }}>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-name">Project Name</Label>
-                    <Input
-                      id="edit-name"
-                      name="name"
-                      defaultValue={projectToEdit.name}
-                      required
-                      data-testid="input-edit-project-name"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-description">Description / Summary</Label>
-                    <textarea
-                      id="edit-description"
-                      name="description"
-                      defaultValue={projectToEdit.description || ""}
-                      placeholder="Vision statement or project overview"
-                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      data-testid="textarea-edit-description"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-code">Project Code</Label>
-                    <Input
-                      id="edit-code"
-                      name="code"
-                      defaultValue={projectToEdit.code}
-                      required
-                      data-testid="input-edit-project-code"
-                    />
-                  </div>
-                  
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-clientId">Client</Label>
-                    <Select name="clientId" defaultValue={projectToEdit.clientId} required>
-                      <SelectTrigger data-testid="select-edit-client">
-                        <SelectValue placeholder="Select a client" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {clients.map(client => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {vocabularyCatalog.length > 0 && (
-                    <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
-                      <h4 className="font-medium text-sm">Vocabulary Customization</h4>
-                      <p className="text-xs text-muted-foreground">
-                        Customize terminology for this project. If not set, client or organization defaults will be used.
-                      </p>
-
+                <Accordion type="multiple" defaultValue={["basic", "status"]} className="w-full">
+                  {/* Basic Information Section */}
+                  <AccordionItem value="basic">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="h-4 w-4" />
+                        Basic Information
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-name">Project Name</Label>
+                        <Input
+                          id="edit-name"
+                          name="name"
+                          defaultValue={projectToEdit.name}
+                          required
+                          data-testid="input-edit-project-name"
+                        />
+                      </div>
+                      
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-description">Description / Summary</Label>
+                        <textarea
+                          id="edit-description"
+                          name="description"
+                          defaultValue={projectToEdit.description || ""}
+                          placeholder="Vision statement or project overview"
+                          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          data-testid="textarea-edit-description"
+                        />
+                      </div>
+                      
                       <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                          <Label htmlFor="edit-epicTermId">Epic Term</Label>
-                          <Select 
-                            name="epicTermId" 
-                            defaultValue={projectToEdit.epicTermId || effectiveClientDefaults.epicTermId || "__default__"}
-                          >
-                            <SelectTrigger data-testid="select-edit-epic-term">
-                              <SelectValue placeholder="Select epic term" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.epicTermId ? ` - ${getTermValueById(effectiveClientDefaults.epicTermId)}` : ''})</SelectItem>
-                              {vocabularyTermsByType.epicTerms?.map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Label htmlFor="edit-code">Project Code</Label>
+                          <Input
+                            id="edit-code"
+                            name="code"
+                            defaultValue={projectToEdit.code}
+                            required
+                            data-testid="input-edit-project-code"
+                          />
                         </div>
-
+                        
                         <div className="grid gap-2">
-                          <Label htmlFor="edit-stageTermId">Stage Term</Label>
-                          <Select 
-                            name="stageTermId" 
-                            defaultValue={projectToEdit.stageTermId || effectiveClientDefaults.stageTermId || "__default__"}
-                          >
-                            <SelectTrigger data-testid="select-edit-stage-term">
-                              <SelectValue placeholder="Select stage term" />
+                          <Label htmlFor="edit-clientId">Client</Label>
+                          <Select name="clientId" defaultValue={projectToEdit.clientId} required>
+                            <SelectTrigger data-testid="select-edit-client">
+                              <SelectValue placeholder="Select a client" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.stageTermId ? ` - ${getTermValueById(effectiveClientDefaults.stageTermId)}` : ''})</SelectItem>
-                              {vocabularyTermsByType.stageTerms?.map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label htmlFor="edit-activityTermId">Activity Term</Label>
-                          <Select 
-                            name="activityTermId" 
-                            defaultValue={projectToEdit.activityTermId || effectiveClientDefaults.activityTermId || "__default__"}
-                          >
-                            <SelectTrigger data-testid="select-edit-activity-term">
-                              <SelectValue placeholder="Select activity term" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.activityTermId ? ` - ${getTermValueById(effectiveClientDefaults.activityTermId)}` : ''})</SelectItem>
-                              {vocabularyTermsByType.activityTerms?.map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label htmlFor="edit-workstreamTermId">Workstream Term</Label>
-                          <Select 
-                            name="workstreamTermId" 
-                            defaultValue={projectToEdit.workstreamTermId || effectiveClientDefaults.workstreamTermId || "__default__"}
-                          >
-                            <SelectTrigger data-testid="select-edit-workstream-term">
-                              <SelectValue placeholder="Select workstream term" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.workstreamTermId ? ` - ${getTermValueById(effectiveClientDefaults.workstreamTermId)}` : ''})</SelectItem>
-                              {vocabularyTermsByType.workstreamTerms?.map((term: any) => (
-                                <SelectItem key={term.id} value={term.id}>
-                                  {term.termValue}
+                              {clients.map(client => (
+                                <SelectItem key={client.id} value={client.id}>
+                                  {client.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                       </div>
-                    </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Status & Team Section */}
+                  <AccordionItem value="status">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4" />
+                        Status & Team
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-2">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-status">Status</Label>
+                          <Select name="status" defaultValue={projectToEdit.status} required>
+                            <SelectTrigger data-testid="select-edit-status">
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="active">Active</SelectItem>
+                              <SelectItem value="on track">On Track</SelectItem>
+                              <SelectItem value="at risk">At Risk</SelectItem>
+                              <SelectItem value="delayed">Delayed</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="on hold">On Hold</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-pm">Project Manager</Label>
+                          <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
+                            <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
+                              <SelectValue placeholder="Select project manager" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No PM Assigned</SelectItem>
+                              {users.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Timeline Section */}
+                  <AccordionItem value="timeline">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Timeline
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-2">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-startDate">Start Date</Label>
+                          <Input
+                            id="edit-startDate"
+                            name="startDate"
+                            type="date"
+                            defaultValue={projectToEdit.startDate ? new Date(projectToEdit.startDate).toISOString().split('T')[0] : ""}
+                            data-testid="input-edit-start-date"
+                          />
+                        </div>
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-endDate">End Date</Label>
+                          <Input
+                            id="edit-endDate"
+                            name="endDate"
+                            type="date"
+                            defaultValue={projectToEdit.endDate ? new Date(projectToEdit.endDate).toISOString().split('T')[0] : ""}
+                            data-testid="input-edit-end-date"
+                          />
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Commercial Section */}
+                  <AccordionItem value="commercial">
+                    <AccordionTrigger className="text-base font-semibold">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4" />
+                        Commercial & Contracts
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-2">
+                      <div className="grid gap-2">
+                        <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
+                        <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
+                          <SelectTrigger data-testid="select-edit-commercial-scheme">
+                            <SelectValue placeholder="Select scheme" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="time-and-materials">Time & Materials</SelectItem>
+                            <SelectItem value="fixed-price">Fixed Price</SelectItem>
+                            <SelectItem value="retainer">Retainer</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {projectToEdit.commercialScheme === 'retainer' && (
+                        <div className="grid gap-2">
+                          <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
+                          <Input
+                            id="edit-retainerTotal"
+                            name="retainerTotal"
+                            type="number"
+                            defaultValue={projectToEdit.retainerTotal || ""}
+                            data-testid="input-edit-retainer-total"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center space-x-2 p-3 bg-muted/50 rounded-lg">
+                        <input
+                          type="checkbox"
+                          id="edit-hasSow"
+                          name="hasSow"
+                          value="true"
+                          defaultChecked={projectToEdit.hasSow}
+                          className="h-4 w-4 rounded border-gray-300"
+                          data-testid="checkbox-edit-has-sow"
+                        />
+                        <Label htmlFor="edit-hasSow" className="text-sm font-normal">
+                          Statement of Work (SOW) has been signed
+                        </Label>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* Vocabulary Customization Section */}
+                  {vocabularyCatalog.length > 0 && (
+                    <AccordionItem value="vocabulary">
+                      <AccordionTrigger className="text-base font-semibold">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          Vocabulary Customization
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-4 pt-2">
+                        <p className="text-sm text-muted-foreground">
+                          Customize terminology for this project. If not set, client or organization defaults will be used.
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-epicTermId">Epic Term</Label>
+                            <Select 
+                              name="epicTermId" 
+                              defaultValue={projectToEdit.epicTermId || effectiveClientDefaults.epicTermId || "__default__"}
+                            >
+                              <SelectTrigger data-testid="select-edit-epic-term">
+                                <SelectValue placeholder="Select epic term" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.epicTermId ? ` - ${getTermValueById(effectiveClientDefaults.epicTermId)}` : ''})</SelectItem>
+                                {vocabularyTermsByType.epicTerms?.map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-stageTermId">Stage Term</Label>
+                            <Select 
+                              name="stageTermId" 
+                              defaultValue={projectToEdit.stageTermId || effectiveClientDefaults.stageTermId || "__default__"}
+                            >
+                              <SelectTrigger data-testid="select-edit-stage-term">
+                                <SelectValue placeholder="Select stage term" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.stageTermId ? ` - ${getTermValueById(effectiveClientDefaults.stageTermId)}` : ''})</SelectItem>
+                                {vocabularyTermsByType.stageTerms?.map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-activityTermId">Activity Term</Label>
+                            <Select 
+                              name="activityTermId" 
+                              defaultValue={projectToEdit.activityTermId || effectiveClientDefaults.activityTermId || "__default__"}
+                            >
+                              <SelectTrigger data-testid="select-edit-activity-term">
+                                <SelectValue placeholder="Select activity term" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.activityTermId ? ` - ${getTermValueById(effectiveClientDefaults.activityTermId)}` : ''})</SelectItem>
+                                {vocabularyTermsByType.activityTerms?.map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <Label htmlFor="edit-workstreamTermId">Workstream Term</Label>
+                            <Select 
+                              name="workstreamTermId" 
+                              defaultValue={projectToEdit.workstreamTermId || effectiveClientDefaults.workstreamTermId || "__default__"}
+                            >
+                              <SelectTrigger data-testid="select-edit-workstream-term">
+                                <SelectValue placeholder="Select workstream term" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">None (use client/org default{effectiveClientDefaults.workstreamTermId ? ` - ${getTermValueById(effectiveClientDefaults.workstreamTermId)}` : ''})</SelectItem>
+                                {vocabularyTermsByType.workstreamTerms?.map((term: any) => (
+                                  <SelectItem key={term.id} value={term.id}>
+                                    {term.termValue}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
                   )}
+                </Accordion>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-status">Status</Label>
-                    <Select name="status" defaultValue={projectToEdit.status} required>
-                      <SelectTrigger data-testid="select-edit-status">
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Active</SelectItem>
-                        <SelectItem value="on track">On Track</SelectItem>
-                        <SelectItem value="at risk">At Risk</SelectItem>
-                        <SelectItem value="delayed">Delayed</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="on hold">On Hold</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-pm">Project Manager</Label>
-                    <Select name="pm" defaultValue={projectToEdit.pm || "none"}>
-                      <SelectTrigger id="edit-pm" data-testid="select-edit-pm">
-                        <SelectValue placeholder="Select project manager" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No PM Assigned</SelectItem>
-                        {users.map((user) => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
-                    <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
-                      <SelectTrigger data-testid="select-edit-commercial-scheme">
-                        <SelectValue placeholder="Select scheme" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="time-and-materials">Time & Materials</SelectItem>
-                        <SelectItem value="fixed-price">Fixed Price</SelectItem>
-                        <SelectItem value="retainer">Retainer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-startDate">Start Date</Label>
-                      <Input
-                        id="edit-startDate"
-                        name="startDate"
-                        type="date"
-                        defaultValue={projectToEdit.startDate ? new Date(projectToEdit.startDate).toISOString().split('T')[0] : ""}
-                        data-testid="input-edit-start-date"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-endDate">End Date</Label>
-                      <Input
-                        id="edit-endDate"
-                        name="endDate"
-                        type="date"
-                        defaultValue={projectToEdit.endDate ? new Date(projectToEdit.endDate).toISOString().split('T')[0] : ""}
-                        data-testid="input-edit-end-date"
-                      />
-                    </div>
-                  </div>
-
-                  {projectToEdit.commercialScheme === 'retainer' && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
-                      <Input
-                        id="edit-retainerTotal"
-                        name="retainerTotal"
-                        type="number"
-                        defaultValue={projectToEdit.retainerTotal || ""}
-                        data-testid="input-edit-retainer-total"
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="edit-hasSow"
-                      name="hasSow"
-                      value="true"
-                      defaultChecked={projectToEdit.hasSow}
-                      data-testid="checkbox-edit-has-sow"
-                    />
-                    <Label htmlFor="edit-hasSow">SOW Signed</Label>
-                  </div>
-                </div>
-                <DialogFooter>
+                <DialogFooter className="mt-6">
                   <Button 
                     type="button" 
                     variant="outline" 
