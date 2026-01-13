@@ -3997,7 +3997,23 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
           
           // Use Stage as bucket (or fallback to "Unassigned" if no stage)
-          const stageName = allocation.stage?.name || 'Unassigned';
+          // First check if stage object is populated, if not but projectStageId exists, fetch it
+          let stageName = 'Unassigned';
+          if (allocation.stage?.name) {
+            stageName = allocation.stage.name;
+          } else if (allocation.projectStageId) {
+            // Fallback: fetch stage directly if joined data is missing
+            const stage = await storage.getProjectStage(allocation.projectStageId);
+            if (stage?.name) {
+              stageName = stage.name;
+            }
+          }
+          console.log('[PLANNER] Allocation stage mapping:', {
+            allocationId: allocation.id,
+            projectStageId: allocation.projectStageId,
+            stageObject: allocation.stage,
+            stageName
+          });
           const bucket = await plannerService.getOrCreateBucket(connection.planId, stageName);
           
           // Get Azure user ID if person is assigned - look up by email (case-insensitive)

@@ -610,6 +610,7 @@ export interface IStorage {
   
   // Project Structure Methods
   getProjectEpics(projectId: string): Promise<ProjectEpic[]>;
+  getProjectStage(stageId: string): Promise<ProjectStage | undefined>;
   getProjectStages(epicId: string): Promise<ProjectStage[]>;
   getProjectStagesByEpicIds(epicIds: string[]): Promise<Map<string, ProjectStage[]>>;
   createProjectEpic(epic: InsertProjectEpic): Promise<ProjectEpic>;
@@ -2436,6 +2437,14 @@ export class DatabaseStorage implements IStorage {
       .from(projectEpics)
       .where(eq(projectEpics.projectId, projectId))
       .orderBy(projectEpics.order);
+  }
+
+  async getProjectStage(stageId: string): Promise<ProjectStage | undefined> {
+    const [stage] = await db.select()
+      .from(projectStages)
+      .where(eq(projectStages.id, stageId))
+      .limit(1);
+    return stage;
   }
 
   async getProjectStages(epicId: string): Promise<ProjectStage[]> {
