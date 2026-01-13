@@ -278,8 +278,8 @@ export default function Projects() {
   const filteredProjects = filteredAndSortedProjects;
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
-    setProjectToEdit(project);
-    setEditDialogOpen(true);
+    // Navigate to project detail page with edit dialog open
+    window.location.href = `/projects/${project.id}?edit=true`;
   };
 
   const handleDeleteProject = (project: ProjectWithBillableInfo) => {

@@ -184,6 +184,12 @@ export default function ProjectDetail() {
     return tab && validTabs.includes(tab) ? tab : 'overview';
   }, [searchString]);
   
+  // Check for edit parameter to auto-open edit dialog
+  const shouldOpenEditDialog = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get('edit') === 'true';
+  }, [searchString]);
+  
   const handleTabChange = (newTab: string) => {
     const params = new URLSearchParams(searchString);
     if (newTab === 'overview') {
@@ -278,6 +284,19 @@ export default function ProjectDetail() {
   } | null>(null);
   
   const { toast } = useToast();
+  
+  // Auto-open edit dialog when ?edit=true is in the URL
+  useEffect(() => {
+    if (shouldOpenEditDialog && analytics?.project && !isLoading) {
+      setProjectToEdit(analytics.project);
+      setEditDialogOpen(true);
+      // Clear the edit param from URL
+      const params = new URLSearchParams(searchString);
+      params.delete('edit');
+      const queryString = params.toString();
+      navigate(`/projects/${id}${queryString ? `?${queryString}` : ''}`, { replace: true });
+    }
+  }, [shouldOpenEditDialog, analytics?.project, isLoading, id, navigate, searchString]);
   
   // Check if user can view Time tab
   const canViewTime = user ? ['admin', 'billing-admin', 'pm', 'executive'].includes(user.role) : false;
