@@ -74,11 +74,7 @@ export default function Projects() {
 
   // Initialize editHasSow when projectToEdit changes
   useEffect(() => {
-    if (projectToEdit) {
-      setEditHasSow(Boolean(projectToEdit.hasSow));
-    } else {
-      setEditHasSow(false);
-    }
+    setEditHasSow(projectToEdit ? Boolean(projectToEdit.hasSow) : false);
   }, [projectToEdit]);
 
   const { data: clients = [] } = useQuery<any[]>({
@@ -1212,7 +1208,7 @@ export default function Projects() {
                           <Checkbox
                             id="edit-hasSow"
                             checked={editHasSow}
-                            onCheckedChange={(checked) => setEditHasSow(checked === true)}
+                            onCheckedChange={setEditHasSow}
                             data-testid="checkbox-edit-has-sow"
                           />
                           <input
