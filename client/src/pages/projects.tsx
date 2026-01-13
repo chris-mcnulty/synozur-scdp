@@ -247,6 +247,13 @@ export default function Projects() {
     setEditDialogOpen(true);
   };
 
+  const handleEditDialogClose = (open: boolean) => {
+    setEditDialogOpen(open);
+    if (!open) {
+      setProjectToEdit(null);
+    }
+  };
+
   const handleDeleteProject = (project: ProjectWithBillableInfo) => {
     setProjectToDelete(project);
     setDeleteDialogOpen(true);
@@ -989,12 +996,7 @@ export default function Projects() {
         </Dialog>
 
         {/* Edit Project Dialog - Accordion-based sections */}
-        <Dialog open={editDialogOpen} onOpenChange={(open) => {
-          setEditDialogOpen(open);
-          if (!open) {
-            setProjectToEdit(null);
-          }
-        }}>
+        <Dialog open={editDialogOpen} onOpenChange={handleEditDialogClose}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Project: {projectToEdit?.name}</DialogTitle>
@@ -1213,7 +1215,7 @@ export default function Projects() {
                           <Checkbox
                             id="edit-hasSow"
                             checked={editHasSow}
-                            onCheckedChange={setEditHasSow}
+                            onCheckedChange={(checked) => setEditHasSow(checked === true)}
                             data-testid="checkbox-edit-has-sow"
                           />
                           <input
