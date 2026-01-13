@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, Link, useLocation } from "wouter";
+import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -173,13 +173,28 @@ type AssignmentFormData = z.infer<typeof assignmentFormSchema>;
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
-  const [, navigate] = useLocation();
-  const [selectedTab, setSelectedTab] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
+  const [location, navigate] = useLocation();
+  const searchString = useSearch();
+  
+  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices'];
+  
+  const selectedTab = useMemo(() => {
+    const params = new URLSearchParams(searchString);
     const tab = params.get('tab');
-    const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices'];
     return tab && validTabs.includes(tab) ? tab : 'overview';
-  });
+  }, [searchString]);
+  
+  const handleTabChange = (newTab: string) => {
+    const params = new URLSearchParams(searchString);
+    if (newTab === 'overview') {
+      params.delete('tab');
+    } else {
+      params.set('tab', newTab);
+    }
+    const queryString = params.toString();
+    navigate(`/projects/${id}${queryString ? `?${queryString}` : ''}`, { replace: true });
+  };
+  
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
   const [deletingSowId, setDeletingSowId] = useState<string | null>(null);
@@ -1852,7 +1867,7 @@ export default function ProjectDetail() {
 
           {/* Main Tabs Content */}
           <div className="flex-1 min-w-0">
-            <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+            <Tabs value={selectedTab} onValueChange={handleTabChange}>
               <TabsList className="w-full justify-start flex-wrap h-auto gap-1 p-1">
                 <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
                 <TabsTrigger value="delivery" data-testid="tab-delivery">Delivery</TabsTrigger>
