@@ -5024,12 +5024,18 @@ export async function registerRoutes(app: Express): Promise<void> {
           personValue = row[colIndex['assigned to']];
           hoursValue = row[colIndex['hours']];
           epicValue = row[colIndex['epic']];
-          stageValue = row[colIndex['stage']];
+          stageValue = row[colIndex['stage']] || row[colIndex['bucket']]; // Stage from Stage or Bucket column
           workstreamValue = row[colIndex['workstream']];
           startDateValue = row[colIndex['start date']];
           endDateValue = row[colIndex['due date']];
-          notesValue = row[colIndex['notes']] || row[colIndex['description']];
-          taskNameValue = row[colIndex['task name']];
+          notesValue = row[colIndex['notes']];
+          // Prefer Description column for task name (contains actual task info)
+          // Fall back to Task Name column only if Description is empty
+          const descriptionValue = row[colIndex['description']];
+          const taskTitleValue = row[colIndex['task name']];
+          taskNameValue = (descriptionValue && String(descriptionValue).trim()) 
+            ? descriptionValue 
+            : taskTitleValue;
         } else {
           // Standard format columns:
           // 0: Person Name, 1: Role Name, 2: Workstream, 3: Epic, 4: Stage,
