@@ -285,6 +285,17 @@ export default function ProjectDetail() {
   
   const { toast } = useToast();
   
+  // Check if user can view Time tab
+  const canViewTime = user ? ['admin', 'billing-admin', 'pm', 'executive'].includes(user.role) : false;
+  
+  // Check if user can manage time entries
+  const canManageTimeEntries = user ? ['admin', 'billing-admin'].includes(user.role) : false;
+
+  const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
+    queryKey: [`/api/projects/${id}/analytics`],
+    enabled: !!id,
+  });
+
   // Auto-open edit dialog when ?edit=true is in the URL
   useEffect(() => {
     if (shouldOpenEditDialog && analytics?.project && !isLoading) {
@@ -297,17 +308,6 @@ export default function ProjectDetail() {
       navigate(`/projects/${id}${queryString ? `?${queryString}` : ''}`, { replace: true });
     }
   }, [shouldOpenEditDialog, analytics?.project, isLoading, id, navigate, searchString]);
-  
-  // Check if user can view Time tab
-  const canViewTime = user ? ['admin', 'billing-admin', 'pm', 'executive'].includes(user.role) : false;
-  
-  // Check if user can manage time entries
-  const canManageTimeEntries = user ? ['admin', 'billing-admin'].includes(user.role) : false;
-
-  const { data: analytics, isLoading } = useQuery<ProjectAnalytics>({
-    queryKey: [`/api/projects/${id}/analytics`],
-    enabled: !!id,
-  });
 
   // Check if user can manage time entries for this project (after analytics is loaded)
   const canManageProjectTimeEntries = user ? (

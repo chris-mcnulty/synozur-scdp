@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,7 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
 }
 
 export default function Projects() {
+  const [, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState(() => {
     return localStorage.getItem("projects_search") || "";
   });
@@ -279,7 +280,7 @@ export default function Projects() {
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
     // Navigate to project detail page with edit dialog open
-    window.location.href = `/projects/${project.id}?edit=true`;
+    navigate(`/projects/${project.id}?edit=true`);
   };
 
   const handleDeleteProject = (project: ProjectWithBillableInfo) => {
