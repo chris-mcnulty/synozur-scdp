@@ -1187,7 +1187,6 @@ export default function Projects() {
                             name="commercialScheme" 
                             value={selectedCommercialScheme}
                             onValueChange={setSelectedCommercialScheme}
-                            defaultValue={projectToEdit.commercialScheme || ""}
                           >
                             <SelectTrigger data-testid="select-edit-commercial-scheme">
                               <SelectValue placeholder="Select scheme" />
