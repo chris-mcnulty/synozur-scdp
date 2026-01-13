@@ -4366,10 +4366,17 @@ export default function ProjectDetail() {
                   <div className="space-y-2">
                     <h4 className="font-medium text-xs uppercase text-muted-foreground tracking-wide">Quick Actions</h4>
                     <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedTab('time')}>
-                        <Clock className="w-3 h-3 mr-1" />
-                        Log Time
-                      </Button>
+                      {canViewTime && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setSelectedTab('time')}
+                        >
+                          <Clock className="w-3 h-3 mr-1" />
+                          Log Time
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setSelectedTab('contracts')}>
                         <FileText className="w-3 h-3 mr-1" />
                         SOWs
