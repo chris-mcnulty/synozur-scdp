@@ -5426,24 +5426,35 @@ export default function ProjectDetail() {
               <form name="edit-project-form" onSubmit={(e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                const endDateValue = formData.get('endDate') as string;
-                const epicTermIdValue = formData.get('epicTermId') as string;
-                const stageTermIdValue = formData.get('stageTermId') as string;
-                const activityTermIdValue = formData.get('activityTermId') as string;
-                const workstreamTermIdValue = formData.get('workstreamTermId') as string;
+                
+                // Helper to get form value or fallback to existing project value
+                const getFormValue = (name: string, fallback: any) => {
+                  const value = formData.get(name);
+                  // If value is null (field not in DOM due to collapsed accordion), use fallback
+                  return value !== null ? String(value) : fallback;
+                };
+                
+                const endDateValue = getFormValue('endDate', projectToEdit.endDate || '');
+                const epicTermIdValue = getFormValue('epicTermId', projectToEdit.epicTermId || '__default__');
+                const stageTermIdValue = getFormValue('stageTermId', projectToEdit.stageTermId || '__default__');
+                const activityTermIdValue = getFormValue('activityTermId', projectToEdit.activityTermId || '__default__');
+                const workstreamTermIdValue = getFormValue('workstreamTermId', projectToEdit.workstreamTermId || '__default__');
+                const pmValue = getFormValue('pm', projectToEdit.pm || 'none');
+                const hasSowValue = getFormValue('hasSow', projectToEdit.hasSow ? 'true' : 'false');
+                
                 editProject.mutate({
                   data: {
-                    name: formData.get('name'),
-                    description: formData.get('description') || undefined,
-                    clientId: formData.get('clientId'),
-                    code: formData.get('code'),
-                    startDate: formData.get('startDate') || undefined,
+                    name: getFormValue('name', projectToEdit.name),
+                    description: getFormValue('description', projectToEdit.description) || undefined,
+                    clientId: getFormValue('clientId', projectToEdit.clientId),
+                    code: getFormValue('code', projectToEdit.code),
+                    startDate: getFormValue('startDate', projectToEdit.startDate) || undefined,
                     endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
-                    commercialScheme: formData.get('commercialScheme'),
-                    status: formData.get('status'),
-                    pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
-                    hasSow: formData.get('hasSow') === 'true',
-                    retainerTotal: formData.get('retainerTotal') || undefined,
+                    commercialScheme: getFormValue('commercialScheme', projectToEdit.commercialScheme),
+                    status: getFormValue('status', projectToEdit.status),
+                    pm: pmValue === 'none' ? null : pmValue,
+                    hasSow: hasSowValue === 'true',
+                    retainerTotal: getFormValue('retainerTotal', projectToEdit.retainerTotal) || undefined,
                     epicTermId: epicTermIdValue && epicTermIdValue !== '__default__' ? epicTermIdValue : null,
                     stageTermId: stageTermIdValue && stageTermIdValue !== '__default__' ? stageTermIdValue : null,
                     activityTermId: activityTermIdValue && activityTermIdValue !== '__default__' ? activityTermIdValue : null,
