@@ -16,6 +16,7 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack Query.
 - **Form Handling**: React Hook Form with Zod validation.
 - **UI/UX Decisions**: Refactored estimate detail tables, mobile-optimized interfaces, responsive navigation, alphabetically sorted dropdowns, reorganized navigation by user persona, prominent quote total displays with visual cues for overrides, dark/light mode toggle.
+- **Projects List UX**: Three view modes (Grouped by client with collapsible sections, List/table view, Cards/grid view), defaults to Active status filter, client-then-project sorting by default, localStorage persistence for all filter/sort/view preferences.
 - **Project Selectors**: Standardized project dropdown format using "CLIENTSHORTNAME | Project name" (e.g., "MSFT | AI Enablement") for disambiguation across similar project names. Defaults to active projects only. Client shortName stored in database with auto-generation fallback.
 - **My Projects Dashboard**: 3-tab structure (Overview, Delivery, Financials) providing action items, active assignments, and financial summary at a glance.
 

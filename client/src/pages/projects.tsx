@@ -57,6 +57,10 @@ export default function Projects() {
   const { toast } = useToast();
 
   useEffect(() => {
+    localStorage.setItem("projects_search", searchTerm);
+  }, [searchTerm]);
+
+  useEffect(() => {
     localStorage.setItem("projects_status_filter", statusFilter);
   }, [statusFilter]);
 
@@ -374,6 +378,10 @@ export default function Projects() {
                     <LayoutGrid className="w-4 h-4" />
                   </Button>
                 </div>
+                <Button variant="outline" data-testid="button-advanced-filter">
+                  <Filter className="w-4 h-4 mr-2" />
+                  Advanced
+                </Button>
               </div>
               {(statusFilter !== "active" || searchTerm) && (
                 <div className="flex items-center gap-2">
@@ -492,14 +500,14 @@ export default function Projects() {
                                     <p className="text-xs text-muted-foreground">budget</p>
                                   </div>
                                   <div className="text-right hidden md:block">
-                                    <p className={`font-medium ${
+                                    <p className="font-medium">${(project.burnedAmount || 0).toLocaleString()}</p>
+                                    <p className={`text-xs ${
                                       (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
                                       (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
                                       'text-green-600 dark:text-green-400'
                                     }`}>
-                                      {project.utilizationRate || 0}%
+                                      burned ({project.utilizationRate || 0}%)
                                     </p>
-                                    <p className="text-xs text-muted-foreground">burned</p>
                                   </div>
                                   <div className="flex gap-1">
                                     <Link href={`/projects/${project.id}`}>
@@ -527,16 +535,16 @@ export default function Projects() {
               <CardContent className="p-0">
                 <div className="divide-y">
                   <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-muted/50 text-sm font-medium text-muted-foreground">
-                    <div className="col-span-4">Project</div>
+                    <div className="col-span-3">Project</div>
                     <div className="col-span-2">Client</div>
                     <div className="col-span-1">Status</div>
                     <div className="col-span-2 text-right">Budget</div>
-                    <div className="col-span-1 text-right">Burned</div>
+                    <div className="col-span-2 text-right">Burned</div>
                     <div className="col-span-2 text-right">Actions</div>
                   </div>
                   {filteredProjects.map((project) => (
                     <div key={project.id} className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-muted/30 transition-colors">
-                      <div className="col-span-4">
+                      <div className="col-span-3">
                         <Link href={`/projects/${project.id}`}>
                           <span className="font-medium hover:underline cursor-pointer">{project.name}</span>
                         </Link>
@@ -557,12 +565,15 @@ export default function Projects() {
                       <div className="col-span-2 text-right font-medium">
                         ${(project.totalBudget || 0).toLocaleString()}
                       </div>
-                      <div className={`col-span-1 text-right font-medium ${
-                        (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
-                        (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
-                        'text-green-600 dark:text-green-400'
-                      }`}>
-                        {project.utilizationRate || 0}%
+                      <div className="col-span-2 text-right">
+                        <span className="font-medium">${(project.burnedAmount || 0).toLocaleString()}</span>
+                        <span className={`ml-2 text-xs ${
+                          (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                          (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                          'text-green-600 dark:text-green-400'
+                        }`}>
+                          ({project.utilizationRate || 0}%)
+                        </span>
                       </div>
                       <div className="col-span-2 flex justify-end gap-1">
                         <Link href={`/projects/${project.id}`}>
