@@ -41,6 +41,7 @@ export default function Projects() {
   const [projectToDelete, setProjectToDelete] = useState<ProjectWithBillableInfo | null>(null);
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
+  const [editHasSow, setEditHasSow] = useState(false);
   const { toast } = useToast();
 
   const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
@@ -70,6 +71,13 @@ export default function Projects() {
       }
     }
   }, [projects]);
+
+  // Initialize editHasSow when projectToEdit changes
+  useEffect(() => {
+    if (projectToEdit) {
+      setEditHasSow(projectToEdit.hasSow || false);
+    }
+  }, [projectToEdit]);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -1199,14 +1207,16 @@ export default function Projects() {
                         )}
 
                         <div className="flex items-center space-x-2 pt-2">
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             id="edit-hasSow"
-                            name="hasSow"
-                            value="true"
-                            defaultChecked={projectToEdit.hasSow}
-                            className="h-4 w-4 rounded border-gray-300"
+                            checked={editHasSow}
+                            onCheckedChange={(checked) => setEditHasSow(checked === true)}
                             data-testid="checkbox-edit-has-sow"
+                          />
+                          <input
+                            type="hidden"
+                            name="hasSow"
+                            value={editHasSow ? "true" : "false"}
                           />
                           <Label htmlFor="edit-hasSow" className="text-sm font-normal">
                             SOW Signed
