@@ -4940,6 +4940,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         await storage.bulkDeleteProjectAllocations(allocationIds);
       }
       
+      // Detect format based on header row
+      const headerRow = data[0] as string[];
+      const headerLower = headerRow.map((h: string) => (h || '').toString().toLowerCase().trim());
+      
+      // Check if this is Planner-style format (has "Task Name" and "Assigned To" columns)
+      const isPlannerFormat = headerLower.includes('task name') && headerLower.includes('assigned to');
+      
+      // Build column index map for flexible column handling
+      const colIndex: Record<string, number> = {};
+      headerLower.forEach((h, i) => { colIndex[h] = i; });
+      
       // Process data rows (skip header)
       const allocations = [];
       const errors = [];
@@ -4947,46 +4958,75 @@ export async function registerRoutes(app: Express): Promise<void> {
       for (let i = 1; i < data.length; i++) {
         const row = data[i] as any[];
         
-        // Expected columns:
-        // 0: Person Name, 1: Role Name, 2: Workstream, 3: Epic, 4: Stage,
-        // 5: Hours, 6: Pricing Mode, 7: Start Date, 8: End Date, 9: Notes
+        // Get values based on format
+        let personValue: any, hoursValue: any, epicValue: any, stageValue: any, workstreamValue: any;
+        let startDateValue: any, endDateValue: any, notesValue: any, taskNameValue: any;
+        let roleValue: any = null, pricingModeValue: any = null;
+        
+        if (isPlannerFormat) {
+          // Planner format columns:
+          // Task Name, Assigned To, Epic, Stage, Workstream, Start Date, Due Date, Labels, Notes, Bucket, Progress, Priority, Description, Hours
+          personValue = row[colIndex['assigned to']];
+          hoursValue = row[colIndex['hours']];
+          epicValue = row[colIndex['epic']];
+          stageValue = row[colIndex['stage']];
+          workstreamValue = row[colIndex['workstream']];
+          startDateValue = row[colIndex['start date']];
+          endDateValue = row[colIndex['due date']];
+          notesValue = row[colIndex['notes']] || row[colIndex['description']];
+          taskNameValue = row[colIndex['task name']];
+        } else {
+          // Standard format columns:
+          // 0: Person Name, 1: Role Name, 2: Workstream, 3: Epic, 4: Stage,
+          // 5: Hours, 6: Pricing Mode, 7: Start Date, 8: End Date, 9: Notes
+          personValue = row[0];
+          roleValue = row[1];
+          workstreamValue = row[2];
+          epicValue = row[3];
+          stageValue = row[4];
+          hoursValue = row[5];
+          pricingModeValue = row[6];
+          startDateValue = row[7];
+          endDateValue = row[8];
+          notesValue = row[9];
+        }
         
         // Skip empty rows
-        if (!row[0] && !row[5]) continue;
+        if (!personValue && !hoursValue) continue;
         
         // Validate required fields
-        if (!row[0]) {
-          errors.push({ row: i + 1, message: "Person name is required" });
+        if (!personValue) {
+          errors.push({ row: i + 1, message: "Person/Assigned To is required" });
           continue;
         }
-        if (!row[5] || isNaN(Number(row[5]))) {
-          errors.push({ row: i + 1, message: "Valid hours value is required" });
+        if (!hoursValue || isNaN(Number(hoursValue))) {
+          errors.push({ row: i + 1, message: `Valid hours value is required (got: ${hoursValue})` });
           continue;
         }
         
         // Lookup person - try email first (lowercase), then name
-        const personIdentifier = String(row[0]).trim().toLowerCase();
+        const personIdentifier = String(personValue).trim().toLowerCase();
         const personId = userEmailToId.get(personIdentifier) || userNameToId.get(personIdentifier);
         if (!personId) {
-          errors.push({ row: i + 1, message: `Person not found: ${row[0]}` });
+          errors.push({ row: i + 1, message: `Person not found: ${personValue}` });
           continue;
         }
         
         // Lookup optional fields
-        const roleName = row[1] ? String(row[1]).trim().toLowerCase() : null;
+        const roleName = roleValue ? String(roleValue).trim().toLowerCase() : null;
         const roleId = roleName ? roleNameToId.get(roleName) : null;
         
-        const workstreamName = row[2] ? String(row[2]).trim().toLowerCase() : null;
+        const workstreamName = workstreamValue ? String(workstreamValue).trim().toLowerCase() : null;
         const workstreamId = workstreamName ? workstreamNameToId.get(workstreamName) : null;
         
-        const epicName = row[3] ? String(row[3]).trim().toLowerCase() : null;
+        const epicName = epicValue ? String(epicValue).trim().toLowerCase() : null;
         const epicId = epicName ? epicNameToId.get(epicName) : null;
         
-        const stageName = row[4] ? String(row[4]).trim().toLowerCase() : null;
+        const stageName = stageValue ? String(stageValue).trim().toLowerCase() : null;
         const stageId = stageName ? stageNameToId.get(stageName) : null;
         
         // Parse pricing mode
-        const pricingModeStr = row[6] ? String(row[6]).toLowerCase() : "role";
+        const pricingModeStr = pricingModeValue ? String(pricingModeValue).toLowerCase() : "role";
         let pricingMode: "role" | "person" | "resource_name" = "role";
         if (pricingModeStr.includes("person")) pricingMode = "person";
         else if (pricingModeStr.includes("resource")) pricingMode = "resource_name";
@@ -5020,6 +5060,12 @@ export async function registerRoutes(app: Express): Promise<void> {
           return null;
         };
         
+        // For Planner format, include task name in notes
+        let finalNotes = notesValue ? String(notesValue) : null;
+        if (isPlannerFormat && taskNameValue) {
+          finalNotes = taskNameValue + (finalNotes ? ` - ${finalNotes}` : '');
+        }
+        
         const allocation = {
           projectId,
           personId,
@@ -5028,15 +5074,15 @@ export async function registerRoutes(app: Express): Promise<void> {
           projectActivityId: null, // We don't have activities in import yet
           projectMilestoneId: null, // We don't have milestones in import yet
           weekNumber: 1, // Default week number, could be parsed from file
-          hours: String(row[5]),
+          hours: String(hoursValue),
           pricingMode,
           rackRate: "0", // Default rack rate, will be calculated based on role/person
-          plannedStartDate: parseDate(row[7]),
-          plannedEndDate: parseDate(row[8]),
+          plannedStartDate: parseDate(startDateValue),
+          plannedEndDate: parseDate(endDateValue),
           resourceName: null, // Could be added if person not found
           billingRate: null, // Will be calculated based on role/person
           costRate: null, // Will be calculated based on role/person
-          notes: row[9] ? String(row[9]) : null,
+          notes: finalNotes,
           estimateLineItemId: null, // No link to estimate when importing
           status: "open" as const,
           startedDate: null,
