@@ -1022,7 +1022,7 @@ export default function Projects() {
                     code: formData.get('code'),
                     startDate: formData.get('startDate') || undefined,
                     endDate: endDateValue && endDateValue.trim() !== '' ? endDateValue : undefined,
-                    commercialScheme: formData.get('commercialScheme'),
+                    commercialScheme: selectedCommercialScheme,
                     status: formData.get('status'),
                     pm: formData.get('pm') === 'none' ? null : formData.get('pm'),
                     hasSow: formData.get('hasSow') === 'true',
