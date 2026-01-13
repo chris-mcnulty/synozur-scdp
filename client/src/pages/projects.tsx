@@ -1185,8 +1185,10 @@ export default function Projects() {
                               <SelectValue placeholder="Select scheme" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="tm">Time & Materials</SelectItem>
-                              <SelectItem value="time-and-materials">Time & Materials (legacy)</SelectItem>
+                              <SelectItem value="tm">Time &amp; Materials</SelectItem>
+                              <SelectItem value="time-and-materials" disabled>
+                                Time &amp; Materials (legacy)
+                              </SelectItem>
                               <SelectItem value="fixed-price">Fixed Price</SelectItem>
                               <SelectItem value="retainer">Retainer</SelectItem>
                               <SelectItem value="milestone">Milestone</SelectItem>
