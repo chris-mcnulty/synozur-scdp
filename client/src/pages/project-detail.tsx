@@ -41,7 +41,7 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
@@ -227,6 +227,8 @@ export default function ProjectDetail() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"append" | "replace">("append");
   const [importError, setImportError] = useState<string | null>(null);
+  const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
   
   // Edit project state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -1296,6 +1298,32 @@ export default function ProjectDetail() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete membership",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Add team member mutation (without assignment)
+  const addTeamMemberMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest(`/api/projects/${id}/engagements`, {
+        method: "POST",
+        body: JSON.stringify({ userId })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/engagements`] });
+      setShowAddMemberDialog(false);
+      setSelectedMemberId("");
+      toast({
+        title: "Team Member Added",
+        description: "Team member has been added to this project"
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add team member",
         variant: "destructive"
       });
     }
@@ -2849,14 +2877,26 @@ export default function ProjectDetail() {
             {/* Team Membership Card - Shows team member status */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Team Membership
-                </CardTitle>
-                <CardDescription>
-                  Track which team members are actively working on this project. 
-                  Mark members as "complete" when they've finished their involvement to stop time reminders.
-                </CardDescription>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="w-5 h-5" />
+                      Team Membership
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Track which team members are actively working on this project. 
+                      Mark members as "complete" when they've finished their involvement to stop time reminders.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowAddMemberDialog(true)}
+                    data-testid="button-add-team-member"
+                  >
+                    <UserPlus className="w-4 h-4 mr-1" />
+                    Add Member
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {engagementsLoading ? (
@@ -5408,6 +5448,57 @@ export default function ProjectDetail() {
                 data-testid="button-confirm-import"
               >
                 {importAssignmentsMutation.isPending ? "Importing..." : "Import Assignments"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Team Member Dialog */}
+        <Dialog open={showAddMemberDialog} onOpenChange={setShowAddMemberDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Team Member</DialogTitle>
+              <DialogDescription>
+                Add a team member to this project without assigning them to a specific task.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="member-select">Select Team Member</Label>
+                <Select value={selectedMemberId} onValueChange={setSelectedMemberId}>
+                  <SelectTrigger id="member-select" data-testid="select-add-member">
+                    <SelectValue placeholder="Select a team member..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {users
+                      .filter((user: any) => !engagements.some((e: any) => e.userId === user.id))
+                      .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                      .map((user: any) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAddMemberDialog(false);
+                  setSelectedMemberId("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => addTeamMemberMutation.mutate(selectedMemberId)}
+                disabled={!selectedMemberId || addTeamMemberMutation.isPending}
+                data-testid="button-confirm-add-member"
+              >
+                {addTeamMemberMutation.isPending ? "Adding..." : "Add Member"}
               </Button>
             </DialogFooter>
           </DialogContent>

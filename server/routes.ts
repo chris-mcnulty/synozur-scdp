@@ -5139,12 +5139,24 @@ export async function registerRoutes(app: Express): Promise<void> {
         allocations.push(allocation);
       }
       
-      // Bulk create allocations
+      // Bulk create allocations and ensure project engagements
       const createdAllocations = [];
+      const engagementsCreated = new Set<string>(); // Track unique personIds for engagement creation
+      
       for (const allocation of allocations) {
         try {
           const created = await storage.createProjectAllocation(allocation);
           createdAllocations.push(created);
+          
+          // Create project engagement for users with valid personId
+          if (allocation.personId && !engagementsCreated.has(allocation.personId)) {
+            try {
+              await storage.ensureProjectEngagement(projectId, allocation.personId);
+              engagementsCreated.add(allocation.personId);
+            } catch (engErr: any) {
+              console.warn(`[WARN] Failed to create engagement for person ${allocation.personId}:`, engErr.message);
+            }
+          }
         } catch (error: any) {
           errors.push({ 
             message: `Failed to create allocation for person ${allocation.personId}`,
@@ -5156,6 +5168,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({
         success: true,
         itemsCreated: createdAllocations.length,
+        membershipsCreated: engagementsCreated.size,
         mode: removeExisting ? "replaced" : "appended",
         errors: errors.length > 0 ? errors : undefined
       });
