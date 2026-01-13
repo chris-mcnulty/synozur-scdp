@@ -5073,17 +5073,17 @@ export async function registerRoutes(app: Express): Promise<void> {
           return null;
         };
         
-        // For Planner format, include task name in notes
-        let finalNotes = notesValue ? String(notesValue) : null;
-        if (isPlannerFormat && taskNameValue) {
-          finalNotes = taskNameValue + (finalNotes ? ` - ${finalNotes}` : '');
-        }
+        // For Planner format, set task name to taskDescription field
+        const taskDescription = isPlannerFormat && taskNameValue ? String(taskNameValue) : null;
+        const finalNotes = notesValue ? String(notesValue) : null;
         
         const allocation = {
           projectId,
           personId,
           roleId: roleId || null,
           projectWorkstreamId: workstreamId || null,
+          projectEpicId: epicId || null, // Epic from CSV
+          projectStageId: stageId || null, // Stage from CSV
           projectActivityId: null, // We don't have activities in import yet
           projectMilestoneId: null, // We don't have milestones in import yet
           weekNumber: 1, // Default week number, could be parsed from file
@@ -5095,6 +5095,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           resourceName: null, // Could be added if person not found
           billingRate: null, // Will be calculated based on role/person
           costRate: null, // Will be calculated based on role/person
+          taskDescription, // Task name from CSV goes here
           notes: finalNotes,
           estimateLineItemId: null, // No link to estimate when importing
           status: "open" as const,
