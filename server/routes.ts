@@ -4065,9 +4065,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
           
           // Get task notes with Constellation project link
-          const baseUrl = process.env.APP_PUBLIC_URL || process.env.REPL_SLUG 
-            ? `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`
-            : 'https://constellation.replit.app';
+          const baseUrl = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
           const projectLink = `${baseUrl}/projects/${projectId}`;
           const originalNotes = allocation.notes || allocation.taskDescription || '';
           const taskNotes = `🔗 View in Constellation: ${projectLink}\n\n${originalNotes}`.trim();
