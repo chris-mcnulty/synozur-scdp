@@ -5913,15 +5913,22 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      // Get all analytics data in parallel
-      const [monthlyMetrics, burnRate, teamHours] = await Promise.all([
+      // Get all analytics data in parallel, including PM name lookup (with error handling)
+      const [monthlyMetrics, burnRate, teamHours, pmUser] = await Promise.all([
         storage.getProjectMonthlyMetrics(req.params.id),
         storage.getProjectBurnRate(req.params.id),
-        storage.getProjectTeamHours(req.params.id)
+        storage.getProjectTeamHours(req.params.id),
+        project.pm ? storage.getUser(project.pm).catch(() => null) : Promise.resolve(null)
       ]);
 
+      // Enhance project with PM name
+      const projectWithPmName = {
+        ...project,
+        pmName: pmUser?.name || null
+      };
+
       res.json({
-        project,
+        project: projectWithPmName,
         monthlyMetrics,
         burnRate,
         teamHours

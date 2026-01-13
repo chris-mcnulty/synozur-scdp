@@ -1784,7 +1784,7 @@ export default function ProjectDetail() {
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Project Manager</p>
                   <p className="font-medium flex items-center gap-2">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    {project.pm || "Not assigned"}
+                    {(project as any).pmName || "Not assigned"}
                   </p>
                 </div>
                 
@@ -2038,6 +2038,8 @@ export default function ProjectDetail() {
                       name="Revenue" 
                       stroke="hsl(var(--primary))" 
                       strokeWidth={2}
+                      connectNulls
+                      dot={{ r: 4 }}
                     />
                     <Line 
                       type="monotone" 
@@ -2045,6 +2047,8 @@ export default function ProjectDetail() {
                       name="Expenses" 
                       stroke="hsl(var(--destructive))" 
                       strokeWidth={2}
+                      connectNulls
+                      dot={{ r: 4 }}
                     />
                   </LineChart>
                 </ResponsiveContainer>

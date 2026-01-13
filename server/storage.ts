@@ -6404,8 +6404,12 @@ export class DatabaseStorage implements IStorage {
     let consumedBudget = 0;
     let revenue = 0;
     
-    if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
-      // For fixed-price projects (retainer/milestone):
+    // Fixed-price schemes: retainer, milestone, fixed-price, fixed
+    const fixedPriceSchemes = ['retainer', 'milestone', 'fixed-price', 'fixed'];
+    const isFixedPrice = fixedPriceSchemes.includes(project.commercialScheme || '');
+    
+    if (isFixedPrice) {
+      // For fixed-price projects (retainer/milestone/fixed-price):
       // - Consumed budget tracks only time-based costs against the hours budget
       // - Expenses are tracked separately and don't consume the hours budget
       consumedBudget = timeBasedCost; // Only hours count against budget
