@@ -3489,7 +3489,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json(engagement);
     } catch (error: any) {
       console.error("[ERROR] Failed to complete engagement:", error);
-      res.status(500).json({ message: "Failed to complete engagement" });
+      // Return specific error message if available
+      const message = error.message === 'Engagement not found' 
+        ? `No team membership found for this user on this project. The user may not be assigned to this project.`
+        : error.message || "Failed to complete engagement";
+      res.status(error.message === 'Engagement not found' ? 404 : 500).json({ message });
     }
   });
 

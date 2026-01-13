@@ -179,7 +179,10 @@ export function MyAssignments() {
   // Mutation to complete membership (mark user as done with the project)
   const completeEngagementMutation = useMutation({
     mutationFn: async ({ projectId }: { projectId: string }) => {
-      return apiRequest(`/api/projects/${projectId}/engagements/${currentUser?.id}/complete`, {
+      if (!currentUser?.id) {
+        throw new Error("User session not loaded. Please refresh the page and try again.");
+      }
+      return apiRequest(`/api/projects/${projectId}/engagements/${currentUser.id}/complete`, {
         method: "PATCH",
         body: JSON.stringify({ force: true })
       });
@@ -220,10 +223,10 @@ export function MyAssignments() {
       });
       
       // If completing an assignment, check if this is the user's last active allocation
-      if (status === 'completed' && !skipEngagementCheck) {
+      if (status === 'completed' && !skipEngagementCheck && currentUser?.id) {
         try {
           const checkResponse = await fetch(
-            `/api/projects/${projectId}/engagements/${currentUser?.id}/check-last-allocation?excludeAllocationId=${id}`,
+            `/api/projects/${projectId}/engagements/${currentUser.id}/check-last-allocation?excludeAllocationId=${id}`,
             { credentials: "include", headers: { 'x-session-id': localStorage.getItem('sessionId') || '' } }
           );
           if (checkResponse.ok) {

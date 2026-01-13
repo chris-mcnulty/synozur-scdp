@@ -5199,10 +5199,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markEngagementComplete(projectId: string, userId: string, completedBy: string, notes?: string): Promise<ProjectEngagement> {
-    const existing = await this.getProjectEngagement(projectId, userId);
+    let existing = await this.getProjectEngagement(projectId, userId);
     
+    // Auto-create engagement if it doesn't exist (handles legacy allocations created before engagement tracking)
     if (!existing) {
-      throw new Error('Engagement not found');
+      existing = await this.createProjectEngagement({
+        projectId,
+        userId,
+        status: 'active',
+      });
     }
     
     return await this.updateProjectEngagement(existing.id, {
