@@ -989,7 +989,12 @@ export default function Projects() {
         </Dialog>
 
         {/* Edit Project Dialog - Accordion-based sections */}
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <Dialog open={editDialogOpen} onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) {
+            setProjectToEdit(null);
+          }
+        }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Project: {projectToEdit?.name}</DialogTitle>
