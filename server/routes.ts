@@ -5035,10 +5035,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         const parseDate = (dateValue: any): string | null => {
           if (!dateValue) return null;
           
-          // Handle Excel date numbers
+          // Handle Excel date serial numbers (days since 1900-01-01, with Excel's leap year bug)
           if (typeof dateValue === 'number') {
-            const date = xlsx.SSF.parse_date_code(dateValue);
-            return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+            // Excel epoch is January 1, 1900, but Excel incorrectly treats 1900 as leap year
+            // So we adjust: dates after Feb 28, 1900 need -1 day correction
+            const excelEpoch = new Date(1899, 11, 30); // Dec 30, 1899 (Excel's day 0)
+            const date = new Date(excelEpoch.getTime() + dateValue * 24 * 60 * 60 * 1000);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
           }
           
           // Handle string dates
@@ -5048,7 +5054,14 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Already in YYYY-MM-DD format
           if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
           
-          // Try parsing
+          // Handle M/D/YYYY or MM/DD/YYYY format (common in CSV exports)
+          const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+          if (slashMatch) {
+            const [, month, day, year] = slashMatch;
+            return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+          
+          // Try parsing with Date constructor
           const parsedDate = new Date(dateStr);
           if (!isNaN(parsedDate.getTime())) {
             const year = parsedDate.getFullYear();
