@@ -174,7 +174,12 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const { user, canViewPricing } = useAuth();
   const [, navigate] = useLocation();
-  const [selectedTab, setSelectedTab] = useState("overview");
+  const [selectedTab, setSelectedTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices'];
+    return tab && validTabs.includes(tab) ? tab : 'overview';
+  });
   const [showSowDialog, setShowSowDialog] = useState(false);
   const [editingSow, setEditingSow] = useState<Sow | null>(null);
   const [deletingSowId, setDeletingSowId] = useState<string | null>(null);

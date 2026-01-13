@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers } from "lucide-react";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
@@ -286,6 +287,13 @@ export default function Projects() {
     setDeleteDialogOpen(true);
   };
 
+  const handleArchiveProject = (project: ProjectWithBillableInfo) => {
+    editProject.mutate({
+      id: project.id,
+      data: { status: "completed" }
+    });
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -518,6 +526,50 @@ export default function Projects() {
                                     <Button size="sm" variant="ghost" onClick={() => handleEditProject(project)} title="Edit">
                                       <Edit className="h-4 w-4" />
                                     </Button>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button size="sm" variant="ghost" title="More Actions">
+                                          <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/projects/${project.id}?tab=delivery`} className="flex items-center cursor-pointer">
+                                            <Users className="h-4 w-4 mr-2" />
+                                            Team & Assignments
+                                          </Link>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/projects/${project.id}?tab=time`} className="flex items-center cursor-pointer">
+                                            <Clock className="h-4 w-4 mr-2" />
+                                            Time Log
+                                          </Link>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/projects/${project.id}?tab=invoices`} className="flex items-center cursor-pointer">
+                                            <Receipt className="h-4 w-4 mr-2" />
+                                            Invoices
+                                          </Link>
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator />
+                                        {project.status !== 'completed' && (
+                                          <DropdownMenuItem 
+                                            onClick={() => handleArchiveProject(project)}
+                                            className="cursor-pointer"
+                                          >
+                                            <Archive className="h-4 w-4 mr-2" />
+                                            Archive Project
+                                          </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuItem 
+                                          onClick={() => handleDeleteProject(project)}
+                                          className="text-destructive cursor-pointer"
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-2" />
+                                          Delete Project
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
                                   </div>
                                 </div>
                               </div>
@@ -584,9 +636,50 @@ export default function Projects() {
                         <Button size="sm" variant="ghost" onClick={() => handleEditProject(project)} title="Edit">
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDeleteProject(project)} title="Delete">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="ghost" title="More Actions">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem asChild>
+                              <Link href={`/projects/${project.id}?tab=delivery`} className="flex items-center cursor-pointer">
+                                <Users className="h-4 w-4 mr-2" />
+                                Team & Assignments
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/projects/${project.id}?tab=time`} className="flex items-center cursor-pointer">
+                                <Clock className="h-4 w-4 mr-2" />
+                                Time Log
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem asChild>
+                              <Link href={`/projects/${project.id}?tab=invoices`} className="flex items-center cursor-pointer">
+                                <Receipt className="h-4 w-4 mr-2" />
+                                Invoices
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {project.status !== 'completed' && (
+                              <DropdownMenuItem 
+                                onClick={() => handleArchiveProject(project)}
+                                className="cursor-pointer"
+                              >
+                                <Archive className="h-4 w-4 mr-2" />
+                                Archive Project
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteProject(project)}
+                              className="text-destructive cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Project
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                   ))}
@@ -667,7 +760,7 @@ export default function Projects() {
                           data-testid={`button-view-project-${project.id}`}
                         >
                           <Eye className="h-3 w-3 mr-1" />
-                          View Analytics
+                          View Details
                         </Button>
                       </Link>
                       <Button 
@@ -678,15 +771,54 @@ export default function Projects() {
                       >
                         <Edit className="h-3 w-3" />
                       </Button>
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleDeleteProject(project)}
-                        data-testid={`button-delete-project-${project.id}`}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            data-testid={`button-more-actions-${project.id}`}
+                          >
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${project.id}?tab=delivery`} className="flex items-center cursor-pointer">
+                              <Users className="h-4 w-4 mr-2" />
+                              Team & Assignments
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${project.id}?tab=time`} className="flex items-center cursor-pointer">
+                              <Clock className="h-4 w-4 mr-2" />
+                              Time Log
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/projects/${project.id}?tab=invoices`} className="flex items-center cursor-pointer">
+                              <Receipt className="h-4 w-4 mr-2" />
+                              Invoices
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {project.status !== 'completed' && (
+                            <DropdownMenuItem 
+                              onClick={() => handleArchiveProject(project)}
+                              className="cursor-pointer"
+                            >
+                              <Archive className="h-4 w-4 mr-2" />
+                              Archive Project
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem 
+                            onClick={() => handleDeleteProject(project)}
+                            className="text-destructive cursor-pointer"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </CardContent>
                 </Card>
