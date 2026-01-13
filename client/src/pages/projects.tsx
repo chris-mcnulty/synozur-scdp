@@ -42,6 +42,7 @@ export default function Projects() {
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const [editHasSow, setEditHasSow] = useState(false);
+  const [createHasSow, setCreateHasSow] = useState(false);
   const { toast } = useToast();
 
   const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
@@ -76,6 +77,13 @@ export default function Projects() {
   useEffect(() => {
     setEditHasSow(projectToEdit ? Boolean(projectToEdit.hasSow) : false);
   }, [projectToEdit]);
+
+  // Reset createHasSow when create dialog closes
+  useEffect(() => {
+    if (!createDialogOpen) {
+      setCreateHasSow(false);
+    }
+  }, [createDialogOpen]);
 
   const { data: clients = [] } = useQuery<any[]>({
     queryKey: ["/api/clients"],
@@ -857,17 +865,21 @@ export default function Projects() {
 
                 <div className="space-y-4 border-t pt-4">
                   <h4 className="font-medium">SOW Tracking</h4>
-                  <div className="grid gap-2">
-                    <Label htmlFor="hasSow">Has SOW?</Label>
-                    <Select name="hasSow" defaultValue="false">
-                      <SelectTrigger data-testid="select-has-sow">
-                        <SelectValue placeholder="Select SOW status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="false">No SOW</SelectItem>
-                        <SelectItem value="true">SOW Signed</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="create-hasSow"
+                      checked={createHasSow}
+                      onCheckedChange={(checked) => setCreateHasSow(!!checked)}
+                      data-testid="checkbox-create-has-sow"
+                    />
+                    <input
+                      type="hidden"
+                      name="hasSow"
+                      value={createHasSow ? "true" : "false"}
+                    />
+                    <Label htmlFor="create-hasSow" className="text-sm font-normal">
+                      SOW Signed
+                    </Label>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -1215,7 +1227,7 @@ export default function Projects() {
                           <Checkbox
                             id="edit-hasSow"
                             checked={editHasSow}
-                            onCheckedChange={(checked) => setEditHasSow(checked === true)}
+                            onCheckedChange={(checked) => setEditHasSow(!!checked)}
                             data-testid="checkbox-edit-has-sow"
                           />
                           <input
