@@ -5007,9 +5007,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Lookup person - try email first (lowercase), then name
         const personIdentifier = String(personValue).trim().toLowerCase();
         const personId = userEmailToId.get(personIdentifier) || userNameToId.get(personIdentifier);
+        
+        // If person not found, we'll create an unassigned allocation with the name stored
+        const resourceName = personId ? null : String(personValue).trim();
         if (!personId) {
-          errors.push({ row: i + 1, message: `Person not found: ${personValue}` });
-          continue;
+          // Log as info, not error - we'll still import the task as unassigned
+          errors.push({ row: i + 1, message: `Person not found: ${personValue} - imported as unassigned` });
         }
         
         // Lookup optional fields
@@ -5025,11 +5028,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         const stageName = stageValue ? String(stageValue).trim().toLowerCase() : null;
         const stageId = stageName ? stageNameToId.get(stageName) : null;
         
-        // Parse pricing mode
-        const pricingModeStr = pricingModeValue ? String(pricingModeValue).toLowerCase() : "role";
-        let pricingMode: "role" | "person" | "resource_name" = "role";
-        if (pricingModeStr.includes("person")) pricingMode = "person";
-        else if (pricingModeStr.includes("resource")) pricingMode = "resource_name";
+        // Parse pricing mode - if person not found, force to resource_name mode
+        let pricingMode: "role" | "person" | "resource_name";
+        if (!personId) {
+          // No person found, use resource_name mode with the original name stored
+          pricingMode = "resource_name";
+        } else {
+          const pricingModeStr = pricingModeValue ? String(pricingModeValue).toLowerCase() : "role";
+          pricingMode = "role";
+          if (pricingModeStr.includes("person")) pricingMode = "person";
+          else if (pricingModeStr.includes("resource")) pricingMode = "resource_name";
+        }
         
         // Parse dates (handle various formats)
         const parseDate = (dateValue: any): string | null => {
@@ -5079,7 +5088,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         
         const allocation = {
           projectId,
-          personId,
+          personId: personId || null, // null if person not found
           roleId: roleId || null,
           projectWorkstreamId: workstreamId || null,
           projectEpicId: epicId || null, // Epic from CSV
@@ -5092,7 +5101,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           rackRate: "0", // Default rack rate, will be calculated based on role/person
           plannedStartDate: parseDate(startDateValue),
           plannedEndDate: parseDate(endDateValue),
-          resourceName: null, // Could be added if person not found
+          resourceName, // Store person name if not found in system
           billingRate: null, // Will be calculated based on role/person
           costRate: null, // Will be calculated based on role/person
           taskDescription, // Task name from CSV goes here
