@@ -63,6 +63,7 @@ export default function Projects() {
       const project = projects.find(p => p.id === editProjectId);
       if (project) {
         setProjectToEdit(project);
+        setSelectedCommercialScheme(project.commercialScheme || "");
         setEditDialogOpen(true);
         // Clean the URL parameter
         const newUrl = window.location.pathname;
@@ -139,6 +140,7 @@ export default function Projects() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       setEditDialogOpen(false);
       setProjectToEdit(null);
+      setSelectedCommercialScheme("");
       toast({
         title: "Success",
         description: "Project updated successfully",
@@ -238,6 +240,7 @@ export default function Projects() {
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
     setProjectToEdit(project);
+    setSelectedCommercialScheme(project.commercialScheme || "");
     setEditDialogOpen(true);
   };
 
@@ -1180,7 +1183,12 @@ export default function Projects() {
                       <div className="grid gap-4">
                         <div className="grid gap-2">
                           <Label htmlFor="edit-commercialScheme">Commercial Scheme</Label>
-                          <Select name="commercialScheme" defaultValue={projectToEdit.commercialScheme || ""}>
+                          <Select 
+                            name="commercialScheme" 
+                            value={selectedCommercialScheme}
+                            onValueChange={setSelectedCommercialScheme}
+                            defaultValue={projectToEdit.commercialScheme || ""}
+                          >
                             <SelectTrigger data-testid="select-edit-commercial-scheme">
                               <SelectValue placeholder="Select scheme" />
                             </SelectTrigger>
@@ -1196,7 +1204,7 @@ export default function Projects() {
                           </Select>
                         </div>
 
-                        {(projectToEdit.commercialScheme === 'retainer' || projectToEdit.retainerTotal) && (
+                        {selectedCommercialScheme === 'retainer' && (
                           <div className="grid gap-2">
                             <Label htmlFor="edit-retainerTotal">Retainer Total ($)</Label>
                             <Input
