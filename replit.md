@@ -16,8 +16,8 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack Query.
 - **Form Handling**: React Hook Form with Zod validation.
 - **UI/UX Decisions**: Refactored estimate detail tables, mobile-optimized interfaces, responsive navigation, alphabetically sorted dropdowns, reorganized navigation by user persona, prominent quote total displays with visual cues for overrides, dark/light mode toggle.
-- **Projects List UX**: Three view modes (Grouped by client with collapsible sections, List/table view, Cards/grid view), defaults to Active status filter, client-then-project sorting by default, localStorage persistence for all filter/sort/view preferences.
-- **Project Detail UX (Phase 2)**: Consolidated tabs from 11 to 6 with nested sub-tabs for better organization:
+- **Projects List UX**: Three view modes (Grouped by client with collapsible sections, List/table view, Cards/grid view), defaults to Active status filter, client-then-project sorting by default, localStorage persistence for all filter/sort/view preferences. Quick actions dropdown menu on project cards for direct navigation to Team & Assignments, Time Log, Invoices, and Archive/Delete options.
+- **Project Detail UX (Phase 2-3)**: Consolidated tabs from 11 to 6 with nested sub-tabs for better organization. Tab state synchronized with URL query parameters (`?tab=delivery`, `?tab=time`, etc.) using wouter's `useSearch` hook for deep linking support:
   - **Overview**: Project summary and KPIs with info sidebar
   - **Analytics**: Sub-tabs for Monthly Trends, Team Performance, Burn Rate
   - **Delivery**: Sub-tabs for Project Structure, Team & Assignments
