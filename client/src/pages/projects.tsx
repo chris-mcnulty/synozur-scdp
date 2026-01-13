@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -9,10 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
+
+type ViewMode = "grouped" | "list" | "cards";
+type SortBy = "client" | "name" | "date" | "status";
 
 interface ProjectWithBillableInfo extends ProjectWithClient {
   totalBudget?: number;
@@ -27,8 +31,22 @@ interface ProjectWithBillableInfo extends ProjectWithClient {
 }
 
 export default function Projects() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    return localStorage.getItem("projects_search") || "";
+  });
+  const [statusFilter, setStatusFilter] = useState(() => {
+    return localStorage.getItem("projects_status_filter") || "active";
+  });
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    return (localStorage.getItem("projects_view_mode") as ViewMode) || "grouped";
+  });
+  const [sortBy, setSortBy] = useState<SortBy>(() => {
+    return (localStorage.getItem("projects_sort_by") as SortBy) || "client";
+  });
+  const [collapsedClients, setCollapsedClients] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("projects_collapsed_clients");
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createClientDialogOpen, setCreateClientDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -37,6 +55,34 @@ export default function Projects() {
   const [projectToEdit, setProjectToEdit] = useState<ProjectWithBillableInfo | null>(null);
   const [selectedCommercialScheme, setSelectedCommercialScheme] = useState("");
   const { toast } = useToast();
+
+  useEffect(() => {
+    localStorage.setItem("projects_status_filter", statusFilter);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    localStorage.setItem("projects_view_mode", viewMode);
+  }, [viewMode]);
+
+  useEffect(() => {
+    localStorage.setItem("projects_sort_by", sortBy);
+  }, [sortBy]);
+
+  useEffect(() => {
+    localStorage.setItem("projects_collapsed_clients", JSON.stringify(Array.from(collapsedClients)));
+  }, [collapsedClients]);
+
+  const toggleClientCollapse = (clientId: string) => {
+    setCollapsedClients(prev => {
+      const next = new Set(prev);
+      if (next.has(clientId)) {
+        next.delete(clientId);
+      } else {
+        next.add(clientId);
+      }
+      return next;
+    });
+  };
 
   const { data: projects, isLoading } = useQuery<ProjectWithBillableInfo[]>({
     queryKey: ["/api/projects"],
@@ -172,12 +218,59 @@ export default function Projects() {
     },
   });
 
-  const filteredProjects = projects?.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.client.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || project.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  }) || [];
+  const filteredAndSortedProjects = useMemo(() => {
+    let result = projects?.filter(project => {
+      const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           project.client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           project.code.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = statusFilter === "all" || project.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    }) || [];
+
+    result = [...result].sort((a, b) => {
+      switch (sortBy) {
+        case "client":
+          const clientCompare = a.client.name.localeCompare(b.client.name);
+          return clientCompare !== 0 ? clientCompare : a.name.localeCompare(b.name);
+        case "name":
+          return a.name.localeCompare(b.name);
+        case "date":
+          const dateA = a.startDate ? new Date(a.startDate).getTime() : 0;
+          const dateB = b.startDate ? new Date(b.startDate).getTime() : 0;
+          return dateB - dateA;
+        case "status":
+          return a.status.localeCompare(b.status);
+        default:
+          return 0;
+      }
+    });
+
+    return result;
+  }, [projects, searchTerm, statusFilter, sortBy]);
+
+  const projectsByClient = useMemo(() => {
+    const grouped = new Map<string, { client: any; projects: ProjectWithBillableInfo[]; totalBudget: number }>();
+    
+    for (const project of filteredAndSortedProjects) {
+      const clientId = project.client.id;
+      if (!grouped.has(clientId)) {
+        grouped.set(clientId, {
+          client: project.client,
+          projects: [],
+          totalBudget: 0
+        });
+      }
+      const group = grouped.get(clientId)!;
+      group.projects.push(project);
+      group.totalBudget += project.totalBudget || 0;
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => 
+      a.client.name.localeCompare(b.client.name)
+    );
+  }, [filteredAndSortedProjects]);
+
+  const filteredProjects = filteredAndSortedProjects;
 
   const handleEditProject = (project: ProjectWithBillableInfo) => {
     setProjectToEdit(project);
@@ -215,181 +308,379 @@ export default function Projects() {
         {/* Filters */}
         <Card>
           <CardContent className="p-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-                <Input
-                  placeholder="Search projects or clients..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search-projects"
-                />
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Input
+                    placeholder="Search projects or clients..."
+                    className="pl-10"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    data-testid="input-search-projects"
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-36" data-testid="select-status-filter">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="on-hold">On Hold</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+                  <SelectTrigger className="w-44" data-testid="select-sort-by">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client">Sort: Client → Project</SelectItem>
+                    <SelectItem value="name">Sort: Project Name</SelectItem>
+                    <SelectItem value="date">Sort: Start Date</SelectItem>
+                    <SelectItem value="status">Sort: Status</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="flex border rounded-md">
+                  <Button
+                    variant={viewMode === "grouped" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-r-none px-3"
+                    onClick={() => setViewMode("grouped")}
+                    title="Grouped by Client"
+                    data-testid="button-view-grouped"
+                  >
+                    <Layers className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "list" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-none border-x px-3"
+                    onClick={() => setViewMode("list")}
+                    title="List View"
+                    data-testid="button-view-list"
+                  >
+                    <List className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant={viewMode === "cards" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-l-none px-3"
+                    onClick={() => setViewMode("cards")}
+                    title="Card View"
+                    data-testid="button-view-cards"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48" data-testid="select-status-filter">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="on-hold">On Hold</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" data-testid="button-advanced-filter">
-                <Filter className="w-4 h-4 mr-2" />
-                Advanced
-              </Button>
+              {(statusFilter !== "active" || searchTerm) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {filteredProjects.length} project{filteredProjects.length !== 1 ? "s" : ""} found
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setStatusFilter("active");
+                      setSearchTerm("");
+                    }}
+                    className="text-xs h-6"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Projects Grid */}
-        <div className="grid grid-cols-1 gap-6">
+        {/* Projects Display */}
+        <div className="space-y-4">
           {isLoading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <CardContent className="p-6">
-                  <div className="space-y-3">
-                    <div className="h-4 bg-muted rounded"></div>
-                    <div className="h-3 bg-muted rounded w-3/4"></div>
-                    <div className="h-3 bg-muted rounded w-1/2"></div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : filteredProjects.length === 0 ? (
-            <div className="col-span-full">
-              <Card>
-                <CardContent className="p-12 text-center">
-                  <div className="text-muted-foreground">
-                    <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <h3 className="text-lg font-medium mb-2">No projects found</h3>
-                    <p>Create your first project to get started with SCDP.</p>
-                  </div>
-                  <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create Project
-                  </Button>
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-1 gap-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardContent className="p-6">
+                    <div className="space-y-3">
+                      <div className="h-4 bg-muted rounded"></div>
+                      <div className="h-3 bg-muted rounded w-3/4"></div>
+                      <div className="h-3 bg-muted rounded w-1/2"></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          ) : (
-            filteredProjects.map((project) => (
-              <Card key={project.id} className="hover:shadow-lg transition-all duration-200" data-testid={`project-card-${project.id}`}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg" data-testid={`project-name-${project.id}`}>
-                        {project.name}
-                      </CardTitle>
-                      <p className="text-sm text-muted-foreground" data-testid={`project-code-${project.id}`}>
-                        {project.code}
-                      </p>
-                    </div>
-                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      project.status === 'active' 
-                        ? 'bg-chart-4/10 text-chart-4' 
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {project.status}
-                    </div>
+          ) : filteredProjects.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <div className="text-muted-foreground">
+                  <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium mb-2">No projects found</h3>
+                  <p>Create your first project to get started with SCDP.</p>
+                </div>
+                <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Project
+                </Button>
+              </CardContent>
+            </Card>
+          ) : viewMode === "grouped" ? (
+            <div className="space-y-4">
+              {projectsByClient.map((group) => (
+                <Collapsible
+                  key={group.client.id}
+                  open={!collapsedClients.has(group.client.id)}
+                  onOpenChange={() => toggleClientCollapse(group.client.id)}
+                >
+                  <Card>
+                    <CollapsibleTrigger asChild>
+                      <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {collapsedClients.has(group.client.id) ? (
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            )}
+                            <div>
+                              <CardTitle className="text-base">{group.client.name}</CardTitle>
+                              <p className="text-sm text-muted-foreground">
+                                {group.projects.length} project{group.projects.length !== 1 ? "s" : ""}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium">${group.totalBudget.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground">total budget</p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <CardContent className="pt-0 pb-2">
+                        <div className="divide-y">
+                          {group.projects.map((project) => (
+                            <div key={project.id} className="py-3 first:pt-0 last:pb-0">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <Link href={`/projects/${project.id}`}>
+                                      <span className="font-medium hover:underline cursor-pointer">
+                                        {project.name}
+                                      </span>
+                                    </Link>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      project.status === 'active' 
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                                        : project.status === 'on-hold'
+                                        ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                        : 'bg-muted text-muted-foreground'
+                                    }`}>
+                                      {project.status}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground">
+                                    {project.code} {project.pm ? `• ${project.pm}` : ""}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-6 text-sm">
+                                  <div className="text-right hidden sm:block">
+                                    <p className="font-medium">${(project.totalBudget || 0).toLocaleString()}</p>
+                                    <p className="text-xs text-muted-foreground">budget</p>
+                                  </div>
+                                  <div className="text-right hidden md:block">
+                                    <p className={`font-medium ${
+                                      (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                                      (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                                      'text-green-600 dark:text-green-400'
+                                    }`}>
+                                      {project.utilizationRate || 0}%
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">burned</p>
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <Link href={`/projects/${project.id}`}>
+                                      <Button size="sm" variant="ghost" title="View Details">
+                                        <Eye className="h-4 w-4" />
+                                      </Button>
+                                    </Link>
+                                    <Button size="sm" variant="ghost" onClick={() => handleEditProject(project)} title="Edit">
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              ))}
+            </div>
+          ) : viewMode === "list" ? (
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-muted/50 text-sm font-medium text-muted-foreground">
+                    <div className="col-span-4">Project</div>
+                    <div className="col-span-2">Client</div>
+                    <div className="col-span-1">Status</div>
+                    <div className="col-span-2 text-right">Budget</div>
+                    <div className="col-span-1 text-right">Burned</div>
+                    <div className="col-span-2 text-right">Actions</div>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Client</p>
-                      <p className="font-medium" data-testid={`project-client-${project.id}`}>
-                        {project.client.name}
-                      </p>
-                    </div>
-                    
-                    {project.startDate && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Timeline</p>
-                        <p className="text-sm" data-testid={`project-timeline-${project.id}`}>
-                          {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}
-                        </p>
+                  {filteredProjects.map((project) => (
+                    <div key={project.id} className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-muted/30 transition-colors">
+                      <div className="col-span-4">
+                        <Link href={`/projects/${project.id}`}>
+                          <span className="font-medium hover:underline cursor-pointer">{project.name}</span>
+                        </Link>
+                        <p className="text-sm text-muted-foreground">{project.code}</p>
                       </div>
-                    )}
-                    
-                    {project.commercialScheme === 'retainer' && project.retainerTotal && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Retainer Value</p>
-                        <p className="font-medium text-sm">
-                          ${Number(project.retainerTotal).toLocaleString()}
-                        </p>
+                      <div className="col-span-2 text-sm">{project.client.name}</div>
+                      <div className="col-span-1">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          project.status === 'active' 
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                            : project.status === 'on-hold'
+                            ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {project.status}
+                        </span>
                       </div>
-                    )}
-                    
-                    {project.hasSow && (
-                      <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                        <FileText className="h-3 w-3" />
-                        <span className="text-xs font-medium">SOW Signed</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Billable Information */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Budget</p>
-                      <p className="font-medium" data-testid={`project-budget-${project.id}`}>
+                      <div className="col-span-2 text-right font-medium">
                         ${(project.totalBudget || 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Burned</p>
-                      <p className="font-medium" data-testid={`project-burned-${project.id}`}>
-                        ${(project.burnedAmount || 0).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Utilization</p>
-                      <p className={`font-medium ${
+                      </div>
+                      <div className={`col-span-1 text-right font-medium ${
                         (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
                         (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
                         'text-green-600 dark:text-green-400'
-                      }`} data-testid={`project-utilization-${project.id}`}>
+                      }`}>
                         {project.utilizationRate || 0}%
-                      </p>
+                      </div>
+                      <div className="col-span-2 flex justify-end gap-1">
+                        <Link href={`/projects/${project.id}`}>
+                          <Button size="sm" variant="ghost" title="View Details">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                        <Button size="sm" variant="ghost" onClick={() => handleEditProject(project)} title="Edit">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDeleteProject(project)} title="Delete">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex space-x-2 pt-2">
-                    <Link href={`/projects/${project.id}`} className="flex-1">
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredProjects.map((project) => (
+                <Card key={project.id} className="hover:shadow-lg transition-all duration-200" data-testid={`project-card-${project.id}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg" data-testid={`project-name-${project.id}`}>
+                          {project.name}
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground" data-testid={`project-code-${project.id}`}>
+                          {project.code}
+                        </p>
+                      </div>
+                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        project.status === 'active' 
+                          ? 'bg-chart-4/10 text-chart-4' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {project.status}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Client</p>
+                        <p className="font-medium" data-testid={`project-client-${project.id}`}>
+                          {project.client.name}
+                        </p>
+                      </div>
+                      {project.startDate && (
+                        <div>
+                          <p className="text-sm text-muted-foreground">Timeline</p>
+                          <p className="text-sm" data-testid={`project-timeline-${project.id}`}>
+                            {new Date(project.startDate).toLocaleDateString()} - {project.endDate ? new Date(project.endDate).toLocaleDateString() : "Ongoing"}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Budget</p>
+                        <p className="font-medium" data-testid={`project-budget-${project.id}`}>
+                          ${(project.totalBudget || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Burned</p>
+                        <p className="font-medium" data-testid={`project-burned-${project.id}`}>
+                          ${(project.burnedAmount || 0).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Utilization</p>
+                        <p className={`font-medium ${
+                          (project.utilizationRate || 0) > 90 ? 'text-red-600 dark:text-red-400' : 
+                          (project.utilizationRate || 0) > 75 ? 'text-yellow-600 dark:text-yellow-400' : 
+                          'text-green-600 dark:text-green-400'
+                        }`} data-testid={`project-utilization-${project.id}`}>
+                          {project.utilizationRate || 0}%
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex space-x-2 pt-2">
+                      <Link href={`/projects/${project.id}`} className="flex-1">
+                        <Button 
+                          size="sm" 
+                          className="w-full"
+                          data-testid={`button-view-project-${project.id}`}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View Analytics
+                        </Button>
+                      </Link>
                       <Button 
                         size="sm" 
-                        className="w-full"
-                        data-testid={`button-view-project-${project.id}`}
+                        variant="outline"
+                        onClick={() => handleEditProject(project)}
+                        data-testid={`button-edit-project-${project.id}`}
                       >
-                        <Eye className="h-3 w-3 mr-1" />
-                        View Analytics
+                        <Edit className="h-3 w-3" />
                       </Button>
-                    </Link>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => handleEditProject(project)}
-                      data-testid={`button-edit-project-${project.id}`}
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteProject(project)}
-                      data-testid={`button-delete-project-${project.id}`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteProject(project)}
+                        data-testid={`button-delete-project-${project.id}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           )}
         </div>
 
