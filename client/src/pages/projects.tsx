@@ -75,7 +75,9 @@ export default function Projects() {
   // Initialize editHasSow when projectToEdit changes
   useEffect(() => {
     if (projectToEdit) {
-      setEditHasSow(projectToEdit.hasSow || false);
+      setEditHasSow(Boolean(projectToEdit.hasSow));
+    } else {
+      setEditHasSow(false);
     }
   }, [projectToEdit]);
 
