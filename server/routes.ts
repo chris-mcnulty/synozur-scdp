@@ -4998,7 +4998,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       const roles = await storage.getRoles();
       const workstreams = await storage.getProjectWorkStreams(projectId);
       const epics = await storage.getProjectEpics(projectId);
-      const stages = await storage.getProjectStages(projectId);
+      // Get all stages for all epics in this project
+      const epicIds = epics.map(e => e.id);
+      const stagesMap = await storage.getProjectStagesByEpicIds(epicIds);
+      const stages: any[] = [];
+      for (const epic of epics) {
+        const epicStages = stagesMap.get(epic.id) || [];
+        stages.push(...epicStages);
+      }
       
       // Create lookup maps (case-insensitive)
       // Support both email and name lookup for users
