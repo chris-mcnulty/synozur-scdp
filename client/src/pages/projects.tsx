@@ -292,7 +292,7 @@ export default function Projects() {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="on-hold">On Hold</SelectItem>
+                    <SelectItem value="on hold">On Hold</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
                   </SelectContent>
                 </Select>
