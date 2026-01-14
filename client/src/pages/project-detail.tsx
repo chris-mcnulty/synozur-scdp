@@ -404,7 +404,7 @@ export default function ProjectDetail() {
 
   // Invoice batches query - fetch invoice batches for the project's client
   const { data: invoiceBatches = [], isLoading: invoiceBatchesLoading } = useQuery<any[]>({
-    queryKey: [`/api/invoice-batches/client/${currentClientId}`],
+    queryKey: [`/api/clients/${currentClientId}/invoice-batches`],
     enabled: !!currentClientId,
   });
   
