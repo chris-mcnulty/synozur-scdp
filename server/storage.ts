@@ -6275,9 +6275,10 @@ export class DatabaseStorage implements IStorage {
     .where(eq(expenses.projectId, projectId))
     .groupBy(sql`TO_CHAR(${expenses.date}::date, 'YYYY-MM')`);
 
-    // For fixed-price projects (retainer, milestone), adjust revenue calculation
+    // For fixed-price projects (retainer, milestone, fixed-price), adjust revenue calculation
     let adjustedTimeMetrics = timeMetrics;
-    if (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') {
+    const isFixedPriceProject = ['retainer', 'milestone', 'fixed-price'].includes(project.commercialScheme);
+    if (isFixedPriceProject) {
       // Get total SOW value for this project
       const totalSowValue = await this.getProjectTotalBudget(projectId);
       
@@ -6319,20 +6320,19 @@ export class DatabaseStorage implements IStorage {
       });
     });
 
+    // Check if this is a fixed-price project (expenses should NOT count as revenue)
+    const isFixedPrice = ['retainer', 'milestone', 'fixed-price'].includes(project.commercialScheme);
+    
     expenseMetrics.forEach(metric => {
       const existing = metricsMap.get(metric.month);
       if (existing) {
-        // For fixed-price projects, expenses don't count as revenue
-        const expenseRevenue = (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') 
-          ? 0 
-          : Number(metric.expenseAmount) || 0;
-        existing.revenue += expenseRevenue; // Add expense to revenue for T&M projects
+        // For fixed-price projects, expenses don't count as revenue (only T&M projects bill expenses)
+        const expenseRevenue = isFixedPrice ? 0 : Number(metric.expenseAmount) || 0;
+        existing.revenue += expenseRevenue; // Add expense to revenue for T&M projects only
         existing.expenseAmount = Number(metric.expenseAmount) || 0;
       } else {
         // For new months with only expenses, determine if expenses should be revenue
-        const expenseRevenue = (project.commercialScheme === 'retainer' || project.commercialScheme === 'milestone') 
-          ? 0 
-          : Number(metric.expenseAmount) || 0;
+        const expenseRevenue = isFixedPrice ? 0 : Number(metric.expenseAmount) || 0;
         metricsMap.set(metric.month, {
           month: metric.month,
           billableHours: 0,
