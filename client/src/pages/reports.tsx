@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Layout } from "@/components/layout/layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1345,10 +1346,11 @@ function Reports() {
   };
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Portfolio Reports</h2>
-      </div>
+    <Layout>
+      <div className="flex-1 space-y-4 p-8 pt-6">
+        <div className="flex items-center justify-between space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight">Portfolio Reports</h2>
+        </div>
       
       {/* Filters */}
       <Card>
@@ -1443,7 +1445,8 @@ function Reports() {
           {renderComplianceTracking()}
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </Layout>
   );
 }
 
