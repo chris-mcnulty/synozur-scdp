@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { ProjectCard } from "@/components/project/project-card";
-import { EstimationModal } from "@/components/project/estimation-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -22,8 +22,7 @@ import type { DashboardMetrics, ProjectWithClient } from "@/lib/types";
 
 
 export default function Dashboard() {
-  const [estimationModalOpen, setEstimationModalOpen] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [, navigate] = useLocation();
 
   const { data: metrics, isLoading: metricsLoading } = useQuery<DashboardMetrics>({
     queryKey: ["/api/dashboard/metrics"],
@@ -34,16 +33,12 @@ export default function Dashboard() {
   });
 
   const handleViewProject = (projectId: string) => {
-    setSelectedProject(projectId);
-    setEstimationModalOpen(true);
+    navigate(`/projects/${projectId}`);
   };
 
   const handleEditProject = (projectId: string) => {
-    // Navigate to project edit page
-    console.log("Edit project:", projectId);
+    navigate(`/projects/${projectId}?tab=overview`);
   };
-
-  const selectedProjectData = projects?.find(p => p.id === selectedProject);
 
   return (
     <Layout>
@@ -266,15 +261,6 @@ export default function Dashboard() {
           <ActivityFeed />
         </div>
       </div>
-
-      {/* Estimation Modal */}
-      {selectedProjectData && (
-        <EstimationModal
-          isOpen={estimationModalOpen}
-          onClose={() => setEstimationModalOpen(false)}
-          projectName={selectedProjectData.name}
-        />
-      )}
     </Layout>
   );
 }
