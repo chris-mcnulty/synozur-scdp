@@ -12,6 +12,131 @@ export type EstimateStatus = z.infer<typeof estimateStatusEnum>;
 export const expenseApprovalStatusEnum = z.enum(['draft', 'submitted', 'approved', 'rejected', 'reimbursed']);
 export type ExpenseApprovalStatus = z.infer<typeof expenseApprovalStatusEnum>;
 
+// Plan status enum
+export const planStatusEnum = z.enum(['active', 'trial', 'expired', 'cancelled', 'suspended']);
+export type PlanStatus = z.infer<typeof planStatusEnum>;
+
+// TenantBranding type for jsonb field
+export type TenantBranding = {
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  fontFamily?: string;
+  tagline?: string;
+  reportHeaderText?: string;
+  reportFooterText?: string;
+};
+
+// ============================================================================
+// MULTI-TENANCY TABLES (Phase 1 - Matches Vega Architecture)
+// ============================================================================
+
+// Service Plans (Subscription Tiers)
+export const servicePlans = pgTable("service_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  internalName: varchar("internal_name", { length: 100 }).notNull().unique(),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  description: text("description"),
+  
+  // Plan type: trial, team, enterprise, unlimited
+  planType: varchar("plan_type", { length: 50 }).notNull(),
+  
+  // Limits (null = unlimited)
+  maxUsers: integer("max_users").default(5),
+  maxProjects: integer("max_projects"),
+  maxClients: integer("max_clients"),
+  
+  // Features
+  aiEnabled: boolean("ai_enabled").default(true),
+  sharePointEnabled: boolean("sharepoint_enabled").default(false),
+  ssoEnabled: boolean("sso_enabled").default(false),
+  customBrandingEnabled: boolean("custom_branding_enabled").default(false),
+  coBrandingEnabled: boolean("co_branding_enabled").default(true),
+  subdomainEnabled: boolean("subdomain_enabled").default(false),
+  plannerEnabled: boolean("planner_enabled").default(false),
+  
+  // Trial settings
+  trialDurationDays: integer("trial_duration_days"),
+  
+  // Pricing (internal billing for MVP)
+  monthlyPriceCents: integer("monthly_price_cents"),
+  annualPriceCents: integer("annual_price_cents"),
+  billingCycle: varchar("billing_cycle", { length: 20 }), // monthly, annual, both
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  isDefault: boolean("is_default").default(false),
+  displayOrder: integer("display_order").default(0),
+  
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// Tenants (Organizations) - Matches Vega structure
+export const tenants = pgTable("tenants", {
+  // Core identity
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  slug: varchar("slug", { length: 100 }).notNull().unique(),
+  
+  // Branding
+  color: text("color"),
+  logoUrl: text("logo_url"),
+  logoUrlDark: text("logo_url_dark"),
+  faviconUrl: text("favicon_url"),
+  customSubdomain: text("custom_subdomain"),
+  branding: jsonb("branding").$type<TenantBranding>(),
+  
+  // Domain & SSO
+  allowedDomains: jsonb("allowed_domains").$type<string[]>(),
+  azureTenantId: text("azure_tenant_id"),
+  enforceSso: boolean("enforce_sso").default(false),
+  allowLocalAuth: boolean("allow_local_auth").default(true),
+  inviteOnly: boolean("invite_only").default(false),
+  
+  // M365 Connectors
+  connectorSharePoint: boolean("connector_sharepoint").default(false),
+  connectorOutlook: boolean("connector_outlook").default(false),
+  connectorPlanner: boolean("connector_planner").default(false),
+  adminConsentGranted: boolean("admin_consent_granted").default(false),
+  adminConsentGrantedAt: timestamp("admin_consent_granted_at"),
+  adminConsentGrantedBy: varchar("admin_consent_granted_by"),
+  
+  // Customization
+  fiscalYearStartMonth: integer("fiscal_year_start_month").default(1),
+  defaultTimezone: varchar("default_timezone", { length: 50 }).default("America/New_York"),
+  vocabularyOverrides: jsonb("vocabulary_overrides").$type<Record<string, string>>(),
+  
+  // Service Plan / Licensing
+  servicePlanId: varchar("service_plan_id").references(() => servicePlans.id),
+  planStartedAt: timestamp("plan_started_at"),
+  planExpiresAt: timestamp("plan_expires_at"),
+  planStatus: text("plan_status").default("active"),
+  
+  // Signup metadata
+  selfServiceSignup: boolean("self_service_signup").default(false),
+  signupCompletedAt: timestamp("signup_completed_at"),
+  organizationSize: text("organization_size"),
+  industry: text("industry"),
+  location: text("location"),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+// Blocked Email Domains (Platform-wide security)
+export const blockedDomains = pgTable("blocked_domains", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  domain: varchar("domain", { length: 255 }).notNull().unique(),
+  reason: text("reason"),
+  blockedBy: varchar("blocked_by"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+// ============================================================================
+// END MULTI-TENANCY TABLES
+// ============================================================================
+
 // Users and Authentication (Person metadata)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1160,7 +1285,30 @@ export const invoiceAdjustmentsRelations = relations(invoiceAdjustments, ({ one 
   }),
 }));
 
-// Insert schemas
+// ============================================================================
+// Insert Schemas - Multi-Tenancy Tables
+// ============================================================================
+
+export const insertServicePlanSchema = createInsertSchema(servicePlans).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTenantSchema = createInsertSchema(tenants).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBlockedDomainSchema = createInsertSchema(blockedDomains).omit({
+  id: true,
+  createdAt: true,
+});
+
+// ============================================================================
+// Insert Schemas - Core Tables
+// ============================================================================
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -1391,6 +1539,23 @@ export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit
 });
 
 // Types
+// ============================================================================
+// Types - Multi-Tenancy Tables
+// ============================================================================
+
+export type ServicePlan = typeof servicePlans.$inferSelect;
+export type InsertServicePlan = z.infer<typeof insertServicePlanSchema>;
+
+export type Tenant = typeof tenants.$inferSelect;
+export type InsertTenant = z.infer<typeof insertTenantSchema>;
+
+export type BlockedDomain = typeof blockedDomains.$inferSelect;
+export type InsertBlockedDomain = z.infer<typeof insertBlockedDomainSchema>;
+
+// ============================================================================
+// Types - Core Tables
+// ============================================================================
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 
