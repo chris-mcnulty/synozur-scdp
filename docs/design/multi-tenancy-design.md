@@ -4,11 +4,22 @@
 
 This document outlines the design for converting Constellation from a single-tenant application to a multi-tenant SaaS platform, enabling software subscription offerings in 6-12 months. The design is modeled after Vega's proven multi-tenant architecture.
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Created:** January 2026  
+**Updated:** January 2026  
 **Status:** Design Complete - Ready for Backlog  
 **Priority:** P1 - High Priority  
-**Based on:** Vega Multi-Tenancy Architecture
+**Based on:** Orion/Vega Multi-Tenancy Architecture
+
+---
+
+## Key Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Tenant ID Format** | UUID strings (varchar) | Consistency with Orion and Vega platforms |
+| **Billing System** | Internal (for MVP) | Simplifies initial implementation; external integration (Stripe) can be added later |
+| **Subdomain Routing** | Post-MVP feature | Not required for initial launch; focus on core multi-tenancy first |
 
 ---
 
@@ -110,10 +121,12 @@ Multi-tenancy allows a single application instance to serve multiple independent
 
 ### New Core Tables
 
+> **Note:** All tables use UUID strings for primary keys to maintain consistency with Orion and Vega platforms.
+
 ```typescript
 // Tenants (Organizations)
 export const tenants = pgTable("tenants", {
-  id: serial("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull().unique(), // URL-friendly identifier
   
@@ -124,7 +137,7 @@ export const tenants = pgTable("tenants", {
   secondaryColor: varchar("secondary_color", { length: 7 }),
   tagline: text("tagline"),
   
-  // Subdomain (Enterprise/Unlimited only)
+  // Subdomain (Enterprise/Unlimited only) - POST-MVP FEATURE
   customSubdomain: varchar("custom_subdomain", { length: 100 }).unique(), // e.g., "clientname"
   subdomainEnabled: boolean("subdomain_enabled").default(false),
   
@@ -147,8 +160,8 @@ export const tenants = pgTable("tenants", {
 
 // Allowed Email Domains per Tenant
 export const tenantDomains = pgTable("tenant_domains", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
   domain: varchar("domain", { length: 255 }).notNull(), // e.g., "company.com"
   isPrimary: boolean("is_primary").default(false),
   createdAt: timestamp("created_at").defaultNow()
@@ -156,7 +169,7 @@ export const tenantDomains = pgTable("tenant_domains", {
 
 // Service Plans (Subscription Tiers)
 export const servicePlans = pgTable("service_plans", {
-  id: serial("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   internalName: varchar("internal_name", { length: 100 }).notNull().unique(),
   displayName: varchar("display_name", { length: 255 }).notNull(),
   description: text("description"),
@@ -181,7 +194,7 @@ export const servicePlans = pgTable("service_plans", {
   // Trial settings
   trialDurationDays: integer("trial_duration_days"), // null = not a trial plan
   
-  // Pricing (for display, actual billing handled externally)
+  // Pricing (internal billing for MVP)
   monthlyPriceCents: integer("monthly_price_cents"),
   annualPriceCents: integer("annual_price_cents"),
   billingCycle: varchar("billing_cycle", { length: 20 }), // monthly, annual, both
@@ -196,9 +209,9 @@ export const servicePlans = pgTable("service_plans", {
 
 // Tenant Plan Assignments
 export const tenantPlans = pgTable("tenant_plans", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
-  planId: integer("plan_id").notNull().references(() => servicePlans.id),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
+  planId: varchar("plan_id").notNull().references(() => servicePlans.id),
   
   // Duration
   startDate: date("start_date").notNull(),
@@ -221,8 +234,8 @@ export const tenantPlans = pgTable("tenant_plans", {
 
 // Tenant SSO Configuration
 export const tenantSsoConfig = pgTable("tenant_sso_config", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id).unique(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id).unique(),
   
   // Azure AD / Entra ID Settings
   azureTenantId: varchar("azure_tenant_id", { length: 255 }),
@@ -240,7 +253,7 @@ export const tenantSsoConfig = pgTable("tenant_sso_config", {
 
 // Blocked Email Domains (Platform-wide security)
 export const blockedDomains = pgTable("blocked_domains", {
-  id: serial("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   domain: varchar("domain", { length: 255 }).notNull().unique(),
   reason: text("reason"),
   blockedBy: varchar("blocked_by"),
@@ -253,12 +266,12 @@ export const blockedDomains = pgTable("blocked_domains", {
 ```typescript
 // Modify existing users table
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey(), // Keep existing
+  id: varchar("id").primaryKey(), // Keep existing UUID format
   
   // ... existing fields ...
   
   // NEW: Multi-tenancy fields
-  primaryTenantId: integer("primary_tenant_id").references(() => tenants.id),
+  primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id),
   
   // NEW: Platform-level roles (separate from tenant roles)
   platformRole: varchar("platform_role", { length: 50 }).default("user"), 
@@ -267,9 +280,9 @@ export const users = pgTable("users", {
 
 // NEW: User-Tenant Membership (many-to-many with roles)
 export const tenantUsers = pgTable("tenant_users", {
-  id: serial("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
   
   // Tenant-specific role (existing Constellation roles)
   role: varchar("role", { length: 50 }).notNull().default("employee"),
@@ -291,9 +304,9 @@ export const tenantUsers = pgTable("tenant_users", {
 
 // Consultant Access (for Synozur consultants accessing client tenants)
 export const consultantAccess = pgTable("consultant_access", {
-  id: serial("id").primaryKey(),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   consultantUserId: varchar("consultant_user_id").notNull().references(() => users.id),
-  tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
   
   // Access configuration
   role: varchar("role", { length: 50 }).notNull(), // Their role in this tenant
@@ -314,7 +327,7 @@ All existing tables need a `tenantId` foreign key for data isolation:
 
 ```typescript
 // Add to all existing tables:
-tenantId: integer("tenant_id").notNull().references(() => tenants.id),
+tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
 
 // Tables requiring tenantId:
 // - clients
@@ -378,15 +391,17 @@ Example 2: Synozur Consultant
 
 ---
 
-## 5. Subdomain Routing (Enterprise/Unlimited)
+## 5. Subdomain Routing (Enterprise/Unlimited) — POST-MVP
+
+> **Note:** Subdomain routing is a **post-MVP feature**. For MVP, all tenants will use the standard app domain. This section documents the future implementation.
 
 ### URL Structure
 
 | Plan | URL Pattern |
 |------|-------------|
 | Trial/Team | `app.constellation.synozur.com` |
-| Enterprise | `{clientname}.constellation.synozur.com` |
-| Unlimited (Synozur) | `synozur.constellation.synozur.com` or custom |
+| Enterprise | `{clientname}.constellation.synozur.com` (post-MVP) |
+| Unlimited (Synozur) | `synozur.constellation.synozur.com` or custom (post-MVP) |
 
 ### Subdomain Implementation
 
