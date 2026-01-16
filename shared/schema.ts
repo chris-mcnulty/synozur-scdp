@@ -134,7 +134,7 @@ export const blockedDomains = pgTable("blocked_domains", {
 });
 
 // ============================================================================
-// END MULTI-TENANCY TABLES
+// END MULTI-TENANCY CORE TABLES (tenant_users and consultant_access below users)
 // ============================================================================
 
 // Users and Authentication (Person metadata)
@@ -156,8 +156,66 @@ export const users = pgTable("users", {
   isSalaried: boolean("is_salaried").notNull().default(false), // Salaried resources don't contribute to direct project costs
   isActive: boolean("is_active").notNull().default(true),
   receiveTimeReminders: boolean("receive_time_reminders").notNull().default(true), // Opt-in for weekly time entry reminders
+  // Multi-tenancy fields
+  primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
+  platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
+
+// ============================================================================
+// MULTI-TENANCY USER TABLES (defined after users for FK references)
+// ============================================================================
+
+// User-Tenant Membership (many-to-many with roles)
+export const tenantUsers = pgTable("tenant_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  
+  // Tenant-specific role (existing Constellation roles)
+  role: varchar("role", { length: 50 }).notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  
+  // Status
+  status: varchar("status", { length: 50 }).default("active"), // active, suspended, invited
+  
+  // Invitation tracking
+  invitedBy: varchar("invited_by").references(() => users.id),
+  invitedAt: timestamp("invited_at"),
+  joinedAt: timestamp("joined_at"),
+  
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueUserTenant: uniqueIndex("unique_user_tenant").on(table.userId, table.tenantId),
+  tenantIdx: index("idx_tenant_users_tenant").on(table.tenantId),
+  userIdx: index("idx_tenant_users_user").on(table.userId),
+}));
+
+// Consultant Access (for Synozur consultants accessing client tenants)
+export const consultantAccess = pgTable("consultant_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  consultantUserId: varchar("consultant_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  
+  // Access configuration
+  role: varchar("role", { length: 50 }).notNull(), // Their role in this tenant
+  grantedBy: varchar("granted_by").references(() => users.id),
+  grantedAt: timestamp("granted_at").notNull().default(sql`now()`),
+  
+  // Optional expiration
+  expiresAt: timestamp("expires_at"),
+  
+  // Notes
+  reason: text("reason"), // "Q1 2026 Implementation Project"
+  
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_consultant_access_tenant").on(table.tenantId),
+  consultantIdx: index("idx_consultant_access_consultant").on(table.consultantUserId),
+}));
+
+// ============================================================================
+// END MULTI-TENANCY TABLES
+// ============================================================================
 
 // Clients
 export const clients = pgTable("clients", {
@@ -367,6 +425,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
 // Client Rate Overrides - Default rates for a client (applies to new estimates only)
 export const clientRateOverrides = pgTable("client_rate_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: 'cascade' }),
   subjectType: text("subject_type").notNull(), // 'role' or 'person' (validated in application layer)
   subjectId: varchar("subject_id").notNull(), // roleId or userId
@@ -558,6 +617,7 @@ export const projectAllocations = pgTable("project_allocations", {
 // Separate from individual allocations - tracks whether user is actively working on project
 export const projectEngagements = pgTable("project_engagements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   status: text("status").notNull().default('active'), // active, complete
@@ -612,6 +672,7 @@ export const projectRateOverrides = pgTable("project_rate_overrides", {
 // Rate overrides
 export const rateOverrides = pgTable("rate_overrides", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   scope: text("scope").notNull(), // "client" or "project"
   scopeId: varchar("scope_id").notNull(), // clientId or projectId
   subjectType: text("subject_type").notNull(), // "role" or "person"
@@ -743,6 +804,7 @@ export const pendingReceipts = pgTable("pending_receipts", {
 // Expense Reports - For grouping expenses into submission batches for approval
 export const expenseReports = pgTable("expense_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   reportNumber: text("report_number").notNull().unique(), // Auto-generated report number (e.g., EXP-2025-10-001)
   submitterId: varchar("submitter_id").notNull().references(() => users.id),
   status: text("status").notNull().default("draft"), // draft, submitted, approved, rejected
@@ -780,6 +842,7 @@ export const expenseReportItems = pgTable("expense_report_items", {
 // Reimbursement Batches - For processing approved expenses for reimbursement
 export const reimbursementBatches = pgTable("reimbursement_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   batchNumber: text("batch_number").notNull().unique(), // Auto-generated batch number (e.g., REIMB-2025-10-001)
   status: text("status").notNull().default("draft"), // draft, approved, processed
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
@@ -1326,6 +1389,17 @@ export const insertBlockedDomainSchema = createInsertSchema(blockedDomains).omit
   createdAt: true,
 });
 
+export const insertTenantUserSchema = createInsertSchema(tenantUsers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertConsultantAccessSchema = createInsertSchema(consultantAccess).omit({
+  id: true,
+  createdAt: true,
+  grantedAt: true,
+});
+
 // ============================================================================
 // Insert Schemas - Core Tables
 // ============================================================================
@@ -1572,6 +1646,12 @@ export type InsertTenant = z.infer<typeof insertTenantSchema>;
 
 export type BlockedDomain = typeof blockedDomains.$inferSelect;
 export type InsertBlockedDomain = z.infer<typeof insertBlockedDomainSchema>;
+
+export type TenantUser = typeof tenantUsers.$inferSelect;
+export type InsertTenantUser = z.infer<typeof insertTenantUserSchema>;
+
+export type ConsultantAccess = typeof consultantAccess.$inferSelect;
+export type InsertConsultantAccess = z.infer<typeof insertConsultantAccessSchema>;
 
 // ============================================================================
 // Types - Core Tables

@@ -384,7 +384,85 @@ Example 2: Synozur Consultant
 
 ---
 
-## 5. Subdomain Routing (Enterprise/Unlimited) — POST-MVP
+## 5. Tenant Resolution Strategy
+
+### Production Multi-Tenant Resolution
+
+When users authenticate via their organization's Azure Entra ID, tenant resolution follows this priority order:
+
+| Priority | Method | Description | Use Case |
+|----------|--------|-------------|----------|
+| 1 | **Entra Tenant ID** | JWT claim `tid` → lookup `tenants.azureTenantId` | Primary production path |
+| 2 | **Email Domain** | User email domain → lookup `tenants.allowedDomains` | Fallback for SSO |
+| 3 | **Custom Subdomain** | URL subdomain → lookup `tenants.customSubdomain` | Post-MVP premium feature |
+| 4 | **Default Slug** | Environment variable `DEFAULT_TENANT_SLUG` | Dev/transition only |
+
+### Resolution Flow
+
+```typescript
+// Tenant resolution middleware
+async function resolveTenant(req, res, next) {
+  let tenant = null;
+  
+  // Priority 1: Resolve from Entra tenant ID (production)
+  if (req.user?.azureTenantId) {
+    tenant = await db.select().from(tenants)
+      .where(eq(tenants.azureTenantId, req.user.azureTenantId))
+      .limit(1);
+  }
+  
+  // Priority 2: Resolve from email domain
+  if (!tenant && req.user?.email) {
+    const domain = req.user.email.split('@')[1];
+    tenant = await db.select().from(tenants)
+      .where(sql`${tenants.allowedDomains} ? ${domain}`)
+      .limit(1);
+  }
+  
+  // Priority 3: Resolve from subdomain (post-MVP)
+  if (!tenant && req.subdomain) {
+    tenant = await db.select().from(tenants)
+      .where(eq(tenants.customSubdomain, req.subdomain))
+      .limit(1);
+  }
+  
+  // Priority 4: Default slug (dev/transition only)
+  if (!tenant && process.env.DEFAULT_TENANT_SLUG) {
+    tenant = await db.select().from(tenants)
+      .where(eq(tenants.slug, process.env.DEFAULT_TENANT_SLUG))
+      .limit(1);
+  }
+  
+  if (!tenant) {
+    return res.status(403).json({ error: 'Tenant not found' });
+  }
+  
+  req.tenantId = tenant[0].id;
+  req.tenant = tenant[0];
+  next();
+}
+```
+
+### Environment Configuration
+
+| Environment | Resolution Strategy | `DEFAULT_TENANT_SLUG` |
+|-------------|--------------------|-----------------------|
+| **Development** | Default slug fallback | `synozur` |
+| **Staging** | Entra ID + default fallback | `synozur` |
+| **Production** | Entra ID only (no fallback) | Not set |
+
+### Important Notes
+
+1. **Each Entra tenant maps to one Constellation tenant** via the `azureTenantId` field
+2. **Default slug is NOT used in production** with multiple Entra tenants
+3. **The default slug pattern is only for**:
+   - Local development (no Entra auth available)
+   - Transition period (backfilling existing NULL tenant_id records)
+   - Single-tenant mode (explicitly configured)
+
+---
+
+## 6. Subdomain Routing (Enterprise/Unlimited) — POST-MVP
 
 > **Note:** Subdomain routing is a **post-MVP feature**. For MVP, all tenants will use the standard app domain. This section documents the future implementation.
 
@@ -441,7 +519,7 @@ const subdomainRouter = async (req, res, next) => {
 
 ---
 
-## 6. Co-Branding Support
+## 7. Co-Branding Support
 
 ### Co-Branding Features
 
@@ -480,7 +558,7 @@ All paying plans support co-branding:
 
 ---
 
-## 7. Tenant Lifecycle
+## 8. Tenant Lifecycle
 
 ### Self-Service Signup Flow
 
@@ -572,7 +650,7 @@ async function checkTenantExpirations() {
 
 ---
 
-## 8. Migration Strategy
+## 9. Migration Strategy
 
 ### Critical Requirement: Production Continuity
 
@@ -921,7 +999,7 @@ Before production cutover:
 
 ---
 
-## 9. UI/UX Changes
+## 10. UI/UX Changes
 
 ### Global Navigation Updates
 
@@ -985,7 +1063,7 @@ Before production cutover:
 
 ---
 
-## 10. API Changes
+## 11. API Changes
 
 ### Route Structure
 
@@ -1022,7 +1100,7 @@ app.use('/api', (req, res, next) => {
 
 ---
 
-## 11. Security Considerations
+## 12. Security Considerations
 
 ### Data Isolation
 - All queries MUST include `tenantId` filter
@@ -1049,7 +1127,7 @@ app.use('/api', (req, res, next) => {
 
 ---
 
-## 12. Existing Feature Compatibility
+## 13. Existing Feature Compatibility
 
 ### Features Requiring Tenant Scoping
 
@@ -1079,7 +1157,7 @@ The existing `vocabularyDefaults` table's "organization" scope becomes tenant sc
 
 ---
 
-## 13. Implementation Phases
+## 14. Implementation Phases
 
 ### Phase 1: Foundation (3-4 weeks)
 - [ ] Create new multi-tenant schema tables
@@ -1136,7 +1214,7 @@ The existing `vocabularyDefaults` table's "organization" scope becomes tenant sc
 
 ---
 
-## 14. Open Items & Decisions
+## 15. Open Items & Decisions
 
 | Item | Options | Recommendation |
 |------|---------|----------------|
@@ -1148,7 +1226,7 @@ The existing `vocabularyDefaults` table's "organization" scope becomes tenant sc
 
 ---
 
-## 15. Success Metrics
+## 16. Success Metrics
 
 | Metric | Target |
 |--------|--------|
