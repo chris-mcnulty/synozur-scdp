@@ -44,7 +44,7 @@ interface Assignment {
 }
 
 export function MyAssignments() {
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -125,8 +125,10 @@ export function MyAssignments() {
   // Filter assignments
   const filteredAssignments = useMemo(() => {
     return assignments.filter((assignment: Assignment) => {
-      // Status filter
-      if (statusFilter !== "all" && assignment.status !== statusFilter) return false;
+      // Status filter - "active" matches open and in_progress
+      if (statusFilter === "active") {
+        if (assignment.status !== "open" && assignment.status !== "in_progress") return false;
+      } else if (statusFilter !== "all" && assignment.status !== statusFilter) return false;
       
       // Project filter
       if (projectFilter !== "all" && assignment.project?.id !== projectFilter) return false;
@@ -394,6 +396,7 @@ export function MyAssignments() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">Active (Open/In Progress)</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
