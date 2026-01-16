@@ -162,6 +162,7 @@ export const users = pgTable("users", {
 // Clients
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   name: text("name").notNull(),
   shortName: text("short_name"), // Abbreviated name for display (e.g., "MSFT" for Microsoft)
   status: text("status").notNull().default("pending"), // pending, active, inactive, archived
@@ -189,7 +190,9 @@ export const clients = pgTable("clients", {
   microsoftTeamId: text("microsoft_team_id"), // Azure Group/Team ID for this client
   microsoftTeamName: text("microsoft_team_name"), // Display name of the Team
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_clients_tenant").on(table.tenantId),
+}));
 
 // Roles (for rate management)
 export const roles = pgTable("roles", {
@@ -241,6 +244,7 @@ export const organizationVocabulary = pgTable("organization_vocabulary", {
 // Projects
 export const projects = pgTable("projects", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   clientId: varchar("client_id").notNull().references(() => clients.id),
   name: text("name").notNull(),
   description: text("description"), // Vision statement/overview (paragraph length)
@@ -270,11 +274,14 @@ export const projects = pgTable("projects", {
   milestoneTermId: varchar("milestone_term_id").references(() => vocabularyCatalog.id),
   activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_projects_tenant").on(table.tenantId),
+}));
 
 // Estimates
 export const estimates = pgTable("estimates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   name: text("name").notNull(),
   clientId: varchar("client_id").notNull().references(() => clients.id),
   projectId: varchar("project_id").references(() => projects.id), // Optional - can create estimate without project
@@ -320,7 +327,9 @@ export const estimates = pgTable("estimates", {
   referralFeePaidTo: text("referral_fee_paid_to"), // Name of seller/referrer
   netRevenue: decimal("net_revenue", { precision: 12, scale: 2 }), // Total fees minus referral fee
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_estimates_tenant").on(table.tenantId),
+}));
 
 // Estimate Line Items (inputs) with factors
 export const estimateLineItems = pgTable("estimate_line_items", {
@@ -515,6 +524,7 @@ export const projectMilestones = pgTable("project_milestones", {
 // Project Resource Allocations - mirrors estimate allocations for actual project work
 export const projectAllocations = pgTable("project_allocations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
   projectActivityId: varchar("project_activity_id").references(() => projectActivities.id),
   projectMilestoneId: varchar("project_milestone_id").references(() => projectMilestones.id),
@@ -540,7 +550,9 @@ export const projectAllocations = pgTable("project_allocations", {
   startedDate: date("started_date"), // Automatically set when status → in_progress
   completedDate: date("completed_date"), // Automatically set when status → completed
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_project_allocations_tenant").on(table.tenantId),
+}));
 
 // Project Engagements - tracks a user's overall engagement status on a project
 // Separate from individual allocations - tracks whether user is actively working on project
@@ -615,6 +627,7 @@ export const rateOverrides = pgTable("rate_overrides", {
 // Time entries
 export const timeEntries = pgTable("time_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   personId: varchar("person_id").notNull().references(() => users.id),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   date: date("date").notNull(),
@@ -635,11 +648,14 @@ export const timeEntries = pgTable("time_entries", {
   locked: boolean("locked").notNull().default(false),
   lockedAt: timestamp("locked_at"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_time_entries_tenant").on(table.tenantId),
+}));
 
 // Expenses
 export const expenses = pgTable("expenses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   personId: varchar("person_id").notNull().references(() => users.id),
   projectId: varchar("project_id").notNull().references(() => projects.id),
   projectResourceId: varchar("project_resource_id").references(() => users.id), // User assigned to this expense within the project
@@ -671,7 +687,9 @@ export const expenses = pgTable("expenses", {
   reimbursedAt: timestamp("reimbursed_at"),
   reimbursementBatchId: varchar("reimbursement_batch_id"), // Will reference reimbursementBatches
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_expenses_tenant").on(table.tenantId),
+}));
 
 // Expense Attachments (for SharePoint file integration)
 export const expenseAttachments = pgTable("expense_attachments", {
@@ -843,6 +861,7 @@ export const projectBudgetHistory = pgTable("project_budget_history", {
 // Invoice batches
 export const invoiceBatches = pgTable("invoice_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   batchId: text("batch_id").notNull().unique(),
   // Support custom date ranges instead of just month
   startDate: date("start_date").notNull(),
@@ -886,7 +905,9 @@ export const invoiceBatches = pgTable("invoice_batches", {
   paymentUpdatedBy: varchar("payment_updated_by").references(() => users.id), // Who updated payment status
   paymentUpdatedAt: timestamp("payment_updated_at"), // When payment status was updated
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_invoice_batches_tenant").on(table.tenantId),
+}));
 
 // Invoice lines
 export const invoiceLines = pgTable("invoice_lines", {
