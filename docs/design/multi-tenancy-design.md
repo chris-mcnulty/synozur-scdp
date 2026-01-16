@@ -17,7 +17,10 @@ This document outlines the design for converting Constellation from a single-ten
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Tenant ID Format** | UUID strings (varchar) | Consistency with Orion and Vega platforms |
+| **Schema Architecture** | Match Vega | Consistency across Synozur platforms; proven production design |
+| **Tenant ID Format** | UUID strings (varchar) | Matches Vega; enables distributed ID generation |
+| **SSO/Domains Storage** | Fields on tenant table | Matches Vega; simpler than separate tables |
+| **Service Plan Link** | FK on tenant (not junction) | Matches Vega; simpler queries |
 | **Billing System** | Internal (for MVP) | Simplifies initial implementation; external integration (Stripe) can be added later |
 | **Subdomain Routing** | Post-MVP feature | Not required for initial launch; focus on core multi-tenancy first |
 
@@ -121,51 +124,72 @@ Multi-tenancy allows a single application instance to serve multiple independent
 
 ### New Core Tables
 
-> **Note:** All tables use UUID strings for primary keys to maintain consistency with Orion and Vega platforms.
+> **Note:** Schema design matches Vega for consistency across Synozur platforms. Uses UUID strings for primary keys and denormalized structure (fewer tables, simpler queries).
 
 ```typescript
-// Tenants (Organizations)
+// Tenants (Organizations) - Matches Vega structure
 export const tenants = pgTable("tenants", {
+  // Core identity
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: varchar("name", { length: 255 }).notNull(),
+  name: text("name").notNull().unique(),
   slug: varchar("slug", { length: 100 }).notNull().unique(), // URL-friendly identifier
   
-  // Branding (Co-branding supported)
+  // Branding
+  color: text("color"), // Primary brand color
   logoUrl: text("logo_url"),
-  logoDarkUrl: text("logo_dark_url"),
-  primaryColor: varchar("primary_color", { length: 7 }), // Hex color
-  secondaryColor: varchar("secondary_color", { length: 7 }),
-  tagline: text("tagline"),
+  logoUrlDark: text("logo_url_dark"),
+  faviconUrl: text("favicon_url"),
+  customSubdomain: text("custom_subdomain"), // POST-MVP FEATURE
+  branding: jsonb("branding").$type<TenantBranding>(), // colors, fonts, custom text
   
-  // Subdomain (Enterprise/Unlimited only) - POST-MVP FEATURE
-  customSubdomain: varchar("custom_subdomain", { length: 100 }).unique(), // e.g., "clientname"
-  subdomainEnabled: boolean("subdomain_enabled").default(false),
+  // Domain & SSO (on tenant, not separate table)
+  allowedDomains: jsonb("allowed_domains").$type<string[]>(), // ["company.com", "subsidiary.com"]
+  azureTenantId: text("azure_tenant_id"),
+  enforceSso: boolean("enforce_sso").default(false),
+  allowLocalAuth: boolean("allow_local_auth").default(true),
+  inviteOnly: boolean("invite_only").default(false),
   
-  // Status
-  status: varchar("status", { length: 50 }).default("active"), 
-  // active, trial, expired, suspended, cancelled
+  // M365 Connectors (feature flags per tenant)
+  connectorSharePoint: boolean("connector_sharepoint").default(false),
+  connectorOutlook: boolean("connector_outlook").default(false),
+  connectorPlanner: boolean("connector_planner").default(false),
+  adminConsentGranted: boolean("admin_consent_granted").default(false),
+  adminConsentGrantedAt: timestamp("admin_consent_granted_at"),
+  adminConsentGrantedBy: varchar("admin_consent_granted_by"),
   
-  // Time settings
+  // Customization
   fiscalYearStartMonth: integer("fiscal_year_start_month").default(1),
   defaultTimezone: varchar("default_timezone", { length: 50 }).default("America/New_York"),
+  vocabularyOverrides: jsonb("vocabulary_overrides").$type<Record<string, string>>(), // custom terminology
   
-  // Membership mode
-  membershipMode: varchar("membership_mode", { length: 20 }).default("domain"), 
-  // domain, invite_only
+  // Service Plan / Licensing (FK on tenant, not junction table)
+  servicePlanId: varchar("service_plan_id").references(() => servicePlans.id),
+  planStartedAt: timestamp("plan_started_at"),
+  planExpiresAt: timestamp("plan_expires_at"),
+  planStatus: text("plan_status").default("active"), // 'active', 'trial', 'expired', 'cancelled', 'suspended'
+  
+  // Signup metadata
+  selfServiceSignup: boolean("self_service_signup").default(false),
+  signupCompletedAt: timestamp("signup_completed_at"),
+  organizationSize: text("organization_size"), // '1-10', '11-50', '51-200', '201-500', '500+'
+  industry: text("industry"),
+  location: text("location"),
   
   // Timestamps
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow()
 });
 
-// Allowed Email Domains per Tenant
-export const tenantDomains = pgTable("tenant_domains", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
-  domain: varchar("domain", { length: 255 }).notNull(), // e.g., "company.com"
-  isPrimary: boolean("is_primary").default(false),
-  createdAt: timestamp("created_at").defaultNow()
-});
+// TenantBranding type for jsonb field
+type TenantBranding = {
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  fontFamily?: string;
+  tagline?: string;
+  reportHeaderText?: string;
+  reportFooterText?: string;
+};
 
 // Service Plans (Subscription Tiers)
 export const servicePlans = pgTable("service_plans", {
@@ -190,6 +214,7 @@ export const servicePlans = pgTable("service_plans", {
   customBrandingEnabled: boolean("custom_branding_enabled").default(false),
   coBrandingEnabled: boolean("co_branding_enabled").default(true),
   subdomainEnabled: boolean("subdomain_enabled").default(false),
+  plannerEnabled: boolean("planner_enabled").default(false),
   
   // Trial settings
   trialDurationDays: integer("trial_duration_days"), // null = not a trial plan
@@ -207,50 +232,6 @@ export const servicePlans = pgTable("service_plans", {
   createdAt: timestamp("created_at").defaultNow()
 });
 
-// Tenant Plan Assignments
-export const tenantPlans = pgTable("tenant_plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull().references(() => tenants.id),
-  planId: varchar("plan_id").notNull().references(() => servicePlans.id),
-  
-  // Duration
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date"), // null = no expiration (Unlimited plan)
-  
-  // Billing
-  billingCycle: varchar("billing_cycle", { length: 20 }), // monthly, annual
-  
-  // Status
-  status: varchar("status", { length: 50 }).default("active"), 
-  // active, expired, cancelled, suspended
-  
-  // Grace period tracking
-  gracePeriodEndDate: date("grace_period_end_date"),
-  dataRetentionEndDate: date("data_retention_end_date"), // 60 days after expiration
-  
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedBy: varchar("updated_by")
-});
-
-// Tenant SSO Configuration
-export const tenantSsoConfig = pgTable("tenant_sso_config", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull().references(() => tenants.id).unique(),
-  
-  // Azure AD / Entra ID Settings
-  azureTenantId: varchar("azure_tenant_id", { length: 255 }),
-  azureClientId: varchar("azure_client_id", { length: 255 }),
-  // Note: Client secret stored in secrets management, not DB
-  
-  // SSO behavior
-  enforceSSO: boolean("enforce_sso").default(false),
-  allowLocalAuth: boolean("allow_local_auth").default(true),
-  autoProvision: boolean("auto_provision").default(true),
-  
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow()
-});
-
 // Blocked Email Domains (Platform-wide security)
 export const blockedDomains = pgTable("blocked_domains", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -260,6 +241,18 @@ export const blockedDomains = pgTable("blocked_domains", {
   createdAt: timestamp("created_at").defaultNow()
 });
 ```
+
+### Removed Tables (Simplified to Match Vega)
+
+The following tables from the original design are **no longer needed**:
+
+| Original Table | Now Stored As |
+|----------------|---------------|
+| `tenantDomains` | `tenants.allowedDomains` (jsonb array) |
+| `tenantSsoConfig` | Fields directly on `tenants` table |
+| `tenantPlans` | `tenants.servicePlanId` (FK) + plan status fields |
+
+This reduces complexity and matches Vega's proven production architecture.
 
 ### User Table Modifications
 
@@ -278,7 +271,7 @@ export const users = pgTable("users", {
   // user, constellation_consultant, constellation_admin, global_admin
 });
 
-// NEW: User-Tenant Membership (many-to-many with roles)
+// User-Tenant Membership (many-to-many with roles)
 export const tenantUsers = pgTable("tenant_users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
