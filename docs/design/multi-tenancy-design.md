@@ -640,42 +640,242 @@ Cons:
 - Not recommended for critical production systems
 ```
 
-### Migration Scripts
+### Zero-Downtime Migration Operations
+
+> **Critical:** The following approach ensures Synozur's production system remains fully operational throughout the entire migration process. No scheduled downtime is required.
+
+#### Principle: Additive-Only Changes
+
+The key to zero-downtime migration is making only **additive** changes:
+- ✅ ADD new tables
+- ✅ ADD new nullable columns
+- ✅ ADD new indexes (concurrently)
+- ✅ ADD constraints after data is consistent
+- ❌ NEVER drop columns during migration
+- ❌ NEVER rename columns during migration
+- ❌ NEVER add NOT NULL constraints on empty columns
+
+#### Phase 1: Create Tenant Infrastructure (No App Changes)
+
+Deploy new tables only. Existing app continues working normally.
+
+```sql
+-- Create tenant tables (app doesn't use these yet)
+CREATE TABLE tenants (...);
+CREATE TABLE service_plans (...);
+CREATE TABLE tenant_plans (...);
+CREATE TABLE tenant_users (...);
+
+-- Seed the Synozur tenant
+INSERT INTO tenants (id, name, slug, status, created_at)
+VALUES (gen_random_uuid(), 'Synozur Consulting', 'synozur', 'active', NOW())
+RETURNING id;
+-- Note: Save this UUID (e.g., 'abc123-...') for backfill scripts
+```
+
+**Verification:** App works exactly as before. No user impact.
+
+#### Phase 2: Add Nullable tenant_id Columns
+
+Add columns without constraints. Use CONCURRENTLY for indexes to avoid locks.
+
+```sql
+-- Add nullable tenant_id to all domain tables (VARCHAR for UUID)
+ALTER TABLE clients ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE projects ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE estimates ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE invoices ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE expenses ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE time_entries ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE allocations ADD COLUMN tenant_id VARCHAR;
+-- ... etc for all tables
+
+-- Create indexes CONCURRENTLY (no table locks)
+CREATE INDEX CONCURRENTLY idx_clients_tenant ON clients(tenant_id);
+CREATE INDEX CONCURRENTLY idx_projects_tenant ON projects(tenant_id);
+CREATE INDEX CONCURRENTLY idx_estimates_tenant ON estimates(tenant_id);
+-- ... etc
+```
+
+**Verification:** App works exactly as before. Columns exist but are ignored.
+
+#### Phase 3: Deploy Dual-Write Code
+
+Update application code to:
+1. **Write** tenant_id on all new records
+2. **Read** with fallback (treat NULL tenant_id as "Synozur" tenant)
+
+```typescript
+// Example: Creating a new client
+async createClient(data: InsertClient): Promise<Client> {
+  // NEW: Always include tenant_id on writes
+  const tenantId = getCurrentTenantId() || SYNOZUR_TENANT_ID;
+  
+  return await db.insert(clients).values({
+    ...data,
+    tenantId // Always populated now
+  }).returning();
+}
+
+// Example: Reading clients with fallback
+async getClients(): Promise<Client[]> {
+  const tenantId = getCurrentTenantId() || SYNOZUR_TENANT_ID;
+  
+  return await db.select()
+    .from(clients)
+    .where(
+      or(
+        eq(clients.tenantId, tenantId),
+        isNull(clients.tenantId) // Fallback for legacy data
+      )
+    );
+}
+```
+
+**Feature Flag:** Use `ENABLE_TENANT_WRITES=true` to control rollout.
+
+**Verification:** New records have tenant_id. Old records still accessible. No user impact.
+
+#### Phase 4: Background Backfill (Batched)
+
+Run batched updates during off-peak hours or continuously with small batches.
+
+```sql
+-- Backfill in batches to avoid long locks
+-- Run multiple times until no rows remain
+UPDATE clients 
+SET tenant_id = 'abc123-...'  -- Synozur tenant UUID
+WHERE tenant_id IS NULL
+LIMIT 1000;
+
+UPDATE projects 
+SET tenant_id = 'abc123-...'
+WHERE tenant_id IS NULL
+LIMIT 1000;
+
+-- ... repeat for all tables until complete
+```
+
+```typescript
+// Backfill script with progress tracking
+async function backfillTenantIds(tenantId: string) {
+  const tables = ['clients', 'projects', 'estimates', ...];
+  
+  for (const table of tables) {
+    let updated = 0;
+    do {
+      const result = await db.execute(sql`
+        UPDATE ${sql.identifier(table)} 
+        SET tenant_id = ${tenantId}
+        WHERE tenant_id IS NULL
+        LIMIT 1000
+      `);
+      updated = result.rowCount;
+      console.log(`${table}: Updated ${updated} rows`);
+      
+      // Small delay to avoid overwhelming the database
+      await sleep(100);
+    } while (updated > 0);
+  }
+}
+```
+
+**Verification:** Run count queries to confirm all records have tenant_id.
+
+```sql
+-- Verification queries
+SELECT COUNT(*) FROM clients WHERE tenant_id IS NULL; -- Should be 0
+SELECT COUNT(*) FROM projects WHERE tenant_id IS NULL; -- Should be 0
+-- ... etc
+```
+
+#### Phase 5: Remove Fallback & Add Constraints
+
+Once backfill is complete and verified:
+
+```sql
+-- Add foreign key constraints
+ALTER TABLE clients 
+  ADD CONSTRAINT fk_clients_tenant 
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id);
+
+-- Make columns NOT NULL (brief lock, but data is already consistent)
+ALTER TABLE clients ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE projects ALTER COLUMN tenant_id SET NOT NULL;
+-- ... etc
+```
+
+Update application code to remove fallback logic:
+
+```typescript
+// Remove the isNull fallback - all data now has tenant_id
+async getClients(): Promise<Client[]> {
+  const tenantId = getCurrentTenantId();
+  
+  return await db.select()
+    .from(clients)
+    .where(eq(clients.tenantId, tenantId));
+}
+```
+
+#### Phase 6: Enable Row-Level Security (Optional)
+
+For additional security, enable PostgreSQL RLS:
+
+```sql
+-- Enable RLS
+ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
+
+-- Create tenant isolation policy
+CREATE POLICY tenant_isolation ON clients
+  USING (tenant_id = current_setting('app.current_tenant')::varchar);
+
+-- Set tenant context per request
+SET LOCAL app.current_tenant = 'abc123-...';
+```
+
+### Migration Scripts (Updated for UUID)
 
 #### Step 1: Create Synozur Tenant
 
 ```sql
--- Create the Synozur tenant
-INSERT INTO tenants (name, slug, status, created_at)
-VALUES ('Synozur Consulting', 'synozur', 'active', NOW())
+-- Create the Synozur tenant with UUID
+INSERT INTO tenants (id, name, slug, status, created_at)
+VALUES (gen_random_uuid(), 'Synozur Consulting', 'synozur', 'active', NOW())
 RETURNING id;
 
--- Store the ID for backfill (e.g., id = 1)
+-- Store the returned UUID for backfill scripts
+-- Example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 ```
 
 #### Step 2: Add tenantId Columns
 
 ```sql
--- Add nullable tenantId to all tables
-ALTER TABLE clients ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
-ALTER TABLE projects ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
-ALTER TABLE estimates ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
-ALTER TABLE invoices ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
-ALTER TABLE expenses ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
-ALTER TABLE time_entries ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
+-- Add nullable tenantId to all tables (VARCHAR for UUID strings)
+ALTER TABLE clients ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE projects ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE estimates ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE invoices ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE expenses ADD COLUMN tenant_id VARCHAR;
+ALTER TABLE time_entries ADD COLUMN tenant_id VARCHAR;
 -- ... etc for all tables
+
+-- Create indexes concurrently (no locks)
+CREATE INDEX CONCURRENTLY idx_clients_tenant ON clients(tenant_id);
+CREATE INDEX CONCURRENTLY idx_projects_tenant ON projects(tenant_id);
+-- ... etc
 ```
 
 #### Step 3: Backfill Existing Data
 
 ```sql
--- Backfill all existing data to Synozur tenant (id = 1)
-UPDATE clients SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE projects SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE estimates SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE invoices SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE expenses SET tenant_id = 1 WHERE tenant_id IS NULL;
-UPDATE time_entries SET tenant_id = 1 WHERE tenant_id IS NULL;
+-- Backfill all existing data to Synozur tenant (use actual UUID)
+UPDATE clients SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
+UPDATE projects SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
+UPDATE estimates SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
+UPDATE invoices SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
+UPDATE expenses SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
+UPDATE time_entries SET tenant_id = 'a1b2c3d4-...' WHERE tenant_id IS NULL;
 -- ... etc
 ```
 
@@ -683,8 +883,8 @@ UPDATE time_entries SET tenant_id = 1 WHERE tenant_id IS NULL;
 
 ```sql
 -- Create tenantUsers records for existing users
-INSERT INTO tenant_users (user_id, tenant_id, role, status, joined_at)
-SELECT id, 1, role, 'active', created_at
+INSERT INTO tenant_users (id, user_id, tenant_id, role, status, joined_at)
+SELECT gen_random_uuid(), id, 'a1b2c3d4-...', role, 'active', created_at
 FROM users;
 
 -- Set platform roles
@@ -693,11 +893,16 @@ UPDATE users SET platform_role = 'constellation_admin'
 WHERE role = 'admin' AND email LIKE '%@synozur.com';
 ```
 
-#### Step 5: Make Columns Non-Nullable
+#### Step 5: Add Constraints
 
 ```sql
--- After validation, make tenantId required
+-- After verification, add foreign keys and NOT NULL constraints
+ALTER TABLE clients 
+  ADD CONSTRAINT fk_clients_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id);
 ALTER TABLE clients ALTER COLUMN tenant_id SET NOT NULL;
+
+ALTER TABLE projects 
+  ADD CONSTRAINT fk_projects_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id);
 ALTER TABLE projects ALTER COLUMN tenant_id SET NOT NULL;
 -- ... etc
 ```
