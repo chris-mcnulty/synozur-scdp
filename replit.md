@@ -97,6 +97,15 @@ Preferred communication style: Simple, everyday language.
 - **Multi-Tenancy Architecture**: `docs/design/multi-tenancy-design.md` - Comprehensive design for converting Constellation to multi-tenant SaaS platform. Includes service plans (Trial, Team, Enterprise, Unlimited), 60-day data retention, co-branding support, subdomain routing for Enterprise/Unlimited, and migration strategy for production continuity.
 - **Microsoft 365 Project Integration**: `docs/design/microsoft-365-project-integration.md` - Teams/Channel creation, Planner sync, 6-8 weeks estimated.
 
+### Multi-Tenancy Implementation Status (In Progress)
+- **Phase 1: Schema Foundation** - COMPLETE. Added service_plans, tenants, blocked_domains tables with UUID-based tenant IDs.
+- **Phase 2: Tenant Columns** - COMPLETE. Added nullable tenant_id FK to 12 tables (clients, projects, estimates, time_entries, expenses, invoice_batches, project_allocations, expense_reports, reimbursement_batches, rate_overrides, client_rate_overrides, project_engagements).
+- **Phase 3: Dual-Write** - COMPLETE. New records automatically tagged with tenant_id via tenant context middleware. Backfill script migrated 295 existing records to Synozur tenant (0 NULL tenant_ids remain).
+- **Phase 4: Tenant-Scoped Reads** - NEXT. Filter all queries by tenant_id for data isolation.
+- **Production Tenant Resolution**: Azure Entra ID claims → azureTenantId lookup, with email domain and subdomain fallbacks.
+- **Default Tenant**: Synozur (slug: synozur, UUID: e005d68f-3714-47c0-b2ba-346aa0bca107).
+- **Key Files**: server/tenant-context.ts, server/session-store.ts (requireAuth integration), server/scripts/backfill-tenant-ids.ts.
+
 ### Planned Architecture Changes
 - **Multi-Tenancy (P1 Backlog)**: 13-17 week implementation to enable SaaS subscription model. Key decisions: remix codebase for parallel development, maintain Synozur production during transition, 60-day data retention, subdomain routing as premium feature.
 - **Two-Tier Role System**: Platform roles (user, constellation_consultant, constellation_admin, global_admin) + Tenant roles (existing: admin, billing-admin, pm, employee, executive).
