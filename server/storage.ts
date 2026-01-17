@@ -1105,6 +1105,8 @@ export class DatabaseStorage implements IStorage {
           name: 'No Client Assigned',
           status: 'inactive',
           currency: 'USD',
+          tenantId: null,
+          shortName: null,
           billingContact: null,
           contactName: null,
           contactAddress: null,
@@ -1121,6 +1123,8 @@ export class DatabaseStorage implements IStorage {
           ndaDate: null,
           ndaDocument: null,
           hasNda: false,
+          microsoftTeamId: null,
+          microsoftTeamName: null,
           createdAt: new Date()
         };
         
@@ -2137,6 +2141,8 @@ export class DatabaseStorage implements IStorage {
         isSalaried: false,
         isActive: false,
         receiveTimeReminders: true,
+        primaryTenantId: null,
+        platformRole: null,
         createdAt: new Date()
       };
       
@@ -2167,6 +2173,8 @@ export class DatabaseStorage implements IStorage {
     const person = row.users || {
       id: row.time_entries.personId,
       email: 'unknown@example.com',
+      primaryTenantId: null,
+      platformRole: null,
       name: 'Unknown User',
       firstName: null,
       lastName: null,

@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 
-// Extend Express Request to include user with SSO data
+// Tenant context interface
+interface TenantContext {
+  tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
+}
+
+// Extend Express Request to include user with SSO data and tenant context
 declare global {
   namespace Express {
     interface Request {
@@ -14,7 +21,13 @@ declare global {
         ssoToken?: string | null;
         ssoRefreshToken?: string | null;
         ssoTokenExpiry?: Date | null;
+        // Multi-tenancy fields
+        tenantId?: string;
+        primaryTenantId?: string | null;
+        platformRole?: string | null;
       };
+      // Resolved tenant context for the current request
+      tenantContext?: TenantContext;
     }
   }
 }
@@ -124,7 +137,16 @@ export async function cleanupExpiredSessions(): Promise<void> {
   }
 }
 
-// Shared authentication middleware - now async
+// Lazy-load tenant context to avoid circular dependencies
+let tenantContextModule: typeof import("./tenant-context") | null = null;
+async function getTenantContextModule() {
+  if (!tenantContextModule) {
+    tenantContextModule = await import("./tenant-context");
+  }
+  return tenantContextModule;
+}
+
+// Shared authentication middleware - now async with tenant context
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   const sessionId = req.headers['x-session-id'] as string;
   const requestPath = req.path;
@@ -163,13 +185,38 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     ssoProvider: session.ssoProvider,
     ssoToken: session.ssoToken,
     ssoRefreshToken: session.ssoRefreshToken,
-    ssoTokenExpiry: session.ssoTokenExpiry
+    ssoTokenExpiry: session.ssoTokenExpiry,
+    // Multi-tenancy fields (will be populated below)
+    primaryTenantId: session.primaryTenantId || null,
+    platformRole: session.platformRole || null
   };
+  
+  // Resolve tenant context for the user
+  try {
+    const { resolveTenantForUser, getDefaultTenant } = await getTenantContextModule();
+    const tenantContext = await resolveTenantForUser(req.user.id);
+    
+    if (tenantContext) {
+      req.tenantContext = tenantContext;
+      req.user.tenantId = tenantContext.tenantId;
+    } else {
+      // Fall back to default tenant for development/transition
+      const defaultTenant = await getDefaultTenant();
+      if (defaultTenant) {
+        req.tenantContext = defaultTenant;
+        req.user.tenantId = defaultTenant.tenantId;
+      }
+    }
+  } catch (error) {
+    console.error("[AUTH] Error resolving tenant context:", error);
+    // Continue without tenant context - reads will still work
+  }
   
   console.log("[AUTH] Session valid:", {
     sessionId: sessionId.substring(0, 8) + '...',
     user: req.user?.email,
     role: req.user?.role,
+    tenantId: req.user?.tenantId?.substring(0, 8) || 'none',
     ssoProvider: req.user?.ssoProvider || 'none',
     hasRefreshToken: !!req.user?.ssoRefreshToken
   });

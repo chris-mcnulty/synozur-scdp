@@ -3144,10 +3144,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("[DEBUG] Creating project with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
+      console.log("[DEBUG] Tenant context:", req.user?.tenantId);
       const validatedData = insertProjectSchema.parse(req.body);
-      console.log("[DEBUG] Validated project data:", validatedData);
-      const project = await storage.createProject(validatedData);
-      console.log("[DEBUG] Created project:", project.id);
+      // Include tenant context in the project data (dual-write)
+      const projectDataWithTenant = {
+        ...validatedData,
+        tenantId: req.user?.tenantId || null
+      };
+      console.log("[DEBUG] Validated project data with tenant:", projectDataWithTenant);
+      const project = await storage.createProject(projectDataWithTenant);
+      console.log("[DEBUG] Created project:", project.id, "tenantId:", project.tenantId);
       res.status(201).json(project);
     } catch (error: any) {
       console.error("[ERROR] Failed to create project:", error);
@@ -3355,7 +3361,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         hours: hours,
         rackRate: rackRate,
         costRate: costRate || null,
-        pricingMode: pricingMode
+        pricingMode: pricingMode,
+        tenantId: req.user?.tenantId || null // Multi-tenancy dual-write
       };
       const validatedData = insertProjectAllocationSchema.parse(allocationData);
       const created = await storage.createProjectAllocation(validatedData);
@@ -6993,10 +7000,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("[DEBUG] Creating client with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
+      console.log("[DEBUG] Tenant context:", req.user?.tenantId);
       const validatedData = insertClientSchema.parse(req.body);
-      console.log("[DEBUG] Validated client data:", validatedData);
-      const client = await storage.createClient(validatedData);
-      console.log("[DEBUG] Created client:", client.id);
+      // Include tenant context in the client data (dual-write)
+      const clientDataWithTenant = {
+        ...validatedData,
+        tenantId: req.user?.tenantId || null
+      };
+      console.log("[DEBUG] Validated client data with tenant:", clientDataWithTenant);
+      const client = await storage.createClient(clientDataWithTenant);
+      console.log("[DEBUG] Created client:", client.id, "tenantId:", client.tenantId);
       res.status(201).json(client);
     } catch (error: any) {
       console.error("[ERROR] Failed to create client:", error);
@@ -10048,6 +10061,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const validatedData = insertTimeEntrySchema.parse(dataWithHours);
       console.log("[TIME_ENTRY] Validated data:", validatedData);
+      console.log("[TIME_ENTRY] Tenant context:", req.user?.tenantId);
 
       // Validate that the project exists before attempting to create the entry
       if (validatedData.projectId) {
@@ -10061,7 +10075,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
-      const timeEntry = await storage.createTimeEntry(validatedData);
+      // Include tenant context in the time entry data (dual-write)
+      const timeEntryDataWithTenant = {
+        ...validatedData,
+        tenantId: req.user?.tenantId || null
+      };
+
+      const timeEntry = await storage.createTimeEntry(timeEntryDataWithTenant);
       console.log("[TIME_ENTRY] Created successfully with rates:", {
         id: timeEntry.id,
         billingRate: timeEntry.billingRate,
@@ -10956,6 +10976,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         personId: expenseOwnerId
       });
       console.log("[EXPENSE_CREATE] Validated data:", JSON.stringify(validatedData, null, 2));
+      console.log("[EXPENSE_CREATE] Tenant context:", req.user?.tenantId);
 
       // Validate person assignment permissions (projectResourceId is for project assignment, separate from owner)
       if (validatedData.projectResourceId) {
@@ -10985,8 +11006,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         validatedData.unit = undefined;
       }
 
+      // Include tenant context in the expense data (dual-write)
+      const expenseDataWithTenant = {
+        ...validatedData,
+        tenantId: req.user?.tenantId || null
+      };
+
       console.log("[EXPENSE_CREATE] Calling storage.createExpense");
-      const expense = await storage.createExpense(validatedData);
+      const expense = await storage.createExpense(expenseDataWithTenant);
       console.log("[EXPENSE_CREATE] Expense created successfully:", expense.id);
       res.status(201).json(expense);
     } catch (error) {
@@ -12760,6 +12787,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { name, clientId, projectId, validDays } = req.body;
       console.log("[DEBUG] Creating estimate with:", { name, clientId, projectId, validDays });
+      console.log("[DEBUG] Tenant context:", req.user?.tenantId);
 
       const validUntil = validDays ? new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : null;
 
@@ -12794,10 +12822,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         confidenceLowMultiplier: "1.20"
       });
 
-      console.log("[DEBUG] Validated data:", validatedData);
+      // Include tenant context in the estimate data (dual-write)
+      const estimateDataWithTenant = {
+        ...validatedData,
+        tenantId: req.user?.tenantId || null
+      };
+
+      console.log("[DEBUG] Validated data with tenant:", estimateDataWithTenant);
       console.log("[DEBUG] About to call storage.createEstimate...");
-      const estimate = await storage.createEstimate(validatedData);
-      console.log("[DEBUG] Created estimate:", estimate.id);
+      const estimate = await storage.createEstimate(estimateDataWithTenant);
+      console.log("[DEBUG] Created estimate:", estimate.id, "tenantId:", estimate.tenantId);
       res.status(201).json(estimate);
     } catch (error: any) {
       console.error("[ERROR] Failed to create estimate:", error);
@@ -13079,8 +13113,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Generate batch ID using configurable system (or use provided one if given)
       const finalBatchId = providedBatchId || await storage.generateBatchId(finalStartDate, finalEndDate);
+      console.log("[DEBUG] Tenant context:", req.user?.tenantId);
 
-      // Create the batch
+      // Create the batch with tenant context (dual-write)
       const batch = await storage.createInvoiceBatch({
         batchId: finalBatchId,
         startDate: finalStartDate,
@@ -13094,7 +13129,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         invoicingMode: invoicingMode || "client",
         batchType: batchType || "mixed", // Default to mixed for backward compatibility
         exportedToQBO: false,
-        createdBy: req.user?.id || null
+        createdBy: req.user?.id || null,
+        tenantId: req.user?.tenantId || null // Multi-tenancy dual-write
       });
 
       res.json(batch);
