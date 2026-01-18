@@ -15,7 +15,7 @@ export default function UserGuide() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">User Guide</h1>
             <p className="text-xl text-muted-foreground">
-              SCDP - Synozur Consulting Delivery Platform
+              Constellation - Synozur Consulting Delivery Platform
             </p>
           </div>
         </div>
@@ -24,9 +24,9 @@ export default function UserGuide() {
           <CardContent className="pt-6">
             <div className="prose prose-sm max-w-none dark:prose-invert space-y-6">
               <section>
-                <h2 className="text-2xl font-bold mb-4">Welcome to SCDP by Synozur</h2>
+                <h2 className="text-2xl font-bold mb-4">Welcome to Constellation by Synozur</h2>
                 <p className="text-muted-foreground">
-                  The Synozur Consulting Delivery Platform (SCDP) is a comprehensive solution designed to streamline the entire lifecycle of consulting projects. From initial estimation through final billing, SCDP helps you manage clients, track time, record expenses, and generate invoices efficiently.
+                  Constellation, the Synozur Consulting Delivery Platform, is a comprehensive solution designed to streamline the entire lifecycle of consulting projects. From initial estimation through final billing, Constellation helps you manage clients, track time, record expenses, and generate invoices efficiently.
                 </p>
               </section>
 
@@ -37,7 +37,7 @@ export default function UserGuide() {
                 
                 <h3 className="text-xl font-semibold mt-4 mb-2">Logging In</h3>
                 <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                  <li>Navigate to the SCDP login page</li>
+                  <li>Navigate to the Constellation login page</li>
                   <li>Enter your email address and password</li>
                   <li>Click "Log In"</li>
                 </ol>
@@ -60,7 +60,7 @@ export default function UserGuide() {
               <section>
                 <h2 className="text-2xl font-bold mb-4">Understanding User Roles</h2>
                 <p className="text-muted-foreground mb-4">
-                  SCDP uses role-based access control to manage permissions. Your role determines which features you can access:
+                  Constellation uses role-based access control to manage permissions. Your role determines which features you can access:
                 </p>
 
                 <div className="space-y-4">
@@ -258,8 +258,8 @@ export default function UserGuide() {
                   </div>
 
                   <div>
-                    <p className="font-semibold">Q: Can clients access SCDP?</p>
-                    <p className="text-sm text-muted-foreground">A: No, SCDP is for internal use only. Invoices and reports are exported and shared with clients externally.</p>
+                    <p className="font-semibold">Q: Can clients access Constellation?</p>
+                    <p className="text-sm text-muted-foreground">A: No, Constellation is for internal use only. Invoices and reports are exported and shared with clients externally.</p>
                   </div>
                 </div>
               </section>
@@ -327,10 +327,10 @@ export default function UserGuide() {
 
               <div className="text-center pt-6 pb-2">
                 <p className="text-lg font-medium text-muted-foreground">
-                  Ready to streamline your consulting delivery? Start using SCDP today!
+                  Ready to streamline your consulting delivery? Start using Constellation today!
                 </p>
                 <p className="text-sm text-muted-foreground italic mt-2">
-                  SCDP by Synozur - Delivering Excellence Together
+                  Constellation by Synozur - Delivering Excellence Together
                 </p>
               </div>
             </div>
