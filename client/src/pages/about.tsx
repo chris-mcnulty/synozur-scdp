@@ -15,6 +15,7 @@ import {
   Users,
   FileText
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type EnvironmentInfo = {
   environment: string;
@@ -66,7 +67,18 @@ export default function About() {
             <p className="text-lg text-muted-foreground font-medium">{companyName}</p>
             <h1 className="text-3xl font-bold tracking-tight">Constellation</h1>
             <p className="text-xl text-muted-foreground">
-              Synozur Consulting Delivery Platform (SCDP)
+              Synozur Consulting Delivery Platform{" "}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help border-b border-dotted border-muted-foreground/50">(SCDP)</span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-center">
+                  <p className="text-xs italic">
+                    Fun fact: SCDP also happens to be the acronym for Sterling Cooper Draper Pryce, 
+                    the fictional ad agency from Mad Men.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </p>
           </div>
           <div className="flex items-center justify-center space-x-2">
