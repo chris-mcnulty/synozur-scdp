@@ -228,14 +228,17 @@ export default function PlatformTenants() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Service Plan</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select 
+                          onValueChange={(val) => field.onChange(val === "_none" ? "" : val)} 
+                          value={field.value || "_none"}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a plan" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="_none">None</SelectItem>
                             {servicePlans?.map(plan => (
                               <SelectItem key={plan.id} value={plan.id}>
                                 {plan.displayName || plan.internalName}
@@ -433,14 +436,17 @@ export default function PlatformTenants() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormLabel>Service Plan</FormLabel>
-                                      <Select onValueChange={field.onChange} value={field.value}>
+                                      <Select 
+                                        onValueChange={(val) => field.onChange(val === "_none" ? "" : val)} 
+                                        value={field.value || "_none"}
+                                      >
                                         <FormControl>
                                           <SelectTrigger>
                                             <SelectValue placeholder="Select a plan" />
                                           </SelectTrigger>
                                         </FormControl>
                                         <SelectContent>
-                                          <SelectItem value="">None</SelectItem>
+                                          <SelectItem value="_none">None</SelectItem>
                                           {servicePlans?.map(plan => (
                                             <SelectItem key={plan.id} value={plan.id}>
                                               {plan.displayName || plan.internalName}
