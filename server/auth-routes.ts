@@ -55,7 +55,8 @@ export function registerAuthRoutes(app: Express): void {
         id: dbUser.id, // Use actual database user ID, not session ID
         email: dbUser.email,
         name: dbUser.name,
-        role: dbUser.role
+        role: dbUser.role,
+        platformRole: dbUser.platformRole || null
       });
 
       res.json({
@@ -63,6 +64,7 @@ export function registerAuthRoutes(app: Express): void {
         email: dbUser.email,
         name: dbUser.name,
         role: dbUser.role,
+        platformRole: dbUser.platformRole || null,
         sessionId
       });
     } catch (error) {
@@ -89,7 +91,8 @@ export function registerAuthRoutes(app: Express): void {
         id: session.id,
         email: session.email,
         name: session.name,
-        role: session.role
+        role: session.role,
+        platformRole: session.platformRole || null
       });
     } catch (error) {
       console.error("Get user error:", error);

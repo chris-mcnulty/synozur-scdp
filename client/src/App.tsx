@@ -28,6 +28,8 @@ import ResourceManagement from "@/pages/resource-management";
 import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
+import PlatformTenants from "@/pages/platform-tenants";
+import PlatformServicePlans from "@/pages/platform-service-plans";
 import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
 import Login from "@/pages/login";
@@ -209,6 +211,12 @@ function Router() {
       </Route>
       <Route path="/admin/sharepoint">
         {user ? <AdminSharePoint /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/platform/tenants">
+        {user ? <PlatformTenants /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/platform/service-plans">
+        {user ? <PlatformServicePlans /> : <Redirect to="/login" />}
       </Route>
       <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}

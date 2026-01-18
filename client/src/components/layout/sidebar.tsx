@@ -20,7 +20,10 @@ import {
   Calculator,
   CreditCard,
   Database,
-  BookOpen
+  BookOpen,
+  Shield,
+  Crown,
+  Package
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -74,7 +77,7 @@ function SidebarSection({ title }: { title: string }) {
 }
 
 export function Sidebar() {
-  const { hasAnyRole } = useAuth();
+  const { hasAnyRole, isPlatformAdmin } = useAuth();
   
   // Determine if user has management roles
   const isManager = hasAnyRole(['admin', 'pm', 'executive']);
@@ -231,6 +234,31 @@ export function Sidebar() {
                 href="/admin/sharepoint"
                 icon={<Settings />}
                 label="SharePoint Diagnostics"
+              />
+            </>
+          )}
+          
+          {/* Platform Admin - for global_admin and constellation_admin only */}
+          {isPlatformAdmin && (
+            <>
+              <SidebarSection title="Platform Admin" />
+              
+              <SidebarItem
+                href="/platform/tenants"
+                icon={<Crown />}
+                label="Tenants"
+              />
+              
+              <SidebarItem
+                href="/platform/service-plans"
+                icon={<Package />}
+                label="Service Plans"
+              />
+              
+              <SidebarItem
+                href="/platform/users"
+                icon={<Shield />}
+                label="Platform Users"
               />
             </>
           )}

@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { sessions } from "@shared/schema";
+import { sessions, users } from "@shared/schema";
 import { eq, lt, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
@@ -31,6 +31,17 @@ export async function getDbSession(sessionId: string): Promise<any> {
       return null;
     }
     
+    // Fetch platformRole from users table (authoritative source)
+    let platformRole: string | null = null;
+    try {
+      const [user] = await db.select({ platformRole: users.platformRole }).from(users).where(eq(users.id, session.userId));
+      if (user) {
+        platformRole = user.platformRole;
+      }
+    } catch (userError) {
+      console.log("[DB-SESSION] Could not fetch platformRole:", userError);
+    }
+
     // Return session data in expected format
     return {
       id: session.userId,
@@ -38,6 +49,7 @@ export async function getDbSession(sessionId: string): Promise<any> {
       email: session.email,
       name: session.name,
       role: session.role,
+      platformRole,
       ssoProvider: session.ssoProvider,
       ssoToken: session.ssoToken,
       ssoRefreshToken: session.ssoRefreshToken,
