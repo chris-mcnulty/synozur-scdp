@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../storage";
-import { servicePlans, tenants } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { servicePlans, tenants, users } from "@shared/schema";
+import { eq, sql, desc } from "drizzle-orm";
 import { z } from "zod";
 
 const servicePlanSchema = z.object({
@@ -251,6 +251,128 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         return res.status(400).json({ error: "Validation error", details: error.errors });
       }
       res.status(500).json({ error: "Failed to update tenant settings" });
+    }
+  });
+
+  // ============================================================================
+  // PLATFORM USERS ROUTES (for platform admins to manage users across tenants)
+  // ============================================================================
+
+  // Get all platform users (across all tenants)
+  app.get("/api/platform/users", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const allUsers = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          role: users.role,
+          platformRole: users.platformRole,
+          primaryTenantId: users.primaryTenantId,
+          canLogin: users.canLogin,
+          isActive: users.isActive,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .orderBy(desc(users.createdAt));
+      
+      // Get tenant names for display
+      const tenantList = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
+      const tenantMap = Object.fromEntries(tenantList.map(t => [t.id, t.name]));
+      
+      const usersWithTenant = allUsers.map(u => ({
+        ...u,
+        tenantName: u.primaryTenantId ? tenantMap[u.primaryTenantId] || "Unknown" : "No Tenant",
+      }));
+      
+      res.json(usersWithTenant);
+    } catch (error) {
+      console.error("Error fetching platform users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  // Update user's platform role
+  app.patch("/api/platform/users/:id/platform-role", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const currentUser = (req as any).user;
+      
+      // Only global_admin can assign global_admin role
+      const { platformRole } = req.body;
+      const validRoles = ["user", "constellation_consultant", "constellation_admin", "global_admin"];
+      
+      if (!validRoles.includes(platformRole)) {
+        return res.status(400).json({ error: "Invalid platform role" });
+      }
+      
+      // Prevent non-global_admin from assigning global_admin
+      if (platformRole === "global_admin" && currentUser.platformRole !== "global_admin") {
+        return res.status(403).json({ error: "Only global admins can assign global_admin role" });
+      }
+      
+      // Prevent users from demoting themselves
+      if (id === currentUser.id && currentUser.platformRole === "global_admin" && platformRole !== "global_admin") {
+        return res.status(400).json({ error: "Cannot demote yourself from global_admin" });
+      }
+      
+      const [updatedUser] = await db
+        .update(users)
+        .set({ platformRole })
+        .where(eq(users.id, id))
+        .returning({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          platformRole: users.platformRole,
+        });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating platform role:", error);
+      res.status(500).json({ error: "Failed to update platform role" });
+    }
+  });
+
+  // Update user's tenant assignment
+  app.patch("/api/platform/users/:id/tenant", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { primaryTenantId } = req.body;
+      
+      // Validate tenant exists if provided
+      if (primaryTenantId) {
+        const [tenant] = await db.select().from(tenants).where(eq(tenants.id, primaryTenantId));
+        if (!tenant) {
+          return res.status(400).json({ error: "Tenant not found" });
+        }
+      }
+      
+      const [updatedUser] = await db
+        .update(users)
+        .set({ primaryTenantId: primaryTenantId || null })
+        .where(eq(users.id, id))
+        .returning({
+          id: users.id,
+          email: users.email,
+          name: users.name,
+          primaryTenantId: users.primaryTenantId,
+        });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user tenant:", error);
+      res.status(500).json({ error: "Failed to update user tenant" });
     }
   });
 }

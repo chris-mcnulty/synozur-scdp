@@ -30,6 +30,7 @@ import SystemSettings from "@/pages/system-settings";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import PlatformTenants from "@/pages/platform-tenants";
 import PlatformServicePlans from "@/pages/platform-service-plans";
+import PlatformUsers from "@/pages/platform-users";
 import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
 import Login from "@/pages/login";
@@ -234,6 +235,13 @@ function Router() {
         {user ? (
           <PlatformAdminGuard>
             <PlatformServicePlans />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/platform/users">
+        {user ? (
+          <PlatformAdminGuard>
+            <PlatformUsers />
           </PlatformAdminGuard>
         ) : <Redirect to="/login" />}
       </Route>
