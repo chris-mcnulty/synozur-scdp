@@ -43,11 +43,22 @@ import { useSessionRecovery } from "@/hooks/use-session-recovery";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 
-// Permission wrapper component
+// Permission wrapper component for tenant roles
 function PermissionGuard({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { hasAnyRole } = useAuth();
   
   if (!hasAnyRole(allowedRoles)) {
+    return <Redirect to="/dashboard" />;
+  }
+  
+  return <>{children}</>;
+}
+
+// Permission wrapper for platform admin routes
+function PlatformAdminGuard({ children }: { children: React.ReactNode }) {
+  const { isPlatformAdmin } = useAuth();
+  
+  if (!isPlatformAdmin) {
     return <Redirect to="/dashboard" />;
   }
   
@@ -213,10 +224,18 @@ function Router() {
         {user ? <AdminSharePoint /> : <Redirect to="/login" />}
       </Route>
       <Route path="/platform/tenants">
-        {user ? <PlatformTenants /> : <Redirect to="/login" />}
+        {user ? (
+          <PlatformAdminGuard>
+            <PlatformTenants />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/platform/service-plans">
-        {user ? <PlatformServicePlans /> : <Redirect to="/login" />}
+        {user ? (
+          <PlatformAdminGuard>
+            <PlatformServicePlans />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
