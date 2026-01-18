@@ -1,6 +1,14 @@
-[
-  {
-    "name": "Start application",
-    "run": "npm run dev"
-  }
-]
+[[workflows]]
+name = "Start application"
+author = "agent"
+mode = "parallel"
+
+[workflows.workflow]
+name = "Start application"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000

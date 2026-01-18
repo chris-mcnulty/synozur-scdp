@@ -31,15 +31,20 @@ export async function getDbSession(sessionId: string): Promise<any> {
       return null;
     }
     
-    // Fetch platformRole from users table (authoritative source)
+    // Fetch platformRole and tenantId from users table (authoritative source)
     let platformRole: string | null = null;
+    let tenantId: string | null = null;
     try {
-      const [user] = await db.select({ platformRole: users.platformRole }).from(users).where(eq(users.id, session.userId));
+      const [user] = await db.select({ 
+        platformRole: users.platformRole,
+        primaryTenantId: users.primaryTenantId 
+      }).from(users).where(eq(users.id, session.userId));
       if (user) {
         platformRole = user.platformRole;
+        tenantId = user.primaryTenantId;
       }
     } catch (userError) {
-      console.log("[DB-SESSION] Could not fetch platformRole:", userError);
+      console.log("[DB-SESSION] Could not fetch platformRole/tenantId:", userError);
     }
 
     // Return session data in expected format
@@ -50,6 +55,7 @@ export async function getDbSession(sessionId: string): Promise<any> {
       name: session.name,
       role: session.role,
       platformRole,
+      tenantId,
       ssoProvider: session.ssoProvider,
       ssoToken: session.ssoToken,
       ssoRefreshToken: session.ssoRefreshToken,

@@ -3,6 +3,7 @@ import { createSession, getSession, deleteSession, requireAuth } from "./session
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { sql } from "drizzle-orm";
+import { autoAssignTenantToUser } from "./tenant-context";
 
 export function registerAuthRoutes(app: Express): void {
   // Login endpoint
@@ -46,6 +47,19 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(401).json({ message: "User not found in database" });
       }
 
+      // Auto-assign tenant based on email domain (or existing assignment)
+      // Note: SSO login flow passes azureTenantId separately via Entra auth routes
+      const tenantContext = await autoAssignTenantToUser(dbUser.id, dbUser.email || '');
+      
+      if (!tenantContext) {
+        console.error("[AUTH] Failed to resolve tenant for user:", dbUser.email);
+        return res.status(403).json({ 
+          message: "Unable to determine your organization. Please contact support." 
+        });
+      }
+      
+      const tenantId = tenantContext.tenantId;
+
       // Generate cryptographically secure session ID
       const crypto = await import('crypto');
       const sessionId = crypto.randomUUID();
@@ -56,7 +70,8 @@ export function registerAuthRoutes(app: Express): void {
         email: dbUser.email,
         name: dbUser.name,
         role: dbUser.role,
-        platformRole: dbUser.platformRole || null
+        platformRole: dbUser.platformRole || null,
+        tenantId: tenantId
       });
 
       res.json({
@@ -65,6 +80,8 @@ export function registerAuthRoutes(app: Express): void {
         name: dbUser.name,
         role: dbUser.role,
         platformRole: dbUser.platformRole || null,
+        tenantId: tenantId,
+        tenantSlug: tenantContext?.tenantSlug || null,
         sessionId
       });
     } catch (error) {
@@ -92,7 +109,8 @@ export function registerAuthRoutes(app: Express): void {
         email: session.email,
         name: session.name,
         role: session.role,
-        platformRole: session.platformRole || null
+        platformRole: session.platformRole || null,
+        tenantId: session.tenantId || null
       });
     } catch (error) {
       console.error("Get user error:", error);

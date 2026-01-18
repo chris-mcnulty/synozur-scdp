@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import "./session-store"; // Import to ensure global Express types are augmented
 import { db } from "./db";
 import { tenants, tenantUsers, users } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 export interface TenantContext {
   tenantId: string;
@@ -13,6 +13,118 @@ export interface TenantContext {
 const DEFAULT_TENANT_SLUG = process.env.DEFAULT_TENANT_SLUG || "synozur";
 
 let cachedDefaultTenant: TenantContext | null = null;
+
+/**
+ * Find tenant by Azure AD tenant ID (for SSO login)
+ */
+export async function getTenantByAzureTenantId(azureTenantId: string): Promise<TenantContext | null> {
+  const result = await db.select()
+    .from(tenants)
+    .where(eq(tenants.azureTenantId, azureTenantId))
+    .limit(1);
+
+  if (result.length > 0) {
+    return {
+      tenantId: result[0].id,
+      tenantSlug: result[0].slug,
+      tenantName: result[0].name,
+    };
+  }
+  return null;
+}
+
+/**
+ * Find tenant by email domain (matching allowedDomains array)
+ */
+export async function getTenantByEmailDomain(email: string): Promise<TenantContext | null> {
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (!domain) return null;
+
+  // Query tenants where allowedDomains jsonb array contains the domain
+  const result = await db.select()
+    .from(tenants)
+    .where(sql`${tenants.allowedDomains} @> ${JSON.stringify([domain])}::jsonb`)
+    .limit(1);
+
+  if (result.length > 0) {
+    return {
+      tenantId: result[0].id,
+      tenantSlug: result[0].slug,
+      tenantName: result[0].name,
+    };
+  }
+  return null;
+}
+
+/**
+ * Auto-assign tenant to user based on email domain or SSO tenant ID.
+ * Updates user's primaryTenantId if not already set.
+ * Returns the resolved tenant context.
+ */
+export async function autoAssignTenantToUser(
+  userId: string, 
+  email: string, 
+  azureTenantId?: string
+): Promise<TenantContext | null> {
+  // First check if user already has a primary tenant
+  const [user] = await db.select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (user?.primaryTenantId) {
+    // User already has a tenant, return it
+    const [tenant] = await db.select()
+      .from(tenants)
+      .where(eq(tenants.id, user.primaryTenantId))
+      .limit(1);
+    
+    if (tenant) {
+      return {
+        tenantId: tenant.id,
+        tenantSlug: tenant.slug,
+        tenantName: tenant.name,
+      };
+    }
+  }
+
+  // Try to resolve tenant
+  let resolvedTenant: TenantContext | null = null;
+
+  // Priority 1: Azure AD tenant ID mapping (most secure)
+  if (azureTenantId) {
+    resolvedTenant = await getTenantByAzureTenantId(azureTenantId);
+    if (resolvedTenant) {
+      console.log(`[TENANT] Resolved tenant via Azure AD: ${resolvedTenant.tenantSlug}`);
+    }
+  }
+
+  // Priority 2: Email domain matching
+  if (!resolvedTenant && email) {
+    resolvedTenant = await getTenantByEmailDomain(email);
+    if (resolvedTenant) {
+      console.log(`[TENANT] Resolved tenant via email domain: ${resolvedTenant.tenantSlug}`);
+    }
+  }
+
+  // Priority 3: Fall back to default tenant
+  if (!resolvedTenant) {
+    resolvedTenant = await getDefaultTenant();
+    if (resolvedTenant) {
+      console.log(`[TENANT] Using default tenant: ${resolvedTenant.tenantSlug}`);
+    }
+  }
+
+  // Update user's primaryTenantId if we resolved a tenant
+  if (resolvedTenant && userId) {
+    await db.update(users)
+      .set({ primaryTenantId: resolvedTenant.tenantId })
+      .where(eq(users.id, userId));
+    console.log(`[TENANT] Assigned user ${userId} to tenant ${resolvedTenant.tenantSlug}`);
+  }
+
+  return resolvedTenant;
+}
 
 export async function getDefaultTenant(): Promise<TenantContext | null> {
   if (cachedDefaultTenant) {
