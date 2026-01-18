@@ -37,6 +37,7 @@ interface VocabularyCatalogTerm {
   termValue: string;
   description: string | null;
   displayOrder: number;
+  isSystemDefault: boolean;
   createdAt: string;
 }
 
@@ -49,6 +50,20 @@ interface OrganizationVocabularySelection {
   activityTermId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface TenantSettings {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  companyAddress: string | null;
+  companyPhone: string | null;
+  companyEmail: string | null;
+  companyWebsite: string | null;
+  paymentTerms: string | null;
+  color: string | null;
+  faviconUrl: string | null;
 }
 
 // Form schemas
@@ -133,9 +148,14 @@ export default function SystemSettings() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("company");
 
-  // Fetch system settings
+  // Fetch system settings (platform-wide defaults)
   const { data: settings = [], isLoading } = useQuery<SystemSetting[]>({
     queryKey: ["/api/settings"],
+  });
+  
+  // Fetch tenant settings (company branding, contact info)
+  const { data: tenantSettings, isLoading: isLoadingTenant } = useQuery<TenantSettings>({
+    queryKey: ["/api/tenant/settings"],
   });
 
   // Get current rate settings
@@ -184,13 +204,13 @@ export default function SystemSettings() {
       paymentTerms: "",
     },
     values: {
-      companyName: settingsMap.COMPANY_NAME || "",
-      companyLogoUrl: settingsMap.COMPANY_LOGO_URL || "",
-      companyAddress: settingsMap.COMPANY_ADDRESS || "",
-      companyPhone: settingsMap.COMPANY_PHONE || "",
-      companyEmail: settingsMap.COMPANY_EMAIL || "",
-      companyWebsite: settingsMap.COMPANY_WEBSITE || "",
-      paymentTerms: settingsMap.PAYMENT_TERMS || "Payment due within 30 days",
+      companyName: tenantSettings?.name || "",
+      companyLogoUrl: tenantSettings?.logoUrl || "",
+      companyAddress: tenantSettings?.companyAddress || "",
+      companyPhone: tenantSettings?.companyPhone || "",
+      companyEmail: tenantSettings?.companyEmail || "",
+      companyWebsite: tenantSettings?.companyWebsite || "",
+      paymentTerms: tenantSettings?.paymentTerms || "Payment due within 30 days",
     },
   });
   
@@ -313,33 +333,22 @@ export default function SystemSettings() {
 
   const updateCompanyMutation = useMutation({
     mutationFn: async (data: CompanySettingsData) => {
-      // Save each company setting
-      const settingsToSave = [
-        { key: 'COMPANY_NAME', value: data.companyName, description: 'Company name for invoices and branding' },
-        { key: 'COMPANY_LOGO_URL', value: data.companyLogoUrl || '', description: 'URL to company logo image for invoices' },
-        { key: 'COMPANY_ADDRESS', value: data.companyAddress || '', description: 'Company address for invoices' },
-        { key: 'COMPANY_PHONE', value: data.companyPhone || '', description: 'Company phone number for invoices' },
-        { key: 'COMPANY_EMAIL', value: data.companyEmail || '', description: 'Company email address for invoices' },
-        { key: 'COMPANY_WEBSITE', value: data.companyWebsite || '', description: 'Company website URL for invoices' },
-        { key: 'PAYMENT_TERMS', value: data.paymentTerms || 'Payment due within 30 days', description: 'Payment terms displayed on invoices' },
-      ];
-
-      await Promise.all(
-        settingsToSave.map(setting => 
-          apiRequest("/api/settings", {
-            method: "POST",
-            body: JSON.stringify({
-              settingKey: setting.key,
-              settingValue: setting.value,
-              settingType: "string",
-              description: setting.description
-            }),
-          })
-        )
-      );
+      // Save to tenant settings (company info is now tenant-scoped)
+      await apiRequest("/api/tenant/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: data.companyName,
+          logoUrl: data.companyLogoUrl || null,
+          companyAddress: data.companyAddress || null,
+          companyPhone: data.companyPhone || null,
+          companyEmail: data.companyEmail || null,
+          companyWebsite: data.companyWebsite || null,
+          paymentTerms: data.paymentTerms || "Payment due within 30 days",
+        }),
+      });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
       toast({
         title: "Company settings saved",
         description: "Company information has been updated successfully.",
