@@ -287,9 +287,10 @@ export const vocabularyCatalog = pgTable("vocabulary_catalog", {
   uniqueTermTypeValue: uniqueIndex("unique_term_type_value").on(table.termType, table.termValue),
 }));
 
-// Organization Vocabulary Settings - Organization-level vocabulary selections
+// Organization Vocabulary Settings - Tenant-level vocabulary selections
 export const organizationVocabulary = pgTable("organization_vocabulary", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id), // Selected Epic term
   stageTermId: varchar("stage_term_id").references(() => vocabularyCatalog.id), // Selected Stage term
   workstreamTermId: varchar("workstream_term_id").references(() => vocabularyCatalog.id), // Selected Workstream term
@@ -297,7 +298,10 @@ export const organizationVocabulary = pgTable("organization_vocabulary", {
   activityTermId: varchar("activity_term_id").references(() => vocabularyCatalog.id), // Selected Activity term
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
-});
+}, (table) => ({
+  tenantIdx: index("idx_organization_vocabulary_tenant").on(table.tenantId),
+  uniqueTenant: uniqueIndex("unique_organization_vocabulary_tenant").on(table.tenantId), // Enforce one record per tenant
+}));
 
 // Projects
 export const projects = pgTable("projects", {

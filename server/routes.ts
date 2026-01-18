@@ -2319,7 +2319,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { id } = req.params;
       
       // Check if term is being used in organization vocabulary
-      const orgVocab = await storage.getOrganizationVocabularySelections();
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required for vocabulary operations" });
+      }
+      const orgVocab = await storage.getOrganizationVocabularySelections(tenantId);
       if (orgVocab) {
         const usedTermIds = [
           orgVocab.epicTermId,
@@ -2356,7 +2360,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get organization vocabulary selections (with term details)
   app.get("/api/vocabulary/organization/selections", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
-      const selections = await storage.getOrganizationVocabularySelections();
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required for vocabulary access" });
+      }
+      const selections = await storage.getOrganizationVocabularySelections(tenantId);
       if (!selections) {
         return res.status(404).json({ message: "Organization vocabulary not configured" });
       }
@@ -2384,8 +2392,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Update organization vocabulary selections
   app.put("/api/vocabulary/organization/selections", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required for vocabulary updates" });
+      }
       const validatedData = updateOrganizationVocabularySchema.parse(req.body);
-      const updated = await storage.updateOrganizationVocabularySelections(validatedData);
+      const updated = await storage.updateOrganizationVocabularySelections(validatedData, tenantId);
       res.json(updated);
     } catch (error) {
       if (error instanceof z.ZodError) {

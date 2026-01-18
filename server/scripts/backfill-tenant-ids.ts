@@ -2,7 +2,7 @@ import { db } from "../db";
 import { 
   tenants, clients, projects, estimates, timeEntries, expenses, 
   invoiceBatches, projectAllocations, expenseReports, reimbursementBatches,
-  rateOverrides, clientRateOverrides, projectEngagements 
+  rateOverrides, clientRateOverrides, projectEngagements, organizationVocabulary 
 } from "@shared/schema";
 import { eq, isNull, sql } from "drizzle-orm";
 
@@ -80,6 +80,7 @@ async function runBackfill(): Promise<void> {
     { name: "rate_overrides", table: rateOverrides },
     { name: "client_rate_overrides", table: clientRateOverrides },
     { name: "project_engagements", table: projectEngagements },
+    { name: "organization_vocabulary", table: organizationVocabulary },
   ];
 
   const results: BackfillResult[] = [];

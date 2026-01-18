@@ -816,8 +816,8 @@ export interface IStorage {
   // New Vocabulary Catalog Methods (uses catalog table and FK references)
   getVocabularyCatalog(): Promise<VocabularyCatalog[]>;
   getVocabularyCatalogByType(termType: string): Promise<VocabularyCatalog[]>;
-  getOrganizationVocabularySelections(): Promise<OrganizationVocabulary | undefined>;
-  updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>): Promise<OrganizationVocabulary>;
+  getOrganizationVocabularySelections(tenantId?: string): Promise<OrganizationVocabulary | undefined>;
+  updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>, tenantId?: string): Promise<OrganizationVocabulary>;
   getVocabularyTermById(termId: string): Promise<VocabularyCatalog | undefined>;
   createVocabularyTerm(term: InsertVocabularyCatalog): Promise<VocabularyCatalog>;
   updateVocabularyTerm(id: string, updates: Partial<InsertVocabularyCatalog>): Promise<VocabularyCatalog>;
@@ -1220,7 +1220,8 @@ export class DatabaseStorage implements IStorage {
       
     if (needsVocabInheritance) {
       try {
-        const [orgVocab] = await db.select().from(organizationVocabulary).limit(1);
+        // Get organization vocabulary for the project's tenant
+        const orgVocab = await this.getOrganizationVocabularySelections(insertProject.tenantId || undefined);
         if (orgVocab) {
           // Only inherit if the insert value is null/undefined AND org has a non-null value
           if (insertProject.epicTermId == null && orgVocab.epicTermId != null) {
@@ -6048,9 +6049,9 @@ export class DatabaseStorage implements IStorage {
     // Get vocabulary for this project (cascade from project -> client -> organization)
     let vocabulary = DEFAULT_VOCABULARY;
     try {
-      // Get organization vocabulary
-      const [orgVocab] = await tx.select()
-        .from(organizationVocabulary);
+      // Get organization vocabulary for the project's tenant
+      const projectTenantId = project.projects.tenantId || undefined;
+      const orgVocab = await this.getOrganizationVocabularySelections(projectTenantId);
       
       if (orgVocab) {
         vocabulary = { ...vocabulary, ...orgVocab };
@@ -8002,14 +8003,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(vocabularyCatalog.sortOrder);
   }
 
-  async getOrganizationVocabularySelections(): Promise<OrganizationVocabulary | undefined> {
+  async getOrganizationVocabularySelections(tenantId?: string): Promise<OrganizationVocabulary | undefined> {
+    // Tenant isolation: require tenantId for strict tenant scoping
+    if (!tenantId) {
+      console.warn('[VOCABULARY] getOrganizationVocabularySelections called without tenantId - returning undefined for tenant isolation');
+      return undefined;
+    }
+    
     const [orgVocab] = await db.select()
       .from(organizationVocabulary)
+      .where(eq(organizationVocabulary.tenantId, tenantId))
       .limit(1);
     return orgVocab || undefined;
   }
 
-  async updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>): Promise<OrganizationVocabulary> {
+  async updateOrganizationVocabularySelections(updates: Partial<InsertOrganizationVocabulary>, tenantId?: string): Promise<OrganizationVocabulary> {
+    // Tenant isolation: require tenantId for write operations to prevent cross-tenant contamination
+    if (!tenantId) {
+      throw new Error('tenantId is required for updating organization vocabulary');
+    }
+
     // Validate term IDs exist in catalog and match correct types
     const termValidations = [
       { id: updates.epicTermId, expectedType: 'epic' },
@@ -8031,20 +8044,23 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    // Ensure only one organization vocabulary record exists (enforce single-record invariant)
-    const existing = await this.getOrganizationVocabularySelections();
+    // Ensure only one organization vocabulary record exists per tenant (enforce single-record invariant)
+    const existing = await this.getOrganizationVocabularySelections(tenantId);
     
     if (existing) {
-      // Update existing record
+      // Update existing record - strictly by tenant
       const [updated] = await db.update(organizationVocabulary)
         .set({ ...updates, updatedAt: sql`now()` })
-        .where(eq(organizationVocabulary.id, existing.id))
+        .where(and(
+          eq(organizationVocabulary.id, existing.id),
+          eq(organizationVocabulary.tenantId, tenantId)
+        ))
         .returning();
       return updated;
     } else {
-      // Create new record (should only happen once on initial setup)
+      // Create new record for this tenant (should only happen once per tenant on initial setup)
       const [created] = await db.insert(organizationVocabulary)
-        .values(updates)
+        .values({ ...updates, tenantId })
         .returning();
       return created;
     }
