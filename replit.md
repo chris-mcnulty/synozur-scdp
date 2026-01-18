@@ -47,8 +47,14 @@ Preferred communication style: Simple, everyday language.
 - **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks, including status, dates, and assignees.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring. Revenue calculations exclude tax.
 
-### Multi-Tenancy (Planned)
-- Designed for future SaaS model with UUID-based tenant IDs, tenant-scoped data isolation, service plans, co-branding, and subdomain routing. Implementation is phased, starting with schema foundation and tenant columns.
+### Multi-Tenancy (Active)
+- **Architecture**: UUID-based tenant IDs (matches Vega production design), tenant-scoped data isolation, service plans, and subdomain routing.
+- **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
+- **Platform Admin UI**: Available at `/platform/tenants` and `/platform/service-plans` for platform admins to create/manage tenants and service plans.
+- **Settings Separation**:
+  - **Tenant Settings**: Company name, logo, address, phone, email, website, payment terms - stored on `tenants` table, managed via `/api/tenant/settings`
+  - **Platform Settings**: Default billing/cost rates, estimation factors, mileage rate - stored in `system_settings` table, visible to platform admins
+- **Vocabulary Multi-tenancy**: `organizationVocabulary` is tenant-scoped with strict tenant isolation.
 
 ## External Dependencies
 
