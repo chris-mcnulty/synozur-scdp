@@ -86,6 +86,13 @@ export const tenants = pgTable("tenants", {
   customSubdomain: text("custom_subdomain"),
   branding: jsonb("branding").$type<TenantBranding>(),
   
+  // Company Contact Info (for invoices/documents)
+  companyAddress: text("company_address"),
+  companyPhone: text("company_phone"),
+  companyEmail: text("company_email"),
+  companyWebsite: text("company_website"),
+  paymentTerms: text("payment_terms"),
+  
   // Domain & SSO
   allowedDomains: jsonb("allowed_domains").$type<string[]>(),
   azureTenantId: text("azure_tenant_id"),
