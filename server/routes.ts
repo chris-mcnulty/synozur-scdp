@@ -4132,14 +4132,28 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
           
           if (syncRecord) {
+            // Validate and prepare dates for Planner update
+            let updateStartDateTime: string | null = allocation.plannedStartDate || null;
+            let updateDueDateTime: string | null = allocation.plannedEndDate || null;
+            
+            // Validate dates: ensure due date is not before start date
+            if (updateStartDateTime && updateDueDateTime) {
+              const startDate = new Date(updateStartDateTime);
+              const endDate = new Date(updateDueDateTime);
+              if (endDate < startDate) {
+                console.warn('[PLANNER] Due date before start date on update, swapping for allocation:', allocation.id);
+                [updateStartDateTime, updateDueDateTime] = [updateDueDateTime, updateStartDateTime];
+              }
+            }
+            
             // Update existing task
             const task = await plannerService.getTask(syncRecord.taskId);
             if (task) {
               await plannerService.updateTask(syncRecord.taskId, task['@odata.etag'] || '', {
                 title: taskTitle,
                 bucketId: bucket.id,
-                startDateTime: allocation.plannedStartDate || null,
-                dueDateTime: allocation.plannedEndDate || null,
+                startDateTime: updateStartDateTime,
+                dueDateTime: updateDueDateTime,
                 percentComplete,
                 assigneeIds
               });
@@ -4167,13 +4181,28 @@ export async function registerRoutes(app: Express): Promise<void> {
               updated++;
             }
           } else {
+            // Validate and prepare dates for Planner
+            let startDateTime: string | undefined = allocation.plannedStartDate || undefined;
+            let dueDateTime: string | undefined = allocation.plannedEndDate || undefined;
+            
+            // Validate dates: ensure due date is not before start date
+            if (startDateTime && dueDateTime) {
+              const startDate = new Date(startDateTime);
+              const endDate = new Date(dueDateTime);
+              if (endDate < startDate) {
+                console.warn('[PLANNER] Due date before start date, swapping for allocation:', allocation.id);
+                // Swap the dates
+                [startDateTime, dueDateTime] = [dueDateTime, startDateTime];
+              }
+            }
+            
             // Create new task
             const newTask = await plannerService.createTask({
               planId: connection.planId,
               bucketId: bucket.id,
               title: taskTitle,
-              startDateTime: allocation.plannedStartDate || undefined,
-              dueDateTime: allocation.plannedEndDate || undefined,
+              startDateTime,
+              dueDateTime,
               assigneeIds,
               percentComplete
             });
