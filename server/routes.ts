@@ -11646,9 +11646,12 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // GET /api/expenses/:expenseId/attachments/:attachmentId/content - Download file content
-  app.get("/api/expenses/:expenseId/attachments/:attachmentId/content", requireAuth, async (req, res) => {
+  // Handle legacy URLs with slashes in attachmentId (e.g., receipts/filename.jpg)
+  app.get("/api/expenses/:expenseId/attachments/*/content", requireAuth, async (req, res) => {
     try {
-      const { expenseId, attachmentId } = req.params;
+      const { expenseId } = req.params;
+      // Capture wildcard path which may include slashes
+      const attachmentId = decodeURIComponent(req.params[0] || '');
       const userId = req.user!.id;
 
       // Validate expense exists and user has permission

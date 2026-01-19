@@ -1596,6 +1596,8 @@ export const insertPendingReceiptSchema = createInsertSchema(pendingReceipts).om
 
 export const insertExpenseReportSchema = createInsertSchema(expenseReports).omit({
   id: true,
+  reportNumber: true, // Auto-generated in storage layer
+  totalAmount: true, // Calculated from expenses
   createdAt: true,
   updatedAt: true,
   submittedAt: true,

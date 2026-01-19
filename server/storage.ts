@@ -3207,10 +3207,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAttachmentById(id: string): Promise<ExpenseAttachment | undefined> {
+    // First try lookup by primary key (UUID)
     const [attachment] = await db.select()
       .from(expenseAttachments)
       .where(eq(expenseAttachments.id, id));
-    return attachment || undefined;
+    if (attachment) return attachment;
+    
+    // Fallback: try lookup by itemId (for legacy receipt-storage entries)
+    const [byItemId] = await db.select()
+      .from(expenseAttachments)
+      .where(eq(expenseAttachments.itemId, id));
+    return byItemId || undefined;
   }
 
   // Admin Expense Management Methods
