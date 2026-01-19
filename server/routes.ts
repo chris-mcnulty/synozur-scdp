@@ -5294,9 +5294,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get all assignments (for resource management)
   app.get("/api/assignments", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
-      console.log("[API] /api/assignments - Fetching allocations with epic and stage data");
-      // Get all allocations across all projects
-      const allocations = await db
+      const tenantId = req.user?.tenantId;
+      console.log("[API] /api/assignments - Fetching allocations with epic and stage data for tenant:", tenantId);
+      
+      // Build query with tenant filtering
+      let query = db
         .select({
           id: projectAllocations.id,
           projectId: projectAllocations.projectId,
@@ -5331,6 +5333,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id))
         .leftJoin(roles, eq(projectAllocations.roleId, roles.id))
         .orderBy(desc(projectAllocations.plannedStartDate));
+      
+      // Apply tenant filter if user has a tenant
+      const allocations = tenantId 
+        ? await query.where(eq(projects.tenantId, tenantId))
+        : await query;
       
       console.log(`[API] /api/assignments - Found ${allocations.length} allocations`);
       
@@ -5672,8 +5679,13 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/capacity/timeline", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
     try {
       const { startDate, endDate, personId, utilizationThreshold } = req.query;
+      const tenantId = req.user?.tenantId;
       
-      // Get all active users (employees)
+      // Get all active users (employees) - filtered by tenant
+      const userConditions = tenantId 
+        ? and(eq(users.role, 'employee'), eq(users.primaryTenantId, tenantId))
+        : eq(users.role, 'employee');
+      
       const allUsers = await db
         .select({
           id: users.id,
@@ -5682,9 +5694,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           role: users.role
         })
         .from(users)
-        .where(eq(users.role, 'employee'));
+        .where(userConditions);
       
-      // Get all allocations with date filtering
+      // Get all allocations with date filtering - filtered by tenant
       let allocationsQuery = db
         .select({
           id: projectAllocations.id,
@@ -5709,6 +5721,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(projectWorkstreams, eq(projectAllocations.projectWorkstreamId, projectWorkstreams.id));
       
       const conditions: any[] = [];
+      
+      // Add tenant filter
+      if (tenantId) {
+        conditions.push(eq(projects.tenantId, tenantId));
+      }
       
       if (startDate && endDate) {
         conditions.push(
