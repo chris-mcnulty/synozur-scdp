@@ -4108,11 +4108,20 @@ export async function registerRoutes(app: Express): Promise<void> {
             console.log('[PLANNER] No person assigned to allocation:', allocation.id);
           }
           
-          // Get task notes with Constellation project link
+          // Get task notes with Constellation assignment link and hours
           const baseUrl = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
-          const projectLink = `${baseUrl}/projects/${projectId}`;
+          // Link directly to the delivery/assignments tab
+          const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery`;
           const originalNotes = allocation.notes || allocation.taskDescription || '';
-          const taskNotes = `🔗 View in Constellation: ${projectLink}\n\n${originalNotes}`.trim();
+          const hoursStr = allocation.hours ? `HOURS: ${allocation.hours}` : '';
+          
+          // Build task notes: Link, Hours, then original notes
+          const notesParts = [
+            `View in Constellation: ${assignmentLink}`,
+            hoursStr,
+            originalNotes
+          ].filter(Boolean);
+          const taskNotes = notesParts.join('\n\n').trim();
           
           // Determine completion status
           let percentComplete = 0;
