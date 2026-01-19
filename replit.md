@@ -49,8 +49,16 @@ Preferred communication style: Simple, everyday language.
 
 ### Multi-Tenancy (Active)
 - **Architecture**: UUID-based tenant IDs (matches Vega production design), tenant-scoped data isolation, service plans, and subdomain routing.
+- **Synozur Tenant UUIDs**:
+  - Development: `e005d68f-3714-47c0-b2ba-346aa0bca107`
+  - Production: `afac1c3e-b09d-4794-959b-1cbf509e59a5`
+- **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login via:
+  1. Existing `primaryTenantId` (if already set)
+  2. Azure AD tenant ID mapping (SSO login)
+  3. Email domain matching (user's email domain → tenant's `allowedDomains`)
+  4. Default tenant fallback
 - **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
-- **Platform Admin UI**: Available at `/platform/tenants` and `/platform/service-plans` for platform admins to create/manage tenants and service plans.
+- **Platform Admin UI**: Available at `/platform/tenants`, `/platform/service-plans`, and `/platform/users` for platform admins to create/manage tenants, service plans, and user assignments.
 - **Settings Separation**:
   - **Tenant Settings**: Company name, logo, address, phone, email, website, payment terms - stored on `tenants` table, managed via `/api/tenant/settings`
   - **Platform Settings**: Default billing/cost rates, estimation factors, mileage rate - stored in `system_settings` table, visible to platform admins
