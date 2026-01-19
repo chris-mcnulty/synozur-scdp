@@ -5462,9 +5462,18 @@ export async function registerRoutes(app: Express): Promise<void> {
         conditions.push(eq(clients.id, clientId as string));
       }
 
-      // Status filter
+      // Status filter - "active" is a virtual status that matches "open" and "in_progress"
       if (status) {
-        conditions.push(eq(projectAllocations.status, status as string));
+        if (status === "active") {
+          conditions.push(
+            or(
+              eq(projectAllocations.status, "open"),
+              eq(projectAllocations.status, "in_progress")
+            )
+          );
+        } else {
+          conditions.push(eq(projectAllocations.status, status as string));
+        }
       }
 
       const allocations = await allocationsQuery.where(and(...conditions));
