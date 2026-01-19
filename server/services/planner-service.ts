@@ -721,8 +721,8 @@ class PlannerService {
       };
 
       if (task.bucketId) taskBody.bucketId = task.bucketId;
-      if (task.startDateTime) taskBody.startDateTime = task.startDateTime;
-      if (task.dueDateTime) taskBody.dueDateTime = task.dueDateTime;
+      if (task.startDateTime) taskBody.startDateTime = this.formatDateForPlanner(task.startDateTime);
+      if (task.dueDateTime) taskBody.dueDateTime = this.formatDateForPlanner(task.dueDateTime);
       if (task.percentComplete !== undefined) taskBody.percentComplete = task.percentComplete;
       
       if (task.assigneeIds && task.assigneeIds.length > 0) {
@@ -756,8 +756,16 @@ class PlannerService {
       const updateBody: any = {};
       if (updates.title !== undefined) updateBody.title = updates.title;
       if (updates.bucketId !== undefined) updateBody.bucketId = updates.bucketId;
-      if (updates.startDateTime !== undefined) updateBody.startDateTime = updates.startDateTime;
-      if (updates.dueDateTime !== undefined) updateBody.dueDateTime = updates.dueDateTime;
+      if (updates.startDateTime !== undefined) {
+        updateBody.startDateTime = updates.startDateTime === null 
+          ? null 
+          : this.formatDateForPlanner(updates.startDateTime);
+      }
+      if (updates.dueDateTime !== undefined) {
+        updateBody.dueDateTime = updates.dueDateTime === null 
+          ? null 
+          : this.formatDateForPlanner(updates.dueDateTime);
+      }
       if (updates.percentComplete !== undefined) updateBody.percentComplete = updates.percentComplete;
       
       if (updates.assigneeIds !== undefined) {
@@ -925,15 +933,26 @@ class PlannerService {
 
   // ============ HELPER METHODS ============
 
+  /**
+   * Format a date for Planner API, ensuring it lands on the correct day regardless of timezone.
+   * Uses noon UTC to avoid midnight timezone edge cases that could shift the day.
+   */
   formatDateForPlanner(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toISOString();
+    // Set to noon UTC to avoid timezone issues that could shift the date
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}T12:00:00.000Z`;
   }
 
   getWeekLabel(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
+    // Use Monday as start of week
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
     const startOfWeek = new Date(d);
-    startOfWeek.setDate(d.getDate() - d.getDay()); // Sunday
+    startOfWeek.setDate(diff);
     return `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
   }
 
