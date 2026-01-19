@@ -6,6 +6,19 @@ Constellation is a comprehensive platform designed to manage the entire lifecycl
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+### UI/UX Design Reference: Vega
+- **Vega** (vega.synozur.com) is Synozur's Entra SSO-based multi-tenant application for managing company operating systems, strategy execution, and OKRs.
+- **Repo**: https://github.com/chris-mcnulty/synozur-vega
+- **Multi-tenant Admin Pattern**: Vega has a unified user management view that:
+  - Shows all users in the system for platform admins
+  - Constrains view to a single tenant for users with limited security scope
+  - Provides filtering to drill into specific tenants
+- **Reference**: Look to Vega for proven patterns in multi-tenant user administration. The user may request code examples from this repo.
+
+### Platform Users Preference
+- User management should be consolidated into a single, unified view (like Vega) rather than separate admin pages
+- Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pages
+
 ## System Architecture
 
 ### Frontend
