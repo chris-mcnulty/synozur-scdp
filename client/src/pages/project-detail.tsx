@@ -160,7 +160,7 @@ const assignmentFormSchema = z.object({
   projectEpicId: z.string().optional(),
   projectStageId: z.string().optional(),
   hours: z.string().min(1, "Hours is required"),
-  pricingMode: z.enum(["role", "person", "resource_name"]),
+  pricingMode: z.enum(["role", "person", "resource_name"]).default("person"), // Auto-determined based on assignment
   rackRate: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -5179,14 +5179,25 @@ export default function ProjectDetail() {
               const epicIdValue = formData.get('epicId') as string;
               const stageIdValue = formData.get('stageId') as string;
               
+              const personIdValue = formData.get('personId') as string;
+              const roleIdFinal = roleIdValue === 'none' ? undefined : roleIdValue || undefined;
+              
+              // Auto-determine pricing mode based on what's assigned
+              let pricingMode: "role" | "person" | "resource_name" = "resource_name";
+              if (personIdValue) {
+                pricingMode = "person";
+              } else if (roleIdFinal) {
+                pricingMode = "role";
+              }
+              
               const data: AssignmentFormData = {
-                personId: formData.get('personId') as string,
-                roleId: roleIdValue === 'none' ? undefined : roleIdValue || undefined,
+                personId: personIdValue,
+                roleId: roleIdFinal,
                 projectWorkstreamId: workstreamIdValue === 'none' ? undefined : workstreamIdValue || undefined,
                 projectEpicId: epicIdValue === 'none' ? undefined : epicIdValue || undefined,
                 projectStageId: stageIdValue === 'none' ? undefined : stageIdValue || undefined,
                 hours: formData.get('hours') as string,
-                pricingMode: formData.get('pricingMode') as "role" | "person" | "resource_name",
+                pricingMode,
                 startDate: formData.get('startDate') as string || undefined,
                 endDate: formData.get('endDate') as string || undefined,
                 taskDescription: formData.get('taskDescription') as string || undefined,
@@ -5295,20 +5306,6 @@ export default function ProjectDetail() {
                     required
                     data-testid="input-hours"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pricingMode">Pricing Mode *</Label>
-                  <Select name="pricingMode" defaultValue={editingAssignment?.pricingMode || "role"}>
-                    <SelectTrigger data-testid="select-pricing-mode">
-                      <SelectValue placeholder="Select pricing mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="role">By Role</SelectItem>
-                      <SelectItem value="person">By Person</SelectItem>
-                      <SelectItem value="resource_name">By Resource Name</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div className="space-y-2">
