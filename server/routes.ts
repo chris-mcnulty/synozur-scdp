@@ -4110,8 +4110,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           
           // Get task notes with Constellation assignment link and hours
           const baseUrl = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
-          // Link directly to the delivery/assignments tab
-          const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery`;
+          // Link directly to the specific assignment in the delivery/assignments tab
+          const assignmentLink = `${baseUrl}/projects/${projectId}?tab=delivery&assignmentId=${allocation.id}`;
           const originalNotes = allocation.notes || allocation.taskDescription || '';
           const hoursStr = allocation.hours ? `HOURS: ${allocation.hours}` : '';
           

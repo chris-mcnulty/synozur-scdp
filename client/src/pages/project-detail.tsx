@@ -190,6 +190,12 @@ export default function ProjectDetail() {
     return params.get('edit') === 'true';
   }, [searchString]);
   
+  // Check for assignmentId parameter (from Planner task links)
+  const highlightedAssignmentId = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get('assignmentId');
+  }, [searchString]);
+  
   const handleTabChange = (newTab: string) => {
     const params = new URLSearchParams(searchString);
     if (newTab === 'overview') {
@@ -2743,7 +2749,20 @@ export default function ProjectDetail() {
                           return true;
                         })
                         .map((allocation: any) => (
-                        <TableRow key={allocation.id} data-testid={`allocation-row-${allocation.id}`}>
+                        <TableRow 
+                          key={allocation.id} 
+                          data-testid={`allocation-row-${allocation.id}`}
+                          ref={(el) => {
+                            if (highlightedAssignmentId === allocation.id && el) {
+                              setTimeout(() => {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }, 100);
+                            }
+                          }}
+                          className={highlightedAssignmentId === allocation.id ? 
+                            'ring-2 ring-primary ring-offset-2 bg-primary/5 animate-pulse' : ''
+                          }
+                        >
                           <TableCell className="font-medium">
                             {allocation.person ? (
                               <div className="flex items-center gap-2">
