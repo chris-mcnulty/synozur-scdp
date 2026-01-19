@@ -3137,7 +3137,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Projects
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
-      const projects = await storage.getProjects();
+      const tenantId = req.user?.tenantId;
+      const projects = await storage.getProjects(tenantId);
       res.json(projects);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch projects" });
@@ -5863,8 +5864,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get all payment milestones across all projects (for billing page)
   app.get("/api/payment-milestones/all", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      // Get all projects
-      const projects = await storage.getProjects();
+      // Get all projects for this tenant
+      const tenantId = req.user?.tenantId;
+      const projects = await storage.getProjects(tenantId);
       
       // Batch fetch all milestones for all projects in a single query
       const projectIds = projects.map(p => p.id);
@@ -7022,7 +7024,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Clients
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
-      const clients = await storage.getClients();
+      const tenantId = req.user?.tenantId;
+      const clients = await storage.getClients(tenantId);
       res.json(clients);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch clients" });
@@ -10488,8 +10491,9 @@ export async function registerRoutes(app: Express): Promise<void> {
             return serial; // Return as-is and let validation catch it
           };
 
-          // Get all projects and users for lookup
-          const projects = await storage.getProjects();
+          // Get all projects and users for lookup (tenant-scoped)
+          const tenantId = req.user?.tenantId;
+          const projects = await storage.getProjects(tenantId);
           const projectMap = new Map();
           projects.forEach(p => {
             projectMap.set(p.name.toLowerCase(), p.id);
@@ -12712,7 +12716,8 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       console.log("[DEBUG] Fetching estimates...");
       const includeArchived = req.query.includeArchived === 'true';
-      const estimates = await storage.getEstimates(includeArchived);
+      const tenantId = req.user?.tenantId;
+      const estimates = await storage.getEstimates(includeArchived, tenantId);
       console.log('[DEBUG] Found ' + estimates.length + ' estimates (includeArchived: ' + includeArchived + ')');
 
       // Calculate totals from line items for each estimate
@@ -13469,7 +13474,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Project billing summaries endpoint
   app.get("/api/billing/project-summaries", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
-      const summaries = await storage.getProjectBillingSummaries();
+      const tenantId = req.user?.tenantId;
+      const summaries = await storage.getProjectBillingSummaries(tenantId);
       res.json(summaries);
     } catch (error: any) {
       console.error("Error fetching project billing summaries:", error);
@@ -14986,8 +14992,9 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const XLSX = await import('xlsx');
 
-      // Get active projects for the template
-      const projects = await storage.getProjects();
+      // Get active projects for the template (tenant-scoped)
+      const tenantId = req.user?.tenantId;
+      const projects = await storage.getProjects(tenantId);
       const sampleProjects = projects.slice(0, 3); // Get first 3 projects for samples
 
       // Template headers with validation guidelines
@@ -15169,8 +15176,9 @@ export async function registerRoutes(app: Express): Promise<void> {
             });
           }
 
-          // Get projects and users for validation
-          const projects = await storage.getProjects();
+          // Get projects and users for validation (tenant-scoped)
+          const tenantId = req.user?.tenantId;
+          const projects = await storage.getProjects(tenantId);
           const projectMap = new Map(projects.map(p => [p.code.toLowerCase(), p]));
 
           const validationErrors: Array<{

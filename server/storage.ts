@@ -227,13 +227,13 @@ export interface IStorage {
   setUserRates(userId: string, billingRate: number | null, costRate: number | null): Promise<void>;
   
   // Clients
-  getClients(): Promise<Client[]>;
+  getClients(tenantId?: string | null): Promise<Client[]>;
   getClient(id: string): Promise<Client | undefined>;
   createClient(client: InsertClient): Promise<Client>;
   updateClient(id: string, client: Partial<InsertClient>): Promise<Client>;
   
   // Projects
-  getProjects(): Promise<(Project & { client: Client })[]>;
+  getProjects(tenantId?: string | null): Promise<(Project & { client: Client })[]>;
   getProject(id: string): Promise<(Project & { client: Client }) | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project>;
@@ -269,7 +269,7 @@ export interface IStorage {
   deleteRole(id: string): Promise<void>;
   
   // Estimates
-  getEstimates(): Promise<(Estimate & { client: Client; project?: Project })[]>;
+  getEstimates(includeArchived?: boolean, tenantId?: string | null): Promise<(Estimate & { client: Client; project?: Project })[]>;
   getEstimate(id: string): Promise<Estimate | undefined>;
   getEstimatesByProject(projectId: string): Promise<Estimate[]>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
@@ -531,7 +531,7 @@ export interface IStorage {
   }>;
 
   // Project Billing Summaries
-  getProjectBillingSummaries(): Promise<{
+  getProjectBillingSummaries(tenantId?: string | null): Promise<{
     projectId: string;
     projectName: string;
     clientName: string;
@@ -1071,7 +1071,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId));
   }
 
-  async getClients(): Promise<Client[]> {
+  async getClients(tenantId?: string | null): Promise<Client[]> {
+    if (tenantId) {
+      return await db.select().from(clients)
+        .where(eq(clients.tenantId, tenantId))
+        .orderBy(clients.name);
+    }
     return await db.select().from(clients).orderBy(clients.name);
   }
 
@@ -1090,10 +1095,14 @@ export class DatabaseStorage implements IStorage {
     return client;
   }
 
-  async getProjects(): Promise<(Project & { client: Client; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
-    const projectRows = await db.select().from(projects)
-      .leftJoin(clients, eq(projects.clientId, clients.id))
-      .orderBy(desc(projects.createdAt));
+  async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
+    let query = db.select().from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id));
+    
+    // Apply tenant filter if provided
+    const projectRows = tenantId
+      ? await query.where(eq(projects.tenantId, tenantId)).orderBy(desc(projects.createdAt))
+      : await query.orderBy(desc(projects.createdAt));
     
     // Get budget, burned, and utilization for each project
     const projectsWithBillableInfo = await Promise.all(
@@ -1330,15 +1339,28 @@ export class DatabaseStorage implements IStorage {
     await db.delete(roles).where(eq(roles.id, id));
   }
 
-  async getEstimates(includeArchived: boolean = false): Promise<(Estimate & { client: Client; project?: Project })[]> {
+  async getEstimates(includeArchived: boolean = false, tenantId?: string | null): Promise<(Estimate & { client: Client; project?: Project })[]> {
     let query = db.select().from(estimates)
       .leftJoin(clients, eq(estimates.clientId, clients.id))
       .leftJoin(projects, eq(estimates.projectId, projects.id));
     
+    // Build conditions array
+    const conditions = [];
+    
     // Filter out archived estimates unless explicitly requested
     // Include NULL as non-archived (for older estimates before archived field was added)
     if (!includeArchived) {
-      query = query.where(or(eq(estimates.archived, false), isNull(estimates.archived))) as any;
+      conditions.push(or(eq(estimates.archived, false), isNull(estimates.archived)));
+    }
+    
+    // Apply tenant filter if provided
+    if (tenantId) {
+      conditions.push(eq(estimates.tenantId, tenantId));
+    }
+    
+    // Apply all conditions
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
     }
     
     const rows = await query.orderBy(clients.name, estimates.name);
@@ -8419,7 +8441,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getProjectBillingSummaries(): Promise<{
+  async getProjectBillingSummaries(tenantId?: string | null): Promise<{
     projectId: string;
     projectName: string;
     clientName: string;
@@ -8432,8 +8454,8 @@ export class DatabaseStorage implements IStorage {
     utilizationPercent?: number;
     rateIssues: number;
   }[]> {
-    // Get all projects with client information
-    const projects = await this.getProjects();
+    // Get all projects with client information (tenant-scoped)
+    const projects = await this.getProjects(tenantId);
 
     const summaries = await Promise.all(
       projects.map(async (project) => {
