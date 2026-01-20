@@ -2804,13 +2804,13 @@ export default function ProjectDetail() {
                           </TableCell>
                           <TableCell>
                             {allocation.plannedStartDate ? 
-                              format(new Date(allocation.plannedStartDate), "MMM d, yyyy") : 
+                              format(parseISO(allocation.plannedStartDate), "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
                           <TableCell>
                             {allocation.plannedEndDate ? 
-                              format(new Date(allocation.plannedEndDate), "MMM d, yyyy") : 
+                              format(parseISO(allocation.plannedEndDate), "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
