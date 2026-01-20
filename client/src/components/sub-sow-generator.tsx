@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, FileText, Download, Sparkles, User, Clock, DollarSign, AlertCircle } from "lucide-react";
+import { Loader2, FileText, Download, Sparkles, User, Clock, DollarSign, AlertCircle, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -59,6 +59,70 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
   const [subSOWData, setSubSOWData] = useState<SubSOWData | null>(null);
   const [narrative, setNarrative] = useState("");
   const [showDialog, setShowDialog] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const generateWordContent = () => {
+    if (!subSOWData || !selectedResource) return '';
+    
+    const lines: string[] = [];
+    lines.push(`SUB-STATEMENT OF WORK`);
+    lines.push(`${'='.repeat(50)}`);
+    lines.push('');
+    lines.push(`Project: ${subSOWData.projectName}`);
+    lines.push(`Client: ${subSOWData.clientName}`);
+    lines.push(`Resource: ${subSOWData.resourceName}`);
+    lines.push(`Role: ${subSOWData.resourceRole}`);
+    lines.push(`Type: ${subSOWData.isSalaried ? 'Salaried Employee' : 'Subcontractor'}`);
+    lines.push('');
+    lines.push(`SUMMARY`);
+    lines.push(`${'-'.repeat(30)}`);
+    lines.push(`Total Hours: ${subSOWData.totalHours.toFixed(1)}`);
+    if (!subSOWData.isSalaried) {
+      lines.push(`Total Cost: $${subSOWData.totalCost.toLocaleString()}`);
+    }
+    lines.push(`Number of Assignments: ${subSOWData.assignments.length}`);
+    lines.push('');
+    lines.push(`ASSIGNED TASKS`);
+    lines.push(`${'-'.repeat(30)}`);
+    
+    subSOWData.assignments.forEach((a, idx) => {
+      lines.push(`${idx + 1}. ${a.description}`);
+      if (a.epicName) lines.push(`   Epic: ${a.epicName}`);
+      if (a.stageName) lines.push(`   Stage: ${a.stageName}`);
+      lines.push(`   Hours: ${a.hours.toFixed(1)}`);
+      if (!subSOWData.isSalaried) {
+        lines.push(`   Amount: $${a.amount.toFixed(2)}`);
+      }
+      lines.push('');
+    });
+    
+    lines.push(`NARRATIVE`);
+    lines.push(`${'-'.repeat(30)}`);
+    lines.push(narrative || '(No narrative provided)');
+    lines.push('');
+    lines.push(`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`);
+    
+    return lines.join('\n');
+  };
+
+  const handleCopyToClipboard = async () => {
+    const content = generateWordContent();
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      toast({
+        title: "Copied to Clipboard",
+        description: "Sub-SOW content copied. You can now paste it into Word.",
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy to clipboard. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const { data: resourcesData, isLoading: isLoadingResources } = useQuery<{
     projectId: string;
@@ -176,10 +240,10 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
         <CardContent>
           <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
             <AlertCircle className="w-5 h-5" />
-            <span>No resources with assigned estimate line items found for this project.</span>
+            <span>No resources with team assignments found for this project.</span>
           </div>
           <p className="text-sm text-muted-foreground text-center">
-            To generate a Sub-SOW, first create an estimate and assign line items to specific users.
+            To generate a Sub-SOW, first add team assignments in the Team tab.
           </p>
         </CardContent>
       </Card>
@@ -348,9 +412,26 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
             </div>
           ) : null}
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setShowDialog(false)}>
               Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleCopyToClipboard}
+              disabled={!subSOWData}
+            >
+              {copied ? (
+                <>
+                  <Check className="w-4 h-4 mr-2" />
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 mr-2" />
+                  Copy for Word
+                </>
+              )}
             </Button>
             <Button
               onClick={() => downloadPdfMutation.mutate()}
