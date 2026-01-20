@@ -9864,8 +9864,11 @@ export async function generateInvoicePDF(params: {
   // Collect PDF receipts separately for merging at end (instead of rendering as images)
   const pdfReceiptBuffers: { buffer: Buffer; originalName: string }[] = [];
   const MAX_RECEIPTS_PER_INVOICE = 50; // Limit to prevent oversized PDFs
+  const MAX_PDF_RECEIPTS = 20; // Limit number of PDF receipts to merge
+  const MAX_TOTAL_PDF_SIZE_MB = 50; // Max total size for all PDF receipts
   let receiptsLimitExceeded = false;
   let totalReceiptsFound = 0;
+  let currentPdfTotalSize = 0;
   
   try {
     // Get all expense lines from the invoice
@@ -9947,12 +9950,24 @@ export async function generateInvoicePDF(params: {
             const isPdf = receipt.contentType.includes('pdf') || 
                           receipt.originalName.toLowerCase().endsWith('.pdf');
             if (isPdf) {
-              // Collect PDF buffers for merging at end of invoice
-              pdfReceiptBuffers.push({
-                buffer: receipt.buffer,
-                originalName: receipt.originalName
-              });
-              console.log(`[PDF] Collected PDF receipt for merging: ${receipt.originalName}`);
+              // Collect PDF buffers for merging at end of invoice (with limits)
+              const pdfSizeBytes = receipt.buffer.length;
+              const pdfSizeMB = pdfSizeBytes / (1024 * 1024);
+              
+              if (pdfReceiptBuffers.length >= MAX_PDF_RECEIPTS) {
+                console.log(`[PDF] Skipping PDF receipt (max count reached): ${receipt.originalName}`);
+                receiptsLimitExceeded = true;
+              } else if (currentPdfTotalSize + pdfSizeBytes > MAX_TOTAL_PDF_SIZE_MB * 1024 * 1024) {
+                console.log(`[PDF] Skipping PDF receipt (size limit reached): ${receipt.originalName} (${pdfSizeMB.toFixed(1)}MB)`);
+                receiptsLimitExceeded = true;
+              } else {
+                pdfReceiptBuffers.push({
+                  buffer: receipt.buffer,
+                  originalName: receipt.originalName
+                });
+                currentPdfTotalSize += pdfSizeBytes;
+                console.log(`[PDF] Collected PDF receipt for merging: ${receipt.originalName} (${pdfSizeMB.toFixed(1)}MB)`);
+              }
             } else {
               imageReceipts.push(receipt);
             }
@@ -10012,12 +10027,24 @@ export async function generateInvoicePDF(params: {
             const isPdf = receipt.contentType.includes('pdf') || 
                           receipt.originalName.toLowerCase().endsWith('.pdf');
             if (isPdf) {
-              // Collect PDF buffers for merging at end of invoice
-              pdfReceiptBuffers.push({
-                buffer: receipt.buffer,
-                originalName: receipt.originalName
-              });
-              console.log(`[PDF] Collected PDF receipt (from URL) for merging: ${receipt.originalName}`);
+              // Collect PDF buffers for merging at end of invoice (with limits)
+              const pdfSizeBytes = receipt.buffer.length;
+              const pdfSizeMB = pdfSizeBytes / (1024 * 1024);
+              
+              if (pdfReceiptBuffers.length >= MAX_PDF_RECEIPTS) {
+                console.log(`[PDF] Skipping PDF receipt (max count reached): ${receipt.originalName}`);
+                receiptsLimitExceeded = true;
+              } else if (currentPdfTotalSize + pdfSizeBytes > MAX_TOTAL_PDF_SIZE_MB * 1024 * 1024) {
+                console.log(`[PDF] Skipping PDF receipt (size limit reached): ${receipt.originalName} (${pdfSizeMB.toFixed(1)}MB)`);
+                receiptsLimitExceeded = true;
+              } else {
+                pdfReceiptBuffers.push({
+                  buffer: receipt.buffer,
+                  originalName: receipt.originalName
+                });
+                currentPdfTotalSize += pdfSizeBytes;
+                console.log(`[PDF] Collected PDF receipt (from URL) for merging: ${receipt.originalName} (${pdfSizeMB.toFixed(1)}MB)`);
+              }
             } else {
               directImageReceipts.push(receipt);
             }
@@ -10196,12 +10223,21 @@ export async function generateInvoicePDF(params: {
     if (pdfReceiptBuffers.length > 0) {
       console.log(`[PDF] Merging ${pdfReceiptBuffers.length} PDF receipt(s) to invoice...`);
       
+      const MAX_TOTAL_PAGES = 100; // Global limit on total appended pages
+      let totalPagesAppended = 0;
+      
       try {
         // Load the invoice PDF we just generated
         const invoicePdf = await PDFDocument.load(pdf);
         
         // Process each PDF receipt
         for (const pdfReceipt of pdfReceiptBuffers) {
+          // Check global page limit
+          if (totalPagesAppended >= MAX_TOTAL_PAGES) {
+            console.log(`[PDF] Reached global page limit (${MAX_TOTAL_PAGES}), skipping remaining PDFs`);
+            break;
+          }
+          
           try {
             console.log(`[PDF] Appending PDF: ${pdfReceipt.originalName}`);
             
@@ -10214,8 +10250,11 @@ export async function generateInvoicePDF(params: {
             const pageCount = receiptPdf.getPageCount();
             console.log(`[PDF]   - ${pdfReceipt.originalName} has ${pageCount} page(s)`);
             
-            // Copy all pages to the invoice (limit to MAX_PDF_PAGES per receipt)
-            const pagesToCopy = Math.min(pageCount, 5); // Max 5 pages per PDF receipt
+            // Calculate pages to copy (per-receipt and global limits)
+            const perReceiptLimit = 5; // Max 5 pages per PDF receipt
+            const remainingGlobalSlots = MAX_TOTAL_PAGES - totalPagesAppended;
+            const pagesToCopy = Math.min(pageCount, perReceiptLimit, remainingGlobalSlots);
+            
             const copiedPages = await invoicePdf.copyPages(
               receiptPdf, 
               Array.from({ length: pagesToCopy }, (_, i) => i)
@@ -10224,10 +10263,11 @@ export async function generateInvoicePDF(params: {
             // Add each copied page to the invoice
             for (const copiedPage of copiedPages) {
               invoicePdf.addPage(copiedPage);
+              totalPagesAppended++;
             }
             
-            if (pageCount > 5) {
-              console.log(`[PDF]   - Truncated to first 5 pages (had ${pageCount})`);
+            if (pageCount > pagesToCopy) {
+              console.log(`[PDF]   - Truncated to ${pagesToCopy} pages (had ${pageCount})`);
             }
           } catch (receiptError) {
             console.error(`[PDF] Failed to merge PDF receipt ${pdfReceipt.originalName}:`, receiptError);
@@ -10237,7 +10277,7 @@ export async function generateInvoicePDF(params: {
         
         // Save the merged PDF
         const mergedPdfBytes = await invoicePdf.save();
-        console.log(`[PDF] Successfully merged ${pdfReceiptBuffers.length} PDF receipt(s). Final size: ${Math.round(mergedPdfBytes.length / 1024)}KB`);
+        console.log(`[PDF] Successfully merged PDF receipts. Total pages appended: ${totalPagesAppended}. Final size: ${Math.round(mergedPdfBytes.length / 1024)}KB`);
         
         return Buffer.from(mergedPdfBytes);
       } catch (mergeError) {

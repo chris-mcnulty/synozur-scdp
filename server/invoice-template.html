@@ -463,9 +463,9 @@
   {{#if receiptsLimitExceeded}}
   <div class="receipt-page">
     <div class="adjustment-note" style="margin-top: 100px;">
-      <strong>Note:</strong> This invoice includes {{receiptImages.length}} of {{totalReceiptsFound}} receipt attachments.
-      The maximum limit is {{maxReceiptsPerInvoice}} receipts per invoice to ensure optimal PDF size and performance.
-      Please contact billing for additional receipt images if needed.
+      <strong>Note:</strong> Some receipt attachments were omitted due to size or count limits.
+      This invoice includes a subset of the {{totalReceiptsFound}} total receipts found.
+      Please contact billing for additional receipt documentation if needed.
     </div>
   </div>
   {{/if}}
