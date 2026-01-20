@@ -54,7 +54,7 @@ Preferred communication style: Simple, everyday language.
 - **AI Integration**: Uses Replit AI (OpenAI GPT-5 compatible) for estimate/invoice narrative generation and report queries.
 - **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence (Manual inline > Estimate override > Client override > User default > Role default).
 - **Salaried Resource Handling**: Configurable `isSalaried` flag for individuals or roles, ensuring salaried time does not impact project profitability metrics.
-- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, and expense receipt inclusion.
+- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download (ZIP of all receipts for an invoice batch).
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation (GSA federal rates).
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
 - **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks, including status, dates, and assignees.
@@ -95,6 +95,14 @@ Preferred communication style: Simple, everyday language.
 - **Current State**: Invoice PDFs are regenerated each time "Generate Invoice" is clicked. The "View Invoice" action serves a cached version from Object Storage.
 - **Enhancement Idea**: For finalized invoices (status = 'sent' or 'paid'), prevent regeneration and only serve the cached version. This preserves the exact invoice sent to the client and improves performance.
 - **Receipt Processing**: PDF receipts are now rendered as images using Puppeteer (up to 25MB per receipt, 60 second timeout). Consider async processing with progress indicator for invoices with many PDF receipts.
+
+### Receipts Bundle Download
+- **Feature**: Users can download all receipts for an invoice batch as a ZIP file
+- **UI**: When receipts are available, the Download PDF button becomes a dropdown with "Invoice PDF" and "Complete Receipts (ZIP)" options
+- **Endpoints**: 
+  - `GET /api/invoice-batches/:batchId/receipts-bundle` - Downloads ZIP with all receipts
+  - `GET /api/invoice-batches/:batchId/receipts-bundle/check` - Returns { available: boolean, count: number }
+- **Security**: Uses batch's tenantId for data isolation, validates user access, URL validation for external receipts (https only), 30s timeout, 25MB max per file
 
 ### Performance Notes
 - Large invoices with many PDF receipts may take up to 60 seconds to generate
