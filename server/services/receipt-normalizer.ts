@@ -49,7 +49,7 @@ export async function normalizeReceiptToDataUrl(
 
   // Handle text receipts
   if (mimeType.includes('text')) {
-    return normalizeTextReceipt(buffer, originalName);
+    return await normalizeTextReceipt(buffer, originalName);
   }
 
   // Unsupported format - return placeholder
@@ -123,8 +123,8 @@ async function normalizeImageReceipt(
 
 /**
  * Normalize PDF receipts
- * For now, we create a placeholder page indicating it's a PDF receipt
- * In future, could use pdf-lib or pdfjs-dist to extract first page as image
+ * Creates a placeholder image indicating it's a PDF receipt
+ * Converts SVG to PNG for better PDF rendering compatibility
  */
 async function normalizePdfReceipt(
   buffer: Buffer,
@@ -132,42 +132,63 @@ async function normalizePdfReceipt(
 ): Promise<NormalizedReceipt> {
   console.log(`[ReceiptNormalizer] PDF receipt detected: ${originalName}`);
   
-  // For now, create a simple placeholder image with text
-  // Future enhancement: Use pdf-lib to extract first page and convert to image
+  // Create placeholder SVG
   const placeholderSvg = `
-    <svg width="800" height="1000" xmlns="http://www.w3.org/2000/svg">
-      <rect width="800" height="1000" fill="#f9fafb" stroke="#e5e7eb" stroke-width="2"/>
-      <text x="400" y="400" font-family="Arial, sans-serif" font-size="24" text-anchor="middle" fill="#374151">
+    <svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+      <rect width="800" height="400" fill="#f9fafb" stroke="#e5e7eb" stroke-width="2"/>
+      <rect x="350" y="80" width="100" height="120" fill="#ef4444" rx="8"/>
+      <text x="400" y="150" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="white">PDF</text>
+      <text x="400" y="250" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="#374151">
         PDF Receipt Attached
       </text>
-      <text x="400" y="450" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#6b7280">
-        ${originalName}
+      <text x="400" y="290" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#6b7280">
+        ${originalName.length > 60 ? originalName.substring(0, 57) + '...' : originalName}
       </text>
-      <text x="400" y="500" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#9ca3af">
+      <text x="400" y="330" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#9ca3af">
         Original PDF file included with invoice
       </text>
     </svg>
   `;
 
-  const base64 = Buffer.from(placeholderSvg).toString('base64');
-  const dataUrl = `data:image/svg+xml;base64,${base64}`;
+  try {
+    // Convert SVG to PNG using sharp for better PDF compatibility
+    const pngBuffer = await sharp(Buffer.from(placeholderSvg))
+      .png()
+      .toBuffer();
+    
+    const base64 = pngBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64}`;
 
-  return {
-    dataUrl,
-    contentType: 'image/svg+xml',
-    originalName,
-    conversionNote: 'PDF receipt placeholder (original PDF attached separately)'
-  };
+    return {
+      dataUrl,
+      contentType: 'image/png',
+      originalName,
+      conversionNote: 'PDF receipt placeholder (original PDF attached separately)'
+    };
+  } catch (error) {
+    console.error(`[ReceiptNormalizer] Error converting PDF placeholder to PNG:`, error);
+    // Fallback to SVG if PNG conversion fails
+    const base64 = Buffer.from(placeholderSvg).toString('base64');
+    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+
+    return {
+      dataUrl,
+      contentType: 'image/svg+xml',
+      originalName,
+      conversionNote: 'PDF receipt placeholder (original PDF attached separately)'
+    };
+  }
 }
 
 /**
  * Normalize text receipts
  * Renders text content as an image with proper formatting
+ * Converts SVG to PNG for better PDF compatibility
  */
-function normalizeTextReceipt(
+async function normalizeTextReceipt(
   buffer: Buffer,
   originalName: string
-): NormalizedReceipt {
+): Promise<NormalizedReceipt> {
   console.log(`[ReceiptNormalizer] Text receipt detected: ${originalName}`);
   
   const textContent = buffer.toString('utf-8');
@@ -202,15 +223,34 @@ function normalizeTextReceipt(
     </svg>
   `;
 
-  const base64 = Buffer.from(textSvg).toString('base64');
-  const dataUrl = `data:image/svg+xml;base64,${base64}`;
+  try {
+    // Convert SVG to PNG for better PDF compatibility
+    const pngBuffer = await sharp(Buffer.from(textSvg))
+      .png()
+      .toBuffer();
+    
+    const base64 = pngBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64}`;
 
-  return {
-    dataUrl,
-    contentType: 'image/svg+xml',
-    originalName,
-    conversionNote: lines.length >= 50 ? 'Text truncated to 50 lines' : undefined
-  };
+    return {
+      dataUrl,
+      contentType: 'image/png',
+      originalName,
+      conversionNote: lines.length >= 50 ? 'Text truncated to 50 lines' : undefined
+    };
+  } catch (error) {
+    console.error(`[ReceiptNormalizer] Error converting text receipt to PNG:`, error);
+    // Fallback to SVG
+    const base64 = Buffer.from(textSvg).toString('base64');
+    const dataUrl = `data:image/svg+xml;base64,${base64}`;
+
+    return {
+      dataUrl,
+      contentType: 'image/svg+xml',
+      originalName,
+      conversionNote: lines.length >= 50 ? 'Text truncated to 50 lines' : undefined
+    };
+  }
 }
 
 /**
