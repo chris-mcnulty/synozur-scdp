@@ -1,5 +1,6 @@
 import sharp from 'sharp';
-import puppeteer from 'puppeteer';
+// Note: Puppeteer-based PDF rendering disabled due to production resource constraints
+// PDF receipts are shown as informative placeholders with the original PDF attached to invoice
 
 /**
  * Receipt Normalizer
@@ -11,7 +12,7 @@ import puppeteer from 'puppeteer';
 const MAX_RECEIPT_SIZE_MB = 25; // Maximum size per receipt (increased for large PDFs)
 const MAX_IMAGE_DIMENSION = 1600; // Max width/height for image optimization
 const MAX_PDF_PAGES = 5; // Maximum pages to extract from a PDF receipt
-const PDF_RENDER_TIMEOUT_MS = 60000; // 60 second timeout for PDF rendering
+// PDF rendering via Puppeteer disabled - using placeholder approach for production reliability
 
 export interface NormalizedReceipt {
   dataUrl: string;
@@ -142,168 +143,84 @@ async function normalizeImageReceipt(
 
 /**
  * Normalize PDF receipts
- * Renders PDF pages to images using Puppeteer for embedding in invoice PDFs
- * Returns multiple NormalizedReceipt entries for multi-page PDFs
+ * Creates an informative placeholder image indicating the PDF is attached to the invoice
+ * Note: Puppeteer-based PDF rendering disabled due to production resource constraints
  */
 async function normalizePdfReceipt(
   buffer: Buffer,
   originalName: string
 ): Promise<NormalizedReceipt[]> {
-  console.log(`[ReceiptNormalizer] PDF receipt detected: ${originalName}`);
+  console.log(`[ReceiptNormalizer] PDF receipt detected: ${originalName} (${Math.round(buffer.length / 1024)}KB)`);
   
-  let browser;
-  const results: NormalizedReceipt[] = [];
+  // Truncate filename for display
+  const displayName = originalName.length > 60 ? originalName.substring(0, 57) + '...' : originalName;
+  
+  // Create an informative placeholder that clearly indicates PDF is attached
+  const placeholderSvg = `
+    <svg width="800" height="500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect width="800" height="500" fill="url(#bgGradient)" rx="8"/>
+      <rect x="20" y="20" width="760" height="460" fill="white" stroke="#cbd5e1" stroke-width="1" rx="6"/>
+      
+      <!-- PDF Icon -->
+      <rect x="340" y="80" width="120" height="140" fill="#dc2626" rx="8"/>
+      <rect x="350" y="90" width="100" height="120" fill="#fef2f2" rx="4"/>
+      <text x="400" y="160" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="#dc2626">PDF</text>
+      
+      <!-- Title -->
+      <text x="400" y="270" font-family="Arial, sans-serif" font-size="20" font-weight="bold" text-anchor="middle" fill="#1e293b">
+        PDF Receipt Attached
+      </text>
+      
+      <!-- Filename -->
+      <text x="400" y="310" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#475569">
+        ${displayName}
+      </text>
+      
+      <!-- Instructions -->
+      <text x="400" y="360" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#64748b">
+        Original PDF file included with invoice
+      </text>
+      
+      <!-- Footer -->
+      <text x="400" y="440" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#94a3b8">
+        PDF receipt placeholder (original PDF attached separately)
+      </text>
+    </svg>
+  `;
   
   try {
-    // Create an HTML page that embeds the PDF using pdf.js or native viewer
-    // This works better than file:// URLs in containerized environments
-    const pdfBase64 = buffer.toString('base64');
-    
-    // Get Chromium path
-    let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROMIUM_PATH;
-    if (!executablePath) {
-      try {
-        const { execSync } = await import('child_process');
-        executablePath = execSync('which chromium').toString().trim();
-      } catch {
-        executablePath = 'chromium';
-      }
-    }
-    
-    console.log(`[ReceiptNormalizer] Launching Puppeteer to render PDF ${originalName}...`);
-    
-    // Launch browser
-    browser = await puppeteer.launch({
-      headless: true,
-      executablePath,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--disable-web-security'
-      ]
-    });
-    
-    const page = await browser.newPage();
-    
-    // Set viewport for good receipt quality (letter size proportions)
-    await page.setViewport({ width: 850, height: 1100, deviceScaleFactor: 2 });
-    
-    // Create an HTML page that uses PDF.js to render the PDF
-    // This is more reliable than trying to open a file:// URL
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { background: white; }
-          embed, object, iframe {
-            width: 100%;
-            height: 100vh;
-            border: none;
-          }
-        </style>
-      </head>
-      <body>
-        <embed src="data:application/pdf;base64,${pdfBase64}" type="application/pdf" width="100%" height="100%" />
-      </body>
-      </html>
-    `;
-    
-    await page.setContent(htmlContent, { 
-      waitUntil: 'networkidle0', 
-      timeout: PDF_RENDER_TIMEOUT_MS 
-    });
-    
-    // Wait for PDF to render in the embedded viewer
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Capture screenshot
-    const screenshot = await page.screenshot({ 
-      type: 'png',
-      fullPage: false,
-      clip: { x: 0, y: 0, width: 850, height: 1100 }
-    });
-    
-    // Optimize the screenshot with sharp
-    const optimizedBuffer = await sharp(screenshot)
-      .resize({
-        width: MAX_IMAGE_DIMENSION,
-        height: MAX_IMAGE_DIMENSION,
-        fit: 'inside',
-        withoutEnlargement: true
-      })
-      .jpeg({ quality: 90 })
+    const pngBuffer = await sharp(Buffer.from(placeholderSvg))
+      .png()
       .toBuffer();
     
-    const base64 = optimizedBuffer.toString('base64');
-    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    const base64 = pngBuffer.toString('base64');
+    const dataUrl = `data:image/png;base64,${base64}`;
     
-    results.push({
+    console.log(`[ReceiptNormalizer] Created placeholder for PDF: ${originalName}`);
+    
+    return [{
       dataUrl,
-      contentType: 'image/jpeg',
+      contentType: 'image/png',
       originalName,
-      pageCount: 1,
-      conversionNote: 'Rendered from PDF'
-    });
-    
-    console.log(`[ReceiptNormalizer] Successfully rendered PDF ${originalName} to image`);
-    
+      conversionNote: 'PDF placeholder - original attached to invoice'
+    }];
   } catch (error) {
-    console.error(`[ReceiptNormalizer] Error rendering PDF ${originalName}:`, error);
+    console.error(`[ReceiptNormalizer] Error creating PDF placeholder:`, error);
     
-    // Fallback to placeholder if PDF rendering fails
-    const placeholderSvg = `
-      <svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-        <rect width="800" height="400" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-        <rect x="350" y="60" width="100" height="120" fill="#ef4444" rx="8"/>
-        <text x="400" y="130" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="white">PDF</text>
-        <text x="400" y="220" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" fill="#92400e">
-          PDF Receipt Could Not Be Rendered
-        </text>
-        <text x="400" y="260" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#b45309">
-          ${originalName.length > 50 ? originalName.substring(0, 47) + '...' : originalName}
-        </text>
-        <text x="400" y="300" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#9ca3af">
-          Please contact billing for the original receipt
-        </text>
-      </svg>
-    `;
-    
-    try {
-      const pngBuffer = await sharp(Buffer.from(placeholderSvg))
-        .png()
-        .toBuffer();
-      
-      const base64 = pngBuffer.toString('base64');
-      const dataUrl = `data:image/png;base64,${base64}`;
-      
-      results.push({
-        dataUrl,
-        contentType: 'image/png',
-        originalName,
-        conversionNote: 'PDF rendering failed - placeholder shown'
-      });
-    } catch {
-      // Last resort fallback
-      results.push({
-        dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-        contentType: 'image/png',
-        originalName,
-        conversionNote: 'PDF rendering failed'
-      });
-    }
-  } finally {
-    // Clean up browser
-    if (browser) {
-      await browser.close();
-    }
+    // Minimal fallback
+    return [{
+      dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      contentType: 'image/png',
+      originalName,
+      conversionNote: 'PDF placeholder'
+    }];
   }
-  
-  return results;
 }
 
 /**
