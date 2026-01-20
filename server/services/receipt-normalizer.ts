@@ -11,9 +11,10 @@ import * as os from 'os';
  * into data URLs suitable for embedding in invoice PDFs.
  */
 
-const MAX_RECEIPT_SIZE_MB = 10; // Maximum size per receipt
+const MAX_RECEIPT_SIZE_MB = 25; // Maximum size per receipt (increased for large PDFs)
 const MAX_IMAGE_DIMENSION = 1600; // Max width/height for image optimization
-const MAX_PDF_PAGES = 3; // Maximum pages to extract from a PDF receipt
+const MAX_PDF_PAGES = 5; // Maximum pages to extract from a PDF receipt
+const PDF_RENDER_TIMEOUT_MS = 60000; // 60 second timeout for PDF rendering
 
 export interface NormalizedReceipt {
   dataUrl: string;
@@ -194,7 +195,7 @@ async function normalizePdfReceipt(
     
     // Navigate to the PDF file
     const fileUrl = `file://${tempFilePath}`;
-    await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: PDF_RENDER_TIMEOUT_MS });
     
     // Wait for PDF to render
     await new Promise(resolve => setTimeout(resolve, 1000));

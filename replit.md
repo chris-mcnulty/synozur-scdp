@@ -88,3 +88,15 @@ Preferred communication style: Simple, everyday language.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client.
 - **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI.
 - **Per Diem Rates**: GSA Per Diem API.
+
+## Backlog / Future Enhancements
+
+### Invoice PDF Optimization
+- **Current State**: Invoice PDFs are regenerated each time "Generate Invoice" is clicked. The "View Invoice" action serves a cached version from Object Storage.
+- **Enhancement Idea**: For finalized invoices (status = 'sent' or 'paid'), prevent regeneration and only serve the cached version. This preserves the exact invoice sent to the client and improves performance.
+- **Receipt Processing**: PDF receipts are now rendered as images using Puppeteer (up to 25MB per receipt, 60 second timeout). Consider async processing with progress indicator for invoices with many PDF receipts.
+
+### Performance Notes
+- Large invoices with many PDF receipts may take up to 60 seconds to generate
+- Consider adding a loading indicator or toast message warning users of long generation times
+- Multi-page PDF receipts are supported (up to 5 pages per PDF)
