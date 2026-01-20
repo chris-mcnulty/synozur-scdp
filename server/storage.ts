@@ -59,6 +59,7 @@ import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
 import { receiptStorage } from './services/receipt-storage.js';
 import { normalizeReceiptBatch, type NormalizedReceipt } from './services/receipt-normalizer.js';
+import { PDFDocument } from 'pdf-lib';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
 
@@ -10096,9 +10097,12 @@ export async function generateInvoicePDF(params: {
     totalAdjustmentIsPositive: totalAdjustments >= 0,
     total: total.toFixed(2),
     
-    // Receipt images
+    // Receipt images (embedded in invoice body)
     receiptImages,
-    hasReceipts: receiptImages.length > 0,
+    hasReceipts: receiptImages.length > 0 || pdfReceiptBuffers.length > 0,
+    hasImageReceipts: receiptImages.length > 0,
+    hasPdfReceipts: pdfReceiptBuffers.length > 0,
+    pdfReceiptsCount: pdfReceiptBuffers.length,
     receiptsLimitExceeded,
     totalReceiptsFound,
     maxReceiptsPerInvoice: MAX_RECEIPTS_PER_INVOICE
@@ -10183,6 +10187,65 @@ export async function generateInvoicePDF(params: {
         left: '0.5in'
       }
     });
+    
+    // Close browser before merging PDFs
+    await browser.close();
+    browser = undefined;
+    
+    // If we have PDF receipts to merge, append them to the invoice
+    if (pdfReceiptBuffers.length > 0) {
+      console.log(`[PDF] Merging ${pdfReceiptBuffers.length} PDF receipt(s) to invoice...`);
+      
+      try {
+        // Load the invoice PDF we just generated
+        const invoicePdf = await PDFDocument.load(pdf);
+        
+        // Process each PDF receipt
+        for (const pdfReceipt of pdfReceiptBuffers) {
+          try {
+            console.log(`[PDF] Appending PDF: ${pdfReceipt.originalName}`);
+            
+            // Load the receipt PDF
+            const receiptPdf = await PDFDocument.load(pdfReceipt.buffer, {
+              ignoreEncryption: true // Try to load even if encrypted
+            });
+            
+            // Get all pages from the receipt PDF
+            const pageCount = receiptPdf.getPageCount();
+            console.log(`[PDF]   - ${pdfReceipt.originalName} has ${pageCount} page(s)`);
+            
+            // Copy all pages to the invoice (limit to MAX_PDF_PAGES per receipt)
+            const pagesToCopy = Math.min(pageCount, 5); // Max 5 pages per PDF receipt
+            const copiedPages = await invoicePdf.copyPages(
+              receiptPdf, 
+              Array.from({ length: pagesToCopy }, (_, i) => i)
+            );
+            
+            // Add each copied page to the invoice
+            for (const copiedPage of copiedPages) {
+              invoicePdf.addPage(copiedPage);
+            }
+            
+            if (pageCount > 5) {
+              console.log(`[PDF]   - Truncated to first 5 pages (had ${pageCount})`);
+            }
+          } catch (receiptError) {
+            console.error(`[PDF] Failed to merge PDF receipt ${pdfReceipt.originalName}:`, receiptError);
+            // Continue with other receipts even if one fails
+          }
+        }
+        
+        // Save the merged PDF
+        const mergedPdfBytes = await invoicePdf.save();
+        console.log(`[PDF] Successfully merged ${pdfReceiptBuffers.length} PDF receipt(s). Final size: ${Math.round(mergedPdfBytes.length / 1024)}KB`);
+        
+        return Buffer.from(mergedPdfBytes);
+      } catch (mergeError) {
+        console.error('[PDF] Failed to merge PDF receipts, returning invoice without attachments:', mergeError);
+        // Return the original invoice if merging fails
+        return Buffer.from(pdf);
+      }
+    }
     
     return Buffer.from(pdf);
   } finally {
