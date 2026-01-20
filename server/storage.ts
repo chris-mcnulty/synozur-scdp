@@ -9890,23 +9890,29 @@ export async function generateInvoicePDF(params: {
       console.log(`[PDF] Found ${invoiceExpenses.length} billed expense(s) in batch date range`);
       
       if (invoiceExpenses.length > 0) {
-        // Fetch all attachments for these expenses
+        // Fetch all attachments for these expenses from expenseAttachments table
         const expenseIds = invoiceExpenses.map(e => e.id);
         const attachments = await db.select()
           .from(expenseAttachments)
           .where(inArray(expenseAttachments.expenseId, expenseIds));
         
-        console.log(`[PDF] Found ${attachments.length} receipt attachment(s)`);
-        totalReceiptsFound = attachments.length;
+        // Also collect expenses with direct receiptUrl (legacy/simple upload method)
+        const expensesWithReceiptUrl = invoiceExpenses.filter(e => e.receiptUrl);
+        
+        console.log(`[PDF] Found ${attachments.length} attachment(s) and ${expensesWithReceiptUrl.length} direct receiptUrl(s)`);
+        totalReceiptsFound = attachments.length + expensesWithReceiptUrl.length;
         
         // Apply limit to prevent oversized PDFs
         const attachmentsToInclude = attachments.slice(0, MAX_RECEIPTS_PER_INVOICE);
-        if (attachments.length > MAX_RECEIPTS_PER_INVOICE) {
+        const remainingSlots = MAX_RECEIPTS_PER_INVOICE - attachmentsToInclude.length;
+        const receiptUrlsToInclude = expensesWithReceiptUrl.slice(0, remainingSlots);
+        
+        if (totalReceiptsFound > MAX_RECEIPTS_PER_INVOICE) {
           receiptsLimitExceeded = true;
-          console.warn(`[PDF] Receipt limit exceeded: ${attachments.length} found, including first ${MAX_RECEIPTS_PER_INVOICE}`);
+          console.warn(`[PDF] Receipt limit exceeded: ${totalReceiptsFound} found, including first ${MAX_RECEIPTS_PER_INVOICE}`);
         }
         
-        // Download and normalize each receipt
+        // Download and normalize attachments from expenseAttachments table
         if (attachmentsToInclude.length > 0) {
           const receiptsToNormalize = await Promise.all(
             attachmentsToInclude.map(async (attachment) => {
@@ -9934,7 +9940,7 @@ export async function generateInvoicePDF(params: {
           
           // Normalize all valid receipts
           if (validReceipts.length > 0) {
-            console.log(`[PDF] Normalizing ${validReceipts.length} receipt(s)...`);
+            console.log(`[PDF] Normalizing ${validReceipts.length} attachment receipt(s)...`);
             const normalizedReceipts = await normalizeReceiptBatch(validReceipts);
             
             // Add successfully normalized receipts to the array
@@ -9943,10 +9949,57 @@ export async function generateInvoicePDF(params: {
                 receiptImages.push(receipt);
               }
             });
-            
-            console.log(`[PDF] Successfully normalized ${receiptImages.length} receipt(s)`);
           }
         }
+        
+        // Download and normalize receipts from direct receiptUrl field
+        if (receiptUrlsToInclude.length > 0) {
+          console.log(`[PDF] Fetching ${receiptUrlsToInclude.length} direct receiptUrl receipt(s)...`);
+          const directReceipts = await Promise.all(
+            receiptUrlsToInclude.map(async (expense) => {
+              try {
+                // Fetch receipt from URL
+                const response = await fetch(expense.receiptUrl!);
+                if (!response.ok) {
+                  throw new Error(`HTTP ${response.status}`);
+                }
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const contentType = response.headers.get('content-type') || 'image/jpeg';
+                // Create a filename from the expense description or ID
+                const originalName = `receipt-${expense.description || expense.id}.${contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg'}`;
+                return {
+                  buffer,
+                  contentType,
+                  originalName
+                };
+              } catch (error) {
+                console.error(`[PDF] Failed to fetch receipt from URL for expense ${expense.id}:`, error);
+                return null;
+              }
+            })
+          );
+          
+          // Filter out failed downloads
+          const validDirectReceipts = directReceipts.filter(r => r !== null) as Array<{ 
+            buffer: Buffer; 
+            contentType: string; 
+            originalName: string 
+          }>;
+          
+          // Normalize direct URL receipts
+          if (validDirectReceipts.length > 0) {
+            console.log(`[PDF] Normalizing ${validDirectReceipts.length} direct URL receipt(s)...`);
+            const normalizedDirectReceipts = await normalizeReceiptBatch(validDirectReceipts);
+            
+            normalizedDirectReceipts.forEach(receipt => {
+              if (receipt) {
+                receiptImages.push(receipt);
+              }
+            });
+          }
+        }
+        
+        console.log(`[PDF] Successfully normalized ${receiptImages.length} total receipt(s)`);
       }
     }
   } catch (error) {
