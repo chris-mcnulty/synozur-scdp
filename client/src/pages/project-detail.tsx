@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
+import { SubSOWGenerator } from "@/components/sub-sow-generator";
 import { format, startOfMonth, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -3054,6 +3055,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="sows" data-testid="tab-contracts-sows">SOWs & Change Orders</TabsTrigger>
                 <TabsTrigger value="budget-history" data-testid="tab-contracts-budget">Budget History</TabsTrigger>
                 <TabsTrigger value="payment-milestones" data-testid="tab-contracts-milestones">Payment Milestones</TabsTrigger>
+                <TabsTrigger value="sub-sow" data-testid="tab-contracts-sub-sow">Sub-SOW Generator</TabsTrigger>
               </TabsList>
               
               <TabsContent value="sows" className="space-y-6">
@@ -3724,6 +3726,11 @@ export default function ProjectDetail() {
                 )}
               </CardContent>
             </Card>
+              </TabsContent>
+
+              {/* Sub-SOW Generator Tab */}
+              <TabsContent value="sub-sow" className="space-y-6">
+                <SubSOWGenerator projectId={id || ''} projectName={analytics?.project?.name || 'Project'} />
               </TabsContent>
               
             </Tabs>

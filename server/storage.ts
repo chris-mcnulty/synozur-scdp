@@ -10295,4 +10295,161 @@ export async function generateInvoicePDF(params: {
   }
 }
 
+// Sub-SOW PDF generation
+interface SubSOWPdfInput {
+  tenantName: string;
+  tenantLogo?: string | null;
+  projectName: string;
+  clientName: string;
+  resourceName: string;
+  resourceEmail: string;
+  resourceRole: string;
+  isSalaried: boolean;
+  totalHours: number;
+  totalCost: number;
+  assignments: Array<{
+    epicName?: string;
+    stageName?: string;
+    description: string;
+    hours: number;
+    rate: number;
+    amount: number;
+  }>;
+  narrative: string;
+  generatedDate: string;
+  projectStartDate?: string | null;
+  projectEndDate?: string | null;
+}
+
+export async function generateSubSOWPdf(input: SubSOWPdfInput): Promise<Buffer> {
+  const { marked } = await import('marked');
+  
+  // Convert markdown narrative to HTML
+  const narrativeHtml = input.narrative ? await marked(input.narrative) : '';
+  
+  // Group assignments by epic
+  const epicGroups = new Map<string, typeof input.assignments>();
+  for (const assignment of input.assignments) {
+    const epicName = assignment.epicName || 'General';
+    if (!epicGroups.has(epicName)) {
+      epicGroups.set(epicName, []);
+    }
+    epicGroups.get(epicName)!.push(assignment);
+  }
+  
+  // Build assignment rows
+  const assignmentsByEpic = Array.from(epicGroups.entries()).map(([epicName, assignments]) => ({
+    epicName,
+    totalHours: assignments.reduce((sum, a) => sum + a.hours, 0),
+    totalAmount: assignments.reduce((sum, a) => sum + a.amount, 0),
+    assignments: assignments.map(a => ({
+      stageName: a.stageName || '',
+      description: a.description,
+      hours: a.hours.toFixed(1),
+      rate: a.rate.toFixed(2),
+      amount: a.amount.toFixed(2)
+    }))
+  }));
+
+  const templateData = {
+    tenantName: input.tenantName,
+    tenantLogo: input.tenantLogo,
+    projectName: input.projectName,
+    clientName: input.clientName,
+    resourceName: input.resourceName,
+    resourceEmail: input.resourceEmail,
+    resourceRole: input.resourceRole,
+    isSalaried: input.isSalaried,
+    isSubcontractor: !input.isSalaried,
+    totalHours: input.totalHours.toFixed(1),
+    totalCost: input.totalCost.toFixed(2),
+    generatedDate: input.generatedDate,
+    projectStartDate: input.projectStartDate,
+    projectEndDate: input.projectEndDate,
+    narrative: narrativeHtml,
+    hasNarrative: !!input.narrative,
+    assignmentsByEpic,
+    hasAssignments: input.assignments.length > 0
+  };
+
+  // Load template
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const projectRoot = path.resolve(__dirname, '..');
+  const templatePath = path.join(projectRoot, 'server', 'sub-sow-template.html');
+  const templateSource = fs.readFileSync(templatePath, 'utf8');
+  const template = Handlebars.compile(templateSource);
+  
+  // Generate HTML
+  const html = template(templateData);
+  
+  // Generate PDF using Puppeteer
+  let browser;
+  try {
+    let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    
+    if (!executablePath) {
+      try {
+        const { execSync } = await import('child_process');
+        executablePath = execSync('which chromium').toString().trim();
+        console.log('[Sub-SOW PDF] Using system Chromium:', executablePath);
+      } catch {
+        executablePath = 'chromium';
+        console.log('[Sub-SOW PDF] Using fallback chromium path');
+      }
+    }
+    
+    const launchArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--single-process',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--no-first-run',
+      '--safebrowsing-disable-auto-update'
+    ];
+    
+    console.log('[Sub-SOW PDF] Launching Chromium for PDF generation...');
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: launchArgs,
+      timeout: 60000
+    });
+    
+    const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(60000);
+    page.setDefaultTimeout(60000);
+    
+    await page.setContent(html, { waitUntil: 'domcontentloaded' });
+    
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '0.5in',
+        right: '0.5in',
+        bottom: '0.5in',
+        left: '0.5in'
+      }
+    });
+    
+    console.log('[Sub-SOW PDF] PDF generated successfully');
+    return Buffer.from(pdf);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
 export { db };

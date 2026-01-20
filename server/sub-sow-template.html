@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sub-Statement of Work - {{resourceName}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      color: #333;
+      background: white;
+    }
+    
+    .page {
+      padding: 0.5in;
+      max-width: 8.5in;
+      margin: 0 auto;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 3px solid #2563eb;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .logo-container {
+      flex: 0 0 auto;
+    }
+    
+    .logo-container img {
+      max-height: 60px;
+      max-width: 200px;
+    }
+    
+    .company-name {
+      font-size: 24pt;
+      font-weight: bold;
+      color: #2563eb;
+    }
+    
+    .document-title {
+      text-align: right;
+    }
+    
+    .document-title h1 {
+      font-size: 18pt;
+      color: #1e40af;
+      margin-bottom: 5px;
+    }
+    
+    .document-title .subtitle {
+      font-size: 10pt;
+      color: #6b7280;
+    }
+    
+    .meta-section {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 30px;
+      background: #f8fafc;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    
+    .meta-group {
+      flex: 1;
+    }
+    
+    .meta-group h3 {
+      font-size: 10pt;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 5px;
+    }
+    
+    .meta-item {
+      margin-bottom: 5px;
+    }
+    
+    .meta-label {
+      font-weight: 600;
+      color: #374151;
+      display: inline-block;
+      width: 100px;
+    }
+    
+    .meta-value {
+      color: #1f2937;
+    }
+    
+    .summary-box {
+      background: #1e40af;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+    }
+    
+    .summary-item h4 {
+      font-size: 9pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      opacity: 0.9;
+      margin-bottom: 5px;
+    }
+    
+    .summary-item .value {
+      font-size: 18pt;
+      font-weight: bold;
+    }
+    
+    .salaried-note {
+      background: #dbeafe;
+      color: #1e40af;
+      padding: 10px 15px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 10pt;
+    }
+    
+    .section {
+      margin-bottom: 25px;
+    }
+    
+    .section-title {
+      font-size: 14pt;
+      color: #1e40af;
+      margin-bottom: 15px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .narrative {
+      background: #f9fafb;
+      padding: 20px;
+      border-radius: 8px;
+      border-left: 4px solid #2563eb;
+    }
+    
+    .narrative h1, .narrative h2, .narrative h3 {
+      color: #1e40af;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    
+    .narrative h1 { font-size: 14pt; }
+    .narrative h2 { font-size: 12pt; }
+    .narrative h3 { font-size: 11pt; }
+    
+    .narrative p {
+      margin-bottom: 12px;
+    }
+    
+    .narrative ul, .narrative ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+    
+    .narrative li {
+      margin-bottom: 5px;
+    }
+    
+    .epic-group {
+      margin-bottom: 20px;
+    }
+    
+    .epic-header {
+      background: #e0e7ff;
+      padding: 10px 15px;
+      border-radius: 6px 6px 0 0;
+      font-weight: 600;
+      color: #3730a3;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .assignments-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 0;
+    }
+    
+    .assignments-table th {
+      background: #f3f4f6;
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 9pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .assignments-table th.number {
+      text-align: right;
+    }
+    
+    .assignments-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 10pt;
+    }
+    
+    .assignments-table td.number {
+      text-align: right;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    
+    .assignments-table tr:hover {
+      background: #fafafa;
+    }
+    
+    .totals-row {
+      background: #f8fafc;
+      font-weight: 600;
+    }
+    
+    .totals-row td {
+      border-top: 2px solid #e5e7eb;
+      padding-top: 12px;
+    }
+    
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 9pt;
+      color: #9ca3af;
+      text-align: center;
+    }
+    
+    .signature-section {
+      margin-top: 40px;
+      display: flex;
+      gap: 40px;
+    }
+    
+    .signature-block {
+      flex: 1;
+      padding-top: 60px;
+      border-top: 1px solid #374151;
+    }
+    
+    .signature-label {
+      font-size: 10pt;
+      color: #6b7280;
+    }
+    
+    @media print {
+      .page {
+        padding: 0;
+      }
+      
+      .section {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="logo-container">
+        {{#if tenantLogo}}
+          <img src="{{tenantLogo}}" alt="{{tenantName}}">
+        {{else}}
+          <div class="company-name">{{tenantName}}</div>
+        {{/if}}
+      </div>
+      <div class="document-title">
+        <h1>Sub-Statement of Work</h1>
+        <div class="subtitle">Generated: {{generatedDate}}</div>
+      </div>
+    </div>
+    
+    <div class="meta-section">
+      <div class="meta-group">
+        <h3>Project Information</h3>
+        <div class="meta-item">
+          <span class="meta-label">Project:</span>
+          <span class="meta-value">{{projectName}}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Client:</span>
+          <span class="meta-value">{{clientName}}</span>
+        </div>
+        {{#if projectStartDate}}
+        <div class="meta-item">
+          <span class="meta-label">Start Date:</span>
+          <span class="meta-value">{{projectStartDate}}</span>
+        </div>
+        {{/if}}
+        {{#if projectEndDate}}
+        <div class="meta-item">
+          <span class="meta-label">End Date:</span>
+          <span class="meta-value">{{projectEndDate}}</span>
+        </div>
+        {{/if}}
+      </div>
+      <div class="meta-group">
+        <h3>Resource Information</h3>
+        <div class="meta-item">
+          <span class="meta-label">Name:</span>
+          <span class="meta-value">{{resourceName}}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Email:</span>
+          <span class="meta-value">{{resourceEmail}}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Role:</span>
+          <span class="meta-value">{{resourceRole}}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Type:</span>
+          <span class="meta-value">{{#if isSalaried}}Salaried Employee{{else}}Subcontractor{{/if}}</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="summary-box">
+      <div class="summary-item">
+        <h4>Total Hours</h4>
+        <div class="value">{{totalHours}}</div>
+      </div>
+      {{#if isSubcontractor}}
+      <div class="summary-item">
+        <h4>Total Cost</h4>
+        <div class="value">${{totalCost}}</div>
+      </div>
+      {{/if}}
+    </div>
+    
+    {{#if isSalaried}}
+    <div class="salaried-note">
+      <strong>Note:</strong> This resource is a salaried employee. Their time allocation is shown for planning purposes, but does not represent direct project cost.
+    </div>
+    {{/if}}
+    
+    {{#if hasNarrative}}
+    <div class="section">
+      <h2 class="section-title">Scope of Work</h2>
+      <div class="narrative">
+        {{{narrative}}}
+      </div>
+    </div>
+    {{/if}}
+    
+    {{#if hasAssignments}}
+    <div class="section">
+      <h2 class="section-title">Work Breakdown</h2>
+      
+      {{#each assignmentsByEpic}}
+      <div class="epic-group">
+        <div class="epic-header">
+          <span>{{epicName}}</span>
+          <span>{{totalHours}} hours{{#unless ../isSalaried}} | ${{totalAmount}}{{/unless}}</span>
+        </div>
+        <table class="assignments-table">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Description</th>
+              <th class="number">Hours</th>
+              {{#unless ../isSalaried}}
+              <th class="number">Rate</th>
+              <th class="number">Amount</th>
+              {{/unless}}
+            </tr>
+          </thead>
+          <tbody>
+            {{#each assignments}}
+            <tr>
+              <td>{{stageName}}</td>
+              <td>{{description}}</td>
+              <td class="number">{{hours}}</td>
+              {{#unless ../../isSalaried}}
+              <td class="number">${{rate}}</td>
+              <td class="number">${{amount}}</td>
+              {{/unless}}
+            </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+      {{/each}}
+      
+      <table class="assignments-table">
+        <tbody>
+          <tr class="totals-row">
+            <td colspan="2"><strong>Grand Total</strong></td>
+            <td class="number"><strong>{{../totalHours}} hrs</strong></td>
+            {{#unless isSalaried}}
+            <td class="number"></td>
+            <td class="number"><strong>${{../totalCost}}</strong></td>
+            {{/unless}}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    {{/if}}
+    
+    <div class="signature-section">
+      <div class="signature-block">
+        <div class="signature-label">{{tenantName}} Representative</div>
+        <div class="meta-item" style="margin-top: 10px;">Date: _______________</div>
+      </div>
+      <div class="signature-block">
+        <div class="signature-label">{{resourceName}}</div>
+        <div class="meta-item" style="margin-top: 10px;">Date: _______________</div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>This Sub-Statement of Work is an addendum to the Master Services Agreement between {{tenantName}} and {{resourceName}}.</p>
+      <p>Generated by Constellation &copy; {{generatedDate}}</p>
+    </div>
+  </div>
+</body>
+</html>

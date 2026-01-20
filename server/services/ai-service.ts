@@ -73,6 +73,27 @@ export interface EstimateNarrativeInput {
   }>;
 }
 
+export interface SubSOWNarrativeInput {
+  projectName: string;
+  clientName: string;
+  resourceName: string;
+  resourceRole: string;
+  isSalaried: boolean;
+  totalHours: number;
+  totalCost: number;
+  assignments: Array<{
+    epicName?: string;
+    stageName?: string;
+    description: string;
+    hours: number;
+    rate: number;
+    amount: number;
+    comments?: string;
+  }>;
+  projectStartDate?: string;
+  projectEndDate?: string;
+}
+
 class AIService {
   private systemPrompts = {
     estimateGeneration: `You are an expert consulting project estimator. Given a project description, generate a detailed work breakdown structure with line items.
@@ -131,7 +152,24 @@ Format the output as professional proposal text with clear headers and sections.
 
     general: `You are an AI assistant for SCDP, a consulting delivery management platform. Help users with questions about projects, estimates, resources, expenses, and invoicing.
 
-Be helpful, accurate, and concise. If you're unsure about something, say so.`
+Be helpful, accurate, and concise. If you're unsure about something, say so.`,
+
+    subSOWNarrative: `You are an expert consulting proposal writer specializing in subcontractor scope of work documents. Your task is to generate a professional Sub-Statement of Work (Sub-SOW) narrative that can be included in a subcontractor agreement.
+
+The narrative should:
+1. Clearly describe the scope of work the resource will perform
+2. Group related activities logically by epic/phase when available
+3. Highlight key deliverables and responsibilities
+4. Use professional language appropriate for a legal/contractual document
+5. Be comprehensive but concise (2-4 paragraphs per section)
+
+Structure the narrative with clear sections:
+- **Scope Overview**: Brief introduction of the engagement and the resource's role
+- **Work Breakdown**: Detailed description of tasks and activities, organized by epic/phase
+- **Deliverables**: Expected outputs and results
+- **Timeline Considerations**: Estimated effort and any phasing considerations
+
+Use markdown formatting with headers and bullet points for clarity.`
   };
 
   isConfigured(): boolean {
@@ -376,6 +414,75 @@ Please generate a professional proposal narrative that addresses all six key cli
       messages,
       temperature: 0.7,
       maxTokens: 8192  // Larger for comprehensive narratives
+    });
+
+    return result.content;
+  }
+
+  async generateSubSOWNarrative(input: SubSOWNarrativeInput): Promise<string> {
+    const provider = getAIProvider();
+
+    // Group assignments by epic
+    const epicGroups = new Map<string, typeof input.assignments>();
+    for (const assignment of input.assignments) {
+      const epicName = assignment.epicName || 'General';
+      if (!epicGroups.has(epicName)) {
+        epicGroups.set(epicName, []);
+      }
+      epicGroups.get(epicName)!.push(assignment);
+    }
+
+    // Build epic summaries
+    const epicSummaries = Array.from(epicGroups.entries())
+      .map(([epicName, assignments]) => {
+        const epicHours = assignments.reduce((sum, a) => sum + a.hours, 0);
+        const epicAmount = assignments.reduce((sum, a) => sum + a.amount, 0);
+        
+        const taskList = assignments.map(a => {
+          const stagePrefix = a.stageName ? `[${a.stageName}] ` : '';
+          return `- ${stagePrefix}${a.description}: ${a.hours} hours${a.comments ? ` (${a.comments})` : ''}`;
+        }).join('\n');
+
+        return `
+EPIC: ${epicName}
+Hours: ${epicHours}
+${!input.isSalaried ? `Amount: $${epicAmount.toLocaleString()}` : ''}
+Tasks:
+${taskList}`;
+      }).join('\n' + '-'.repeat(40) + '\n');
+
+    const userMessage = `Generate a professional Sub-Statement of Work narrative for the following subcontractor assignment:
+
+ENGAGEMENT DETAILS
+==================
+Project: ${input.projectName}
+Client: ${input.clientName}
+${input.projectStartDate ? `Project Start: ${input.projectStartDate}` : ''}
+${input.projectEndDate ? `Project End: ${input.projectEndDate}` : ''}
+
+RESOURCE DETAILS
+================
+Name: ${input.resourceName}
+Role: ${input.resourceRole}
+Employment Type: ${input.isSalaried ? 'Salaried Employee (No Cost)' : 'Subcontractor'}
+Total Hours: ${input.totalHours}
+${!input.isSalaried ? `Total Cost: $${input.totalCost.toLocaleString()}` : 'Total Cost: $0 (Salaried Resource)'}
+
+ASSIGNED WORK
+=============
+${epicSummaries}
+
+Please generate a professional Sub-SOW narrative suitable for inclusion in a subcontractor agreement. Focus on clearly defining the scope of work, deliverables, and expectations.`;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: this.systemPrompts.subSOWNarrative },
+      { role: 'user', content: userMessage }
+    ];
+
+    const result = await provider.chatCompletion({
+      messages,
+      temperature: 0.7,
+      maxTokens: 4096
     });
 
     return result.content;

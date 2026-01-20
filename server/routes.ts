@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { storage, db } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates } from "@shared/schema";
+import { storage, db, generateSubSOWPdf } from "./storage";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants } from "@shared/schema";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -6959,6 +6959,428 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error deleting SOW:", error);
       res.status(500).json({ message: "Failed to delete SOW" });
+    }
+  });
+
+  // ============================================================================
+  // SUB-SOW GENERATION ENDPOINTS
+  // ============================================================================
+
+  // Get available resources for Sub-SOW generation (users assigned to project estimates)
+  app.get("/api/projects/:id/sub-sow/resources", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      
+      // Get project with related estimates
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Get all estimates for this project
+      const allEstimates = await storage.getEstimates();
+      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
+      
+      // Collect all line items from project estimates
+      const resourceMap = new Map<string, {
+        userId: string;
+        userName: string;
+        roleName: string;
+        isSalaried: boolean;
+        totalHours: number;
+        totalCost: number;
+        lineItemCount: number;
+      }>();
+
+      for (const estimate of projectEstimates) {
+        const lineItems = await storage.getEstimateLineItems(estimate.id);
+        
+        for (const item of lineItems) {
+          if (!item.assignedUserId) continue;
+          
+          const user = await storage.getUser(item.assignedUserId);
+          if (!user) continue;
+          
+          const hours = parseFloat(item.adjustedHours?.toString() || '0');
+          const costRate = parseFloat(item.costRate?.toString() || '0');
+          const cost = user.isSalaried ? 0 : hours * costRate;
+          
+          const existing = resourceMap.get(item.assignedUserId);
+          if (existing) {
+            existing.totalHours += hours;
+            existing.totalCost += cost;
+            existing.lineItemCount++;
+          } else {
+            const role = user.roleId ? await storage.getRole(user.roleId) : null;
+            resourceMap.set(item.assignedUserId, {
+              userId: item.assignedUserId,
+              userName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+              roleName: role?.name || 'Unknown Role',
+              isSalaried: user.isSalaried,
+              totalHours: hours,
+              totalCost: cost,
+              lineItemCount: 1
+            });
+          }
+        }
+      }
+
+      const resources = Array.from(resourceMap.values()).sort((a, b) => 
+        a.userName.localeCompare(b.userName)
+      );
+
+      res.json({ 
+        projectId,
+        projectName: project.name,
+        resources 
+      });
+    } catch (error: any) {
+      console.error("Error fetching Sub-SOW resources:", error);
+      res.status(500).json({ message: "Failed to fetch resources", error: error.message });
+    }
+  });
+
+  // Get Sub-SOW data for a specific resource
+  app.get("/api/projects/:id/sub-sow/:userId", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { id: projectId, userId } = req.params;
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const client = project.clientId ? await storage.getClient(project.clientId) : null;
+      const role = user.roleId ? await storage.getRole(user.roleId) : null;
+
+      // Get all estimates for this project
+      const allEstimates = await storage.getEstimates();
+      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
+      
+      // Collect assignments for this user
+      const assignments: Array<{
+        estimateId: string;
+        estimateName: string;
+        epicName?: string;
+        stageName?: string;
+        description: string;
+        hours: number;
+        rate: number;
+        amount: number;
+        comments?: string;
+      }> = [];
+
+      for (const estimate of projectEstimates) {
+        const lineItems = await storage.getEstimateLineItems(estimate.id);
+        const epics = await storage.getEstimateEpics(estimate.id);
+        const stages = await storage.getEstimateStages(estimate.id);
+        
+        // Create lookup maps
+        const epicMap = new Map(epics.map(e => [e.id, e.name]));
+        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
+        
+        for (const item of lineItems) {
+          if (item.assignedUserId !== userId) continue;
+          
+          const hours = parseFloat(item.adjustedHours?.toString() || '0');
+          const costRate = parseFloat(item.costRate?.toString() || '0');
+          const amount = user.isSalaried ? 0 : hours * costRate;
+          
+          let epicName: string | undefined;
+          let stageName: string | undefined;
+          
+          if (item.stageId) {
+            const stageData = stageMap.get(item.stageId);
+            if (stageData) {
+              stageName = stageData.name;
+              epicName = epicMap.get(stageData.epicId);
+            }
+          } else if (item.epicId) {
+            epicName = epicMap.get(item.epicId);
+          }
+          
+          assignments.push({
+            estimateId: estimate.id,
+            estimateName: estimate.name,
+            epicName,
+            stageName,
+            description: item.description,
+            hours,
+            rate: costRate,
+            amount,
+            comments: item.comments || undefined
+          });
+        }
+      }
+
+      const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
+      const totalCost = assignments.reduce((sum, a) => sum + a.amount, 0);
+
+      res.json({
+        projectId,
+        projectName: project.name,
+        projectStartDate: project.startDate,
+        projectEndDate: project.endDate,
+        clientId: client?.id,
+        clientName: client?.name || 'Unknown Client',
+        resourceId: userId,
+        resourceName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+        resourceEmail: user.email,
+        resourceRole: role?.name || 'Unknown Role',
+        isSalaried: user.isSalaried,
+        totalHours,
+        totalCost,
+        assignments
+      });
+    } catch (error: any) {
+      console.error("Error fetching Sub-SOW data:", error);
+      res.status(500).json({ message: "Failed to fetch Sub-SOW data", error: error.message });
+    }
+  });
+
+  // Generate Sub-SOW with AI narrative
+  app.post("/api/projects/:id/sub-sow/:userId/generate", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { id: projectId, userId } = req.params;
+      const { generateNarrative = true } = req.body;
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const client = project.clientId ? await storage.getClient(project.clientId) : null;
+      const role = user.roleId ? await storage.getRole(user.roleId) : null;
+
+      // Get all estimates for this project
+      const allEstimates = await storage.getEstimates();
+      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
+      
+      // Collect assignments for this user
+      const assignments: Array<{
+        epicName?: string;
+        stageName?: string;
+        description: string;
+        hours: number;
+        rate: number;
+        amount: number;
+        comments?: string;
+      }> = [];
+
+      for (const estimate of projectEstimates) {
+        const lineItems = await storage.getEstimateLineItems(estimate.id);
+        const epics = await storage.getEstimateEpics(estimate.id);
+        const stages = await storage.getEstimateStages(estimate.id);
+        
+        const epicMap = new Map(epics.map(e => [e.id, e.name]));
+        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
+        
+        for (const item of lineItems) {
+          if (item.assignedUserId !== userId) continue;
+          
+          const hours = parseFloat(item.adjustedHours?.toString() || '0');
+          const costRate = parseFloat(item.costRate?.toString() || '0');
+          const amount = user.isSalaried ? 0 : hours * costRate;
+          
+          let epicName: string | undefined;
+          let stageName: string | undefined;
+          
+          if (item.stageId) {
+            const stageData = stageMap.get(item.stageId);
+            if (stageData) {
+              stageName = stageData.name;
+              epicName = epicMap.get(stageData.epicId);
+            }
+          } else if (item.epicId) {
+            epicName = epicMap.get(item.epicId);
+          }
+          
+          assignments.push({
+            epicName,
+            stageName,
+            description: item.description,
+            hours,
+            rate: costRate,
+            amount,
+            comments: item.comments || undefined
+          });
+        }
+      }
+
+      const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
+      const totalCost = assignments.reduce((sum, a) => sum + a.amount, 0);
+      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const resourceRole = role?.name || 'Unknown Role';
+
+      let narrative = '';
+      if (generateNarrative) {
+        const { aiService } = await import('./services/ai-service.js');
+        
+        if (aiService.isConfigured()) {
+          narrative = await aiService.generateSubSOWNarrative({
+            projectName: project.name,
+            clientName: client?.name || 'Unknown Client',
+            resourceName,
+            resourceRole,
+            isSalaried: user.isSalaried,
+            totalHours,
+            totalCost,
+            assignments,
+            projectStartDate: project.startDate || undefined,
+            projectEndDate: project.endDate || undefined
+          });
+        } else {
+          narrative = 'AI narrative generation is not configured. Please provide a manual narrative.';
+        }
+      }
+
+      res.json({
+        projectId,
+        projectName: project.name,
+        clientName: client?.name || 'Unknown Client',
+        resourceId: userId,
+        resourceName,
+        resourceEmail: user.email,
+        resourceRole,
+        isSalaried: user.isSalaried,
+        totalHours,
+        totalCost,
+        assignments,
+        narrative,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("Error generating Sub-SOW:", error);
+      res.status(500).json({ message: "Failed to generate Sub-SOW", error: error.message });
+    }
+  });
+
+  // Generate Sub-SOW PDF
+  app.post("/api/projects/:id/sub-sow/:userId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { id: projectId, userId } = req.params;
+      const { narrative } = req.body;
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const client = project.clientId ? await storage.getClient(project.clientId) : null;
+      const role = user.roleId ? await storage.getRole(user.roleId) : null;
+      
+      // Get tenant for branding
+      let tenant = null;
+      if (req.user?.tenantId) {
+        const [tenantResult] = await db.select().from(tenants).where(eq(tenants.id, req.user.tenantId));
+        tenant = tenantResult || null;
+      }
+
+      // Get all estimates for this project
+      const allEstimates = await storage.getEstimates();
+      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
+      
+      // Collect assignments for this user
+      const assignments: Array<{
+        epicName?: string;
+        stageName?: string;
+        description: string;
+        hours: number;
+        rate: number;
+        amount: number;
+      }> = [];
+
+      for (const estimate of projectEstimates) {
+        const lineItems = await storage.getEstimateLineItems(estimate.id);
+        const epics = await storage.getEstimateEpics(estimate.id);
+        const stages = await storage.getEstimateStages(estimate.id);
+        
+        const epicMap = new Map(epics.map(e => [e.id, e.name]));
+        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
+        
+        for (const item of lineItems) {
+          if (item.assignedUserId !== userId) continue;
+          
+          const hours = parseFloat(item.adjustedHours?.toString() || '0');
+          const costRate = parseFloat(item.costRate?.toString() || '0');
+          const amount = user.isSalaried ? 0 : hours * costRate;
+          
+          let epicName: string | undefined;
+          let stageName: string | undefined;
+          
+          if (item.stageId) {
+            const stageData = stageMap.get(item.stageId);
+            if (stageData) {
+              stageName = stageData.name;
+              epicName = epicMap.get(stageData.epicId);
+            }
+          } else if (item.epicId) {
+            epicName = epicMap.get(item.epicId);
+          }
+          
+          assignments.push({
+            epicName,
+            stageName,
+            description: item.description,
+            hours,
+            rate: costRate,
+            amount
+          });
+        }
+      }
+
+      const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
+      const totalCost = assignments.reduce((sum, a) => sum + a.amount, 0);
+      const resourceName = `${user.firstName} ${user.lastName}`.trim() || user.email;
+      const resourceRole = role?.name || 'Unknown Role';
+
+      // Generate PDF
+      const pdfBuffer = await generateSubSOWPdf({
+        tenantName: tenant?.name || 'Synozur Consulting',
+        tenantLogo: tenant?.logoUrl,
+        projectName: project.name,
+        clientName: client?.name || 'Unknown Client',
+        resourceName: resourceName || 'Unknown Resource',
+        resourceEmail: user.email,
+        resourceRole,
+        isSalaried: user.isSalaried,
+        totalHours,
+        totalCost,
+        assignments,
+        narrative: narrative || '',
+        generatedDate: new Date().toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }),
+        projectStartDate: project.startDate,
+        projectEndDate: project.endDate
+      });
+
+      const safeResourceName = resourceName || 'Unknown';
+      const filename = `Sub-SOW_${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_${safeResourceName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("Error generating Sub-SOW PDF:", error);
+      res.status(500).json({ message: "Failed to generate Sub-SOW PDF", error: error.message });
     }
   });
 
