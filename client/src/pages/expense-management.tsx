@@ -37,7 +37,8 @@ import {
   Building2,
   FolderOpen,
   Search,
-  Trash2
+  Trash2,
+  ExternalLink
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -956,10 +957,17 @@ export default function ExpenseManagement() {
                         </TableCell>
                         <TableCell data-testid={`status-receipt-${expense.id}`}>
                           {expense.receiptUrl ? (
-                            <div className="flex items-center gap-1 text-green-600">
+                            <a 
+                              href={expense.receiptUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-green-600 hover:text-green-500 hover:underline cursor-pointer"
+                              title="Click to view receipt"
+                            >
                               <Receipt className="w-4 h-4" />
-                              <span className="text-xs">Yes</span>
-                            </div>
+                              <span className="text-xs">View</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
                           ) : (
                             <div className="flex items-center gap-1 text-muted-foreground">
                               <Receipt className="w-4 h-4" />
