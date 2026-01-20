@@ -6966,7 +6966,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // SUB-SOW GENERATION ENDPOINTS
   // ============================================================================
 
-  // Get available resources for Sub-SOW generation (users assigned to project estimates)
+  // Get available resources for Sub-SOW generation (users from estimates AND project allocations)
   app.get("/api/projects/:id/sub-sow/resources", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const projectId = req.params.id;
@@ -6977,11 +6977,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Get all estimates for this project
-      const allEstimates = await storage.getEstimates();
-      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
-      
-      // Collect all line items from project estimates
+      // Collect all resources from both estimates and project allocations
       const resourceMap = new Map<string, {
         userId: string;
         userName: string;
@@ -6991,6 +6987,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         totalCost: number;
         lineItemCount: number;
       }>();
+
+      // 1. Get resources from estimate line items
+      const allEstimates = await storage.getEstimates();
+      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
 
       for (const estimate of projectEstimates) {
         const lineItems = await storage.getEstimateLineItems(estimate.id);
@@ -7022,6 +7022,38 @@ export async function registerRoutes(app: Express): Promise<void> {
               lineItemCount: 1
             });
           }
+        }
+      }
+
+      // 2. Get resources from project allocations (Team Assignments)
+      const allocations = await storage.getProjectAllocations(projectId);
+      
+      for (const allocation of allocations) {
+        if (!allocation.personId) continue;
+        
+        const user = await storage.getUser(allocation.personId);
+        if (!user) continue;
+        
+        const hours = parseFloat(allocation.hours?.toString() || '0');
+        const costRate = parseFloat(allocation.costRate?.toString() || '0');
+        const cost = user.isSalaried ? 0 : hours * costRate;
+        
+        const existing = resourceMap.get(allocation.personId);
+        if (existing) {
+          existing.totalHours += hours;
+          existing.totalCost += cost;
+          existing.lineItemCount++;
+        } else {
+          const role = user.roleId ? await storage.getRole(user.roleId) : null;
+          resourceMap.set(allocation.personId, {
+            userId: allocation.personId,
+            userName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+            roleName: role?.name || 'Unknown Role',
+            isSalaried: user.isSalaried,
+            totalHours: hours,
+            totalCost: cost,
+            lineItemCount: 1
+          });
         }
       }
 
@@ -7075,6 +7107,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         comments?: string;
       }> = [];
 
+      // 1. Get assignments from estimate line items
       for (const estimate of projectEstimates) {
         const lineItems = await storage.getEstimateLineItems(estimate.id);
         const epics = await storage.getEstimateEpics(estimate.id);
@@ -7116,6 +7149,35 @@ export async function registerRoutes(app: Express): Promise<void> {
             comments: item.comments || undefined
           });
         }
+      }
+
+      // 2. Get assignments from project allocations (Team Assignments)
+      const allocations = await storage.getProjectAllocations(projectId);
+      for (const allocation of allocations) {
+        if (allocation.personId !== userId) continue;
+        
+        const hours = parseFloat(allocation.hours?.toString() || '0');
+        const costRate = parseFloat(allocation.costRate?.toString() || '0');
+        const amount = user.isSalaried ? 0 : hours * costRate;
+        
+        // Get activity name if available
+        let activityName = allocation.activityName || 'Project Task';
+        if (allocation.projectActivityId && !allocation.activityName) {
+          // Fetch activity name if needed
+          activityName = 'Allocated Task';
+        }
+        
+        assignments.push({
+          estimateId: 'allocation-' + allocation.id,
+          estimateName: 'Project Allocation',
+          epicName: allocation.epicName || undefined,
+          stageName: allocation.stageName || undefined,
+          description: activityName,
+          hours,
+          rate: costRate,
+          amount,
+          comments: allocation.notes || undefined
+        });
       }
 
       const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
@@ -7177,6 +7239,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         comments?: string;
       }> = [];
 
+      // 1. Get assignments from estimate line items
       for (const estimate of projectEstimates) {
         const lineItems = await storage.getEstimateLineItems(estimate.id);
         const epics = await storage.getEstimateEpics(estimate.id);
@@ -7215,6 +7278,28 @@ export async function registerRoutes(app: Express): Promise<void> {
             comments: item.comments || undefined
           });
         }
+      }
+
+      // 2. Get assignments from project allocations (Team Assignments)
+      const allocations = await storage.getProjectAllocations(projectId);
+      for (const allocation of allocations) {
+        if (allocation.personId !== userId) continue;
+        
+        const hours = parseFloat(allocation.hours?.toString() || '0');
+        const costRate = parseFloat(allocation.costRate?.toString() || '0');
+        const amount = user.isSalaried ? 0 : hours * costRate;
+        
+        const activityName = allocation.activityName || 'Project Task';
+        
+        assignments.push({
+          epicName: allocation.epicName || undefined,
+          stageName: allocation.stageName || undefined,
+          description: activityName,
+          hours,
+          rate: costRate,
+          amount,
+          comments: allocation.notes || undefined
+        });
       }
 
       const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
@@ -7305,6 +7390,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         amount: number;
       }> = [];
 
+      // 1. Get assignments from estimate line items
       for (const estimate of projectEstimates) {
         const lineItems = await storage.getEstimateLineItems(estimate.id);
         const epics = await storage.getEstimateEpics(estimate.id);
@@ -7342,6 +7428,27 @@ export async function registerRoutes(app: Express): Promise<void> {
             amount
           });
         }
+      }
+
+      // 2. Get assignments from project allocations (Team Assignments)
+      const allocations = await storage.getProjectAllocations(projectId);
+      for (const allocation of allocations) {
+        if (allocation.personId !== userId) continue;
+        
+        const hours = parseFloat(allocation.hours?.toString() || '0');
+        const costRate = parseFloat(allocation.costRate?.toString() || '0');
+        const amount = user.isSalaried ? 0 : hours * costRate;
+        
+        const activityName = allocation.activityName || 'Project Task';
+        
+        assignments.push({
+          epicName: allocation.epicName || undefined,
+          stageName: allocation.stageName || undefined,
+          description: activityName,
+          hours,
+          rate: costRate,
+          amount
+        });
       }
 
       const totalHours = assignments.reduce((sum, a) => sum + a.hours, 0);
