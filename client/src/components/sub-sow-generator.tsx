@@ -66,7 +66,6 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
     resources: SubSOWResource[];
   }>({
     queryKey: ['/api/projects', projectId, 'sub-sow', 'resources'],
-    queryFn: () => fetch(`/api/projects/${projectId}/sub-sow/resources`).then(r => r.json()),
   });
 
   const generateMutation = useMutation({
@@ -98,9 +97,17 @@ export function SubSOWGenerator({ projectId, projectName }: SubSOWGeneratorProps
     mutationFn: async () => {
       if (!selectedResource) throw new Error("No resource selected");
       
+      // Get session ID from localStorage for authentication
+      const sessionId = localStorage.getItem('sessionId');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (sessionId) {
+        headers['x-session-id'] = sessionId;
+      }
+      
       const response = await fetch(`/api/projects/${projectId}/sub-sow/${selectedResource.userId}/pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({ narrative }),
       });
       
