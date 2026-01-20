@@ -9860,6 +9860,8 @@ export async function generateInvoicePDF(params: {
   // Fetch receipt attachments for expense lines
   console.log('[PDF] Fetching receipt attachments for invoice...');
   const receiptImages: NormalizedReceipt[] = [];
+  // Collect PDF receipts separately for merging at end (instead of rendering as images)
+  const pdfReceiptBuffers: { buffer: Buffer; originalName: string }[] = [];
   const MAX_RECEIPTS_PER_INVOICE = 50; // Limit to prevent oversized PDFs
   let receiptsLimitExceeded = false;
   let totalReceiptsFound = 0;
@@ -9912,9 +9914,9 @@ export async function generateInvoicePDF(params: {
           console.warn(`[PDF] Receipt limit exceeded: ${totalReceiptsFound} found, including first ${MAX_RECEIPTS_PER_INVOICE}`);
         }
         
-        // Download and normalize attachments from expenseAttachments table
+        // Download and process attachments from expenseAttachments table
         if (attachmentsToInclude.length > 0) {
-          const receiptsToNormalize = await Promise.all(
+          const receiptsToProcess = await Promise.all(
             attachmentsToInclude.map(async (attachment) => {
               try {
                 // Download receipt from storage
@@ -9932,16 +9934,33 @@ export async function generateInvoicePDF(params: {
           );
           
           // Filter out failed downloads
-          const validReceipts = receiptsToNormalize.filter(r => r !== null) as Array<{ 
+          const validReceipts = receiptsToProcess.filter(r => r !== null) as Array<{ 
             buffer: Buffer; 
             contentType: string; 
             originalName: string 
           }>;
           
-          // Normalize all valid receipts
-          if (validReceipts.length > 0) {
-            console.log(`[PDF] Normalizing ${validReceipts.length} attachment receipt(s)...`);
-            const normalizedReceipts = await normalizeReceiptBatch(validReceipts);
+          // Separate PDF receipts from image receipts
+          const imageReceipts: typeof validReceipts = [];
+          for (const receipt of validReceipts) {
+            const isPdf = receipt.contentType.includes('pdf') || 
+                          receipt.originalName.toLowerCase().endsWith('.pdf');
+            if (isPdf) {
+              // Collect PDF buffers for merging at end of invoice
+              pdfReceiptBuffers.push({
+                buffer: receipt.buffer,
+                originalName: receipt.originalName
+              });
+              console.log(`[PDF] Collected PDF receipt for merging: ${receipt.originalName}`);
+            } else {
+              imageReceipts.push(receipt);
+            }
+          }
+          
+          // Normalize only image receipts for embedding in invoice HTML
+          if (imageReceipts.length > 0) {
+            console.log(`[PDF] Normalizing ${imageReceipts.length} image receipt(s)...`);
+            const normalizedReceipts = await normalizeReceiptBatch(imageReceipts);
             
             // Add successfully normalized receipts to the array
             normalizedReceipts.forEach(receipt => {
@@ -9952,7 +9971,7 @@ export async function generateInvoicePDF(params: {
           }
         }
         
-        // Download and normalize receipts from direct receiptUrl field
+        // Download and process receipts from direct receiptUrl field
         if (receiptUrlsToInclude.length > 0) {
           console.log(`[PDF] Fetching ${receiptUrlsToInclude.length} direct receiptUrl receipt(s)...`);
           const directReceipts = await Promise.all(
@@ -9986,10 +10005,27 @@ export async function generateInvoicePDF(params: {
             originalName: string 
           }>;
           
-          // Normalize direct URL receipts
-          if (validDirectReceipts.length > 0) {
-            console.log(`[PDF] Normalizing ${validDirectReceipts.length} direct URL receipt(s)...`);
-            const normalizedDirectReceipts = await normalizeReceiptBatch(validDirectReceipts);
+          // Separate PDF receipts from image receipts (same as above)
+          const directImageReceipts: typeof validDirectReceipts = [];
+          for (const receipt of validDirectReceipts) {
+            const isPdf = receipt.contentType.includes('pdf') || 
+                          receipt.originalName.toLowerCase().endsWith('.pdf');
+            if (isPdf) {
+              // Collect PDF buffers for merging at end of invoice
+              pdfReceiptBuffers.push({
+                buffer: receipt.buffer,
+                originalName: receipt.originalName
+              });
+              console.log(`[PDF] Collected PDF receipt (from URL) for merging: ${receipt.originalName}`);
+            } else {
+              directImageReceipts.push(receipt);
+            }
+          }
+          
+          // Normalize only image receipts
+          if (directImageReceipts.length > 0) {
+            console.log(`[PDF] Normalizing ${directImageReceipts.length} direct URL image receipt(s)...`);
+            const normalizedDirectReceipts = await normalizeReceiptBatch(directImageReceipts);
             
             normalizedDirectReceipts.forEach(receipt => {
               if (receipt) {
