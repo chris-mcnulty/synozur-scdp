@@ -1147,17 +1147,44 @@ export default function ProjectDetail() {
 
   const updateAssignmentMutation = useMutation({
     mutationFn: async ({ allocationId, data }: { allocationId: string; data: any }) => {
-      const processedData = {
-        ...data,
-        hours: data.hours ? parseFloat(data.hours) : undefined,
-        roleId: data.roleId === 'none' ? null : data.roleId,
-        workstreamId: data.workstreamId === 'none' ? null : data.workstreamId,
-        epicId: data.epicId === 'none' ? null : data.epicId,
-        stageId: data.stageId === 'none' ? null : data.stageId,
-        plannedStartDate: data.startDate || null,
-        plannedEndDate: data.endDate || null,
-        taskDescription: data.taskDescription || null,
-      };
+      // Only include fields that are explicitly provided in the data
+      // This prevents status-only updates from overwriting other fields
+      const processedData: Record<string, any> = { ...data };
+      
+      // Process hours if provided
+      if (data.hours !== undefined) {
+        processedData.hours = data.hours ? parseFloat(data.hours) : undefined;
+      }
+      
+      // Process select fields - only if explicitly provided
+      if (data.roleId !== undefined) {
+        processedData.roleId = data.roleId === 'none' ? null : data.roleId;
+      }
+      if (data.workstreamId !== undefined) {
+        processedData.workstreamId = data.workstreamId === 'none' ? null : data.workstreamId;
+      }
+      if (data.epicId !== undefined) {
+        processedData.epicId = data.epicId === 'none' ? null : data.epicId;
+      }
+      if (data.stageId !== undefined) {
+        processedData.stageId = data.stageId === 'none' ? null : data.stageId;
+      }
+      
+      // Process date fields - only if explicitly provided
+      if (data.startDate !== undefined) {
+        processedData.plannedStartDate = data.startDate || null;
+        delete processedData.startDate;
+      }
+      if (data.endDate !== undefined) {
+        processedData.plannedEndDate = data.endDate || null;
+        delete processedData.endDate;
+      }
+      
+      // Only update taskDescription if it was explicitly provided
+      if (data.taskDescription !== undefined) {
+        processedData.taskDescription = data.taskDescription || null;
+      }
+      
       return apiRequest(`/api/projects/${id}/allocations/${allocationId}`, {
         method: "PUT",
         body: JSON.stringify(processedData)
