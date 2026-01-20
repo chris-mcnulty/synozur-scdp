@@ -150,7 +150,7 @@ const metadataQuerySchema = z.object({
   skip: z.coerce.number().min(0).optional().default(0)
 });
 
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or } from "drizzle-orm";
 // Azure/SharePoint imports
 import { msalInstance, authCodeRequest, tokenRequest } from "./auth/entra-config";
 import { graphClient, registerContainerTypePermissions } from "./services/graph-client.js";
