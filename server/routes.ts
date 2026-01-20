@@ -6966,18 +6966,17 @@ export async function registerRoutes(app: Express): Promise<void> {
   // SUB-SOW GENERATION ENDPOINTS
   // ============================================================================
 
-  // Get available resources for Sub-SOW generation (users from estimates AND project allocations)
+  // Get available resources for Sub-SOW generation (users from project allocations only)
   app.get("/api/projects/:id/sub-sow/resources", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const projectId = req.params.id;
       
-      // Get project with related estimates
       const project = await storage.getProject(projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Collect all resources from both estimates and project allocations
+      // Collect resources from project allocations (Team Assignments) - this IS the scope
       const resourceMap = new Map<string, {
         userId: string;
         userName: string;
@@ -6988,44 +6987,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         lineItemCount: number;
       }>();
 
-      // 1. Get resources from estimate line items
-      const allEstimates = await storage.getEstimates();
-      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
-
-      for (const estimate of projectEstimates) {
-        const lineItems = await storage.getEstimateLineItems(estimate.id);
-        
-        for (const item of lineItems) {
-          if (!item.assignedUserId) continue;
-          
-          const user = await storage.getUser(item.assignedUserId);
-          if (!user) continue;
-          
-          const hours = parseFloat(item.adjustedHours?.toString() || '0');
-          const costRate = parseFloat(item.costRate?.toString() || '0');
-          const cost = user.isSalaried ? 0 : hours * costRate;
-          
-          const existing = resourceMap.get(item.assignedUserId);
-          if (existing) {
-            existing.totalHours += hours;
-            existing.totalCost += cost;
-            existing.lineItemCount++;
-          } else {
-            const role = user.roleId ? await storage.getRole(user.roleId) : null;
-            resourceMap.set(item.assignedUserId, {
-              userId: item.assignedUserId,
-              userName: `${user.firstName} ${user.lastName}`.trim() || user.email,
-              roleName: role?.name || 'Unknown Role',
-              isSalaried: user.isSalaried,
-              totalHours: hours,
-              totalCost: cost,
-              lineItemCount: 1
-            });
-          }
-        }
-      }
-
-      // 2. Get resources from project allocations (Team Assignments)
       const allocations = await storage.getProjectAllocations(projectId);
       
       for (const allocation of allocations) {
@@ -7072,7 +7033,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Get Sub-SOW data for a specific resource
+  // Get Sub-SOW data for a specific resource (from project allocations only)
   app.get("/api/projects/:id/sub-sow/:userId", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
@@ -7090,14 +7051,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const client = project.clientId ? await storage.getClient(project.clientId) : null;
       const role = user.roleId ? await storage.getRole(user.roleId) : null;
 
-      // Get all estimates for this project
-      const allEstimates = await storage.getEstimates();
-      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
-      
-      // Collect assignments for this user
+      // Collect assignments from project allocations (Team Assignments) - this IS the scope
       const assignments: Array<{
-        estimateId: string;
-        estimateName: string;
+        allocationId: string;
         epicName?: string;
         stageName?: string;
         description: string;
@@ -7105,53 +7061,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         rate: number;
         amount: number;
         comments?: string;
+        startDate?: string;
+        endDate?: string;
       }> = [];
 
-      // 1. Get assignments from estimate line items
-      for (const estimate of projectEstimates) {
-        const lineItems = await storage.getEstimateLineItems(estimate.id);
-        const epics = await storage.getEstimateEpics(estimate.id);
-        const stages = await storage.getEstimateStages(estimate.id);
-        
-        // Create lookup maps
-        const epicMap = new Map(epics.map(e => [e.id, e.name]));
-        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
-        
-        for (const item of lineItems) {
-          if (item.assignedUserId !== userId) continue;
-          
-          const hours = parseFloat(item.adjustedHours?.toString() || '0');
-          const costRate = parseFloat(item.costRate?.toString() || '0');
-          const amount = user.isSalaried ? 0 : hours * costRate;
-          
-          let epicName: string | undefined;
-          let stageName: string | undefined;
-          
-          if (item.stageId) {
-            const stageData = stageMap.get(item.stageId);
-            if (stageData) {
-              stageName = stageData.name;
-              epicName = epicMap.get(stageData.epicId);
-            }
-          } else if (item.epicId) {
-            epicName = epicMap.get(item.epicId);
-          }
-          
-          assignments.push({
-            estimateId: estimate.id,
-            estimateName: estimate.name,
-            epicName,
-            stageName,
-            description: item.description,
-            hours,
-            rate: costRate,
-            amount,
-            comments: item.comments || undefined
-          });
-        }
-      }
-
-      // 2. Get assignments from project allocations (Team Assignments)
       const allocations = await storage.getProjectAllocations(projectId);
       for (const allocation of allocations) {
         if (allocation.personId !== userId) continue;
@@ -7160,23 +7073,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         const costRate = parseFloat(allocation.costRate?.toString() || '0');
         const amount = user.isSalaried ? 0 : hours * costRate;
         
-        // Get activity name if available
-        let activityName = allocation.activityName || 'Project Task';
-        if (allocation.projectActivityId && !allocation.activityName) {
-          // Fetch activity name if needed
-          activityName = 'Allocated Task';
-        }
+        const activityName = allocation.activityName || 'Project Task';
         
         assignments.push({
-          estimateId: 'allocation-' + allocation.id,
-          estimateName: 'Project Allocation',
+          allocationId: allocation.id,
           epicName: allocation.epicName || undefined,
           stageName: allocation.stageName || undefined,
           description: activityName,
           hours,
           rate: costRate,
           amount,
-          comments: allocation.notes || undefined
+          comments: allocation.notes || undefined,
+          startDate: allocation.plannedStartDate?.toISOString?.() || allocation.plannedStartDate,
+          endDate: allocation.plannedEndDate?.toISOString?.() || allocation.plannedEndDate
         });
       }
 
@@ -7205,7 +7114,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Generate Sub-SOW with AI narrative
+  // Generate Sub-SOW with AI narrative (from project allocations only)
   app.post("/api/projects/:id/sub-sow/:userId/generate", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
@@ -7224,11 +7133,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const client = project.clientId ? await storage.getClient(project.clientId) : null;
       const role = user.roleId ? await storage.getRole(user.roleId) : null;
 
-      // Get all estimates for this project
-      const allEstimates = await storage.getEstimates();
-      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
-      
-      // Collect assignments for this user
+      // Collect assignments from project allocations (Team Assignments) - this IS the scope
       const assignments: Array<{
         epicName?: string;
         stageName?: string;
@@ -7239,48 +7144,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         comments?: string;
       }> = [];
 
-      // 1. Get assignments from estimate line items
-      for (const estimate of projectEstimates) {
-        const lineItems = await storage.getEstimateLineItems(estimate.id);
-        const epics = await storage.getEstimateEpics(estimate.id);
-        const stages = await storage.getEstimateStages(estimate.id);
-        
-        const epicMap = new Map(epics.map(e => [e.id, e.name]));
-        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
-        
-        for (const item of lineItems) {
-          if (item.assignedUserId !== userId) continue;
-          
-          const hours = parseFloat(item.adjustedHours?.toString() || '0');
-          const costRate = parseFloat(item.costRate?.toString() || '0');
-          const amount = user.isSalaried ? 0 : hours * costRate;
-          
-          let epicName: string | undefined;
-          let stageName: string | undefined;
-          
-          if (item.stageId) {
-            const stageData = stageMap.get(item.stageId);
-            if (stageData) {
-              stageName = stageData.name;
-              epicName = epicMap.get(stageData.epicId);
-            }
-          } else if (item.epicId) {
-            epicName = epicMap.get(item.epicId);
-          }
-          
-          assignments.push({
-            epicName,
-            stageName,
-            description: item.description,
-            hours,
-            rate: costRate,
-            amount,
-            comments: item.comments || undefined
-          });
-        }
-      }
-
-      // 2. Get assignments from project allocations (Team Assignments)
       const allocations = await storage.getProjectAllocations(projectId);
       for (const allocation of allocations) {
         if (allocation.personId !== userId) continue;
@@ -7350,7 +7213,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Generate Sub-SOW PDF
+  // Generate Sub-SOW PDF (from project allocations only)
   app.post("/api/projects/:id/sub-sow/:userId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
@@ -7376,11 +7239,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         tenant = tenantResult || null;
       }
 
-      // Get all estimates for this project
-      const allEstimates = await storage.getEstimates();
-      const projectEstimates = allEstimates.filter(e => e.projectId === projectId);
-      
-      // Collect assignments for this user
+      // Collect assignments from project allocations (Team Assignments) - this IS the scope
       const assignments: Array<{
         epicName?: string;
         stageName?: string;
@@ -7390,47 +7249,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         amount: number;
       }> = [];
 
-      // 1. Get assignments from estimate line items
-      for (const estimate of projectEstimates) {
-        const lineItems = await storage.getEstimateLineItems(estimate.id);
-        const epics = await storage.getEstimateEpics(estimate.id);
-        const stages = await storage.getEstimateStages(estimate.id);
-        
-        const epicMap = new Map(epics.map(e => [e.id, e.name]));
-        const stageMap = new Map(stages.map(s => [s.id, { name: s.name, epicId: s.epicId }]));
-        
-        for (const item of lineItems) {
-          if (item.assignedUserId !== userId) continue;
-          
-          const hours = parseFloat(item.adjustedHours?.toString() || '0');
-          const costRate = parseFloat(item.costRate?.toString() || '0');
-          const amount = user.isSalaried ? 0 : hours * costRate;
-          
-          let epicName: string | undefined;
-          let stageName: string | undefined;
-          
-          if (item.stageId) {
-            const stageData = stageMap.get(item.stageId);
-            if (stageData) {
-              stageName = stageData.name;
-              epicName = epicMap.get(stageData.epicId);
-            }
-          } else if (item.epicId) {
-            epicName = epicMap.get(item.epicId);
-          }
-          
-          assignments.push({
-            epicName,
-            stageName,
-            description: item.description,
-            hours,
-            rate: costRate,
-            amount
-          });
-        }
-      }
-
-      // 2. Get assignments from project allocations (Team Assignments)
       const allocations = await storage.getProjectAllocations(projectId);
       for (const allocation of allocations) {
         if (allocation.personId !== userId) continue;
