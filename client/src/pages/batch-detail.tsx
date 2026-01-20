@@ -69,7 +69,8 @@ import {
   User as UserIcon,
   ExternalLink,
   Wrench,
-  Upload
+  Upload,
+  Archive
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -691,6 +692,74 @@ export default function BatchDetail() {
   };
 
   const [isPDFGenerating, setIsPDFGenerating] = useState(false);
+  const [isReceiptsDownloading, setIsReceiptsDownloading] = useState(false);
+
+  // Check if receipts bundle is available
+  const { data: receiptsBundleData } = useQuery<{ available: boolean; count: number }>({
+    queryKey: ["/api/invoice-batches", batchId, "receipts-bundle", "check"],
+    enabled: !!batchId,
+  });
+
+  const handleDownloadReceiptsBundle = async () => {
+    if (!batchId) return;
+    
+    try {
+      setIsReceiptsDownloading(true);
+      
+      toast({
+        title: "Preparing receipts bundle",
+        description: "Please wait while we gather all receipts...",
+      });
+      
+      const sessionId = localStorage.getItem('sessionId');
+      if (!sessionId) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to download receipts.",
+          variant: "destructive"
+        });
+        setIsReceiptsDownloading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/invoice-batches/${batchId}/receipts-bundle`, {
+        method: 'GET',
+        headers: {
+          'X-Session-Id': sessionId,
+        },
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipts-bundle-${batchId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download complete",
+        description: "The receipts bundle has been downloaded.",
+      });
+    } catch (error: any) {
+      console.error("Receipts bundle download error:", error);
+      toast({
+        title: "Download failed",
+        description: error.message || "Failed to download receipts bundle.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsReceiptsDownloading(false);
+    }
+  };
 
   const handleDownloadPDF = async () => {
     if (!batchId) return;
@@ -1210,15 +1279,46 @@ export default function BatchDetail() {
             </Button>
           )}
           
-          <Button
-            onClick={handleDownloadPDF}
-            variant="outline"
-            disabled={isPDFGenerating}
-            data-testid="button-download-pdf"
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            {isPDFGenerating ? "Generating PDF..." : "Download PDF"}
-          </Button>
+          {receiptsBundleData?.available ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={isPDFGenerating || isReceiptsDownloading}
+                  data-testid="button-download-dropdown"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {isPDFGenerating ? "Generating PDF..." : isReceiptsDownloading ? "Downloading..." : "Download"}
+                  <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Download Options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleDownloadPDF} disabled={isPDFGenerating}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Invoice PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadReceiptsBundle} disabled={isReceiptsDownloading}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Complete Receipts (ZIP)
+                  <Badge variant="secondary" className="ml-2 text-xs">
+                    {receiptsBundleData.count}
+                  </Badge>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              onClick={handleDownloadPDF}
+              variant="outline"
+              disabled={isPDFGenerating}
+              data-testid="button-download-pdf"
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              {isPDFGenerating ? "Generating PDF..." : "Download PDF"}
+            </Button>
+          )}
           
           <Button
             onClick={async () => {

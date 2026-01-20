@@ -13855,11 +13855,24 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { batchId } = req.params;
       const archiver = await import('archiver');
+      const userTenantId = req.user?.primaryTenantId;
 
-      // Get batch details to get date range
+      // Get batch details to get date range (storage layer validates access)
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
         return res.status(404).json({ message: "Invoice batch not found" });
+      }
+
+      // Use the batch's tenantId for filtering (authoritative source)
+      const batchTenantId = (batch as any).tenantId;
+      
+      // Validate user has access to this tenant (if batch has a tenant and user has a tenant)
+      if (batchTenantId && userTenantId && batchTenantId !== userTenantId) {
+        // Check if user has platform admin access
+        const userRole = req.user?.role;
+        if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
+          return res.status(403).json({ message: "Access denied: batch belongs to a different tenant" });
+        }
       }
 
       // Get invoice lines to find projects
@@ -13870,17 +13883,23 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "No projects found in this invoice batch" });
       }
 
+      // Build query conditions - use batch's tenant for strict isolation
+      const queryConditions = [
+        inArray(expenses.projectId, projectIds),
+        gte(expenses.date, batch.startDate),
+        lte(expenses.date, batch.endDate),
+        eq(expenses.billedFlag, true)
+      ];
+      
+      // Add tenant filtering using the batch's tenant (authoritative source)
+      if (batchTenantId) {
+        queryConditions.push(eq(expenses.tenantId, batchTenantId));
+      }
+
       // Fetch all billed expenses for these projects within the batch date range
       const invoiceExpenses = await db.select()
         .from(expenses)
-        .where(
-          and(
-            inArray(expenses.projectId, projectIds),
-            gte(expenses.date, batch.startDate),
-            lte(expenses.date, batch.endDate),
-            eq(expenses.billedFlag, true)
-          )
-        );
+        .where(and(...queryConditions));
 
       if (invoiceExpenses.length === 0) {
         return res.status(404).json({ message: "No expenses found for this invoice batch" });
@@ -13897,7 +13916,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       console.log(`[RECEIPTS_BUNDLE] Found ${attachments.length} attachments for ${invoiceExpenses.length} expenses`);
 
-      // Download each attachment
+      // Download each attachment (from object storage - already tenant-isolated)
       for (const attachment of attachments) {
         try {
           const buffer = await receiptStorage.getReceipt(attachment.itemId);
@@ -13910,17 +13929,56 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
-      // Also get receipts from direct receiptUrl field
+      // Also get receipts from direct receiptUrl field with validation
+      const MAX_URL_SIZE = 25 * 1024 * 1024; // 25MB max per file
+      const FETCH_TIMEOUT = 30000; // 30 second timeout
+      
       const expensesWithReceiptUrl = invoiceExpenses.filter(e => e.receiptUrl);
       for (const expense of expensesWithReceiptUrl) {
         try {
-          const response = await fetch(expense.receiptUrl!);
-          if (response.ok) {
-            const buffer = Buffer.from(await response.arrayBuffer());
-            const contentType = response.headers.get('content-type') || 'application/octet-stream';
-            const ext = contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg';
-            const name = `receipt-${expense.description || expense.id}.${ext}`;
-            receiptFiles.push({ name, buffer });
+          const url = expense.receiptUrl!;
+          
+          // Validate URL - only allow https URLs or known internal patterns
+          if (!url.startsWith('https://') && !url.startsWith('/api/')) {
+            console.warn(`[RECEIPTS_BUNDLE] Skipping non-https URL for expense ${expense.id}`);
+            continue;
+          }
+          
+          // Use AbortController for timeout
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+          
+          try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              // Check content length before downloading
+              const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+              if (contentLength > MAX_URL_SIZE) {
+                console.warn(`[RECEIPTS_BUNDLE] Skipping oversized file (${contentLength} bytes) for expense ${expense.id}`);
+                continue;
+              }
+              
+              const buffer = Buffer.from(await response.arrayBuffer());
+              
+              // Double-check size after download
+              if (buffer.length > MAX_URL_SIZE) {
+                console.warn(`[RECEIPTS_BUNDLE] Downloaded file exceeds size limit for expense ${expense.id}`);
+                continue;
+              }
+              
+              const contentType = response.headers.get('content-type') || 'application/octet-stream';
+              const ext = contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg';
+              const name = `receipt-${expense.description || expense.id}.${ext}`;
+              receiptFiles.push({ name, buffer });
+            }
+          } catch (fetchError: any) {
+            if (fetchError.name === 'AbortError') {
+              console.warn(`[RECEIPTS_BUNDLE] Timeout fetching receipt URL for expense ${expense.id}`);
+            } else {
+              throw fetchError;
+            }
           }
         } catch (error) {
           console.error(`[RECEIPTS_BUNDLE] Failed to fetch receipt URL for expense ${expense.id}:`, error);
@@ -13974,11 +14032,23 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/invoice-batches/:batchId/receipts-bundle/check", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { batchId } = req.params;
+      const userTenantId = req.user?.primaryTenantId;
 
-      // Get batch details
+      // Get batch details (storage layer validates access)
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
         return res.json({ available: false, count: 0 });
+      }
+
+      // Use the batch's tenantId for filtering (authoritative source)
+      const batchTenantId = (batch as any).tenantId;
+      
+      // Validate user has access to this tenant
+      if (batchTenantId && userTenantId && batchTenantId !== userTenantId) {
+        const userRole = req.user?.role;
+        if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
+          return res.json({ available: false, count: 0 }); // Silent deny for check endpoint
+        }
       }
 
       // Get invoice lines to find projects
@@ -13989,29 +14059,45 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.json({ available: false, count: 0 });
       }
 
+      // Build query conditions - use batch's tenant for strict isolation
+      const queryConditions = [
+        inArray(expenses.projectId, projectIds),
+        gte(expenses.date, batch.startDate),
+        lte(expenses.date, batch.endDate),
+        eq(expenses.billedFlag, true)
+      ];
+      
+      // Add tenant filtering using the batch's tenant (authoritative source)
+      if (batchTenantId) {
+        queryConditions.push(eq(expenses.tenantId, batchTenantId));
+      }
+
       // Count billed expenses with receipts
-      const invoiceExpenses = await db.select()
+      const invoiceExpenses = await db.select({
+        id: expenses.id,
+        receiptUrl: expenses.receiptUrl
+      })
         .from(expenses)
-        .where(
-          and(
-            inArray(expenses.projectId, projectIds),
-            gte(expenses.date, batch.startDate),
-            lte(expenses.date, batch.endDate),
-            eq(expenses.billedFlag, true)
-          )
-        );
+        .where(and(...queryConditions));
+
+      if (invoiceExpenses.length === 0) {
+        return res.json({ available: false, count: 0 });
+      }
 
       const expenseIds = invoiceExpenses.map(e => e.id);
       
-      // Count attachments
-      const attachmentCount = expenseIds.length > 0 
-        ? (await db.select().from(expenseAttachments).where(inArray(expenseAttachments.expenseId, expenseIds))).length
-        : 0;
+      // Count attachments using SQL count for efficiency
+      const attachmentCountResult = await db.select({ count: sql<number>`count(*)` })
+        .from(expenseAttachments)
+        .where(inArray(expenseAttachments.expenseId, expenseIds));
+      const attachmentCount = attachmentCountResult[0]?.count || 0;
 
-      // Count direct receiptUrl
-      const directUrlCount = invoiceExpenses.filter(e => e.receiptUrl).length;
+      // Count direct receiptUrl (only valid https URLs)
+      const directUrlCount = invoiceExpenses.filter(e => 
+        e.receiptUrl && (e.receiptUrl.startsWith('https://') || e.receiptUrl.startsWith('/api/'))
+      ).length;
       
-      const totalReceipts = attachmentCount + directUrlCount;
+      const totalReceipts = Number(attachmentCount) + directUrlCount;
 
       res.json({ 
         available: totalReceipts > 0,
