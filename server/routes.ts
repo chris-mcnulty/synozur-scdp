@@ -13850,6 +13850,179 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Download all receipts as ZIP bundle for an invoice batch
+  app.get("/api/invoice-batches/:batchId/receipts-bundle", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const archiver = await import('archiver');
+
+      // Get batch details to get date range
+      const batch = await storage.getInvoiceBatchDetails(batchId);
+      if (!batch) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+
+      // Get invoice lines to find projects
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+
+      if (projectIds.length === 0) {
+        return res.status(404).json({ message: "No projects found in this invoice batch" });
+      }
+
+      // Fetch all billed expenses for these projects within the batch date range
+      const invoiceExpenses = await db.select()
+        .from(expenses)
+        .where(
+          and(
+            inArray(expenses.projectId, projectIds),
+            gte(expenses.date, batch.startDate),
+            lte(expenses.date, batch.endDate),
+            eq(expenses.billedFlag, true)
+          )
+        );
+
+      if (invoiceExpenses.length === 0) {
+        return res.status(404).json({ message: "No expenses found for this invoice batch" });
+      }
+
+      // Collect all receipt files
+      const receiptFiles: { name: string; buffer: Buffer }[] = [];
+      const expenseIds = invoiceExpenses.map(e => e.id);
+
+      // Get attachments from expenseAttachments table
+      const attachments = await db.select()
+        .from(expenseAttachments)
+        .where(inArray(expenseAttachments.expenseId, expenseIds));
+
+      console.log(`[RECEIPTS_BUNDLE] Found ${attachments.length} attachments for ${invoiceExpenses.length} expenses`);
+
+      // Download each attachment
+      for (const attachment of attachments) {
+        try {
+          const buffer = await receiptStorage.getReceipt(attachment.itemId);
+          receiptFiles.push({
+            name: attachment.fileName,
+            buffer
+          });
+        } catch (error) {
+          console.error(`[RECEIPTS_BUNDLE] Failed to download ${attachment.fileName}:`, error);
+        }
+      }
+
+      // Also get receipts from direct receiptUrl field
+      const expensesWithReceiptUrl = invoiceExpenses.filter(e => e.receiptUrl);
+      for (const expense of expensesWithReceiptUrl) {
+        try {
+          const response = await fetch(expense.receiptUrl!);
+          if (response.ok) {
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const contentType = response.headers.get('content-type') || 'application/octet-stream';
+            const ext = contentType.includes('pdf') ? 'pdf' : contentType.includes('png') ? 'png' : 'jpg';
+            const name = `receipt-${expense.description || expense.id}.${ext}`;
+            receiptFiles.push({ name, buffer });
+          }
+        } catch (error) {
+          console.error(`[RECEIPTS_BUNDLE] Failed to fetch receipt URL for expense ${expense.id}:`, error);
+        }
+      }
+
+      if (receiptFiles.length === 0) {
+        return res.status(404).json({ message: "No receipt files found" });
+      }
+
+      console.log(`[RECEIPTS_BUNDLE] Creating ZIP with ${receiptFiles.length} files`);
+
+      // Create ZIP archive
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="receipts-bundle-${batchId}.zip"`);
+
+      const archive = archiver.default('zip', { zlib: { level: 5 } });
+      
+      archive.on('error', (err: any) => {
+        console.error('[RECEIPTS_BUNDLE] Archive error:', err);
+        res.status(500).json({ message: 'Failed to create ZIP archive' });
+      });
+
+      archive.pipe(res);
+
+      // Add files to archive with unique names to avoid conflicts
+      const usedNames = new Set<string>();
+      for (const file of receiptFiles) {
+        let fileName = file.name;
+        let counter = 1;
+        while (usedNames.has(fileName)) {
+          const ext = fileName.lastIndexOf('.') > 0 ? fileName.slice(fileName.lastIndexOf('.')) : '';
+          const baseName = fileName.lastIndexOf('.') > 0 ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
+          fileName = `${baseName}_${counter}${ext}`;
+          counter++;
+        }
+        usedNames.add(fileName);
+        archive.append(file.buffer, { name: fileName });
+      }
+
+      await archive.finalize();
+    } catch (error: any) {
+      console.error("Failed to generate receipts bundle:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to generate receipts bundle" 
+      });
+    }
+  });
+
+  // Check if receipts bundle is available for an invoice batch
+  app.get("/api/invoice-batches/:batchId/receipts-bundle/check", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+
+      // Get batch details
+      const batch = await storage.getInvoiceBatchDetails(batchId);
+      if (!batch) {
+        return res.json({ available: false, count: 0 });
+      }
+
+      // Get invoice lines to find projects
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
+
+      if (projectIds.length === 0) {
+        return res.json({ available: false, count: 0 });
+      }
+
+      // Count billed expenses with receipts
+      const invoiceExpenses = await db.select()
+        .from(expenses)
+        .where(
+          and(
+            inArray(expenses.projectId, projectIds),
+            gte(expenses.date, batch.startDate),
+            lte(expenses.date, batch.endDate),
+            eq(expenses.billedFlag, true)
+          )
+        );
+
+      const expenseIds = invoiceExpenses.map(e => e.id);
+      
+      // Count attachments
+      const attachmentCount = expenseIds.length > 0 
+        ? (await db.select().from(expenseAttachments).where(inArray(expenseAttachments.expenseId, expenseIds))).length
+        : 0;
+
+      // Count direct receiptUrl
+      const directUrlCount = invoiceExpenses.filter(e => e.receiptUrl).length;
+      
+      const totalReceipts = attachmentCount + directUrlCount;
+
+      res.json({ 
+        available: totalReceipts > 0,
+        count: totalReceipts
+      });
+    } catch (error: any) {
+      console.error("Failed to check receipts bundle:", error);
+      res.json({ available: false, count: 0 });
+    }
+  });
+
   // Invoice Line Adjustments API Routes
 
   // Line-item editing
