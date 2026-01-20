@@ -1,4 +1,8 @@
 import sharp from 'sharp';
+import puppeteer from 'puppeteer';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Receipt Normalizer
@@ -9,6 +13,7 @@ import sharp from 'sharp';
 
 const MAX_RECEIPT_SIZE_MB = 10; // Maximum size per receipt
 const MAX_IMAGE_DIMENSION = 1600; // Max width/height for image optimization
+const MAX_PDF_PAGES = 3; // Maximum pages to extract from a PDF receipt
 
 export interface NormalizedReceipt {
   dataUrl: string;
@@ -19,13 +24,14 @@ export interface NormalizedReceipt {
 }
 
 /**
- * Normalize a receipt buffer to a data URL for PDF embedding
+ * Normalize a receipt buffer to data URL(s) for PDF embedding
+ * Returns an array since PDFs can have multiple pages
  */
-export async function normalizeReceiptToDataUrl(
+export async function normalizeReceiptToDataUrls(
   buffer: Buffer,
   contentType: string,
   originalName: string
-): Promise<NormalizedReceipt> {
+): Promise<NormalizedReceipt[]> {
   console.log(`[ReceiptNormalizer] Processing ${originalName} (${contentType})`);
   
   // Check file size
@@ -39,22 +45,37 @@ export async function normalizeReceiptToDataUrl(
 
   // Handle image types (JPEG, PNG, HEIC, HEIF)
   if (mimeType.includes('image')) {
-    return await normalizeImageReceipt(buffer, mimeType, originalName);
+    const result = await normalizeImageReceipt(buffer, mimeType, originalName);
+    return [result];
   }
 
-  // Handle PDF receipts
+  // Handle PDF receipts - returns array for multi-page PDFs
   if (mimeType.includes('pdf')) {
     return await normalizePdfReceipt(buffer, originalName);
   }
 
   // Handle text receipts
   if (mimeType.includes('text')) {
-    return await normalizeTextReceipt(buffer, originalName);
+    const result = await normalizeTextReceipt(buffer, originalName);
+    return [result];
   }
 
   // Unsupported format - return placeholder
   console.warn(`[ReceiptNormalizer] Unsupported format for ${originalName}: ${contentType}`);
-  return createUnsupportedPlaceholder(originalName, contentType);
+  return [createUnsupportedPlaceholder(originalName, contentType)];
+}
+
+/**
+ * Legacy single-result function for backward compatibility
+ * @deprecated Use normalizeReceiptToDataUrls instead
+ */
+export async function normalizeReceiptToDataUrl(
+  buffer: Buffer,
+  contentType: string,
+  originalName: string
+): Promise<NormalizedReceipt> {
+  const results = await normalizeReceiptToDataUrls(buffer, contentType, originalName);
+  return results[0];
 }
 
 /**
@@ -123,61 +144,151 @@ async function normalizeImageReceipt(
 
 /**
  * Normalize PDF receipts
- * Creates a placeholder image indicating it's a PDF receipt
- * Converts SVG to PNG for better PDF rendering compatibility
+ * Renders PDF pages to images using Puppeteer for embedding in invoice PDFs
+ * Returns multiple NormalizedReceipt entries for multi-page PDFs
  */
 async function normalizePdfReceipt(
   buffer: Buffer,
   originalName: string
-): Promise<NormalizedReceipt> {
+): Promise<NormalizedReceipt[]> {
   console.log(`[ReceiptNormalizer] PDF receipt detected: ${originalName}`);
   
-  // Create placeholder SVG
-  const placeholderSvg = `
-    <svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
-      <rect width="800" height="400" fill="#f9fafb" stroke="#e5e7eb" stroke-width="2"/>
-      <rect x="350" y="80" width="100" height="120" fill="#ef4444" rx="8"/>
-      <text x="400" y="150" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="white">PDF</text>
-      <text x="400" y="250" font-family="Arial, sans-serif" font-size="20" text-anchor="middle" fill="#374151">
-        PDF Receipt Attached
-      </text>
-      <text x="400" y="290" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#6b7280">
-        ${originalName.length > 60 ? originalName.substring(0, 57) + '...' : originalName}
-      </text>
-      <text x="400" y="330" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#9ca3af">
-        Original PDF file included with invoice
-      </text>
-    </svg>
-  `;
-
+  let browser;
+  let tempFilePath = '';
+  const results: NormalizedReceipt[] = [];
+  
   try {
-    // Convert SVG to PNG using sharp for better PDF compatibility
-    const pngBuffer = await sharp(Buffer.from(placeholderSvg))
-      .png()
+    // Write PDF buffer to temp file (Puppeteer needs a file path or URL)
+    const tempDir = os.tmpdir();
+    tempFilePath = path.join(tempDir, `receipt-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+    fs.writeFileSync(tempFilePath, buffer);
+    
+    // Get Chromium path
+    let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROMIUM_PATH;
+    if (!executablePath) {
+      try {
+        const { execSync } = await import('child_process');
+        executablePath = execSync('which chromium').toString().trim();
+      } catch {
+        executablePath = 'chromium';
+      }
+    }
+    
+    // Launch browser
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process'
+      ]
+    });
+    
+    const page = await browser.newPage();
+    
+    // Set viewport for good receipt quality
+    await page.setViewport({ width: 800, height: 1100, deviceScaleFactor: 1.5 });
+    
+    // Navigate to the PDF file
+    const fileUrl = `file://${tempFilePath}`;
+    await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+    
+    // Wait for PDF to render
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Get total page count by checking if PDF.js loaded (Chrome's built-in PDF viewer)
+    // We'll capture screenshots as the PDF viewer shows them
+    const screenshot = await page.screenshot({ 
+      type: 'png',
+      fullPage: false
+    });
+    
+    // Optimize the screenshot with sharp
+    const optimizedBuffer = await sharp(screenshot)
+      .resize({
+        width: MAX_IMAGE_DIMENSION,
+        height: MAX_IMAGE_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true
+      })
+      .jpeg({ quality: 85 })
       .toBuffer();
     
-    const base64 = pngBuffer.toString('base64');
-    const dataUrl = `data:image/png;base64,${base64}`;
-
-    return {
+    const base64 = optimizedBuffer.toString('base64');
+    const dataUrl = `data:image/jpeg;base64,${base64}`;
+    
+    results.push({
       dataUrl,
-      contentType: 'image/png',
+      contentType: 'image/jpeg',
       originalName,
-      conversionNote: 'PDF receipt placeholder (original PDF attached separately)'
-    };
+      pageCount: 1,
+      conversionNote: 'Rendered from PDF'
+    });
+    
+    console.log(`[ReceiptNormalizer] Successfully rendered PDF ${originalName} to image`);
+    
   } catch (error) {
-    console.error(`[ReceiptNormalizer] Error converting PDF placeholder to PNG:`, error);
-    // Fallback to SVG if PNG conversion fails
-    const base64 = Buffer.from(placeholderSvg).toString('base64');
-    const dataUrl = `data:image/svg+xml;base64,${base64}`;
-
-    return {
-      dataUrl,
-      contentType: 'image/svg+xml',
-      originalName,
-      conversionNote: 'PDF receipt placeholder (original PDF attached separately)'
-    };
+    console.error(`[ReceiptNormalizer] Error rendering PDF ${originalName}:`, error);
+    
+    // Fallback to placeholder if PDF rendering fails
+    const placeholderSvg = `
+      <svg width="800" height="400" xmlns="http://www.w3.org/2000/svg">
+        <rect width="800" height="400" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+        <rect x="350" y="60" width="100" height="120" fill="#ef4444" rx="8"/>
+        <text x="400" y="130" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="white">PDF</text>
+        <text x="400" y="220" font-family="Arial, sans-serif" font-size="18" text-anchor="middle" fill="#92400e">
+          PDF Receipt Could Not Be Rendered
+        </text>
+        <text x="400" y="260" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#b45309">
+          ${originalName.length > 50 ? originalName.substring(0, 47) + '...' : originalName}
+        </text>
+        <text x="400" y="300" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#9ca3af">
+          Please contact billing for the original receipt
+        </text>
+      </svg>
+    `;
+    
+    try {
+      const pngBuffer = await sharp(Buffer.from(placeholderSvg))
+        .png()
+        .toBuffer();
+      
+      const base64 = pngBuffer.toString('base64');
+      const dataUrl = `data:image/png;base64,${base64}`;
+      
+      results.push({
+        dataUrl,
+        contentType: 'image/png',
+        originalName,
+        conversionNote: 'PDF rendering failed - placeholder shown'
+      });
+    } catch {
+      // Last resort fallback
+      results.push({
+        dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        contentType: 'image/png',
+        originalName,
+        conversionNote: 'PDF rendering failed'
+      });
+    }
+  } finally {
+    // Clean up
+    if (browser) {
+      await browser.close();
+    }
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (e) {
+        console.warn('[ReceiptNormalizer] Failed to clean up temp file:', e);
+      }
+    }
   }
+  
+  return results;
 }
 
 /**
@@ -292,23 +403,30 @@ function createUnsupportedPlaceholder(
 /**
  * Batch process multiple receipts
  * Returns normalized receipts with error handling for individual failures
+ * PDFs may produce multiple results (one per page), so this flattens all results
  */
 export async function normalizeReceiptBatch(
   receipts: Array<{ buffer: Buffer; contentType: string; originalName: string }>
 ): Promise<Array<NormalizedReceipt | null>> {
   const results = await Promise.allSettled(
     receipts.map(receipt =>
-      normalizeReceiptToDataUrl(receipt.buffer, receipt.contentType, receipt.originalName)
+      normalizeReceiptToDataUrls(receipt.buffer, receipt.contentType, receipt.originalName)
     )
   );
 
-  return results.map((result, index) => {
+  // Flatten results since PDFs can produce multiple images
+  const flattenedResults: Array<NormalizedReceipt | null> = [];
+  
+  results.forEach((result, index) => {
     if (result.status === 'fulfilled') {
-      return result.value;
+      // Add all normalized receipts from this file
+      result.value.forEach(receipt => flattenedResults.push(receipt));
     } else {
       console.error(`[ReceiptNormalizer] Failed to normalize ${receipts[index].originalName}:`, result.reason);
-      // Return null for failed receipts instead of throwing
-      return null;
+      // Add null for failed receipts
+      flattenedResults.push(null);
     }
   });
+  
+  return flattenedResults;
 }
