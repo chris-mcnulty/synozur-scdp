@@ -13203,6 +13203,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       const finalBatchId = providedBatchId || await storage.generateBatchId(finalStartDate, finalEndDate);
       console.log("[DEBUG] Tenant context:", req.user?.tenantId);
 
+      // Determine default tax rate based on batch type
+      // Expense reimbursement is not a taxable activity, so default to 0 for expense-only batches
+      const finalBatchType = batchType || "mixed";
+      let defaultTaxRate = "9.3"; // Default for services/mixed batches
+      if (finalBatchType === "expenses") {
+        defaultTaxRate = "0"; // Expense reimbursement is not taxable
+      }
+
       // Create the batch with tenant context (dual-write)
       const batch = await storage.createInvoiceBatch({
         batchId: finalBatchId,
@@ -13212,10 +13220,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         pricingSnapshotDate: new Date().toISOString().split('T')[0],
         discountPercent: discountPercent || null,
         discountAmount: discountAmount || null,
-        taxRate: taxRate !== undefined ? taxRate : "9.3", // Default to 9.3% if not provided
+        taxRate: taxRate !== undefined ? taxRate : defaultTaxRate, // Use 0 for expenses, 9.3% otherwise
         totalAmount: "0", // Will be updated after generating invoices
         invoicingMode: invoicingMode || "client",
-        batchType: batchType || "mixed", // Default to mixed for backward compatibility
+        batchType: finalBatchType,
         exportedToQBO: false,
         createdBy: req.user?.id || null,
         tenantId: req.user?.tenantId || null // Multi-tenancy dual-write
