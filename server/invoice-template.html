@@ -427,8 +427,8 @@
     </div>
   </div>
 
-  <!-- Receipt Images Section -->
-  {{#if hasReceipts}}
+  <!-- Receipt Images Section (image receipts embedded here) -->
+  {{#if hasImageReceipts}}
   {{#each receiptImages}}
   <div class="receipt-page">
     <div class="receipt-heading">Receipt Attachment</div>
@@ -441,15 +441,33 @@
     {{/if}}
   </div>
   {{/each}}
-  {{#if ../receiptsLimitExceeded}}
+  {{/if}}
+
+  <!-- PDF Receipts Notice (actual PDFs are appended at end of document) -->
+  {{#if hasPdfReceipts}}
   <div class="receipt-page">
-    <div class="adjustment-note" style="margin-top: 100px;">
-      <strong>Note:</strong> This invoice includes {{../receiptImages.length}} of {{../totalReceiptsFound}} receipt attachments.
-      The maximum limit is {{../maxReceiptsPerInvoice}} receipts per invoice to ensure optimal PDF size and performance.
-      Please contact billing for additional receipt images if needed.
+    <div class="receipt-heading" style="color: #1e40af;">PDF Receipts Attached</div>
+    <div style="text-align: center; padding: 40px 20px; background: #f0f9ff; border: 2px solid #3b82f6; border-radius: 8px; margin: 20px auto; max-width: 600px;">
+      <div style="font-size: 48px; margin-bottom: 16px;">📎</div>
+      <div style="font-size: 18px; font-weight: 600; color: #1e3a5f; margin-bottom: 12px;">
+        {{pdfReceiptsCount}} PDF Receipt(s) Appended
+      </div>
+      <div style="font-size: 14px; color: #475569; line-height: 1.5;">
+        The original PDF receipt files have been attached to this invoice document.<br>
+        Please scroll or navigate to the following pages to view them.
+      </div>
     </div>
   </div>
   {{/if}}
+
+  {{#if receiptsLimitExceeded}}
+  <div class="receipt-page">
+    <div class="adjustment-note" style="margin-top: 100px;">
+      <strong>Note:</strong> This invoice includes {{receiptImages.length}} of {{totalReceiptsFound}} receipt attachments.
+      The maximum limit is {{maxReceiptsPerInvoice}} receipts per invoice to ensure optimal PDF size and performance.
+      Please contact billing for additional receipt images if needed.
+    </div>
+  </div>
   {{/if}}
 </body>
 </html>
