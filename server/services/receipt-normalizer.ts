@@ -1,8 +1,5 @@
 import sharp from 'sharp';
 import puppeteer from 'puppeteer';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 /**
  * Receipt Normalizer
@@ -155,14 +152,12 @@ async function normalizePdfReceipt(
   console.log(`[ReceiptNormalizer] PDF receipt detected: ${originalName}`);
   
   let browser;
-  let tempFilePath = '';
   const results: NormalizedReceipt[] = [];
   
   try {
-    // Write PDF buffer to temp file (Puppeteer needs a file path or URL)
-    const tempDir = os.tmpdir();
-    tempFilePath = path.join(tempDir, `receipt-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
-    fs.writeFileSync(tempFilePath, buffer);
+    // Create an HTML page that embeds the PDF using pdf.js or native viewer
+    // This works better than file:// URLs in containerized environments
+    const pdfBase64 = buffer.toString('base64');
     
     // Get Chromium path
     let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROMIUM_PATH;
@@ -175,6 +170,8 @@ async function normalizePdfReceipt(
       }
     }
     
+    console.log(`[ReceiptNormalizer] Launching Puppeteer to render PDF ${originalName}...`);
+    
     // Launch browser
     browser = await puppeteer.launch({
       headless: true,
@@ -184,27 +181,51 @@ async function normalizePdfReceipt(
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process'
+        '--single-process',
+        '--disable-web-security'
       ]
     });
     
     const page = await browser.newPage();
     
-    // Set viewport for good receipt quality
-    await page.setViewport({ width: 800, height: 1100, deviceScaleFactor: 1.5 });
+    // Set viewport for good receipt quality (letter size proportions)
+    await page.setViewport({ width: 850, height: 1100, deviceScaleFactor: 2 });
     
-    // Navigate to the PDF file
-    const fileUrl = `file://${tempFilePath}`;
-    await page.goto(fileUrl, { waitUntil: 'networkidle0', timeout: PDF_RENDER_TIMEOUT_MS });
+    // Create an HTML page that uses PDF.js to render the PDF
+    // This is more reliable than trying to open a file:// URL
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { background: white; }
+          embed, object, iframe {
+            width: 100%;
+            height: 100vh;
+            border: none;
+          }
+        </style>
+      </head>
+      <body>
+        <embed src="data:application/pdf;base64,${pdfBase64}" type="application/pdf" width="100%" height="100%" />
+      </body>
+      </html>
+    `;
     
-    // Wait for PDF to render
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await page.setContent(htmlContent, { 
+      waitUntil: 'networkidle0', 
+      timeout: PDF_RENDER_TIMEOUT_MS 
+    });
     
-    // Get total page count by checking if PDF.js loaded (Chrome's built-in PDF viewer)
-    // We'll capture screenshots as the PDF viewer shows them
+    // Wait for PDF to render in the embedded viewer
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Capture screenshot
     const screenshot = await page.screenshot({ 
       type: 'png',
-      fullPage: false
+      fullPage: false,
+      clip: { x: 0, y: 0, width: 850, height: 1100 }
     });
     
     // Optimize the screenshot with sharp
@@ -215,7 +236,7 @@ async function normalizePdfReceipt(
         fit: 'inside',
         withoutEnlargement: true
       })
-      .jpeg({ quality: 85 })
+      .jpeg({ quality: 90 })
       .toBuffer();
     
     const base64 = optimizedBuffer.toString('base64');
@@ -276,16 +297,9 @@ async function normalizePdfReceipt(
       });
     }
   } finally {
-    // Clean up
+    // Clean up browser
     if (browser) {
       await browser.close();
-    }
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
-      try {
-        fs.unlinkSync(tempFilePath);
-      } catch (e) {
-        console.warn('[ReceiptNormalizer] Failed to clean up temp file:', e);
-      }
     }
   }
   
