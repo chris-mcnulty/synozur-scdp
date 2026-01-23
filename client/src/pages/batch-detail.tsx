@@ -1653,10 +1653,20 @@ export default function BatchDetail() {
                         {batchDetails.paymentMilestone.name}
                       </p>
                       <Badge 
-                        variant={batchDetails.paymentMilestone.status === 'invoiced' ? 'default' : batchDetails.paymentMilestone.status === 'planned' ? 'secondary' : 'destructive'}
+                        variant={
+                          batchDetails.paymentMilestone.status === 'invoiced' ? 'default' : 
+                          batchDetails.paymentMilestone.status === 'paid' ? 'default' :
+                          batchDetails.paymentMilestone.status === 'planned' ? 'secondary' : 
+                          batchDetails.paymentMilestone.status === 'cancelled' || batchDetails.paymentMilestone.status === 'canceled' ? 'destructive' :
+                          'outline'
+                        }
                         data-testid="badge-milestone-status"
                       >
-                        {batchDetails.paymentMilestone.status === 'invoiced' ? 'Invoiced' : batchDetails.paymentMilestone.status === 'planned' ? 'Planned' : 'Canceled'}
+                        {batchDetails.paymentMilestone.status === 'invoiced' ? 'Invoiced' : 
+                         batchDetails.paymentMilestone.status === 'paid' ? 'Paid' :
+                         batchDetails.paymentMilestone.status === 'planned' ? 'Planned' : 
+                         batchDetails.paymentMilestone.status === 'cancelled' || batchDetails.paymentMilestone.status === 'canceled' ? 'Cancelled' :
+                         batchDetails.paymentMilestone.status || 'Active'}
                       </Badge>
                     </div>
                   </div>
