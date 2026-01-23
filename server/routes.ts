@@ -14087,14 +14087,38 @@ export async function registerRoutes(app: Express): Promise<void> {
       const lines = await storage.getInvoiceLinesForBatch(batchId);
       const adjustments = await storage.getInvoiceAdjustments(batchId);
 
-      // Get company settings
-      const companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
-      const companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
-      const companyAddress = await storage.getSystemSettingValue('COMPANY_ADDRESS');
-      const companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
-      const companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
-      const companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
-      const defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
+      // Get company settings from tenant (multi-tenant) or fall back to system settings
+      let companyName: string | undefined;
+      let companyLogo: string | undefined;
+      let companyAddress: string | undefined;
+      let companyPhone: string | undefined;
+      let companyEmail: string | undefined;
+      let companyWebsite: string | undefined;
+      let defaultPaymentTerms: string | undefined;
+
+      // Try to get settings from tenant first
+      const tenantId = batch.tenantId || (req.user as any)?.primaryTenantId;
+      if (tenantId) {
+        const tenant = await storage.getTenant(tenantId);
+        if (tenant) {
+          companyName = tenant.name || undefined;
+          companyLogo = tenant.logoUrl || undefined;
+          companyAddress = tenant.companyAddress || undefined;
+          companyPhone = tenant.companyPhone || undefined;
+          companyEmail = tenant.companyEmail || undefined;
+          companyWebsite = tenant.companyWebsite || undefined;
+          defaultPaymentTerms = tenant.paymentTerms || undefined;
+        }
+      }
+
+      // Fall back to system settings if tenant settings not available
+      if (!companyName) companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
+      if (!companyLogo) companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
+      if (!companyAddress) companyAddress = await storage.getSystemSettingValue('COMPANY_ADDRESS');
+      if (!companyPhone) companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
+      if (!companyEmail) companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
+      if (!companyWebsite) companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
+      if (!defaultPaymentTerms) defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
       
       // Use batch-specific payment terms if set, otherwise use defaults based on batch type
       // Expense-only invoices default to "Due on Receipt"
