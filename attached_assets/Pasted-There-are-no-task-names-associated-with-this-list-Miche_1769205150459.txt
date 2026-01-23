@@ -1,0 +1,342 @@
+There are no task names associated with this list
+
+ 
+
+Michelle Caldwell (She/Her)
+
+Chief Executive Officer, Synozur Alliance
+
+ 
+
+Email: michelle.caldwell@synozur.com
+
+Phone: 833.796.6987 x700 | Mobile: 614.202.7580
+
+www.synozur.com
+
+ 
+
+Use this link to book time with me
+
+ 
+
+ 
+
+ 
+
+From: Chris McNulty <chris.mcnulty@synozur.com>
+Sent: Tuesday, January 20, 2026 4:35 PM
+To: Michelle Caldwell <Michelle.Caldwell@synozur.com>
+Subject: ERIC RIZ
+
+ 
+
+SUB-STATEMENT OF WORK
+
+==================================================
+
+ 
+
+Project: IA/AI Readiness & M365 Governance
+
+Client: Platinum Equity
+
+Resource: Eric Riz
+
+Role: Unknown Role
+
+Type: Subcontractor
+
+ 
+
+SUMMARY
+
+------------------------------
+
+Total Hours: 95.0
+
+Total Cost: $0
+
+Number of Assignments: 17
+
+ 
+
+ASSIGNED TASKS
+
+------------------------------
+
+1. Project Task
+
+   Hours: 2.0
+
+   Amount: $0.00
+
+ 
+
+2. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+3. Project Task
+
+   Hours: 2.0
+
+   Amount: $0.00
+
+ 
+
+4. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+5. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+6. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+7. Project Task
+
+   Hours: 3.0
+
+   Amount: $0.00
+
+ 
+
+8. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+9. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+10. Project Task
+
+   Hours: 12.0
+
+   Amount: $0.00
+
+ 
+
+11. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+12. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+13. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+14. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+15. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+16. Project Task
+
+   Hours: 8.0
+
+   Amount: $0.00
+
+ 
+
+17. Project Task
+
+   Hours: 4.0
+
+   Amount: $0.00
+
+ 
+
+NARRATIVE
+
+------------------------------
+
+# Sub-Statement of Work: IA/AI Readiness & M365 Governance
+
+Client: Platinum Equity
+
+Subcontractor: Eric Riz (Subcontractor Consultant – M365 Governance & AI Readiness)
+
+Project Start: 2025-11-28
+
+Total Level of Effort: 95 hours
+
+ 
+
+## Scope Overview
+
+The Subcontractor will provide advisory and design services to support Platinum Equity’s IA/AI Readiness & Microsoft 365 (M365) Governance initiative. Acting as a subject-matter consultant, the Subcontractor will assess current-state practices, design a practical governance framework, and define information architecture (IA) standards and AI readiness controls tailored to Platinum Equity’s Microsoft 365 environment and risk posture.
+
+ 
+
+Services will focus on discovery and assessment, governance and IA design, AI readiness and risk alignment, enablement, and delivery of a prioritized implementation roadmap. The Subcontractor’s work is limited to strategy, design, and planning activities; hands-on configuration and tooling implementation are out of scope unless expressly added by change control.
+
+ 
+
+## Work Breakdown
+
+The Subcontractor will organize work into the following phases to ensure a structured, outcome-driven engagement:
+
+ 
+
+- Discovery & Planning
+
+  - Conduct project kickoff, confirm scope, success criteria, and constraints.
+
+  - Identify stakeholders and schedule interviews/workshops; establish a communications cadence.
+
+  - Define evaluation criteria, metrics, and decision-making approach; initiate risk and decision logs.
+
+ 
+
+- Current-State Assessment & Gap Analysis
+
+  - Review M365 tenant governance posture across SharePoint, Teams, Entra ID, and Microsoft Purview (e.g., labeling, DLP, retention, access management, external sharing).
+
+  - Assess IA elements (site architecture, hubs, metadata/taxonomy, content types), lifecycle processes, and provisioning practices.
+
+  - Evaluate prerequisites and controls relevant to AI features (e.g., M365 Copilot readiness) including data boundaries and permissions hygiene.
+
+  - Document findings and produce a gap/risk analysis mapped to business and compliance objectives.
+
+ 
+
+- Governance & Information Architecture Design
+
+  - Define a practical governance model, operating principles, and RACI for ownership and decision rights.
+
+  - Develop policies and standards for site/team provisioning, naming conventions, external collaboration, lifecycle/archival, and records/retention alignment.
+
+  - Produce an IA blueprint including site patterns, taxonomy and content type recommendations, and request/approval workflows.
+
+  - Outline change management and exception handling processes.
+
+ 
+
+- AI Readiness & Risk Alignment
+
+  - Identify priority AI use cases and associated data-access requirements and risks.
+
+  - Recommend guardrails and enabling patterns (e.g., sensitivity labeling, conditional access, data residency and privacy considerations) to support secure AI adoption.
+
+  - Align proposed controls with relevant frameworks and corporate policies; define success measures and monitoring approach.
+
+ 
+
+- Enablement & Roadmap
+
+  - Facilitate targeted working sessions to review designs, confirm decisions, and align stakeholders.
+
+  - Develop an adoption and communications approach and pilot entry criteria where applicable.
+
+  - Produce a prioritized implementation roadmap and backlog with high-level level-of-effort guidance and dependencies.
+
+  - Prepare and deliver knowledge transfer and handover materials.
+
+ 
+
+## Deliverables
+
+The Subcontractor will produce the following deliverables, subject to client review and acceptance:
+
+ 
+
+- Engagement Plan and Stakeholder Map, including meeting/workshop schedule and communications cadence.
+
+- Current-State Assessment Report and Gap/Risk Analysis for M365 governance, IA, and AI readiness.
+
+- Governance Framework and Operating Model, including RACI, policy standards, and decision rights.
+
+- Information Architecture Blueprint: site design patterns, taxonomy/metadata model, content type guidance, and provisioning standards.
+
+- AI Readiness Assessment and Controls Recommendations, including enabling guardrails and risk mitigations for secure AI adoption in M365.
+
+- Prioritized Implementation Roadmap and Backlog with high-level effort estimates, sequencing, and dependencies.
+
+- Pilot/Enablement Plan and Adoption/Communications Outline.
+
+- Policy and Standards Drafts (e.g., external sharing, retention/records alignment, naming/provisioning).
+
+- Decision Log and Risk/Issue Register.
+
+- Knowledge Transfer Session and Handover Pack (summary deck and reference materials).
+
+ 
+
+## Timeline Considerations
+
+The services will be delivered over an estimated 95 hours beginning on or about 2025-11-28. Work is expected to occur over approximately 6–8 calendar weeks, subject to stakeholder availability and timely access to required information and environments. Anticipated allocation by phase is as follows:
+
+- Discovery & Planning: ~12 hours
+
+- Current-State Assessment & Gap Analysis: ~28 hours
+
+- Governance & IA Design: ~30 hours
+
+- AI Readiness & Risk Alignment: ~12 hours
+
+- Enablement & Roadmap: ~8 hours
+
+- Documentation & Handover: ~5 hours
+
+ 
+
+The Subcontractor will conduct up to six focused workshops/interviews and recurring status touchpoints as part of the above effort. Timely access to M365 tenant documentation, existing policies, and designated stakeholders is required to meet the schedule. Any material changes in scope, deliverables, or effort will be managed via the prime contractor’s change control process. Delivery will be remote unless otherwise agreed.
+
+ 
+
+Generated: January 20, 2026

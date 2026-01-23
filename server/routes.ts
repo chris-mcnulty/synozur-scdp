@@ -7144,13 +7144,27 @@ export async function registerRoutes(app: Express): Promise<void> {
         const costRate = parseFloat(allocation.costRate?.toString() || '0');
         const amount = user.isSalaried ? 0 : hours * costRate;
         
-        const activityName = allocation.activityName || 'Project Task';
+        // Build task name from related entities (activity, workstream, epic/stage)
+        let taskName = '';
+        if (allocation.activity?.name) {
+          taskName = allocation.activity.name;
+        } else if (allocation.workstream?.name) {
+          taskName = allocation.workstream.name;
+        } else if (allocation.epic?.name && allocation.stage?.name) {
+          taskName = `${allocation.epic.name} - ${allocation.stage.name}`;
+        } else if (allocation.epic?.name) {
+          taskName = allocation.epic.name;
+        } else if (allocation.stage?.name) {
+          taskName = allocation.stage.name;
+        } else {
+          taskName = allocation.resourceName || 'Project Task';
+        }
         
         assignments.push({
           allocationId: allocation.id,
-          epicName: allocation.epicName || undefined,
-          stageName: allocation.stageName || undefined,
-          description: activityName,
+          epicName: allocation.epic?.name || undefined,
+          stageName: allocation.stage?.name || undefined,
+          description: taskName,
           hours,
           rate: costRate,
           amount,
@@ -7223,12 +7237,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         const costRate = parseFloat(allocation.costRate?.toString() || '0');
         const amount = user.isSalaried ? 0 : hours * costRate;
         
-        const activityName = allocation.activityName || 'Project Task';
+        // Build task name from related entities (activity, workstream, epic/stage)
+        let taskName = '';
+        if (allocation.activity?.name) {
+          taskName = allocation.activity.name;
+        } else if (allocation.workstream?.name) {
+          taskName = allocation.workstream.name;
+        } else if (allocation.epic?.name && allocation.stage?.name) {
+          taskName = `${allocation.epic.name} - ${allocation.stage.name}`;
+        } else if (allocation.epic?.name) {
+          taskName = allocation.epic.name;
+        } else if (allocation.stage?.name) {
+          taskName = allocation.stage.name;
+        } else {
+          taskName = allocation.resourceName || 'Project Task';
+        }
         
         assignments.push({
-          epicName: allocation.epicName || undefined,
-          stageName: allocation.stageName || undefined,
-          description: activityName,
+          epicName: allocation.epic?.name || undefined,
+          stageName: allocation.stage?.name || undefined,
+          description: taskName,
           hours,
           rate: costRate,
           amount,
@@ -7328,12 +7356,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         const costRate = parseFloat(allocation.costRate?.toString() || '0');
         const amount = user.isSalaried ? 0 : hours * costRate;
         
-        const activityName = allocation.activityName || 'Project Task';
+        // Build task name from related entities (activity, workstream, epic/stage)
+        let taskName = '';
+        if (allocation.activity?.name) {
+          taskName = allocation.activity.name;
+        } else if (allocation.workstream?.name) {
+          taskName = allocation.workstream.name;
+        } else if (allocation.epic?.name && allocation.stage?.name) {
+          taskName = `${allocation.epic.name} - ${allocation.stage.name}`;
+        } else if (allocation.epic?.name) {
+          taskName = allocation.epic.name;
+        } else if (allocation.stage?.name) {
+          taskName = allocation.stage.name;
+        } else {
+          taskName = allocation.resourceName || 'Project Task';
+        }
         
         assignments.push({
-          epicName: allocation.epicName || undefined,
-          stageName: allocation.stageName || undefined,
-          description: activityName,
+          epicName: allocation.epic?.name || undefined,
+          stageName: allocation.stage?.name || undefined,
+          description: taskName,
           hours,
           rate: costRate,
           amount
