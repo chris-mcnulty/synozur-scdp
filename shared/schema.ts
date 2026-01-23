@@ -254,6 +254,8 @@ export const clients = pgTable("clients", {
   // Microsoft Teams integration
   microsoftTeamId: text("microsoft_team_id"), // Azure Group/Team ID for this client
   microsoftTeamName: text("microsoft_team_name"), // Display name of the Team
+  // Payment terms override (e.g., "Net 30", "Net 45", "Due Upon Receipt")
+  paymentTerms: text("payment_terms"), // Overrides tenant default when set
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_clients_tenant").on(table.tenantId),

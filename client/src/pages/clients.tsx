@@ -317,6 +317,7 @@ export default function Clients() {
               const formData = new FormData(e.currentTarget);
               const msaDate = formData.get('msaDate') as string;
               const ndaDate = formData.get('ndaDate') as string;
+              const paymentTerms = formData.get('paymentTerms') as string;
               createClientMutation.mutate({
                 name: formData.get('name'),
                 currency: formData.get('currency') || 'USD',
@@ -324,6 +325,7 @@ export default function Clients() {
                 billingContact: formData.get('billingContact'),
                 contactName: formData.get('contactName'),
                 contactAddress: formData.get('contactAddress'),
+                paymentTerms: paymentTerms || undefined,
                 msaDate: msaDate || undefined,
                 sinceDate: formData.get('sinceDate') as string || undefined,
                 hasMsa: Boolean(msaDate), // Auto-set based on MSA date
@@ -402,6 +404,23 @@ export default function Clients() {
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="inactive">Inactive</SelectItem>
                       <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="paymentTerms">Payment Terms (Optional)</Label>
+                  <Select name="paymentTerms" defaultValue="">
+                    <SelectTrigger data-testid="select-payment-terms">
+                      <SelectValue placeholder="Use tenant default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Use Tenant Default</SelectItem>
+                      <SelectItem value="Net 10">Net 10</SelectItem>
+                      <SelectItem value="Net 30">Net 30</SelectItem>
+                      <SelectItem value="Net 45">Net 45</SelectItem>
+                      <SelectItem value="Net 60">Net 60</SelectItem>
+                      <SelectItem value="Due Upon Receipt">Due Upon Receipt</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
