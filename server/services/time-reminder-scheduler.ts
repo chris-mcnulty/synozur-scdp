@@ -158,11 +158,11 @@ export async function runTimeReminders(): Promise<{ sent: number; skipped: numbe
     return { sent: 0, skipped: 0, errors: 0 };
   }
 
-  const appUrl = process.env.REPLIT_DEV_DOMAIN 
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : process.env.REPLIT_DOMAINS 
-      ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
-      : 'https://scdp.synozur.com';
+  const appUrl = process.env.APP_URL 
+    || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
+    || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
+    || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+    || 'https://scdp.synozur.com';
 
   const recipients = await getUsersNeedingReminders();
   console.log(`[TIME-REMINDERS] Found ${recipients.length} users to remind`);
