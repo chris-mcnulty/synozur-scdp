@@ -4,7 +4,7 @@ import {
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
-  vocabularyCatalog, organizationVocabulary,
+  vocabularyCatalog, organizationVocabulary, tenants,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   expenseReports, expenseReportItems, reimbursementBatches,
   projectPlannerConnections, plannerTaskSync, userAzureMappings,
@@ -47,6 +47,7 @@ import {
   type ProjectPlannerConnection, type InsertProjectPlannerConnection,
   type PlannerTaskSync, type InsertPlannerTaskSync,
   type UserAzureMapping, type InsertUserAzureMapping,
+  type Tenant,
   type VocabularyTerms, DEFAULT_VOCABULARY
 } from "@shared/schema";
 import { db } from "./db";
@@ -931,6 +932,10 @@ export interface IStorage {
   updateUserAzureMapping(id: string, updates: Partial<InsertUserAzureMapping>): Promise<UserAzureMapping>;
   deleteUserAzureMapping(id: string): Promise<void>;
   getAllUserAzureMappings(): Promise<UserAzureMapping[]>;
+  
+  // Tenant Methods
+  getTenant(id: string): Promise<Tenant | undefined>;
+  updateTenant(id: string, updates: Partial<Tenant>): Promise<Tenant>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -9673,6 +9678,25 @@ export class DatabaseStorage implements IStorage {
   async getAllUserAzureMappings(): Promise<UserAzureMapping[]> {
     return await db.select()
       .from(userAzureMappings);
+  }
+
+  // Tenant Methods
+  async getTenant(id: string): Promise<Tenant | undefined> {
+    const [tenant] = await db.select()
+      .from(tenants)
+      .where(eq(tenants.id, id));
+    return tenant || undefined;
+  }
+
+  async updateTenant(id: string, updates: Partial<Tenant>): Promise<Tenant> {
+    const [updated] = await db.update(tenants)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(tenants.id, id))
+      .returning();
+    return updated;
   }
 }
 

@@ -2117,6 +2117,77 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Tenant Settings (for current user's tenant)
+  app.get("/api/tenant/settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+      
+      if (!tenantId) {
+        return res.status(404).json({ message: "No tenant associated with user" });
+      }
+
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) {
+        return res.status(404).json({ message: "Tenant not found" });
+      }
+
+      res.json({
+        id: tenant.id,
+        name: tenant.name,
+        logoUrl: tenant.logoUrl,
+        logoUrlDark: tenant.logoUrlDark,
+        companyAddress: tenant.companyAddress,
+        companyPhone: tenant.companyPhone,
+        companyEmail: tenant.companyEmail,
+        companyWebsite: tenant.companyWebsite,
+        paymentTerms: tenant.paymentTerms,
+      });
+    } catch (error: any) {
+      console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
+      res.status(500).json({ message: "Failed to fetch tenant settings" });
+    }
+  });
+
+  app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+      
+      if (!tenantId) {
+        return res.status(404).json({ message: "No tenant associated with user" });
+      }
+
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms } = req.body;
+
+      const updatedTenant = await storage.updateTenant(tenantId, {
+        name,
+        logoUrl,
+        logoUrlDark,
+        companyAddress,
+        companyPhone,
+        companyEmail,
+        companyWebsite,
+        paymentTerms,
+      });
+
+      res.json({
+        id: updatedTenant.id,
+        name: updatedTenant.name,
+        logoUrl: updatedTenant.logoUrl,
+        logoUrlDark: updatedTenant.logoUrlDark,
+        companyAddress: updatedTenant.companyAddress,
+        companyPhone: updatedTenant.companyPhone,
+        companyEmail: updatedTenant.companyEmail,
+        companyWebsite: updatedTenant.companyWebsite,
+        paymentTerms: updatedTenant.paymentTerms,
+      });
+    } catch (error: any) {
+      console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
+      res.status(500).json({ message: "Failed to update tenant settings" });
+    }
+  });
+
   // System Settings (admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
