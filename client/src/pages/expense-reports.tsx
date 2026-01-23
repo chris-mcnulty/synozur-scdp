@@ -22,8 +22,7 @@ import { z } from "zod";
 
 const reportFormSchema = insertExpenseReportSchema.omit({
   submitterId: true,
-  reportNumber: true,
-  totalAmount: true,
+  tenantId: true,
 }).extend({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
