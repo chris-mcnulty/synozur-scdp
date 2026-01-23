@@ -84,7 +84,7 @@ export default function ExpenseReports() {
   // Filter to show only expenses without a report (not attached to any expense report yet)
   const unassignedExpenses = myExpenses.filter(exp => 
     !reports.some(report => 
-      report.items.some(item => item.expense.id === exp.id)
+      (report.items || []).some(item => item?.expense?.id === exp.id)
     )
   );
 
@@ -250,7 +250,7 @@ export default function ExpenseReports() {
                       {report.title}
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      {report.reportNumber} • {report.items.length} expense{report.items.length !== 1 ? 's' : ''}
+                      {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
                     </CardDescription>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -409,7 +409,7 @@ export default function ExpenseReports() {
                 )}
 
                 <div>
-                  <h3 className="font-medium mb-2">Expenses ({selectedReport.items.length})</h3>
+                  <h3 className="font-medium mb-2">Expenses ({(selectedReport.items || []).length})</h3>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -421,7 +421,7 @@ export default function ExpenseReports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {selectedReport.items.map((item) => (
+                      {(selectedReport.items || []).map((item) => (
                         <TableRow key={item.id}>
                           <TableCell>{format(new Date(item.expense.date), 'MMM d, yyyy')}</TableCell>
                           <TableCell>
@@ -458,7 +458,7 @@ export default function ExpenseReports() {
                       </Button>
                       <Button
                         onClick={() => submitReportMutation.mutate(selectedReport.id)}
-                        disabled={submitReportMutation.isPending || selectedReport.items.length === 0}
+                        disabled={submitReportMutation.isPending || (selectedReport.items || []).length === 0}
                         data-testid="button-submit-report"
                       >
                         <Send className="mr-2 h-4 w-4" />
