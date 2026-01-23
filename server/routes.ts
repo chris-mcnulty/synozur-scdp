@@ -14211,8 +14211,10 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Try to get settings from tenant first
       const tenantId = batch.tenantId || (req.user as any)?.primaryTenantId;
+      console.log(`[INVOICE PDF] Resolving tenant - batch.tenantId: ${batch.tenantId}, user.primaryTenantId: ${(req.user as any)?.primaryTenantId}, resolved: ${tenantId}`);
       if (tenantId) {
         const tenant = await storage.getTenant(tenantId);
+        console.log(`[INVOICE PDF] Tenant found: ${tenant?.name}, logo: ${tenant?.logoUrl?.substring(0, 50)}..., address: ${tenant?.companyAddress?.substring(0, 30)}...`);
         if (tenant) {
           companyName = tenant.name || undefined;
           companyLogo = tenant.logoUrl || undefined;
@@ -14222,11 +14224,15 @@ export async function registerRoutes(app: Express): Promise<void> {
           companyWebsite = tenant.companyWebsite || undefined;
           defaultPaymentTerms = tenant.paymentTerms || undefined;
         }
+      } else {
+        console.log('[INVOICE PDF] No tenant ID found, falling back to system settings');
       }
 
       // Fall back to system settings if tenant settings not available
       if (!companyName) companyName = await storage.getSystemSettingValue('COMPANY_NAME', 'Your Company Name');
       if (!companyLogo) companyLogo = await storage.getSystemSettingValue('COMPANY_LOGO_URL');
+      
+      console.log(`[INVOICE PDF] Final values - name: ${companyName}, logo: ${companyLogo?.substring(0, 50)}..., address: ${companyAddress?.substring(0, 30)}...`);
       if (!companyAddress) companyAddress = await storage.getSystemSettingValue('COMPANY_ADDRESS');
       if (!companyPhone) companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
       if (!companyEmail) companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
