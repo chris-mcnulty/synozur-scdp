@@ -9789,6 +9789,7 @@ export async function generateInvoicePDF(params: {
     companyEmail?: string | undefined;
     companyWebsite?: string | undefined;
     paymentTerms?: string | undefined;
+    showConstellationFooter?: boolean;
   };
 }): Promise<Buffer> {
   const { batch, lines, adjustments, companySettings } = params;
@@ -10106,6 +10107,8 @@ export async function generateInvoicePDF(params: {
     companyWebsite: companySettings.companyWebsite,
     // Use batch-specific payment terms if available, otherwise fall back to global setting
     paymentTerms: batch.paymentTerms || companySettings.paymentTerms,
+    // Show Constellation footer (tenant-level setting, defaults to true)
+    showConstellationFooter: companySettings.showConstellationFooter ?? true,
     
     // Batch info
     batchId: batch.batchId,

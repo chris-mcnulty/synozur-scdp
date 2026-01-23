@@ -2142,6 +2142,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyEmail: tenant.companyEmail,
         companyWebsite: tenant.companyWebsite,
         paymentTerms: tenant.paymentTerms,
+        showConstellationFooter: tenant.showConstellationFooter ?? true,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -2158,7 +2159,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "No tenant associated with user" });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms } = req.body;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter } = req.body;
 
       const updatedTenant = await storage.updateTenant(tenantId, {
         name,
@@ -2169,6 +2170,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyEmail,
         companyWebsite,
         paymentTerms,
+        showConstellationFooter,
       });
 
       res.json({
@@ -2181,6 +2183,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyEmail: updatedTenant.companyEmail,
         companyWebsite: updatedTenant.companyWebsite,
         paymentTerms: updatedTenant.paymentTerms,
+        showConstellationFooter: updatedTenant.showConstellationFooter ?? true,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
@@ -14209,6 +14212,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       let companyEmail: string | undefined;
       let companyWebsite: string | undefined;
       let defaultPaymentTerms: string | undefined;
+      let showConstellationFooter: boolean = true; // Default to true
 
       // Try to get settings from tenant first
       const tenantId = batch.tenantId || (req.user as any)?.primaryTenantId;
@@ -14224,6 +14228,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           companyEmail = tenant.companyEmail || undefined;
           companyWebsite = tenant.companyWebsite || undefined;
           defaultPaymentTerms = tenant.paymentTerms || undefined;
+          showConstellationFooter = tenant.showConstellationFooter ?? true;
         }
       } else {
         console.log('[INVOICE PDF] No tenant ID found, falling back to system settings');
@@ -14280,7 +14285,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           companyPhone,
           companyEmail,
           companyWebsite,
-          paymentTerms
+          paymentTerms,
+          showConstellationFooter
         }
       });
 
