@@ -3,12 +3,7 @@ name = "Start application"
 author = "agent"
 mode = "parallel"
 
-[workflows.workflow]
-name = "Start application"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
+[[workflows.tasks]]
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000

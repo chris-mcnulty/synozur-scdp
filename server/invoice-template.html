@@ -406,7 +406,7 @@
         {{/if}}
         {{#if taxAmount}}
         <tr>
-          <td>Tax {{#if taxRate}}({{taxRate}}%){{/if}}:</td>
+          <td>Tax {{#if effectiveTaxPercent}}({{effectiveTaxPercent}}%){{/if}}:</td>
           <td class="text-right font-mono">${{taxAmount}}</td>
         </tr>
         {{/if}}
