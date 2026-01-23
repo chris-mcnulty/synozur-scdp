@@ -1,0 +1,116 @@
+2026-01-23 14:19:05.89
+ffd408a6
+User
+allocationId: '828d6e61-6101-4f3a-a906-49bf25c2c86f'
+2026-01-23 14:19:05.89
+ffd408a6
+User
+tenantId: 'afac1c3e',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+description: 'presentation prep',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+}
+2026-01-23 14:19:05.89
+ffd408a6
+User
+billable: true,
+2026-01-23 14:19:05.89
+ffd408a6
+User
+date: '2026-01-14',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+user: 'andrew.borg@synozur.com',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+hasRefreshToken: false
+2026-01-23 14:19:05.89
+ffd408a6
+User
+[TIME_ENTRY] Creating time entry: {
+2026-01-23 14:19:05.89
+ffd408a6
+User
+}
+2026-01-23 14:19:05.89
+ffd408a6
+User
+allocationId: '828d6e61-6101-4f3a-a906-49bf25c2c86f'
+2026-01-23 14:19:05.89
+ffd408a6
+User
+personId: '78008b2f-07eb-4dad-bc10-4cb718a88275'
+2026-01-23 14:19:05.89
+ffd408a6
+User
+description: 'presentation prep',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+email: 'andrew.borg@synozur.com',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+[DIAGNOSTIC] Authenticated user full details: {
+2026-01-23 14:19:05.89
+ffd408a6
+User
+name: 'Andrew Borg',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+hours: '5.0',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+timestamp: '2026-01-23T22:19:05.899Z'
+2026-01-23 14:19:05.89
+ffd408a6
+User
+role: 'employee',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+date: '2026-01-14',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+id: '78008b2f-07eb-4dad-bc10-4cb718a88275',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+personId: '78008b2f-07eb-4dad-bc10-4cb718a88275',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+sessionSize: 2,
+2026-01-23 14:19:05.89
+ffd408a6
+User
+projectId: '1a8b6fc5-2ede-4775-9115-ee06391729ef',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+}
+2026-01-23 14:19:05.89
+ffd408a6
+User
+billable: true,
+2026-01-23 14:19:05.89
+ffd408a6
+User
+isActive: true,
+2026-01-23 14:19:05.89
+ffd408a6
+User
+allocationId: '828d6e61-6101-4f3a-a906-49bf25c2c86f',
+2026-01-23 14:19:05.89
+ffd408a6
+User
+}
