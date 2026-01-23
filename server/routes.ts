@@ -6095,7 +6095,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         batchType: "mixed",
         projectMilestoneId: milestoneId,
         exportedToQBO: false,
-        createdBy: userId
+        createdBy: userId,
+        tenantId: req.user?.tenantId || null
       });
       
       // Automatically create an invoice line for the milestone amount
