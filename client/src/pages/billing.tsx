@@ -468,7 +468,16 @@ export default function Billing() {
                     <Label className="text-base font-medium">Invoice Type</Label>
                     <RadioGroup 
                       value={batchType} 
-                      onValueChange={(value: 'services' | 'expenses' | 'mixed' | 'milestone') => setBatchType(value)}
+                      onValueChange={(value: 'services' | 'expenses' | 'mixed' | 'milestone') => {
+                        setBatchType(value);
+                        // Expense invoices are never taxed - auto-set tax rate to 0
+                        if (value === 'expenses') {
+                          setTaxRate('0');
+                        } else if (taxRate === '0') {
+                          // Reset to default when switching away from expenses
+                          setTaxRate('9.3');
+                        }
+                      }}
                       className="space-y-3"
                       data-testid="radio-batch-type"
                     >
@@ -632,8 +641,13 @@ export default function Billing() {
                       onChange={(e) => setTaxRate(e.target.value)}
                       data-testid="input-tax-rate"
                       step="0.1"
+                      disabled={batchType === 'expenses'}
                     />
-                    <p className="text-sm text-muted-foreground">Tax is applied at the batch level to the total invoice amount (default: 9.3%)</p>
+                    <p className="text-sm text-muted-foreground">
+                      {batchType === 'expenses' 
+                        ? 'Expense reimbursements are not taxable' 
+                        : 'Tax is applied at the batch level to the total invoice amount (default: 9.3%)'}
+                    </p>
                   </div>
 
                   <div className="flex justify-end space-x-3">

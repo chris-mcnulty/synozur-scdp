@@ -14238,12 +14238,35 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!companyPhone) companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
       if (!companyEmail) companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
       if (!companyWebsite) companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
-      if (!defaultPaymentTerms) defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due within 30 days');
+      if (!defaultPaymentTerms) defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Net 30');
       
-      // Use batch-specific payment terms if set, otherwise use defaults based on batch type
-      // Expense-only invoices default to "Due on Receipt"
-      const paymentTerms = batch.paymentTerms || 
-        (batch.batchType === 'expense' ? 'Due on Receipt' : defaultPaymentTerms);
+      // Get client payment terms if available (for client-level override)
+      // Use the first client's payment terms if multiple clients in batch
+      let clientPaymentTerms: string | null = null;
+      if (lines.length > 0) {
+        const firstClientId = lines[0].clientId;
+        if (firstClientId) {
+          const client = await storage.getClient(firstClientId);
+          clientPaymentTerms = client?.paymentTerms || null;
+        }
+      }
+      
+      // Payment terms hierarchy: batch override > client override > tenant default
+      // Special rule: expense invoices default to "Due Upon Receipt" unless explicitly overridden
+      let paymentTerms: string;
+      if (batch.paymentTerms) {
+        // Explicit batch-level override takes precedence
+        paymentTerms = batch.paymentTerms;
+      } else if (batch.batchType === 'expenses') {
+        // Expense invoices default to Due Upon Receipt
+        paymentTerms = 'Due Upon Receipt';
+      } else if (clientPaymentTerms) {
+        // Client-level override
+        paymentTerms = clientPaymentTerms;
+      } else {
+        // Fall back to tenant/system default
+        paymentTerms = defaultPaymentTerms;
+      }
 
       // Generate PDF
       const pdfBuffer = await storage.generateInvoicePDF({

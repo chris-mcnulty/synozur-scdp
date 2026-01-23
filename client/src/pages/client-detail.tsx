@@ -144,6 +144,7 @@ export default function ClientDetail() {
         contactName: client.contactName || "",
         contactAddress: client.contactAddress || "",
         currency: client.currency,
+        paymentTerms: client.paymentTerms || "",
         msaDate: client.msaDate || "",
         sinceDate: client.sinceDate || "",
         hasMsa: client.hasMsa || false,
@@ -226,6 +227,7 @@ export default function ClientDetail() {
       contactName: client.contactName || "",
       contactAddress: client.contactAddress || "",
       currency: client.currency,
+      paymentTerms: client.paymentTerms || "",
       msaDate: client.msaDate || "",
       sinceDate: client.sinceDate || "",
       hasMsa: client.hasMsa || false,
@@ -480,6 +482,25 @@ export default function ClientDetail() {
                             onChange={(e) => setEditForm({ ...editForm, billingContact: e.target.value })}
                             data-testid="input-edit-billing-contact"
                           />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="paymentTerms">Payment Terms</Label>
+                          <Select
+                            value={editForm.paymentTerms || ""}
+                            onValueChange={(value) => setEditForm({ ...editForm, paymentTerms: value === "" ? null : value })}
+                          >
+                            <SelectTrigger data-testid="select-edit-payment-terms">
+                              <SelectValue placeholder="Use tenant default" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">Use Tenant Default</SelectItem>
+                              <SelectItem value="Net 10">Net 10</SelectItem>
+                              <SelectItem value="Net 30">Net 30</SelectItem>
+                              <SelectItem value="Net 45">Net 45</SelectItem>
+                              <SelectItem value="Net 60">Net 60</SelectItem>
+                              <SelectItem value="Due Upon Receipt">Due Upon Receipt</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                         <div className="md:col-span-2 space-y-2">
                           <Label htmlFor="contactAddress">Contact Address</Label>
