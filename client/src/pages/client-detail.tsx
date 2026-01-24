@@ -147,6 +147,7 @@ export default function ClientDetail() {
         secondaryContactEmail: client.secondaryContactEmail || "",
         currency: client.currency,
         paymentTerms: client.paymentTerms || "",
+        paymentMethod: client.paymentMethod || "ACH Transfer",
         msaDate: client.msaDate || "",
         sinceDate: client.sinceDate || "",
         hasMsa: client.hasMsa || false,
@@ -232,6 +233,7 @@ export default function ClientDetail() {
       secondaryContactEmail: client.secondaryContactEmail || "",
       currency: client.currency,
       paymentTerms: client.paymentTerms || "",
+      paymentMethod: client.paymentMethod || "ACH Transfer",
       msaDate: client.msaDate || "",
       sinceDate: client.sinceDate || "",
       hasMsa: client.hasMsa || false,
@@ -524,6 +526,23 @@ export default function ClientDetail() {
                               <SelectItem value="Net 45">Net 45</SelectItem>
                               <SelectItem value="Net 60">Net 60</SelectItem>
                               <SelectItem value="Due Upon Receipt">Due Upon Receipt</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="paymentMethod">Payment Method</Label>
+                          <Select
+                            value={editForm.paymentMethod || "ACH Transfer"}
+                            onValueChange={(value) => setEditForm({ ...editForm, paymentMethod: value })}
+                          >
+                            <SelectTrigger data-testid="select-edit-payment-method">
+                              <SelectValue placeholder="Select payment method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ACH Transfer">ACH Transfer</SelectItem>
+                              <SelectItem value="Wire Transfer">Wire Transfer</SelectItem>
+                              <SelectItem value="Check">Check</SelectItem>
+                              <SelectItem value="Credit Card">Credit Card</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

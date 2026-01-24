@@ -90,9 +90,47 @@
       padding-right: 40px;
     }
 
-    .batch-info {
-      flex: 1;
+    .invoice-details-section {
+      flex: 0 0 auto;
       text-align: right;
+    }
+
+    .invoice-info-table {
+      border-collapse: collapse;
+      margin-left: auto;
+    }
+
+    .invoice-info-table td {
+      padding: 4px 0;
+    }
+
+    .invoice-info-table td.label {
+      color: #6b7280;
+      font-size: 11px;
+      text-transform: uppercase;
+      padding-right: 30px;
+      text-align: left;
+    }
+
+    .invoice-info-table td.value {
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .payment-method-section {
+      margin-top: 20px;
+      text-align: right;
+    }
+
+    .payment-method-section .label {
+      color: #6b7280;
+      font-size: 11px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .payment-method-section .value {
+      font-weight: 600;
     }
 
     .section-title {
@@ -337,16 +375,29 @@
         {{#unless @last}}<br>{{/unless}}
         {{/each}}
       </div>
-      <div class="batch-info">
-        <div class="section-title">Batch Information</div>
-        <div><strong>Period:</strong> {{startDate}} to {{endDate}}</div>
-        <div><strong>Status:</strong> {{status}}</div>
-        {{#if totalProjects}}
-        <div><strong>Projects:</strong> {{totalProjects}}</div>
-        {{/if}}
-        {{#if totalLines}}
-        <div><strong>Line Items:</strong> {{totalLines}}</div>
-        {{/if}}
+      <div class="invoice-details-section">
+        <table class="invoice-info-table">
+          <tr>
+            <td class="label">INVOICE</td>
+            <td class="value">{{glInvoiceNumber}}</td>
+          </tr>
+          <tr>
+            <td class="label">DATE</td>
+            <td class="value">{{invoiceDate}}</td>
+          </tr>
+          <tr>
+            <td class="label">TERMS</td>
+            <td class="value">{{paymentTerms}}</td>
+          </tr>
+          <tr>
+            <td class="label">DUE DATE</td>
+            <td class="value">{{dueDate}}</td>
+          </tr>
+        </table>
+        <div class="payment-method-section">
+          <div class="label">PAYMENT METHOD</div>
+          <div class="value">{{paymentMethod}}</div>
+        </div>
       </div>
     </div>
 

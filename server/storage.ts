@@ -9806,6 +9806,45 @@ export async function resolveRatesForTimeEntry(
   return { billingRate, costRate };
 }
 
+// Helper function to calculate due date based on payment terms
+function calculateDueDate(paymentTerms?: string): string {
+  const today = new Date();
+  let daysToAdd = 30; // Default to Net 30
+  
+  if (paymentTerms) {
+    const lowerTerms = paymentTerms.toLowerCase();
+    if (lowerTerms.includes('due upon receipt') || lowerTerms.includes('due on receipt')) {
+      daysToAdd = 0;
+    } else if (lowerTerms.includes('net 7')) {
+      daysToAdd = 7;
+    } else if (lowerTerms.includes('net 10')) {
+      daysToAdd = 10;
+    } else if (lowerTerms.includes('net 15')) {
+      daysToAdd = 15;
+    } else if (lowerTerms.includes('net 21')) {
+      daysToAdd = 21;
+    } else if (lowerTerms.includes('net 30')) {
+      daysToAdd = 30;
+    } else if (lowerTerms.includes('net 45')) {
+      daysToAdd = 45;
+    } else if (lowerTerms.includes('net 60')) {
+      daysToAdd = 60;
+    } else if (lowerTerms.includes('net 90')) {
+      daysToAdd = 90;
+    } else {
+      // Try to extract number from terms (e.g., "Net 25")
+      const match = lowerTerms.match(/net\s*(\d+)/);
+      if (match) {
+        daysToAdd = parseInt(match[1], 10);
+      }
+    }
+  }
+  
+  const dueDate = new Date(today);
+  dueDate.setDate(dueDate.getDate() + daysToAdd);
+  return dueDate.toLocaleDateString();
+}
+
 // PDF Generation implementation
 export async function generateInvoicePDF(params: {
   batch: InvoiceBatch & { totalLinesCount: number; clientCount: number; projectCount: number };
@@ -10149,6 +10188,11 @@ export async function generateInvoicePDF(params: {
     generatedDate: new Date().toLocaleDateString(),
     totalProjects: batch.projectCount,
     totalLines: batch.totalLinesCount,
+    
+    // Invoice header details (legacy format)
+    invoiceDate: new Date().toLocaleDateString(),
+    dueDate: calculateDueDate(batch.paymentTerms || companySettings.paymentTerms),
+    paymentMethod: uniqueClients[0]?.paymentMethod || 'ACH Transfer',
     
     // Client info
     uniqueClients,
