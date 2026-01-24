@@ -6182,12 +6182,26 @@ export class DatabaseStorage implements IStorage {
         // Create invoice line for expense (expenses are not taxable by default)
         // Include person name for tracking (especially important for per diems)
         const vendorInfo = expense.vendor ? ` - ${expense.vendor}` : '';
+        
+        // For mileage expenses, show miles as quantity and rate per mile
+        let lineQuantity: string | null = null;
+        let lineRate: string | null = null;
+        if (expense.category === 'mileage' && expense.quantity) {
+          const miles = Number(expense.quantity);
+          if (miles > 0) {
+            lineQuantity = expense.quantity;
+            lineRate = (amount / miles).toFixed(4); // Calculate rate per mile
+          }
+        }
+        
         await tx.insert(invoiceLines).values({
           batchId,
           projectId,
           clientId: client.id,
           type: 'expense',
           amount: expense.amount,
+          quantity: lineQuantity,
+          rate: lineRate,
           description: `${person.name} - ${expense.description}${vendorInfo} (${expense.date})`,
           taxable: false, // Expenses are pass-through costs, not subject to tax
           expenseCategory: expense.category || null // Store expense category for reporting
