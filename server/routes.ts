@@ -11452,12 +11452,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
   
-  app.post("/api/platform/airports/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
+  app.post("/api/platform/airports/upload", requireAuth, upload.single('file'), async (req, res) => {
     try {
       const user = (req as any).user;
-      const userRole = user?.role;
+      const platformRole = user?.platformRole;
       
-      if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
+      if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
         return res.status(403).json({ message: "Only platform admins can upload airport data" });
       }
       
