@@ -48,6 +48,9 @@ const expenseFormSchema = insertExpenseSchema.omit({
   perDiemDays: z.string().optional(), // Number of days for per diem (auto-calculated from date range)
   perDiemIncludeLodging: z.boolean().optional(), // Include lodging in per diem calculation
   perDiemItemize: z.boolean().optional(), // Break per diem into individual daily charges
+  departureAirport: z.string().optional(), // 3-letter airport code for departure
+  arrivalAirport: z.string().optional(), // 3-letter airport code for arrival  
+  isRoundTrip: z.boolean().optional(), // Round trip vs one-way
 }).refine((data) => {
   // Validate that miles is positive when category is mileage
   if (data.category === "mileage") {
@@ -146,6 +149,9 @@ export default function Expenses() {
       perDiemDays: "",
       perDiemIncludeLodging: false,
       perDiemItemize: false,
+      departureAirport: "",
+      arrivalAirport: "",
+      isRoundTrip: false,
     },
   });
 
@@ -329,9 +335,14 @@ export default function Expenses() {
         perDiemCity: "",
         perDiemState: "",
         perDiemZip: "",
+        perDiemStartDate: "",
+        perDiemEndDate: "",
         perDiemDays: "",
         perDiemIncludeLodging: false,
         perDiemItemize: false,
+        departureAirport: "",
+        arrivalAirport: "",
+        isRoundTrip: false,
       });
       // Reset component state
       setPrevCategory("");
@@ -491,9 +502,14 @@ export default function Expenses() {
             perDiemCity: "",
             perDiemState: "",
             perDiemZip: "",
+            perDiemStartDate: "",
+            perDiemEndDate: "",
             perDiemDays: "",
             perDiemIncludeLodging: false,
             perDiemItemize: false,
+            departureAirport: "",
+            arrivalAirport: "",
+            isRoundTrip: false,
           });
           setPrevCategory("");
           setReceiptFile(null);
@@ -782,6 +798,17 @@ export default function Expenses() {
         days: data.perDiemDays, 
         location: submitData.perDiemLocation,
         amount: submitData.amount
+      });
+    } else if (data.category === "airfare") {
+      // For airfare, include airport codes and round trip flag
+      submitData.departureAirport = data.departureAirport?.toUpperCase() || null;
+      submitData.arrivalAirport = data.arrivalAirport?.toUpperCase() || null;
+      submitData.isRoundTrip = data.isRoundTrip ?? false;
+      
+      console.log('Airfare transformation:', { 
+        departure: submitData.departureAirport, 
+        arrival: submitData.arrivalAirport,
+        isRoundTrip: submitData.isRoundTrip
       });
     } else {
       // Clear quantity and unit for non-mileage/non-perdiem expenses
@@ -1306,6 +1333,76 @@ export default function Expenses() {
                         </FormItem>
                       )}
                     />
+                  )}
+
+                  {/* Airfare-specific fields */}
+                  {watchedCategory === "airfare" && (
+                    <div className="space-y-4 p-4 border rounded-md bg-muted/50">
+                      <div className="text-sm font-medium">Flight Route</div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="departureAirport"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>From (Airport Code)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="SEA"
+                                  maxLength={3}
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                  data-testid="input-departure-airport"
+                                />
+                              </FormControl>
+                              <FormDescription>3-letter code (e.g., SEA, LAX)</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="arrivalAirport"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>To (Airport Code)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="JFK"
+                                  maxLength={3}
+                                  {...field}
+                                  onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                  data-testid="input-arrival-airport"
+                                />
+                              </FormControl>
+                              <FormDescription>3-letter code (e.g., JFK, ORD)</FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="isRoundTrip"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="checkbox-round-trip"
+                              />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                              <FormLabel>Round Trip</FormLabel>
+                              <FormDescription>
+                                Check if this is a round-trip ticket (shows as SEA ↔ JFK on invoice)
+                              </FormDescription>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   )}
 
                   {/* Per Diem-specific fields */}
