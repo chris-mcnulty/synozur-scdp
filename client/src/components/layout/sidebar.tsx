@@ -23,7 +23,8 @@ import {
   BookOpen,
   Shield,
   Crown,
-  Package
+  Package,
+  Plane
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -259,6 +260,12 @@ export function Sidebar() {
                 href="/platform/users"
                 icon={<Shield />}
                 label="Platform Users"
+              />
+              
+              <SidebarItem
+                href="/platform/airports"
+                icon={<Plane />}
+                label="Airport Codes"
               />
             </>
           )}
