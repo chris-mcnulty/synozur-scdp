@@ -38,12 +38,15 @@ interface PerDiemMatrixProps {
 
 function generateDateRange(start: string, end: string): string[] {
   const dates: string[] = [];
-  const startDate = new Date(start);
-  const endDate = new Date(end);
+  const startDate = new Date(start + 'T00:00:00');
+  const endDate = new Date(end + 'T00:00:00');
   
   const current = new Date(startDate);
   while (current <= endDate) {
-    dates.push(current.toISOString().split('T')[0]);
+    const year = current.getFullYear();
+    const month = String(current.getMonth() + 1).padStart(2, '0');
+    const day = String(current.getDate()).padStart(2, '0');
+    dates.push(`${year}-${month}-${day}`);
     current.setDate(current.getDate() + 1);
   }
   
