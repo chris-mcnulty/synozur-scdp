@@ -1562,7 +1562,7 @@ export default function Expenses() {
                                       )}
                                       data-testid="button-perdiem-start-date"
                                     >
-                                      {field.value ? format(new Date(field.value), "PPP") : "Pick start date"}
+                                      {field.value ? format(new Date(field.value + 'T00:00:00'), "PPP") : "Pick start date"}
                                       <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                     </Button>
                                   </FormControl>
@@ -1570,14 +1570,14 @@ export default function Expenses() {
                                 <PopoverContent className="w-auto p-0" align="start">
                                   <Calendar
                                     mode="single"
-                                    selected={field.value ? new Date(field.value) : undefined}
+                                    selected={field.value ? new Date(field.value + 'T00:00:00') : undefined}
                                     onSelect={(date) => {
                                       if (date) {
                                         const dateStr = format(date, "yyyy-MM-dd");
                                         field.onChange(dateStr);
                                         const endDate = form.getValues("perDiemEndDate");
                                         if (endDate) {
-                                          const endDateObj = new Date(endDate);
+                                          const endDateObj = new Date(endDate + 'T00:00:00');
                                           if (date > endDateObj) {
                                             form.setValue("perDiemEndDate", dateStr);
                                             form.setValue("perDiemDays", "1");
@@ -1613,7 +1613,7 @@ export default function Expenses() {
                                       )}
                                       data-testid="button-perdiem-end-date"
                                     >
-                                      {field.value ? format(new Date(field.value), "PPP") : "Pick end date"}
+                                      {field.value ? format(new Date(field.value + 'T00:00:00'), "PPP") : "Pick end date"}
                                       <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                                     </Button>
                                   </FormControl>
@@ -1621,11 +1621,11 @@ export default function Expenses() {
                                 <PopoverContent className="w-auto p-0" align="start">
                                   <Calendar
                                     mode="single"
-                                    selected={field.value ? new Date(field.value) : undefined}
+                                    selected={field.value ? new Date(field.value + 'T00:00:00') : undefined}
                                     disabled={(date) => {
                                       const startDate = form.getValues("perDiemStartDate");
                                       if (startDate) {
-                                        return date < new Date(startDate);
+                                        return date < new Date(startDate + 'T00:00:00');
                                       }
                                       return false;
                                     }}
@@ -1635,7 +1635,7 @@ export default function Expenses() {
                                         field.onChange(dateStr);
                                         const startDate = form.getValues("perDiemStartDate");
                                         if (startDate) {
-                                          const days = differenceInDays(date, new Date(startDate)) + 1;
+                                          const days = differenceInDays(date, new Date(startDate + 'T00:00:00')) + 1;
                                           form.setValue("perDiemDays", String(days));
                                         }
                                       }
