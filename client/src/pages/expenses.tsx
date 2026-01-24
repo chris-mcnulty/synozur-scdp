@@ -1250,7 +1250,7 @@ export default function Expenses() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Expense Entry Form */}
-          <Card className={cn("lg:col-span-1", form.watch("category") === "Per Diem" && "lg:col-span-2")} data-testid="expense-entry-form">
+          <Card className={cn("lg:col-span-1", form.watch("category") === "Per Diem" && "lg:col-span-3")} data-testid="expense-entry-form">
             <CardHeader>
               <CardTitle className="flex items-center">
                 <Plus className="w-5 h-5 mr-2" />
@@ -1858,8 +1858,8 @@ export default function Expenses() {
             </CardContent>
           </Card>
 
-          {/* Expenses List */}
-          <Card className={cn("lg:col-span-2", form.watch("category") === "Per Diem" && "lg:col-span-1")} data-testid="expenses-list">
+          {/* Expenses List - hidden when Per Diem is selected */}
+          <Card className={cn("lg:col-span-2", form.watch("category") === "Per Diem" && "hidden")} data-testid="expenses-list">
             <CardHeader>
               <CardTitle className="flex items-center">
                 <Receipt className="w-5 h-5 mr-2" />
