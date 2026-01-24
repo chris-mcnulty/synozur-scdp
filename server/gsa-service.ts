@@ -17,6 +17,134 @@ export interface GSARate {
   county?: string;
 }
 
+// M&IE breakdown by component (GSA standard breakdown table)
+export interface MIEBreakdown {
+  mieTotal: number;
+  breakfast: number;
+  lunch: number;
+  dinner: number;
+  incidentals: number;
+}
+
+// Per diem day with individual meal component selections
+export interface PerDiemDay {
+  date: string; // ISO date string
+  isClientEngagement: boolean; // Whether working with client this day
+  breakfast: boolean; // true = claim, false = provided by client
+  lunch: boolean;
+  dinner: boolean;
+  incidentals: boolean;
+  isPartialDay: boolean; // First or last day (75% rule)
+}
+
+// GSA M&IE breakdown table (FY2025)
+// Source: https://www.gsa.gov/travel/plan-a-trip/per-diem-rates/mie-breakdowns
+const MIE_BREAKDOWN_TABLE: MIEBreakdown[] = [
+  { mieTotal: 59, breakfast: 13, lunch: 15, dinner: 26, incidentals: 5 }, // Standard CONUS
+  { mieTotal: 64, breakfast: 14, lunch: 17, dinner: 28, incidentals: 5 },
+  { mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 },
+  { mieTotal: 74, breakfast: 17, lunch: 21, dinner: 31, incidentals: 5 },
+  { mieTotal: 79, breakfast: 18, lunch: 22, dinner: 34, incidentals: 5 },
+  { mieTotal: 84, breakfast: 19, lunch: 23, dinner: 37, incidentals: 5 },
+  { mieTotal: 89, breakfast: 20, lunch: 25, dinner: 39, incidentals: 5 },
+  { mieTotal: 92, breakfast: 21, lunch: 26, dinner: 40, incidentals: 5 },
+];
+
+/**
+ * Get M&IE breakdown by total M&IE rate
+ * Finds the closest matching tier from the GSA breakdown table
+ */
+export function getMIEBreakdown(mieTotal: number): MIEBreakdown {
+  // Find exact match first
+  const exactMatch = MIE_BREAKDOWN_TABLE.find(b => b.mieTotal === mieTotal);
+  if (exactMatch) return exactMatch;
+  
+  // Find closest match
+  let closest = MIE_BREAKDOWN_TABLE[0];
+  let minDiff = Math.abs(mieTotal - closest.mieTotal);
+  
+  for (const breakdown of MIE_BREAKDOWN_TABLE) {
+    const diff = Math.abs(mieTotal - breakdown.mieTotal);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = breakdown;
+    }
+  }
+  
+  // If M&IE is higher than all tiers, calculate proportionally
+  if (mieTotal > 92) {
+    // Use percentages: 15% breakfast, 25% lunch, 40% dinner, rest incidentals
+    const breakfast = Math.round(mieTotal * 0.15);
+    const lunch = Math.round(mieTotal * 0.25);
+    const dinner = Math.round(mieTotal * 0.40);
+    const incidentals = mieTotal - breakfast - lunch - dinner;
+    return { mieTotal, breakfast, lunch, dinner, incidentals };
+  }
+  
+  return closest;
+}
+
+/**
+ * Calculate per diem total based on day-by-day selections
+ * Allows deducting meals provided by client
+ */
+export function calculatePerDiemWithComponents(
+  gsaRate: GSARate,
+  days: PerDiemDay[]
+): {
+  totalAmount: number;
+  breakdown: MIEBreakdown;
+  dailyBreakdown: { date: string; amount: number; components: string[] }[];
+} {
+  const breakdown = getMIEBreakdown(gsaRate.meals);
+  const dailyBreakdown: { date: string; amount: number; components: string[] }[] = [];
+  let totalAmount = 0;
+  
+  for (const day of days) {
+    if (!day.isClientEngagement) {
+      // Skip days with no client engagement
+      dailyBreakdown.push({ date: day.date, amount: 0, components: ['No client engagement'] });
+      continue;
+    }
+    
+    let dayAmount = 0;
+    const components: string[] = [];
+    
+    // Add each meal component if not provided by client
+    if (day.breakfast) {
+      dayAmount += breakdown.breakfast;
+      components.push(`Breakfast $${breakdown.breakfast}`);
+    }
+    if (day.lunch) {
+      dayAmount += breakdown.lunch;
+      components.push(`Lunch $${breakdown.lunch}`);
+    }
+    if (day.dinner) {
+      dayAmount += breakdown.dinner;
+      components.push(`Dinner $${breakdown.dinner}`);
+    }
+    if (day.incidentals) {
+      dayAmount += breakdown.incidentals;
+      components.push(`Incidentals $${breakdown.incidentals}`);
+    }
+    
+    // Apply 75% rule for first/last day if it's a partial day
+    if (day.isPartialDay && components.length > 0) {
+      dayAmount = Math.round(dayAmount * 0.75 * 100) / 100;
+      components.push('(75% partial day)');
+    }
+    
+    totalAmount += dayAmount;
+    dailyBreakdown.push({ date: day.date, amount: dayAmount, components });
+  }
+  
+  return {
+    totalAmount: Math.round(totalAmount * 100) / 100,
+    breakdown,
+    dailyBreakdown
+  };
+}
+
 export interface DailyComponent {
   day: number;
   type: 'meals' | 'lodging';

@@ -11450,6 +11450,66 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Get M&IE breakdown by total rate (for displaying component values)
+  app.get("/api/perdiem/mie-breakdown/:mieTotal", requireAuth, async (req, res) => {
+    try {
+      const mieTotal = parseFloat(req.params.mieTotal);
+      if (isNaN(mieTotal) || mieTotal <= 0) {
+        return res.status(400).json({ message: "Invalid M&IE total" });
+      }
+      
+      const { getMIEBreakdown } = await import("./gsa-service.js");
+      const breakdown = getMIEBreakdown(mieTotal);
+      res.json(breakdown);
+    } catch (error) {
+      console.error("Error getting M&IE breakdown:", error);
+      res.status(500).json({ message: "Failed to get M&IE breakdown" });
+    }
+  });
+
+  // Calculate per diem with component selections (for meal deductions)
+  app.post("/api/perdiem/calculate-with-components", requireAuth, async (req, res) => {
+    try {
+      const { city, state, zip, days, year } = req.body;
+      
+      // days is an array of PerDiemDay objects with individual meal component selections
+      if (!Array.isArray(days) || days.length === 0) {
+        return res.status(400).json({ message: "Days array is required with component selections" });
+      }
+      
+      if (!zip && (!city || !state)) {
+        return res.status(400).json({ message: "Location required. Provide either city/state or ZIP code." });
+      }
+      
+      const { getPerDiemRatesByCity, getPerDiemRatesByZip, calculatePerDiemWithComponents, getStandardCONUSRate } = await import("./gsa-service.js");
+      
+      let gsaRate;
+      try {
+        if (zip) {
+          gsaRate = await getPerDiemRatesByZip(zip, year);
+        } else if (city && state) {
+          gsaRate = await getPerDiemRatesByCity(city, state, year);
+        }
+      } catch (apiError: any) {
+        console.warn("[PERDIEM_COMPONENTS] GSA API error (will fallback to CONUS):", apiError?.message);
+      }
+      
+      // Fallback to standard CONUS rate
+      if (!gsaRate) {
+        gsaRate = await getStandardCONUSRate(year);
+      }
+      
+      const calculation = calculatePerDiemWithComponents(gsaRate, days);
+      res.json({
+        ...calculation,
+        gsaRate
+      });
+    } catch (error: any) {
+      console.error("[PERDIEM_COMPONENTS] Error:", error);
+      res.status(500).json({ message: "Failed to calculate per diem with components", error: error?.message });
+    }
+  });
+
 
   // Regular expenses endpoint - "My Expenses" page always shows current user's expenses only
   app.get("/api/expenses", requireAuth, async (req, res) => {

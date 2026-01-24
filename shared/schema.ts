@@ -761,6 +761,9 @@ export const expenses = pgTable("expenses", {
   perDiemMealsRate: decimal("per_diem_meals_rate", { precision: 10, scale: 2 }), // GSA M&IE rate
   perDiemLodgingRate: decimal("per_diem_lodging_rate", { precision: 10, scale: 2 }), // GSA lodging rate
   perDiemBreakdown: jsonb("per_diem_breakdown"), // Detailed breakdown: { fullDays: 2, partialDays: 1, mealsTotal: 148, lodgingTotal: 200 }
+  // Per Diem day-by-day component selections (for meal deductions when client provides meals)
+  // Format: [{ date: "2025-01-24", isClientEngagement: true, breakfast: true, lunch: false, dinner: true, incidentals: true }]
+  perDiemDays: jsonb("per_diem_days"), // Array of day selections with meal component checkboxes
   // Approval workflow fields
   approvalStatus: text("approval_status").notNull().default("draft"), // draft, submitted, approved, rejected, reimbursed
   submittedAt: timestamp("submitted_at"),
