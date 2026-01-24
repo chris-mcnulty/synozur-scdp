@@ -1959,15 +1959,41 @@ export default function Expenses() {
                         {expense.receiptUrl && (
                           <div className="text-sm mt-1 flex items-center gap-1">
                             <Receipt className="w-3 h-3 text-green-600" />
-                            <a 
-                              href={expense.receiptUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-green-600 hover:underline"
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const sessionId = localStorage.getItem('sessionId');
+                                  const response = await fetch(expense.receiptUrl!, {
+                                    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                                  });
+                                  if (!response.ok) {
+                                    throw new Error('Failed to download receipt');
+                                  }
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  const contentDisposition = response.headers.get('Content-Disposition');
+                                  const filename = contentDisposition?.match(/filename="(.+)"/)?.[1] || 'receipt';
+                                  a.download = filename;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  window.URL.revokeObjectURL(url);
+                                  document.body.removeChild(a);
+                                } catch (error) {
+                                  console.error('Receipt download error:', error);
+                                  toast({
+                                    title: "Download failed",
+                                    description: "Could not download receipt. Please try again.",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
+                              className="text-green-600 hover:underline cursor-pointer"
                               data-testid={`link-receipt-${expense.id}`}
                             >
                               View Receipt
-                            </a>
+                            </button>
                           </div>
                         )}
                       </div>

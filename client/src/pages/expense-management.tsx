@@ -966,17 +966,43 @@ export default function ExpenseManagement() {
                         </TableCell>
                         <TableCell data-testid={`status-receipt-${expense.id}`}>
                           {expense.receiptUrl ? (
-                            <a 
-                              href={expense.receiptUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  const sessionId = localStorage.getItem('sessionId');
+                                  const response = await fetch(expense.receiptUrl!, {
+                                    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                                  });
+                                  if (!response.ok) {
+                                    throw new Error('Failed to download receipt');
+                                  }
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  const contentDisposition = response.headers.get('Content-Disposition');
+                                  const filename = contentDisposition?.match(/filename="(.+)"/)?.[1] || 'receipt';
+                                  a.download = filename;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  window.URL.revokeObjectURL(url);
+                                  document.body.removeChild(a);
+                                } catch (error) {
+                                  console.error('Receipt download error:', error);
+                                  toast({
+                                    title: "Download failed",
+                                    description: "Could not download receipt. Please try again.",
+                                    variant: "destructive"
+                                  });
+                                }
+                              }}
                               className="flex items-center gap-1 text-green-600 hover:text-green-500 hover:underline cursor-pointer"
                               title="Click to view receipt"
                             >
                               <Receipt className="w-4 h-4" />
                               <span className="text-xs">View</span>
                               <ExternalLink className="w-3 h-3" />
-                            </a>
+                            </button>
                           ) : (
                             <div className="flex items-center gap-1 text-muted-foreground">
                               <Receipt className="w-4 h-4" />
