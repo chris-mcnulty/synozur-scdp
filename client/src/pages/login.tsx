@@ -86,8 +86,8 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Left side - Information panel */}
-      <div className="lg:w-1/2 bg-gradient-to-br from-primary/10 via-primary/5 to-background p-8 lg:p-12 flex flex-col justify-center">
+      {/* Left side - Information panel (hidden on mobile, shown on lg+) */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary/10 via-primary/5 to-background p-8 lg:p-12 flex-col justify-center">
         <div className="max-w-lg mx-auto lg:mx-0">
           <div className="flex items-center gap-3 mb-6">
             <SynozurLogo className="h-12 w-12" />
@@ -137,7 +137,16 @@ export default function Login() {
       </div>
 
       {/* Right side - Login form */}
-      <div className="lg:w-1/2 flex items-center justify-center p-8 bg-background">
+      <div className="lg:w-1/2 flex flex-col items-center justify-center p-8 bg-background min-h-screen lg:min-h-0">
+        {/* Mobile header with logo */}
+        <div className="flex items-center gap-3 mb-8 lg:hidden">
+          <SynozurLogo className="h-10 w-10" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Constellation</h1>
+            <p className="text-xs text-muted-foreground">by Synozur</p>
+          </div>
+        </div>
+        
         <Card className="w-full max-w-md border-0 shadow-none lg:border lg:shadow-sm">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">
