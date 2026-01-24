@@ -455,8 +455,33 @@ export default function Expenses() {
       }
 
       // Check if per diem should be itemized - use the matrix day selections
-      if (data.category === "perdiem" && perDiemDaySelections.length > 0 && perDiemMieBreakdown) {
-        console.log('Creating itemized per diem expenses from matrix selections...');
+      // Debug logging to understand why itemization might not trigger
+      if (data.category === "perdiem") {
+        console.log('Per diem submission debug:', {
+          category: data.category,
+          daySelectionsLength: perDiemDaySelections.length,
+          hasMieBreakdown: !!perDiemMieBreakdown,
+          mieBreakdown: perDiemMieBreakdown,
+          startDate: data.perDiemStartDate,
+          endDate: data.perDiemEndDate,
+        });
+      }
+      
+      // Use default MIE breakdown if not available from GSA lookup
+      const effectiveMieBreakdown = perDiemMieBreakdown || { 
+        mieTotal: 68, 
+        breakfast: 16, 
+        lunch: 19, 
+        dinner: 28, 
+        incidentals: 5 
+      };
+      
+      if (data.category === "perdiem" && perDiemDaySelections.length > 0) {
+        console.log('Creating itemized per diem expenses from matrix selections...', {
+          dayCount: perDiemDaySelections.length,
+          usingDefaultRates: !perDiemMieBreakdown,
+          rates: effectiveMieBreakdown,
+        });
         const baseData = transformExpenseFormData(data, mileageRate);
         const location = baseData.perDiemLocation;
         
@@ -466,7 +491,7 @@ export default function Expenses() {
           let receiptUploadFailures = 0;
           
           // Helper to generate description for a day
-          const generateDayDescription = (day: PerDiemDay, rates: typeof perDiemMieBreakdown) => {
+          const generateDayDescription = (day: PerDiemDay, rates: typeof effectiveMieBreakdown) => {
             const claimedMeals: string[] = [];
             const clientServedMeals: string[] = [];
             
@@ -512,7 +537,7 @@ export default function Expenses() {
           };
           
           // Calculate amount for a day
-          const calculateDayAmount = (day: PerDiemDay, rates: typeof perDiemMieBreakdown) => {
+          const calculateDayAmount = (day: PerDiemDay, rates: typeof effectiveMieBreakdown) => {
             if (!day.isClientEngagement) return 0;
             
             let total = 0;
@@ -532,10 +557,10 @@ export default function Expenses() {
             // Skip days with no client engagement (amount would be 0)
             if (!day.isClientEngagement) continue;
             
-            const dayAmount = calculateDayAmount(day, perDiemMieBreakdown);
+            const dayAmount = calculateDayAmount(day, effectiveMieBreakdown);
             if (dayAmount <= 0) continue;
             
-            const dayDescription = generateDayDescription(day, perDiemMieBreakdown);
+            const dayDescription = generateDayDescription(day, effectiveMieBreakdown);
             const formattedDate = format(new Date(day.date + 'T00:00:00'), 'EEE, MMM d');
             
             const itemizedData = {
