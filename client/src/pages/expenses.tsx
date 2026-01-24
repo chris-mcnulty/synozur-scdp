@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
-import { format, addDays } from "date-fns";
+import { format, addDays, differenceInDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
 import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText } from "lucide-react";
 import { useLocation } from "wouter";
@@ -25,6 +25,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
+import { PerDiemMatrix, type PerDiemDay } from "@/components/PerDiemMatrix";
 
 const expenseFormSchema = insertExpenseSchema.omit({
   personId: true, // Server-side only
@@ -42,7 +43,9 @@ const expenseFormSchema = insertExpenseSchema.omit({
   perDiemCity: z.string().optional(), // Per diem location
   perDiemState: z.string().optional(),
   perDiemZip: z.string().optional(),
-  perDiemDays: z.string().optional(), // Number of days for per diem (separate field)
+  perDiemStartDate: z.string().optional(), // Start date for per diem range
+  perDiemEndDate: z.string().optional(), // End date for per diem range
+  perDiemDays: z.string().optional(), // Number of days for per diem (auto-calculated from date range)
   perDiemIncludeLodging: z.boolean().optional(), // Include lodging in per diem calculation
   perDiemItemize: z.boolean().optional(), // Break per diem into individual daily charges
 }).refine((data) => {
@@ -102,6 +105,8 @@ export default function Expenses() {
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
   const [perDiemBreakdown, setPerDiemBreakdown] = useState<any>(null); // Per diem calculation breakdown
   const [isCalculatingPerDiem, setIsCalculatingPerDiem] = useState<boolean>(false);
+  const [perDiemDaySelections, setPerDiemDaySelections] = useState<PerDiemDay[]>([]); // Per diem matrix day selections
+  const [perDiemCalculatedTotal, setPerDiemCalculatedTotal] = useState<number>(0);
   const [prevCategory, setPrevCategory] = useState<string>("");
   const [editPrevCategory, setEditPrevCategory] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -136,6 +141,8 @@ export default function Expenses() {
       perDiemCity: "",
       perDiemState: "",
       perDiemZip: "",
+      perDiemStartDate: "",
+      perDiemEndDate: "",
       perDiemDays: "",
       perDiemIncludeLodging: false,
       perDiemItemize: false,
@@ -1367,27 +1374,116 @@ export default function Expenses() {
                         )}
                       />
 
-                      <FormField
-                        control={form.control}
-                        name="perDiemDays"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Number of Days</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                min="1"
-                                step="1"
-                                placeholder="3"
-                                {...field}
-                                data-testid="input-perdiem-days"
-                              />
-                            </FormControl>
-                            <FormDescription>Total days of travel</FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="perDiemStartDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Start Date</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "w-full pl-3 text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                      data-testid="button-perdiem-start-date"
+                                    >
+                                      {field.value ? format(new Date(field.value), "PPP") : "Pick start date"}
+                                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value ? new Date(field.value) : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        const dateStr = format(date, "yyyy-MM-dd");
+                                        field.onChange(dateStr);
+                                        const endDate = form.getValues("perDiemEndDate");
+                                        if (endDate) {
+                                          const days = differenceInDays(new Date(endDate), date) + 1;
+                                          form.setValue("perDiemDays", days > 0 ? String(days) : "1");
+                                        }
+                                      }
+                                    }}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="perDiemEndDate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>End Date</FormLabel>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <FormControl>
+                                    <Button
+                                      variant="outline"
+                                      className={cn(
+                                        "w-full pl-3 text-left font-normal",
+                                        !field.value && "text-muted-foreground"
+                                      )}
+                                      data-testid="button-perdiem-end-date"
+                                    >
+                                      {field.value ? format(new Date(field.value), "PPP") : "Pick end date"}
+                                      <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                    </Button>
+                                  </FormControl>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={field.value ? new Date(field.value) : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        const dateStr = format(date, "yyyy-MM-dd");
+                                        field.onChange(dateStr);
+                                        const startDate = form.getValues("perDiemStartDate");
+                                        if (startDate) {
+                                          const days = differenceInDays(date, new Date(startDate)) + 1;
+                                          form.setValue("perDiemDays", days > 0 ? String(days) : "1");
+                                        }
+                                      }
+                                    }}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {form.watch("perDiemStartDate") && form.watch("perDiemEndDate") && (
+                        <PerDiemMatrix
+                          startDate={form.watch("perDiemStartDate") || ""}
+                          endDate={form.watch("perDiemEndDate") || ""}
+                          city={form.watch("perDiemCity")}
+                          state={form.watch("perDiemState")}
+                          zip={form.watch("perDiemZip")}
+                          onDaysChange={(days) => {
+                            setPerDiemDaySelections(days);
+                            form.setValue("perDiemDays", String(days.length));
+                          }}
+                          onTotalChange={(total) => {
+                            setPerDiemCalculatedTotal(total);
+                            form.setValue("amount", total.toFixed(2));
+                          }}
+                        />
+                      )}
 
                       <FormField
                         control={form.control}
@@ -1412,53 +1508,6 @@ export default function Expenses() {
                           </FormItem>
                         )}
                       />
-
-                      <Button
-                        type="button"
-                        onClick={calculatePerDiem}
-                        disabled={isCalculatingPerDiem}
-                        className="w-full"
-                        data-testid="button-calculate-perdiem"
-                      >
-                        {isCalculatingPerDiem ? "Calculating..." : "Calculate Per Diem"}
-                      </Button>
-
-                      {perDiemBreakdown && (
-                        <FormField
-                          control={form.control}
-                          name="perDiemItemize"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4 bg-muted/50">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                  data-testid="checkbox-perdiem-itemize"
-                                />
-                              </FormControl>
-                              <div className="space-y-1 leading-none">
-                                <FormLabel>
-                                  Itemize by day component?
-                                </FormLabel>
-                                <FormDescription>
-                                  Creates separate expense entries for each day's meals and lodging instead of one block charge.
-                                </FormDescription>
-                              </div>
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      {perDiemBreakdown && (
-                        <div className="p-3 bg-background rounded-md border space-y-2">
-                          <div className="text-sm font-medium">Breakdown:</div>
-                          <div className="text-xs text-muted-foreground">{perDiemBreakdown.breakdown}</div>
-                          <div className="flex justify-between items-center pt-2 border-t">
-                            <span className="text-sm font-medium">Total Amount:</span>
-                            <span className="text-lg font-bold">${perDiemBreakdown.totalAmount.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
 
