@@ -256,6 +256,8 @@ export default function ClientDetail() {
       msaDate: editForm.msaDate === "" ? null : editForm.msaDate,
       sinceDate: editForm.sinceDate === "" ? null : editForm.sinceDate,
       ndaDate: editForm.ndaDate === "" ? null : editForm.ndaDate,
+      // Convert sentinel values back to null for payment terms
+      paymentTerms: editForm.paymentTerms === "__tenant_default__" ? null : (editForm.paymentTerms || null),
       // Ensure vocabulary term IDs are null if empty
       epicTermId: editForm.epicTermId || null,
       stageTermId: editForm.stageTermId || null,
@@ -513,14 +515,14 @@ export default function ClientDetail() {
                         <div className="space-y-2">
                           <Label htmlFor="paymentTerms">Payment Terms</Label>
                           <Select
-                            value={editForm.paymentTerms || ""}
-                            onValueChange={(value) => setEditForm({ ...editForm, paymentTerms: value === "" ? null : value })}
+                            value={editForm.paymentTerms || "__tenant_default__"}
+                            onValueChange={(value) => setEditForm({ ...editForm, paymentTerms: value === "__tenant_default__" ? null : value })}
                           >
                             <SelectTrigger data-testid="select-edit-payment-terms">
                               <SelectValue placeholder="Use tenant default" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">Use Tenant Default</SelectItem>
+                              <SelectItem value="__tenant_default__">Use Tenant Default</SelectItem>
                               <SelectItem value="Net 10">Net 10</SelectItem>
                               <SelectItem value="Net 30">Net 30</SelectItem>
                               <SelectItem value="Net 45">Net 45</SelectItem>

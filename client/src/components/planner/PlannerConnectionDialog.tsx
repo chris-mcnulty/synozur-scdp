@@ -630,12 +630,12 @@ export function PlannerConnectionDialog({
                   {!loadingTemplates && teamTemplates && teamTemplates.length > 0 && (
                     <div className="space-y-2">
                       <Label>Team Template (optional)</Label>
-                      <Select value={selectedTemplateId || ""} onValueChange={(v) => setSelectedTemplateId(v || null)}>
+                      <Select value={selectedTemplateId || "__standard__"} onValueChange={(v) => setSelectedTemplateId(v === "__standard__" ? null : v)}>
                         <SelectTrigger>
                           <SelectValue placeholder="Standard template" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Standard template</SelectItem>
+                          <SelectItem value="__standard__">Standard template</SelectItem>
                           {teamTemplates.map((template) => (
                             <SelectItem key={template.id} value={template.id}>
                               {template.displayName}

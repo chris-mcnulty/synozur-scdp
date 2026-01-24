@@ -281,12 +281,12 @@ export default function PlatformUsers() {
 
               <div className="space-y-2">
                 <Label>Primary Tenant</Label>
-                <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+                <Select value={selectedTenant || "__no_tenant__"} onValueChange={(v) => setSelectedTenant(v === "__no_tenant__" ? "" : v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a tenant" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No Tenant</SelectItem>
+                    <SelectItem value="__no_tenant__">No Tenant</SelectItem>
                     {tenants.map((tenant) => (
                       <SelectItem key={tenant.id} value={tenant.id}>
                         {tenant.name} ({tenant.slug})

@@ -317,7 +317,8 @@ export default function Clients() {
               const formData = new FormData(e.currentTarget);
               const msaDate = formData.get('msaDate') as string;
               const ndaDate = formData.get('ndaDate') as string;
-              const paymentTerms = formData.get('paymentTerms') as string;
+              const paymentTermsRaw = formData.get('paymentTerms') as string;
+              const paymentTerms = paymentTermsRaw === '__tenant_default__' ? undefined : (paymentTermsRaw || undefined);
               createClientMutation.mutate({
                 name: formData.get('name'),
                 currency: formData.get('currency') || 'USD',
@@ -325,7 +326,7 @@ export default function Clients() {
                 billingContact: formData.get('billingContact'),
                 contactName: formData.get('contactName'),
                 contactAddress: formData.get('contactAddress'),
-                paymentTerms: paymentTerms || undefined,
+                paymentTerms: paymentTerms,
                 msaDate: msaDate || undefined,
                 sinceDate: formData.get('sinceDate') as string || undefined,
                 hasMsa: Boolean(msaDate), // Auto-set based on MSA date
@@ -410,12 +411,12 @@ export default function Clients() {
                 
                 <div className="grid gap-2">
                   <Label htmlFor="paymentTerms">Payment Terms (Optional)</Label>
-                  <Select name="paymentTerms" defaultValue="">
+                  <Select name="paymentTerms" defaultValue="__tenant_default__">
                     <SelectTrigger data-testid="select-payment-terms">
                       <SelectValue placeholder="Use tenant default" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Use Tenant Default</SelectItem>
+                      <SelectItem value="__tenant_default__">Use Tenant Default</SelectItem>
                       <SelectItem value="Net 10">Net 10</SelectItem>
                       <SelectItem value="Net 30">Net 30</SelectItem>
                       <SelectItem value="Net 45">Net 45</SelectItem>
