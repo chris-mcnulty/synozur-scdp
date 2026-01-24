@@ -215,6 +215,33 @@ export default function Expenses() {
   // Watch for category changes to handle mileage
   const watchedCategory = form.watch("category");
   const watchedMiles = form.watch("miles");
+  
+  // Airport code validation
+  const watchedDepartureAirport = form.watch("departureAirport");
+  const watchedArrivalAirport = form.watch("arrivalAirport");
+  
+  type AirportInfo = {
+    id: string;
+    iataCode: string;
+    name: string;
+    municipality: string | null;
+    isoCountry: string | null;
+    isoRegion: string | null;
+  };
+  
+  const { data: departureAirportInfo, isLoading: departureLoading } = useQuery<AirportInfo | null>({
+    queryKey: ["/api/airports", watchedDepartureAirport?.toUpperCase()],
+    enabled: watchedCategory === "airfare" && watchedDepartureAirport?.length === 3,
+    staleTime: 60000,
+    retry: false,
+  });
+  
+  const { data: arrivalAirportInfo, isLoading: arrivalLoading } = useQuery<AirportInfo | null>({
+    queryKey: ["/api/airports", watchedArrivalAirport?.toUpperCase()],
+    enabled: watchedCategory === "airfare" && watchedArrivalAirport?.length === 3,
+    staleTime: 60000,
+    retry: false,
+  });
 
   // Auto-calculate amount when miles change for mileage category
   // Clear quantity/unit when switching away from mileage
@@ -880,6 +907,24 @@ export default function Expenses() {
   // Watch edit form category and miles for auto-calculation
   const editWatchedCategory = editForm.watch("category");
   const editWatchedMiles = editForm.watch("miles");
+  
+  // Edit form airport code validation
+  const editWatchedDepartureAirport = editForm.watch("departureAirport");
+  const editWatchedArrivalAirport = editForm.watch("arrivalAirport");
+  
+  const { data: editDepartureAirportInfo, isLoading: editDepartureLoading } = useQuery<AirportInfo | null>({
+    queryKey: ["/api/airports", editWatchedDepartureAirport?.toUpperCase()],
+    enabled: editWatchedCategory === "airfare" && editWatchedDepartureAirport?.length === 3,
+    staleTime: 60000,
+    retry: false,
+  });
+  
+  const { data: editArrivalAirportInfo, isLoading: editArrivalLoading } = useQuery<AirportInfo | null>({
+    queryKey: ["/api/airports", editWatchedArrivalAirport?.toUpperCase()],
+    enabled: editWatchedCategory === "airfare" && editWatchedArrivalAirport?.length === 3,
+    staleTime: 60000,
+    retry: false,
+  });
 
   // Auto-calculate amount for edit form
   // Clear quantity/unit when switching away from mileage
@@ -1384,9 +1429,23 @@ export default function Expenses() {
                                   {...field}
                                   onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                                   data-testid="input-departure-airport"
+                                  className={departureAirportInfo ? "border-green-500" : (watchedDepartureAirport?.length === 3 && !departureLoading ? "border-orange-400" : "")}
                                 />
                               </FormControl>
-                              <FormDescription>3-letter code (e.g., SEA, LAX)</FormDescription>
+                              {departureLoading && watchedDepartureAirport?.length === 3 && (
+                                <FormDescription className="text-muted-foreground">Looking up airport...</FormDescription>
+                              )}
+                              {departureAirportInfo ? (
+                                <FormDescription className="text-green-600">
+                                  {departureAirportInfo.name}{departureAirportInfo.municipality ? `, ${departureAirportInfo.municipality}` : ""}
+                                </FormDescription>
+                              ) : watchedDepartureAirport?.length === 3 && !departureLoading ? (
+                                <FormDescription className="text-orange-500">
+                                  Airport code not found - you can still use this code
+                                </FormDescription>
+                              ) : (
+                                <FormDescription>3-letter IATA code (e.g., SEA, LAX)</FormDescription>
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -1404,9 +1463,23 @@ export default function Expenses() {
                                   {...field}
                                   onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                                   data-testid="input-arrival-airport"
+                                  className={arrivalAirportInfo ? "border-green-500" : (watchedArrivalAirport?.length === 3 && !arrivalLoading ? "border-orange-400" : "")}
                                 />
                               </FormControl>
-                              <FormDescription>3-letter code (e.g., JFK, ORD)</FormDescription>
+                              {arrivalLoading && watchedArrivalAirport?.length === 3 && (
+                                <FormDescription className="text-muted-foreground">Looking up airport...</FormDescription>
+                              )}
+                              {arrivalAirportInfo ? (
+                                <FormDescription className="text-green-600">
+                                  {arrivalAirportInfo.name}{arrivalAirportInfo.municipality ? `, ${arrivalAirportInfo.municipality}` : ""}
+                                </FormDescription>
+                              ) : watchedArrivalAirport?.length === 3 && !arrivalLoading ? (
+                                <FormDescription className="text-orange-500">
+                                  Airport code not found - you can still use this code
+                                </FormDescription>
+                              ) : (
+                                <FormDescription>3-letter IATA code (e.g., JFK, ORD)</FormDescription>
+                              )}
                               <FormMessage />
                             </FormItem>
                           )}
@@ -2051,9 +2124,23 @@ export default function Expenses() {
                               {...field}
                               onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                               data-testid="edit-input-departure-airport"
+                              className={editDepartureAirportInfo ? "border-green-500" : (editWatchedDepartureAirport?.length === 3 && !editDepartureLoading ? "border-orange-400" : "")}
                             />
                           </FormControl>
-                          <FormDescription>3-letter code</FormDescription>
+                          {editDepartureLoading && editWatchedDepartureAirport?.length === 3 && (
+                            <FormDescription className="text-muted-foreground">Looking up airport...</FormDescription>
+                          )}
+                          {editDepartureAirportInfo ? (
+                            <FormDescription className="text-green-600">
+                              {editDepartureAirportInfo.name}{editDepartureAirportInfo.municipality ? `, ${editDepartureAirportInfo.municipality}` : ""}
+                            </FormDescription>
+                          ) : editWatchedDepartureAirport?.length === 3 && !editDepartureLoading ? (
+                            <FormDescription className="text-orange-500">
+                              Airport code not found - you can still use this code
+                            </FormDescription>
+                          ) : (
+                            <FormDescription>3-letter IATA code</FormDescription>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
@@ -2071,9 +2158,23 @@ export default function Expenses() {
                               {...field}
                               onChange={(e) => field.onChange(e.target.value.toUpperCase())}
                               data-testid="edit-input-arrival-airport"
+                              className={editArrivalAirportInfo ? "border-green-500" : (editWatchedArrivalAirport?.length === 3 && !editArrivalLoading ? "border-orange-400" : "")}
                             />
                           </FormControl>
-                          <FormDescription>3-letter code</FormDescription>
+                          {editArrivalLoading && editWatchedArrivalAirport?.length === 3 && (
+                            <FormDescription className="text-muted-foreground">Looking up airport...</FormDescription>
+                          )}
+                          {editArrivalAirportInfo ? (
+                            <FormDescription className="text-green-600">
+                              {editArrivalAirportInfo.name}{editArrivalAirportInfo.municipality ? `, ${editArrivalAirportInfo.municipality}` : ""}
+                            </FormDescription>
+                          ) : editWatchedArrivalAirport?.length === 3 && !editArrivalLoading ? (
+                            <FormDescription className="text-orange-500">
+                              Airport code not found - you can still use this code
+                            </FormDescription>
+                          ) : (
+                            <FormDescription>3-letter IATA code</FormDescription>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}
