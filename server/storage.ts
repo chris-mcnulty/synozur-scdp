@@ -3,7 +3,7 @@ import {
   estimateMilestones, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
-  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings,
+  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes,
   vocabularyCatalog, organizationVocabulary, tenants,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   expenseReports, expenseReportItems, reimbursementBatches,
@@ -33,6 +33,7 @@ import {
   type ProjectRateOverride, type InsertProjectRateOverride,
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
+  type AirportCode, type InsertAirportCode,
   type VocabularyCatalog, type InsertVocabularyCatalog,
   type OrganizationVocabulary, type InsertOrganizationVocabulary,
   type ContainerType, type InsertContainerType,
@@ -804,6 +805,16 @@ export interface IStorage {
   setSystemSetting(key: string, value: string, description?: string, settingType?: string): Promise<SystemSetting>;
   updateSystemSetting(id: string, updates: Partial<InsertSystemSetting>): Promise<SystemSetting>;
   deleteSystemSetting(id: string): Promise<void>;
+  
+  // Airport Code Methods
+  getAllAirportCodes(limit?: number): Promise<AirportCode[]>;
+  searchAirportCodes(searchTerm: string, limit?: number): Promise<AirportCode[]>;
+  getAirportCodesByCountry(country: string, limit?: number): Promise<AirportCode[]>;
+  getAirportByCode(iataCode: string): Promise<AirportCode | undefined>;
+  createAirportCode(airport: InsertAirportCode): Promise<AirportCode>;
+  updateAirportCode(id: string, updates: Partial<InsertAirportCode>): Promise<AirportCode>;
+  deleteAirportCode(id: string): Promise<void>;
+  bulkUpsertAirportCodes(airports: InsertAirportCode[]): Promise<number>;
   
   // Vocabulary System Methods (Legacy - uses JSON text fields)
   getOrganizationVocabulary(): Promise<VocabularyTerms>;
@@ -7898,6 +7909,103 @@ export class DatabaseStorage implements IStorage {
   async deleteSystemSetting(id: string): Promise<void> {
     await db.delete(systemSettings)
       .where(eq(systemSettings.id, id));
+  }
+
+  // Airport Code Methods
+  async getAllAirportCodes(limit: number = 50): Promise<AirportCode[]> {
+    return db.select()
+      .from(airportCodes)
+      .where(eq(airportCodes.isActive, true))
+      .limit(limit);
+  }
+
+  async searchAirportCodes(searchTerm: string, limit: number = 50): Promise<AirportCode[]> {
+    const term = searchTerm.toUpperCase();
+    return db.select()
+      .from(airportCodes)
+      .where(
+        and(
+          eq(airportCodes.isActive, true),
+          or(
+            ilike(airportCodes.iataCode, `%${term}%`),
+            ilike(airportCodes.name, `%${searchTerm}%`),
+            ilike(airportCodes.municipality, `%${searchTerm}%`)
+          )
+        )
+      )
+      .limit(limit);
+  }
+
+  async getAirportCodesByCountry(country: string, limit: number = 50): Promise<AirportCode[]> {
+    return db.select()
+      .from(airportCodes)
+      .where(
+        and(
+          eq(airportCodes.isActive, true),
+          eq(airportCodes.isoCountry, country.toUpperCase())
+        )
+      )
+      .limit(limit);
+  }
+
+  async getAirportByCode(iataCode: string): Promise<AirportCode | undefined> {
+    const [airport] = await db.select()
+      .from(airportCodes)
+      .where(
+        and(
+          eq(airportCodes.iataCode, iataCode.toUpperCase()),
+          eq(airportCodes.isActive, true)
+        )
+      );
+    return airport;
+  }
+
+  async createAirportCode(airport: InsertAirportCode): Promise<AirportCode> {
+    const [created] = await db.insert(airportCodes)
+      .values(airport)
+      .returning();
+    return created;
+  }
+
+  async updateAirportCode(id: string, updates: Partial<InsertAirportCode>): Promise<AirportCode> {
+    const [updated] = await db.update(airportCodes)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(airportCodes.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAirportCode(id: string): Promise<void> {
+    await db.delete(airportCodes)
+      .where(eq(airportCodes.id, id));
+  }
+
+  async bulkUpsertAirportCodes(airports: InsertAirportCode[]): Promise<number> {
+    if (airports.length === 0) return 0;
+    
+    let inserted = 0;
+    const batchSize = 500;
+    
+    for (let i = 0; i < airports.length; i += batchSize) {
+      const batch = airports.slice(i, i + batchSize);
+      await db.insert(airportCodes)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: airportCodes.iataCode,
+          set: {
+            name: sql`excluded.name`,
+            municipality: sql`excluded.municipality`,
+            isoCountry: sql`excluded.iso_country`,
+            isoRegion: sql`excluded.iso_region`,
+            airportType: sql`excluded.airport_type`,
+            coordinates: sql`excluded.coordinates`,
+            updatedAt: new Date(),
+          },
+        });
+      inserted += batch.length;
+    }
+    
+    return inserted;
   }
 
   // Vocabulary System Methods

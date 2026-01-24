@@ -11363,6 +11363,82 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // ============================================================================
+  // Airport Code Endpoints (System-wide reference data)
+  // ============================================================================
+  
+  app.get("/api/airports", requireAuth, async (req, res) => {
+    try {
+      const { search, country, limit = "50" } = req.query;
+      const maxLimit = Math.min(parseInt(limit as string) || 50, 200);
+      
+      let airports;
+      
+      if (search && typeof search === "string" && search.length >= 2) {
+        airports = await storage.searchAirportCodes(search, maxLimit);
+      } else if (country && typeof country === "string") {
+        airports = await storage.getAirportCodesByCountry(country, maxLimit);
+      } else {
+        airports = await storage.getAllAirportCodes(maxLimit);
+      }
+      
+      res.json(airports);
+    } catch (error) {
+      console.error("Error fetching airports:", error);
+      res.status(500).json({ message: "Failed to fetch airports" });
+    }
+  });
+  
+  app.get("/api/airports/:iataCode", requireAuth, async (req, res) => {
+    try {
+      const { iataCode } = req.params;
+      
+      if (!iataCode || !/^[A-Z]{3}$/.test(iataCode.toUpperCase())) {
+        return res.status(400).json({ message: "Invalid IATA code format" });
+      }
+      
+      const airport = await storage.getAirportByCode(iataCode.toUpperCase());
+      
+      if (!airport) {
+        return res.status(404).json({ message: "Airport not found" });
+      }
+      
+      res.json(airport);
+    } catch (error) {
+      console.error("Error fetching airport:", error);
+      res.status(500).json({ message: "Failed to fetch airport" });
+    }
+  });
+  
+  app.post("/api/airports/validate", requireAuth, async (req, res) => {
+    try {
+      const { codes } = req.body;
+      
+      if (!Array.isArray(codes)) {
+        return res.status(400).json({ message: "codes must be an array" });
+      }
+      
+      const results: Record<string, { valid: boolean; airport?: any }> = {};
+      
+      for (const code of codes) {
+        if (typeof code === "string" && /^[A-Z]{3}$/.test(code.toUpperCase())) {
+          const airport = await storage.getAirportByCode(code.toUpperCase());
+          results[code.toUpperCase()] = {
+            valid: !!airport,
+            airport: airport || undefined
+          };
+        } else {
+          results[code] = { valid: false };
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Error validating airports:", error);
+      res.status(500).json({ message: "Failed to validate airports" });
+    }
+  });
+
   // Per Diem GSA Rate Endpoints
   app.get("/api/perdiem/rates/city/:city/state/:state", requireAuth, async (req, res) => {
     try {
