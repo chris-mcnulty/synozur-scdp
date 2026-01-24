@@ -34,6 +34,7 @@ interface PerDiemMatrixProps {
   initialDays?: PerDiemDay[];
   onDaysChange: (days: PerDiemDay[]) => void;
   onTotalChange: (total: number) => void;
+  onBreakdownChange?: (breakdown: MIEBreakdown | null) => void;
 }
 
 function generateDateRange(start: string, end: string): string[] {
@@ -67,6 +68,7 @@ export function PerDiemMatrix({
   initialDays,
   onDaysChange,
   onTotalChange,
+  onBreakdownChange,
 }: PerDiemMatrixProps) {
   const [days, setDays] = useState<PerDiemDay[]>([]);
   const [breakdown, setBreakdown] = useState<MIEBreakdown | null>(null);
@@ -139,6 +141,13 @@ export function PerDiemMatrix({
     
     fetchBreakdown();
   }, [city, state, zip]);
+
+  // Notify parent when breakdown changes
+  useEffect(() => {
+    if (onBreakdownChange) {
+      onBreakdownChange(breakdown);
+    }
+  }, [breakdown, onBreakdownChange]);
 
   useEffect(() => {
     if (!breakdown || days.length === 0) return;

@@ -123,6 +123,7 @@ export default function Expenses() {
   const [isCalculatingPerDiem, setIsCalculatingPerDiem] = useState<boolean>(false);
   const [perDiemDaySelections, setPerDiemDaySelections] = useState<PerDiemDay[]>([]); // Per diem matrix day selections
   const [perDiemCalculatedTotal, setPerDiemCalculatedTotal] = useState<number>(0);
+  const [perDiemMieBreakdown, setPerDiemMieBreakdown] = useState<{ mieTotal: number; breakfast: number; lunch: number; dinner: number; incidentals: number } | null>(null);
   const [prevCategory, setPrevCategory] = useState<string>("");
   const [editPrevCategory, setEditPrevCategory] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -453,38 +454,97 @@ export default function Expenses() {
         }
       }
 
-      // Check if per diem should be itemized
-      if (data.category === "perdiem" && data.perDiemItemize && perDiemBreakdown?.dailyComponents) {
-        console.log('Creating itemized per diem expenses...');
+      // Check if per diem should be itemized - use the matrix day selections
+      if (data.category === "perdiem" && perDiemDaySelections.length > 0 && perDiemMieBreakdown) {
+        console.log('Creating itemized per diem expenses from matrix selections...');
         const baseData = transformExpenseFormData(data, mileageRate);
         const location = baseData.perDiemLocation;
         
         try {
-          // Create separate expense for each daily component
-          // Use direct API calls to avoid multiple onSuccess toasts
+          // Create separate expense for each day with meal details
           const createdExpenses = [];
           let receiptUploadFailures = 0;
           
-          // Parse the start date from the form to calculate individual dates
-          const startDate = parseBusinessDate(data.date);
-          
-          for (const component of perDiemBreakdown.dailyComponents) {
-            // Calculate the actual date for this component based on the day number
-            // Day 1 = start date, Day 2 = start date + 1, etc.
-            let componentDate = data.date; // Default to form date
-            if (startDate) {
-              const dayOffset = component.day - 1; // Day 1 has offset 0
-              const actualDate = addDays(startDate, dayOffset);
-              componentDate = format(actualDate, 'yyyy-MM-dd');
+          // Helper to generate description for a day
+          const generateDayDescription = (day: PerDiemDay, rates: typeof perDiemMieBreakdown) => {
+            const claimedMeals: string[] = [];
+            const clientServedMeals: string[] = [];
+            
+            // Check each meal
+            if (day.breakfast) {
+              claimedMeals.push(`Breakfast ($${rates.breakfast})`);
+            } else {
+              clientServedMeals.push('Breakfast');
             }
+            
+            if (day.lunch) {
+              claimedMeals.push(`Lunch ($${rates.lunch})`);
+            } else {
+              clientServedMeals.push('Lunch');
+            }
+            
+            if (day.dinner) {
+              claimedMeals.push(`Dinner ($${rates.dinner})`);
+            } else {
+              clientServedMeals.push('Dinner');
+            }
+            
+            if (day.incidentals) {
+              claimedMeals.push(`Incidentals ($${rates.incidentals})`);
+            } else {
+              clientServedMeals.push('Incidentals');
+            }
+            
+            let description = '';
+            if (claimedMeals.length > 0) {
+              description += `Employee paid: ${claimedMeals.join(', ')}`;
+            }
+            if (clientServedMeals.length > 0) {
+              if (description) description += '\n';
+              description += `Client served: ${clientServedMeals.join(', ')}`;
+            }
+            if (day.isPartialDay) {
+              if (description) description += '\n';
+              description += '(Partial day - 75% rate)';
+            }
+            
+            return description;
+          };
+          
+          // Calculate amount for a day
+          const calculateDayAmount = (day: PerDiemDay, rates: typeof perDiemMieBreakdown) => {
+            if (!day.isClientEngagement) return 0;
+            
+            let total = 0;
+            if (day.breakfast) total += rates.breakfast;
+            if (day.lunch) total += rates.lunch;
+            if (day.dinner) total += rates.dinner;
+            if (day.incidentals) total += rates.incidentals;
+            
+            if (day.isPartialDay && total > 0) {
+              total = Math.round(total * 0.75 * 100) / 100;
+            }
+            
+            return total;
+          };
+          
+          for (const day of perDiemDaySelections) {
+            // Skip days with no client engagement (amount would be 0)
+            if (!day.isClientEngagement) continue;
+            
+            const dayAmount = calculateDayAmount(day, perDiemMieBreakdown);
+            if (dayAmount <= 0) continue;
+            
+            const dayDescription = generateDayDescription(day, perDiemMieBreakdown);
+            const formattedDate = format(new Date(day.date + 'T00:00:00'), 'EEE, MMM d');
             
             const itemizedData = {
               ...baseData,
-              date: componentDate, // Use the calculated date for this specific day
-              amount: component.amount.toFixed(2),
-              quantity: "1", // Each component is quantity 1
-              unit: component.type === 'lodging' ? 'night' : 'day', // Use correct unit for lodging vs meals
-              description: `${location}\n${component.description}`,
+              date: day.date, // Use the actual date for this day
+              amount: dayAmount.toFixed(2),
+              quantity: "1", // Each day is quantity 1
+              unit: 'day',
+              description: `${location}\n${formattedDate}\n${dayDescription}`,
             };
             
             // Call API directly to avoid mutation's onSuccess firing for each expense
@@ -554,6 +614,8 @@ export default function Expenses() {
           setPrevCategory("");
           setReceiptFile(null);
           setPerDiemBreakdown(null);
+          setPerDiemDaySelections([]);
+          setPerDiemMieBreakdown(null);
           
           // Show single toast after all expenses created
           if (receiptFile && receiptUploadFailures > 0) {
@@ -1664,6 +1726,9 @@ export default function Expenses() {
                           onTotalChange={(total) => {
                             setPerDiemCalculatedTotal(total);
                             form.setValue("amount", total.toFixed(2));
+                          }}
+                          onBreakdownChange={(breakdown) => {
+                            setPerDiemMieBreakdown(breakdown);
                           }}
                         />
                       )}
