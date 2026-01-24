@@ -289,6 +289,25 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 });
 
+// Airport Codes - IATA 3-letter airport codes (system-wide, no tenant scoping)
+export const airportCodes = pgTable("airport_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  iataCode: varchar("iata_code", { length: 3 }).notNull().unique(), // 3-letter IATA code (e.g., "SEA", "JFK")
+  name: text("name").notNull(), // Airport name
+  municipality: text("municipality"), // City/town name
+  isoCountry: varchar("iso_country", { length: 2 }), // Country code (e.g., "US", "CA")
+  isoRegion: varchar("iso_region", { length: 10 }), // Region code (e.g., "US-WA", "US-NY")
+  airportType: text("airport_type"), // e.g., "large_airport", "medium_airport", "small_airport"
+  coordinates: text("coordinates"), // Lat/Long coordinates
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  iataCodeIdx: uniqueIndex("idx_airport_iata_code").on(table.iataCode),
+  countryIdx: index("idx_airport_country").on(table.isoCountry),
+  nameIdx: index("idx_airport_name").on(table.name),
+}));
+
 // Vocabulary Catalog - Predefined term options
 export const vocabularyCatalog = pgTable("vocabulary_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1663,6 +1682,12 @@ export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit
   updatedAt: true,
 });
 
+export const insertAirportCodeSchema = createInsertSchema(airportCodes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 // ============================================================================
 // Types - Multi-Tenancy Tables
@@ -1701,6 +1726,9 @@ export type InsertRole = z.infer<typeof insertRoleSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+export type AirportCode = typeof airportCodes.$inferSelect;
+export type InsertAirportCode = z.infer<typeof insertAirportCodeSchema>;
 
 export type VocabularyCatalog = typeof vocabularyCatalog.$inferSelect;
 export type InsertVocabularyCatalog = z.infer<typeof insertVocabularyCatalogSchema>;
