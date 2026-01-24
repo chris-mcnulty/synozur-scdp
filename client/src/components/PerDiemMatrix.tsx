@@ -70,6 +70,7 @@ export function PerDiemMatrix({
   const [gsaRate, setGsaRate] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [totalAmount, setTotalAmount] = useState(0);
+  const [rateError, setRateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!startDate || !endDate) return;
@@ -95,30 +96,41 @@ export function PerDiemMatrix({
 
   useEffect(() => {
     const fetchBreakdown = async () => {
-      if (!gsaRate && (city && state) || zip) {
-        setIsLoading(true);
-        try {
-          let url = '';
-          if (zip) {
-            url = `/api/perdiem/rates/zip/${zip}`;
-          } else if (city && state) {
-            url = `/api/perdiem/rates/city/${encodeURIComponent(city)}/state/${state}`;
-          }
-          
-          if (url) {
-            const rate = await apiRequest(url);
-            if (rate && rate.meals) {
-              setGsaRate(rate.meals);
-              const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.meals}`);
-              setBreakdown(mieBreakdown);
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching GSA rates:', error);
-          setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
-        } finally {
-          setIsLoading(false);
+      const hasLocation = (city && state) || zip;
+      if (!hasLocation) {
+        setBreakdown(null);
+        setGsaRate(0);
+        setRateError(null);
+        return;
+      }
+      
+      setIsLoading(true);
+      setRateError(null);
+      try {
+        let url = '';
+        if (zip) {
+          url = `/api/perdiem/rates/zip/${zip}`;
+        } else if (city && state) {
+          url = `/api/perdiem/rates/city/${encodeURIComponent(city)}/state/${state}`;
         }
+        
+        if (url) {
+          const rate = await apiRequest(url);
+          if (rate && rate.meals) {
+            setGsaRate(rate.meals);
+            const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.meals}`);
+            setBreakdown(mieBreakdown);
+          } else {
+            setRateError("Could not find GSA rates for this location. Using default rates.");
+            setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching GSA rates:', error);
+        setRateError("Could not load GSA rates. Using default rates.");
+        setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -216,6 +228,11 @@ export function PerDiemMatrix({
             <Badge variant="outline">Lunch: ${breakdown.lunch}</Badge>
             <Badge variant="outline">Dinner: ${breakdown.dinner}</Badge>
             <Badge variant="outline">Incidentals: ${breakdown.incidentals}</Badge>
+          </div>
+        )}
+        {rateError && (
+          <div className="text-sm text-amber-600 dark:text-amber-400 mt-2 flex items-center gap-1">
+            <span>⚠️</span> {rateError}
           </div>
         )}
       </CardHeader>

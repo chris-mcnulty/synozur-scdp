@@ -1407,8 +1407,14 @@ export default function Expenses() {
                                         field.onChange(dateStr);
                                         const endDate = form.getValues("perDiemEndDate");
                                         if (endDate) {
-                                          const days = differenceInDays(new Date(endDate), date) + 1;
-                                          form.setValue("perDiemDays", days > 0 ? String(days) : "1");
+                                          const endDateObj = new Date(endDate);
+                                          if (date > endDateObj) {
+                                            form.setValue("perDiemEndDate", dateStr);
+                                            form.setValue("perDiemDays", "1");
+                                          } else {
+                                            const days = differenceInDays(endDateObj, date) + 1;
+                                            form.setValue("perDiemDays", String(days));
+                                          }
                                         }
                                       }
                                     }}
@@ -1446,6 +1452,13 @@ export default function Expenses() {
                                   <Calendar
                                     mode="single"
                                     selected={field.value ? new Date(field.value) : undefined}
+                                    disabled={(date) => {
+                                      const startDate = form.getValues("perDiemStartDate");
+                                      if (startDate) {
+                                        return date < new Date(startDate);
+                                      }
+                                      return false;
+                                    }}
                                     onSelect={(date) => {
                                       if (date) {
                                         const dateStr = format(date, "yyyy-MM-dd");
@@ -1453,7 +1466,7 @@ export default function Expenses() {
                                         const startDate = form.getValues("perDiemStartDate");
                                         if (startDate) {
                                           const days = differenceInDays(date, new Date(startDate)) + 1;
-                                          form.setValue("perDiemDays", days > 0 ? String(days) : "1");
+                                          form.setValue("perDiemDays", String(days));
                                         }
                                       }
                                     }}
