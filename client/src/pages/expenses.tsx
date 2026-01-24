@@ -907,10 +907,24 @@ export default function Expenses() {
       submitData.arrivalAirport = data.arrivalAirport?.toUpperCase() || null;
       submitData.isRoundTrip = data.isRoundTrip ?? false;
       
+      // Build route description for airfare
+      if (submitData.departureAirport && submitData.arrivalAirport) {
+        const tripType = submitData.isRoundTrip ? 'Round Trip' : 'One Way';
+        const routeInfo = `${submitData.departureAirport} → ${submitData.arrivalAirport} (${tripType})`;
+        
+        // Prepend route info to existing description or use as description
+        if (submitData.description && submitData.description.trim()) {
+          submitData.description = `${routeInfo}\n${submitData.description}`;
+        } else {
+          submitData.description = routeInfo;
+        }
+      }
+      
       console.log('Airfare transformation:', { 
         departure: submitData.departureAirport, 
         arrival: submitData.arrivalAirport,
-        isRoundTrip: submitData.isRoundTrip
+        isRoundTrip: submitData.isRoundTrip,
+        description: submitData.description
       });
     } else {
       // Clear quantity and unit for non-mileage/non-perdiem expenses
