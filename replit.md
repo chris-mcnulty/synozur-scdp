@@ -90,6 +90,10 @@ Preferred communication style: Simple, everyday language.
 - **Expense Form Integration**: Airfare expenses show airport name lookups with green/orange border validation feedback
 - **Maintenance**: Platform admins can upload new CSV data via `/api/platform/airports/upload`
 - **Script**: `scripts/ingest-airport-codes.ts` for bulk data ingestion
+- **CSV Format**: Flexible column detection supports multiple formats:
+  - Standard: `iata_code,name,municipality,iso_country,iso_region,type,coordinates`
+  - OurAirports format: `ident,type,name,...,iata_code,...,municipality,iso_country,iso_region,...,coordinates`
+  - Only rows with valid 3-letter IATA codes are imported; others are skipped
 
 ## External Dependencies
 
