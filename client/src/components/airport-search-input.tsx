@@ -34,8 +34,22 @@ export function AirportSearchInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const searchQueryUrl = searchTerm.length >= 2 
+    ? `/api/airports?search=${encodeURIComponent(searchTerm)}&limit=10`
+    : null;
+
   const { data: searchResults, isLoading } = useQuery<AirportInfo[]>({
-    queryKey: ["/api/airports", { search: searchTerm, limit: 10 }],
+    queryKey: ["/api/airports", searchTerm],
+    queryFn: async () => {
+      if (!searchQueryUrl) return [];
+      const response = await fetch(searchQueryUrl, {
+        headers: {
+          'X-Session-Id': localStorage.getItem('sessionId') || '',
+        },
+      });
+      if (!response.ok) return [];
+      return response.json();
+    },
     enabled: searchTerm.length >= 2,
     staleTime: 60000,
   });
