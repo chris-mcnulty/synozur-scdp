@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -11438,6 +11439,160 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to validate airports" });
     }
   });
+  
+  app.get("/api/airports/stats/count", requireAuth, async (req, res) => {
+    try {
+      const result = await db.select({ count: sql<number>`count(*)` })
+        .from(airportCodes)
+        .where(eq(airportCodes.isActive, true));
+      res.json({ count: result[0]?.count || 0 });
+    } catch (error) {
+      console.error("Error fetching airport count:", error);
+      res.status(500).json({ message: "Failed to fetch airport count" });
+    }
+  });
+  
+  app.post("/api/platform/airports/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const userRole = user?.role;
+      
+      if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
+        return res.status(403).json({ message: "Only platform admins can upload airport data" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const csvContent = req.file.buffer.toString('utf-8');
+      const lines = csvContent.split('\n');
+      
+      if (lines.length < 2) {
+        return res.status(400).json({ message: "CSV file is empty or has no data rows" });
+      }
+      
+      const header = lines[0].toLowerCase();
+      const iataCodePattern = /^[A-Z]{3}$/;
+      
+      let iataIndex = -1;
+      let nameIndex = -1;
+      let municipalityIndex = -1;
+      let countryIndex = -1;
+      let regionIndex = -1;
+      let typeIndex = -1;
+      let coordsIndex = -1;
+      
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      iataIndex = headers.findIndex(h => h.includes('iata') || h === 'code');
+      nameIndex = headers.findIndex(h => h === 'name' || h.includes('airport'));
+      municipalityIndex = headers.findIndex(h => h.includes('municipality') || h.includes('city'));
+      countryIndex = headers.findIndex(h => h.includes('country') || h === 'iso_country');
+      regionIndex = headers.findIndex(h => h.includes('region') || h === 'iso_region');
+      typeIndex = headers.findIndex(h => h === 'type' || h.includes('airport_type'));
+      coordsIndex = headers.findIndex(h => h.includes('coord') || h.includes('gps'));
+      
+      if (iataIndex === -1 || nameIndex === -1) {
+        return res.status(400).json({ 
+          message: "CSV must have columns for IATA code and airport name",
+          headers: headers 
+        });
+      }
+      
+      const airports: Array<{
+        iataCode: string;
+        name: string;
+        municipality: string | null;
+        isoCountry: string | null;
+        isoRegion: string | null;
+        airportType: string | null;
+        coordinates: string | null;
+        isActive: boolean;
+      }> = [];
+      
+      const seenCodes = new Set<string>();
+      let skipped = 0;
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const parts = parseCSVLine(line);
+        const iataCode = (parts[iataIndex] || '').trim().toUpperCase();
+        
+        if (!iataCodePattern.test(iataCode)) {
+          skipped++;
+          continue;
+        }
+        
+        if (seenCodes.has(iataCode)) {
+          skipped++;
+          continue;
+        }
+        
+        seenCodes.add(iataCode);
+        
+        const name = (parts[nameIndex] || '').trim() || 'Unknown';
+        const municipality = municipalityIndex >= 0 ? (parts[municipalityIndex] || '').trim() || null : null;
+        const isoCountry = countryIndex >= 0 ? (parts[countryIndex] || '').trim() || null : null;
+        const isoRegion = regionIndex >= 0 ? (parts[regionIndex] || '').trim() || null : null;
+        const airportType = typeIndex >= 0 ? (parts[typeIndex] || '').trim() || null : null;
+        const coordinates = coordsIndex >= 0 ? (parts[coordsIndex] || '').trim() || null : null;
+        
+        airports.push({
+          iataCode,
+          name: name === 'null' ? 'Unknown' : name,
+          municipality: municipality === 'null' ? null : municipality,
+          isoCountry: isoCountry === 'null' ? null : isoCountry,
+          isoRegion: isoRegion === 'null' ? null : isoRegion,
+          airportType: airportType === 'null' ? null : airportType,
+          coordinates: coordinates === 'null' ? null : coordinates,
+          isActive: true,
+        });
+      }
+      
+      if (airports.length === 0) {
+        return res.status(400).json({ 
+          message: "No valid 3-letter IATA codes found in the CSV",
+          skipped 
+        });
+      }
+      
+      const inserted = await storage.bulkUpsertAirportCodes(airports);
+      
+      res.json({ 
+        message: "Airport codes uploaded successfully",
+        inserted,
+        skipped,
+        total: airports.length 
+      });
+    } catch (error) {
+      console.error("Error uploading airport codes:", error);
+      res.status(500).json({ message: "Failed to upload airport codes" });
+    }
+  });
+  
+  function parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        result.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    
+    return result;
+  }
 
   // Per Diem GSA Rate Endpoints
   app.get("/api/perdiem/rates/city/:city/state/:state", requireAuth, async (req, res) => {
