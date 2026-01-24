@@ -77,6 +77,18 @@ const expenseFormSchema = insertExpenseSchema.omit({
   message: "Per diem requires days and location (city/state or ZIP)",
   path: ["perDiemDays"],
 }).refine((data) => {
+  // Validate airfare airport codes
+  if (data.category === "airfare") {
+    const airportCodeRegex = /^[A-Z]{3}$/;
+    const depCode = data.departureAirport?.toUpperCase() || "";
+    const arrCode = data.arrivalAirport?.toUpperCase() || "";
+    return airportCodeRegex.test(depCode) && airportCodeRegex.test(arrCode);
+  }
+  return true;
+}, {
+  message: "Departure and arrival airport codes must be 3 letters (e.g., SEA, LAX)",
+  path: ["departureAirport"],
+}).refine((data) => {
   // Ensure required fields are not empty strings
   if (data.category && data.projectId && data.description !== undefined) {
     return data.category.trim() !== "" && data.projectId.trim() !== "";
@@ -953,6 +965,9 @@ export default function Expenses() {
       miles: "",
       quantity: "",
       unit: "",
+      departureAirport: "",
+      arrivalAirport: "",
+      isRoundTrip: false,
     };
 
     // For mileage expenses, populate the miles field and trigger amount recalculation
@@ -964,6 +979,18 @@ export default function Expenses() {
       formData.quantity = miles;
       formData.unit = "mile";
       console.log('Mileage expense detected, miles:', miles);
+    }
+
+    // For airfare expenses, populate the airport codes and round trip flag
+    if (expense.category === "airfare") {
+      formData.departureAirport = (expense as any).departureAirport || "";
+      formData.arrivalAirport = (expense as any).arrivalAirport || "";
+      formData.isRoundTrip = (expense as any).isRoundTrip || false;
+      console.log('Airfare expense detected:', { 
+        departure: formData.departureAirport, 
+        arrival: formData.arrivalAirport, 
+        isRoundTrip: formData.isRoundTrip 
+      });
     }
 
     console.log('Form data to be set:', formData);
@@ -998,6 +1025,9 @@ export default function Expenses() {
       miles: "",
       quantity: "",
       unit: "",
+      departureAirport: "",
+      arrivalAirport: "",
+      isRoundTrip: false,
     });
   };
 
@@ -1058,7 +1088,8 @@ export default function Expenses() {
       'projectId', 'projectResourceId', 'date', 'category', 'amount', 
       'quantity', 'unit', 'currency', 'billable', 'reimbursable', 
       'description', 'vendor', 'perDiemLocation', 'perDiemMealsRate', 
-      'perDiemLodgingRate', 'perDiemBreakdown'
+      'perDiemLodgingRate', 'perDiemBreakdown',
+      'departureAirport', 'arrivalAirport', 'isRoundTrip'
     ];
 
     const filteredData: any = {};
@@ -2001,6 +2032,74 @@ export default function Expenses() {
                   )}
                 />
               )}
+
+              {/* Airfare fields for editing */}
+              {editWatchedCategory === "airfare" && (
+                <div className="space-y-4 p-4 border rounded-md bg-muted/50">
+                  <div className="text-sm font-medium">Flight Route</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={editForm.control}
+                      name="departureAirport"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>From (Airport Code)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="SEA"
+                              maxLength={3}
+                              {...field}
+                              onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                              data-testid="edit-input-departure-airport"
+                            />
+                          </FormControl>
+                          <FormDescription>3-letter code</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={editForm.control}
+                      name="arrivalAirport"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>To (Airport Code)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="JFK"
+                              maxLength={3}
+                              {...field}
+                              onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                              data-testid="edit-input-arrival-airport"
+                            />
+                          </FormControl>
+                          <FormDescription>3-letter code</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={editForm.control}
+                    name="isRoundTrip"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="edit-checkbox-round-trip"
+                          />
+                        </FormControl>
+                        <div className="space-y-1 leading-none">
+                          <FormLabel>Round Trip</FormLabel>
+                        </div>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
+
               <FormField
                 control={editForm.control}
                 name="amount"
