@@ -420,7 +420,7 @@
         {{#each this.lines}}
         <tr>
           <td>{{this.description}}</td>
-          <td>{{this.type}}</td>
+          <td>{{#if this.expenseCategory}}{{this.expenseCategory}}{{else}}{{this.type}}{{/if}}</td>
           <td class="text-right font-mono">{{#if this.quantity}}{{this.quantity}}{{else}}-{{/if}}</td>
           <td class="text-right font-mono">{{#if this.rate}}${{this.rate}}{{else}}-{{/if}}</td>
           <td class="text-right font-mono amount">${{this.billedAmount}}</td>
