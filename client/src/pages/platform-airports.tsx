@@ -38,8 +38,19 @@ export default function PlatformAirports() {
     queryKey: ["/api/airports/stats/count"],
   });
 
+  const airportsQueryUrl = searchTerm.length >= 2 
+    ? `/api/airports?search=${encodeURIComponent(searchTerm)}&limit=50`
+    : `/api/airports?limit=50`;
+    
   const { data: airports, isLoading } = useQuery<AirportInfo[]>({
-    queryKey: ["/api/airports", { search: searchTerm, limit: 50 }],
+    queryKey: ["/api/airports", searchTerm],
+    queryFn: async () => {
+      const res = await fetch(airportsQueryUrl, {
+        headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" }
+      });
+      if (!res.ok) throw new Error("Failed to fetch airports");
+      return res.json();
+    },
     enabled: searchTerm.length >= 2 || searchTerm.length === 0,
   });
 
