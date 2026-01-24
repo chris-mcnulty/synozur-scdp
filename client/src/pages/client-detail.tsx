@@ -143,6 +143,8 @@ export default function ClientDetail() {
         billingContact: client.billingContact || "",
         contactName: client.contactName || "",
         contactAddress: client.contactAddress || "",
+        secondaryContactName: client.secondaryContactName || "",
+        secondaryContactEmail: client.secondaryContactEmail || "",
         currency: client.currency,
         paymentTerms: client.paymentTerms || "",
         msaDate: client.msaDate || "",
@@ -226,6 +228,8 @@ export default function ClientDetail() {
       billingContact: client.billingContact || "",
       contactName: client.contactName || "",
       contactAddress: client.contactAddress || "",
+      secondaryContactName: client.secondaryContactName || "",
+      secondaryContactEmail: client.secondaryContactEmail || "",
       currency: client.currency,
       paymentTerms: client.paymentTerms || "",
       msaDate: client.msaDate || "",
@@ -484,6 +488,27 @@ export default function ClientDetail() {
                           />
                         </div>
                         <div className="space-y-2">
+                          <Label htmlFor="secondaryContactName">Secondary Contact Name (Optional)</Label>
+                          <Input
+                            id="secondaryContactName"
+                            value={editForm.secondaryContactName || ""}
+                            onChange={(e) => setEditForm({ ...editForm, secondaryContactName: e.target.value })}
+                            placeholder="e.g., Finance Department"
+                            data-testid="input-edit-secondary-contact-name"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="secondaryContactEmail">Secondary Contact Email (Optional)</Label>
+                          <Input
+                            id="secondaryContactEmail"
+                            type="email"
+                            value={editForm.secondaryContactEmail || ""}
+                            onChange={(e) => setEditForm({ ...editForm, secondaryContactEmail: e.target.value })}
+                            placeholder="e.g., ap@company.com"
+                            data-testid="input-edit-secondary-contact-email"
+                          />
+                        </div>
+                        <div className="space-y-2">
                           <Label htmlFor="paymentTerms">Payment Terms</Label>
                           <Select
                             value={editForm.paymentTerms || ""}
@@ -702,6 +727,20 @@ export default function ClientDetail() {
                                 <span className="text-sm text-muted-foreground">Billing Contact</span>
                               </div>
                               <p data-testid="text-billing-contact">{client.billingContact}</p>
+                            </>
+                          )}
+
+                          {(client.secondaryContactName || client.secondaryContactEmail) && (
+                            <>
+                              <div className="flex items-center space-x-2">
+                                <Mail className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">Secondary Contact (CC on Invoices)</span>
+                              </div>
+                              <p data-testid="text-secondary-contact">
+                                {client.secondaryContactName}
+                                {client.secondaryContactName && client.secondaryContactEmail && ' - '}
+                                {client.secondaryContactEmail}
+                              </p>
                             </>
                           )}
 

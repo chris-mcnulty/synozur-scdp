@@ -331,6 +331,9 @@
         {{#if this.billingContact}}
         <div>{{this.billingContact}}</div>
         {{/if}}
+        {{#if this.secondaryContactName}}
+        <div><strong>CC:</strong> {{this.secondaryContactName}}{{#if this.secondaryContactEmail}} ({{this.secondaryContactEmail}}){{/if}}</div>
+        {{/if}}
         {{#unless @last}}<br>{{/unless}}
         {{/each}}
       </div>

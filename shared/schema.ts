@@ -238,6 +238,8 @@ export const clients = pgTable("clients", {
   billingContact: text("billing_contact"),
   contactName: text("contact_name"),
   contactAddress: text("contact_address"),
+  secondaryContactName: text("secondary_contact_name"),
+  secondaryContactEmail: text("secondary_contact_email"),
   vocabularyOverrides: text("vocabulary_overrides"), // JSON string (DEPRECATED - kept for migration)
   // Vocabulary term selections (overrides organization defaults)
   epicTermId: varchar("epic_term_id").references(() => vocabularyCatalog.id),
