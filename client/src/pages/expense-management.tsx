@@ -104,6 +104,10 @@ const individualEditSchema = z.object({
   reimbursable: z.boolean().optional(),
   billedFlag: z.boolean().optional(),
   projectResourceId: z.string().optional(),
+  // Airfare specific fields
+  departureAirport: z.string().max(3).optional(),
+  arrivalAirport: z.string().max(3).optional(),
+  isRoundTrip: z.boolean().optional(),
 });
 
 type IndividualEditData = z.infer<typeof individualEditSchema>;
@@ -369,6 +373,10 @@ export default function ExpenseManagement() {
       reimbursable: expense.reimbursable,
       billedFlag: expense.billedFlag,
       projectResourceId: expense.projectResourceId || undefined,
+      // Airfare specific fields
+      departureAirport: (expense as any).departureAirport || "",
+      arrivalAirport: (expense as any).arrivalAirport || "",
+      isRoundTrip: (expense as any).isRoundTrip || false,
     });
     setIndividualEditDialogOpen(true);
   };
@@ -1241,6 +1249,69 @@ export default function ExpenseManagement() {
                       )}
                     />
                   </div>
+
+                  {/* Airfare specific fields - only show when category is airfare */}
+                  {individualEditForm.watch("category") === "airfare" && (
+                    <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+                      <FormField
+                        control={individualEditForm.control}
+                        name="departureAirport"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Departure Airport</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                placeholder="SEA" 
+                                maxLength={3}
+                                className="uppercase"
+                                onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                data-testid="input-departure-airport" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={individualEditForm.control}
+                        name="arrivalAirport"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Arrival Airport</FormLabel>
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                placeholder="SFO" 
+                                maxLength={3}
+                                className="uppercase"
+                                onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                                data-testid="input-arrival-airport" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={individualEditForm.control}
+                        name="isRoundTrip"
+                        render={({ field }) => (
+                          <FormItem className="flex flex-row items-center space-x-3 space-y-0 pt-6">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                data-testid="checkbox-round-trip"
+                              />
+                            </FormControl>
+                            <FormLabel className="font-normal">Round Trip</FormLabel>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <FormField

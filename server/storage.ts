@@ -6194,6 +6194,21 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
+        // Build description with airfare route info if available
+        let description = expense.description || '';
+        if (expense.category === 'airfare') {
+          const dep = (expense as any).departureAirport;
+          const arr = (expense as any).arrivalAirport;
+          const isRoundTrip = (expense as any).isRoundTrip;
+          
+          if (dep && arr) {
+            const route = isRoundTrip 
+              ? `${dep} ↔ ${arr}` // Round trip with bidirectional arrow
+              : `${dep} → ${arr}`; // One way with arrow
+            description = description ? `${route}: ${description}` : route;
+          }
+        }
+        
         await tx.insert(invoiceLines).values({
           batchId,
           projectId,
@@ -6202,7 +6217,7 @@ export class DatabaseStorage implements IStorage {
           amount: expense.amount,
           quantity: lineQuantity,
           rate: lineRate,
-          description: `${person.name} - ${expense.description}${vendorInfo} (${expense.date})`,
+          description: `${person.name} - ${description}${vendorInfo} (${expense.date})`,
           taxable: false, // Expenses are pass-through costs, not subject to tax
           expenseCategory: expense.category || null // Store expense category for reporting
         });

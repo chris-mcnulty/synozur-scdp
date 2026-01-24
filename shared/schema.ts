@@ -750,6 +750,10 @@ export const expenses = pgTable("expenses", {
   vendor: text("vendor"), // Merchant/vendor name (e.g., Alaska Airlines, Starbucks, Hyatt)
   receiptUrl: text("receipt_url"),
   billedFlag: boolean("billed_flag").notNull().default(false),
+  // Airfare specific fields
+  departureAirport: text("departure_airport"), // Three-letter airport code (e.g., "SEA", "SFO")
+  arrivalAirport: text("arrival_airport"), // Three-letter airport code (e.g., "LAX", "JFK")
+  isRoundTrip: boolean("is_round_trip").default(false), // If true, shows both directions on invoice
   // Per Diem specific fields
   perDiemLocation: text("per_diem_location"), // Location string (e.g., "Washington, DC" or "ZIP 20001")
   perDiemMealsRate: decimal("per_diem_meals_rate", { precision: 10, scale: 2 }), // GSA M&IE rate
