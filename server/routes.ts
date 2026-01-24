@@ -14200,6 +14200,63 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Helper function to build user-friendly invoice PDF filename
+  function buildInvoicePDFFilename(
+    batchId: string,
+    glInvoiceNumber: string | null | undefined,
+    lines: Array<{ client?: { id?: string; shortName?: string | null; name?: string }; project?: { id?: string; code?: string | null; name?: string } }>
+  ): string {
+    const sanitize = (s: string | null | undefined): string => 
+      (s || '').replace(/[^a-zA-Z0-9-_]/g, '');
+    
+    // Handle empty or missing lines gracefully
+    if (!lines || lines.length === 0) {
+      const glPart = glInvoiceNumber ? `_${sanitize(glInvoiceNumber)}` : '';
+      return `Invoice${glPart}_${batchId}.pdf`;
+    }
+    
+    // Extract unique clients and projects with safety checks
+    const clientMap = new Map<string, { shortName?: string | null; name?: string }>();
+    const projectMap = new Map<string, { code?: string | null; name?: string }>();
+    
+    for (const line of lines) {
+      if (line.client?.id) {
+        clientMap.set(line.client.id, { shortName: line.client.shortName, name: line.client.name });
+      }
+      if (line.project?.id) {
+        projectMap.set(line.project.id, { code: line.project.code, name: line.project.name });
+      }
+    }
+    
+    const uniqueClients = [...clientMap.values()];
+    const uniqueProjects = [...projectMap.values()];
+    
+    // Get client shortName or abbreviated name
+    let clientPart = 'Unknown';
+    if (uniqueClients.length === 1) {
+      const client = uniqueClients[0];
+      clientPart = client.shortName || 
+        (client.name ? client.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10) : 'Unknown');
+    } else if (uniqueClients.length > 1) {
+      clientPart = 'Multiple';
+    }
+    
+    // Get project code or abbreviated name
+    let projectPart = 'Unknown';
+    if (uniqueProjects.length === 1) {
+      const project = uniqueProjects[0];
+      projectPart = project.code || 
+        (project.name ? project.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15) : 'Unknown');
+    } else if (uniqueProjects.length > 1) {
+      projectPart = 'Multiple';
+    }
+    
+    // Include GL invoice number if present
+    const glPart = glInvoiceNumber ? `_${sanitize(glInvoiceNumber)}` : '';
+    
+    return `${sanitize(clientPart)}_${sanitize(projectPart)}${glPart}_${batchId}.pdf`;
+  }
+
   // PDF Invoice Generation
   app.get("/api/invoice-batches/:batchId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
@@ -14318,7 +14375,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Store the PDF file ID in the database
       await storage.updateInvoiceBatch(batchId, { pdfFileId: fileId });
 
-      const fileName = `invoice-${batchId}.pdf`;
+      // Build user-friendly filename
+      const fileName = buildInvoicePDFFilename(batchId, batch.glInvoiceNumber, lines);
+      
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'attachment; filename="' + fileName + '"');
       res.send(pdfBuffer);
@@ -14352,9 +14411,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
+      // Build user-friendly filename
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const fileName = buildInvoicePDFFilename(batchId, batch.glInvoiceNumber, lines);
+
       // Return the PDF for viewing (inline, not download)
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="invoice-${batchId}.pdf"`);
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
       res.send(pdfBuffer);
     } catch (error: any) {
       console.error("Failed to retrieve invoice PDF:", error);
@@ -14378,9 +14441,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Try to get the invoice PDF using the stored file ID
       await invoicePDFStorage.getInvoicePDF(batch.pdfFileId);
       
+      // Build user-friendly filename
+      const lines = await storage.getInvoiceLinesForBatch(batchId);
+      const fileName = buildInvoicePDFFilename(batchId, batch.glInvoiceNumber, lines);
+      
       res.json({ 
         exists: true,
-        fileName: `invoice-${batchId}.pdf`
+        fileName
       });
     } catch (error: any) {
       // File doesn't exist
