@@ -1014,6 +1014,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   allocationGroupId: varchar("allocation_group_id"), // Groups related adjustment lines
   sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW if applicable
   taxable: boolean("taxable").notNull().default(true), // Whether this line is subject to tax (expenses default to false)
+  expenseCategory: text("expense_category"), // Category for expense lines (e.g., "Per Diem", "Hotel", "Travel"); null for service lines
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

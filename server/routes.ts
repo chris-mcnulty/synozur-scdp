@@ -13924,6 +13924,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const csvHeaders = [
         'Line ID',
         'Type',
+        'Expense Category',
         'Client',
         'Project',
         'Project Code',
@@ -13940,9 +13941,18 @@ export async function registerRoutes(app: Express): Promise<void> {
         const dateMatch = line.description?.match(/\((\d{4}-\d{2}-\d{2})\)$/);
         const date = dateMatch ? dateMatch[1] : '';
         
+        // Determine expense category: use stored category for expenses, "Services" for time entries, blank for others
+        let expenseCategory = '';
+        if (line.type === 'expense') {
+          expenseCategory = (line as any).expenseCategory || '';
+        } else if (line.type === 'time') {
+          expenseCategory = 'Services';
+        }
+        
         return [
           line.id,
           line.type,
+          `"${expenseCategory.replace(/"/g, '""')}"`,
           `"${(line.client.name || '').replace(/"/g, '""')}"`,
           `"${(line.project.name || '').replace(/"/g, '""')}"`,
           line.project.code || '',

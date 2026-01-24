@@ -6189,7 +6189,8 @@ export class DatabaseStorage implements IStorage {
           type: 'expense',
           amount: expense.amount,
           description: `${person.name} - ${expense.description}${vendorInfo} (${expense.date})`,
-          taxable: false // Expenses are pass-through costs, not subject to tax
+          taxable: false, // Expenses are pass-through costs, not subject to tax
+          expenseCategory: expense.category || null // Store expense category for reporting
         });
       }
       expensesBilled = expenseIds.length;

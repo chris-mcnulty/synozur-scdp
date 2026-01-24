@@ -584,7 +584,7 @@ export default function Billing() {
                     <div className="space-y-2">
                       <Label>Select Projects</Label>
                       <div className="border border-border rounded-lg p-4 max-h-48 overflow-y-auto">
-                        {(projects as any[])?.map((project: any) => (
+                        {(projects as any[])?.filter((project: any) => project.status === 'active').map((project: any) => (
                           <div key={project.id} className="flex items-center space-x-2 py-2">
                             <Checkbox
                               id={project.id}
@@ -601,7 +601,7 @@ export default function Billing() {
                             <Label htmlFor={project.id} className="flex-1">
                               <div className="font-medium">{project.name}</div>
                               <div className="text-sm text-muted-foreground">
-                                {project.client.name} • {project.status}
+                                {project.client.name}
                               </div>
                             </Label>
                           </div>
