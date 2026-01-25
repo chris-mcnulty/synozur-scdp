@@ -12032,6 +12032,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         billable,
         reimbursable,
         billedFlag,
+        approvalStatus,
         hasReceipt,
         minAmount,
         maxAmount
@@ -12050,6 +12051,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (billable !== undefined) filters.billable = billable === 'true';
       if (reimbursable !== undefined) filters.reimbursable = reimbursable === 'true';
       if (billedFlag !== undefined) filters.billedFlag = billedFlag === 'true';
+      if (approvalStatus) filters.approvalStatus = approvalStatus;
       if (hasReceipt !== undefined) filters.hasReceipt = hasReceipt === 'true';
       if (minAmount) filters.minAmount = parseFloat(minAmount);
       if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
