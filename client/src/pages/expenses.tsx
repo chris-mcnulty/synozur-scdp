@@ -108,6 +108,7 @@ const EXPENSE_CATEGORIES = [
   { value: "meals", label: "Meals" },
   { value: "taxi", label: "Taxi/Transportation" },
   { value: "airfare", label: "Airfare" },
+  { value: "carrental", label: "Car Rental" },
   { value: "parking", label: "Parking" },
   { value: "entertainment", label: "Entertainment" },
   { value: "other", label: "Other" },
