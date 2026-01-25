@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -119,6 +119,7 @@ export default function Expenses() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
   const [perDiemBreakdown, setPerDiemBreakdown] = useState<any>(null); // Per diem calculation breakdown
   const [isCalculatingPerDiem, setIsCalculatingPerDiem] = useState<boolean>(false);
@@ -371,6 +372,7 @@ export default function Expenses() {
         vendor: "",
         category: "",
         projectId: "",
+        projectResourceId: "",
         miles: "",
         quantity: "",
         unit: "",
@@ -389,6 +391,9 @@ export default function Expenses() {
       // Reset component state
       setPrevCategory("");
       setReceiptFile(null);
+      if (receiptInputRef.current) {
+        receiptInputRef.current.value = '';
+      }
       setPerDiemBreakdown(null);
       toast({
         title: "Expense created",
@@ -622,6 +627,7 @@ export default function Expenses() {
             vendor: "",
             category: "",
             projectId: "",
+            projectResourceId: "",
             miles: "",
             quantity: "",
             unit: "",
@@ -639,6 +645,9 @@ export default function Expenses() {
           });
           setPrevCategory("");
           setReceiptFile(null);
+          if (receiptInputRef.current) {
+            receiptInputRef.current.value = '';
+          }
           setPerDiemBreakdown(null);
           setPerDiemDaySelections([]);
           setPerDiemMieBreakdown(null);
@@ -1936,6 +1945,7 @@ export default function Expenses() {
                     <FormLabel>Receipt (Optional)</FormLabel>
                     <div className="flex items-center space-x-2">
                       <Input
+                        ref={receiptInputRef}
                         type="file"
                         accept=".jpg,.jpeg,.png,.pdf,.heic,.heif"
                         onChange={handleFileChange}
