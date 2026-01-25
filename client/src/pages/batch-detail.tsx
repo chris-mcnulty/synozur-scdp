@@ -129,6 +129,7 @@ interface InvoiceBatchDetails {
   clientCount: number;
   projectCount: number;
   paymentTerms?: string | null;
+  clientPaymentTerms?: string | null;
   finalizer?: { id: string; name: string; email: string } | null;
   creator?: { id: string; name: string; email: string } | null;
   asOfDate?: string | null;
@@ -1783,14 +1784,19 @@ export default function BatchDetail() {
               <div className="text-sm text-muted-foreground">Payment Terms</div>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium" data-testid="text-payment-terms">
-                  {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                  {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                 </p>
                 {batchDetails.paymentTerms && (
                   <Badge variant="secondary" className="text-xs">
                     Custom
                   </Badge>
                 )}
-                {!batchDetails.paymentTerms && (
+                {!batchDetails.paymentTerms && batchDetails.clientPaymentTerms && (
+                  <Badge variant="outline" className="text-xs">
+                    Client Default
+                  </Badge>
+                )}
+                {!batchDetails.paymentTerms && !batchDetails.clientPaymentTerms && (
                   <Badge variant="outline" className="text-xs">
                     Default
                   </Badge>
@@ -1883,14 +1889,19 @@ export default function BatchDetail() {
                           Custom
                         </Badge>
                       )}
-                      {!batchDetails.paymentTerms && (
+                      {!batchDetails.paymentTerms && batchDetails.clientPaymentTerms && (
+                        <Badge variant="outline" className="text-xs">
+                          Client Default
+                        </Badge>
+                      )}
+                      {!batchDetails.paymentTerms && !batchDetails.clientPaymentTerms && (
                         <Badge variant="outline" className="text-xs">
                           Using Default
                         </Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground" data-testid="text-current-payment-terms">
-                      {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                      {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                     </p>
                   </div>
                   {canEditLines() && (
@@ -1949,10 +1960,10 @@ export default function BatchDetail() {
                   {!useCustomPaymentTerms && (
                     <div className="rounded-lg bg-muted/50 p-3">
                       <p className="text-sm text-muted-foreground">
-                        This batch will use the default payment terms:
+                        This batch will use the {batchDetails.clientPaymentTerms ? 'client' : 'default'} payment terms:
                       </p>
                       <p className="text-sm font-medium mt-1">
-                        {defaultPaymentTerms || 'Payment due within 30 days'}
+                        {batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                       </p>
                     </div>
                   )}
@@ -2006,6 +2017,10 @@ export default function BatchDetail() {
                     <Badge variant="secondary" className="text-xs">
                       Custom
                     </Badge>
+                  ) : batchDetails.clientPaymentTerms ? (
+                    <Badge variant="outline" className="text-xs">
+                      Client Default
+                    </Badge>
                   ) : (
                     <Badge variant="outline" className="text-xs">
                       Default
@@ -2013,7 +2028,7 @@ export default function BatchDetail() {
                   )}
                 </div>
                 <p className="text-sm" data-testid="text-finalized-payment-terms">
-                  {batchDetails.paymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                  {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                 </p>
                 <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
                   <Lock className="h-3 w-3" />

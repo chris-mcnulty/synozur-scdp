@@ -473,6 +473,7 @@ export interface IStorage {
     totalLinesCount: number;
     clientCount: number;
     projectCount: number;
+    clientPaymentTerms?: string | null;
     paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
   }) | undefined>;
   updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch>;
@@ -5455,12 +5456,27 @@ export class DatabaseStorage implements IStorage {
       totalAmount: round2(totalAmount).toString()
     };
 
+    // Get client payment terms if there's a primary client in the batch
+    // Use the first client's payment terms (for single-client batches this is the client's terms)
+    let clientPaymentTerms: string | null = null;
+    if (uniqueClients.size > 0) {
+      const firstClientId = Array.from(uniqueClients)[0];
+      if (firstClientId) {
+        const [clientResult] = await db
+          .select({ paymentTerms: clients.paymentTerms })
+          .from(clients)
+          .where(eq(clients.id, firstClientId));
+        clientPaymentTerms = clientResult?.paymentTerms || null;
+      }
+    }
+
     // Convert decimal fields to numbers before returning
     return convertDecimalFieldsToNumbers({
       ...updatedBatch,
       totalLinesCount,
       clientCount: uniqueClients.size,
       projectCount: uniqueProjects.size,
+      clientPaymentTerms,
       creator: result.creator?.id ? {
         id: String(result.creator.id),
         name: String(result.creator.name),
