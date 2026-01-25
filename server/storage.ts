@@ -10022,8 +10022,20 @@ export async function generateInvoicePDF(params: {
     clientProjectMap[key].lines.push(lineData);
   }
 
-  // Convert to array
+  // Convert to array and sort lines within each group by date
   for (const group of Object.values(clientProjectMap)) {
+    // Sort lines by date (extracted from description if present, e.g., "... (2024-01-15)")
+    group.lines.sort((a, b) => {
+      // Try to extract date from description - format: "... (YYYY-MM-DD)" at end
+      const dateRegex = /\((\d{4}-\d{2}-\d{2})\)\s*$/;
+      const matchA = a.description?.match(dateRegex);
+      const matchB = b.description?.match(dateRegex);
+      
+      const dateA = matchA ? matchA[1] : (a.date || '');
+      const dateB = matchB ? matchB[1] : (b.date || '');
+      
+      return dateA.localeCompare(dateB);
+    });
     groupedLines.push(group);
   }
 
