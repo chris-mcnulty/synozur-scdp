@@ -102,6 +102,7 @@ const individualEditSchema = z.object({
   category: z.string().optional(),
   amount: z.string().optional(), // Keep as string for decimal precision
   date: z.string().optional(), // Use 'date' to match backend
+  billable: z.boolean().optional(),
   reimbursable: z.boolean().optional(),
   billedFlag: z.boolean().optional(),
   projectResourceId: z.string().optional(),
@@ -371,6 +372,7 @@ export default function ExpenseManagement() {
       category: expense.category || "",
       amount: expense.amount || undefined, // Already a string from backend
       date: expense.date || undefined, // Use 'date' field from expense
+      billable: expense.billable,
       reimbursable: expense.reimbursable,
       billedFlag: expense.billedFlag,
       projectResourceId: expense.projectResourceId || undefined,
@@ -1380,7 +1382,25 @@ export default function ExpenseManagement() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <FormField
+                      control={individualEditForm.control}
+                      name="billable"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="checkbox-individual-billable"
+                            />
+                          </FormControl>
+                          <FormLabel className="text-sm font-normal">
+                            Billable
+                          </FormLabel>
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={individualEditForm.control}
                       name="reimbursable"
