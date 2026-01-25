@@ -9969,6 +9969,21 @@ function calculateDueDate(paymentTerms?: string): string {
   return dueDate.toLocaleDateString();
 }
 
+// Expense category code to friendly label mapping
+const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  travel: "Travel",
+  hotel: "Hotel",
+  meals: "Meals",
+  taxi: "Taxi/Transportation",
+  airfare: "Airfare",
+  carrental: "Car Rental",
+  parking: "Parking",
+  entertainment: "Entertainment",
+  other: "Other",
+  mileage: "Mileage",
+  perdiem: "Per Diem",
+};
+
 // PDF Generation implementation
 export async function generateInvoicePDF(params: {
   batch: InvoiceBatch & { totalLinesCount: number; clientCount: number; projectCount: number };
@@ -10009,6 +10024,11 @@ export async function generateInvoicePDF(params: {
       : parseFloat(line.amount || '0');
     const variance = billedAmount - originalAmount;
     
+    // Convert expense category code to friendly label
+    const expenseCategoryLabel = line.expenseCategory 
+      ? (EXPENSE_CATEGORY_LABELS[line.expenseCategory] || line.expenseCategory)
+      : null;
+    
     const lineData = {
       ...line,
       originalAmount: originalAmount.toFixed(2),
@@ -10016,7 +10036,8 @@ export async function generateInvoicePDF(params: {
       varianceAmount: Math.abs(variance).toFixed(2),
       varianceIsPositive: variance >= 0,
       amount: parseFloat(line.amount || '0').toFixed(2),
-      rate: line.rate ? parseFloat(line.rate).toFixed(2) : null
+      rate: line.rate ? parseFloat(line.rate).toFixed(2) : null,
+      expenseCategory: expenseCategoryLabel // Use friendly label instead of code
     };
     
     clientProjectMap[key].lines.push(lineData);
