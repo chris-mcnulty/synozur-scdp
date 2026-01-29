@@ -62,6 +62,7 @@ import puppeteer from 'puppeteer';
 import { receiptStorage } from './services/receipt-storage.js';
 import { normalizeReceiptBatch, type NormalizedReceipt } from './services/receipt-normalizer.js';
 import { PDFDocument } from 'pdf-lib';
+import { convertCurrency } from './exchange-rates.js';
 // Graph client import disabled for local file storage migration
 // import { graphClient } from './services/graph-client.js';
 
@@ -6227,10 +6228,21 @@ export class DatabaseStorage implements IStorage {
 
     // Process expenses (skip if batch type is services only)
     const expenseIds: string[] = [];
+    const targetCurrency = client.currency || 'USD';
+    
     if (batchType === 'expenses' || batchType === 'mixed') {
       for (const { expense, person } of unbilledExpensesWithPerson) {
-        const amount = Number(expense.amount);
-        totalAmount += amount;
+        const originalAmount = Number(expense.amount);
+        const expenseCurrency = expense.currency || 'USD';
+        
+        // Convert expense to client's currency if different
+        const { convertedAmount, exchangeRate } = await convertCurrency(
+          originalAmount,
+          expenseCurrency,
+          targetCurrency
+        );
+        
+        totalAmount += convertedAmount;
         expenseIds.push(expense.id);
 
         // Create invoice line for expense (expenses are not taxable by default)
@@ -6244,7 +6256,7 @@ export class DatabaseStorage implements IStorage {
           const miles = Number(expense.quantity);
           if (miles > 0) {
             lineQuantity = expense.quantity;
-            lineRate = (amount / miles).toFixed(4); // Calculate rate per mile
+            lineRate = (convertedAmount / miles).toFixed(4); // Calculate rate per mile in target currency
           }
         }
         
@@ -6263,17 +6275,26 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
+        // Add currency conversion note to description if converted
+        let fullDescription = `${person.name} - ${description}${vendorInfo} (${expense.date})`;
+        if (expenseCurrency !== targetCurrency) {
+          fullDescription += ` [${expenseCurrency} ${originalAmount.toFixed(2)} @ ${exchangeRate}]`;
+        }
+        
         await tx.insert(invoiceLines).values({
           batchId,
           projectId,
           clientId: client.id,
           type: 'expense',
-          amount: expense.amount,
+          amount: convertedAmount.toString(),
           quantity: lineQuantity,
           rate: lineRate,
-          description: `${person.name} - ${description}${vendorInfo} (${expense.date})`,
+          description: fullDescription,
           taxable: false, // Expenses are pass-through costs, not subject to tax
-          expenseCategory: expense.category || null // Store expense category for reporting
+          expenseCategory: expense.category || null, // Store expense category for reporting
+          originalCurrency: expenseCurrency !== targetCurrency ? expenseCurrency : null,
+          originalCurrencyAmount: expenseCurrency !== targetCurrency ? originalAmount.toString() : null,
+          exchangeRate: expenseCurrency !== targetCurrency ? exchangeRate.toString() : null
         });
       }
       expensesBilled = expenseIds.length;
