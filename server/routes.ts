@@ -12014,6 +12014,87 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // OCONUS Per Diem Calculation Endpoints
+  // Calculate OCONUS per diem for foreign/non-continental US travel
+  app.post("/api/perdiem/oconus/calculate", requireAuth, async (req, res) => {
+    try {
+      const { country, location, date, days, includePartialDays, includeLodging, fiscalYear } = req.body;
+      
+      console.log("[OCONUS_PERDIEM] Request:", { country, location, date, days, includePartialDays, includeLodging });
+      
+      if (!country || !location) {
+        return res.status(400).json({ message: "Country and location are required" });
+      }
+      
+      if (typeof days !== 'number' || days <= 0) {
+        return res.status(400).json({ message: "Invalid days parameter. Must be a positive number." });
+      }
+      
+      const travelDate = date ? new Date(date) : new Date();
+      const year = fiscalYear ? parseInt(fiscalYear) : undefined;
+      
+      const oconusRate = await storage.getOconusRate(country, location, travelDate, year);
+      
+      if (!oconusRate) {
+        return res.status(404).json({ 
+          message: `OCONUS rate not found for ${location}, ${country}. Please verify the location or try selecting from the countries list.`
+        });
+      }
+      
+      const { convertOconusToGSARate, calculateOconusPerDiem } = await import("./gsa-service.js");
+      const rate = convertOconusToGSARate(oconusRate);
+      const calculation = calculateOconusPerDiem(rate, days, includePartialDays !== false, includeLodging === true);
+      
+      console.log("[OCONUS_PERDIEM] Result:", calculation);
+      
+      res.json({
+        ...calculation,
+        oconusRate: rate
+      });
+    } catch (error: any) {
+      console.error("[OCONUS_PERDIEM] Error:", error);
+      res.status(500).json({ message: "Failed to calculate OCONUS per diem", error: error?.message });
+    }
+  });
+
+  // Calculate OCONUS per diem with meal component selections
+  app.post("/api/perdiem/oconus/calculate-with-components", requireAuth, async (req, res) => {
+    try {
+      const { country, location, date, days, fiscalYear } = req.body;
+      
+      if (!country || !location) {
+        return res.status(400).json({ message: "Country and location are required" });
+      }
+      
+      if (!Array.isArray(days) || days.length === 0) {
+        return res.status(400).json({ message: "Days array is required with component selections" });
+      }
+      
+      const travelDate = date ? new Date(date) : new Date();
+      const year = fiscalYear ? parseInt(fiscalYear) : undefined;
+      
+      const oconusRate = await storage.getOconusRate(country, location, travelDate, year);
+      
+      if (!oconusRate) {
+        return res.status(404).json({ 
+          message: `OCONUS rate not found for ${location}, ${country}`
+        });
+      }
+      
+      const { convertOconusToGSARate, calculateOconusPerDiemWithComponents } = await import("./gsa-service.js");
+      const rate = convertOconusToGSARate(oconusRate);
+      const calculation = calculateOconusPerDiemWithComponents(rate, days);
+      
+      res.json({
+        ...calculation,
+        oconusRate: rate
+      });
+    } catch (error: any) {
+      console.error("[OCONUS_PERDIEM_COMPONENTS] Error:", error);
+      res.status(500).json({ message: "Failed to calculate OCONUS per diem with components", error: error?.message });
+    }
+  });
+
 
   // Regular expenses endpoint - "My Expenses" page always shows current user's expenses only
   app.get("/api/expenses", requireAuth, async (req, res) => {

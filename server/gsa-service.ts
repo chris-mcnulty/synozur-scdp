@@ -447,3 +447,167 @@ export async function getStandardCONUSRate(year?: number): Promise<GSARate> {
     lodging: 98, // Standard lodging rate for FY2025
   };
 }
+
+// ============================================================================
+// OCONUS (Outside Continental US) Per Diem Rate Functions
+// Uses data from DoD OCONUS Per Diem files (updated annually, no API available)
+// ============================================================================
+
+export interface OconusGSARate {
+  country: string;
+  location: string;
+  fiscalYear: number;
+  meals: number;  // M&IE rate
+  lodging: number;
+  maxPerDiem: number;
+  seasonStart?: string;
+  seasonEnd?: string;
+}
+
+/**
+ * Convert OCONUS database rate to GSARate-like structure for consistency
+ */
+export function convertOconusToGSARate(oconusRate: {
+  country: string;
+  location: string;
+  fiscalYear: number;
+  mie: number;
+  lodging: number;
+  maxPerDiem: number;
+  seasonStart?: string;
+  seasonEnd?: string;
+}): OconusGSARate {
+  return {
+    country: oconusRate.country,
+    location: oconusRate.location,
+    fiscalYear: oconusRate.fiscalYear,
+    meals: oconusRate.mie,
+    lodging: oconusRate.lodging,
+    maxPerDiem: oconusRate.maxPerDiem,
+    seasonStart: oconusRate.seasonStart,
+    seasonEnd: oconusRate.seasonEnd,
+  };
+}
+
+/**
+ * Calculate OCONUS per diem with components (similar to CONUS calculation)
+ */
+export function calculateOconusPerDiemWithComponents(
+  rate: OconusGSARate,
+  days: PerDiemDay[]
+): {
+  totalAmount: number;
+  breakdown: MIEBreakdown;
+  dailyBreakdown: { date: string; amount: number; components: string[] }[];
+} {
+  // Use same calculation as CONUS with the OCONUS M&IE rate
+  const breakdown = getMIEBreakdown(rate.meals);
+  const dailyBreakdown: { date: string; amount: number; components: string[] }[] = [];
+  let totalAmount = 0;
+  
+  for (const day of days) {
+    if (!day.isClientEngagement) {
+      dailyBreakdown.push({ date: day.date, amount: 0, components: ['No client engagement'] });
+      continue;
+    }
+    
+    let dayAmount = 0;
+    const components: string[] = [];
+    
+    if (day.breakfast) {
+      dayAmount += breakdown.breakfast;
+      components.push(`Breakfast $${breakdown.breakfast}`);
+    }
+    if (day.lunch) {
+      dayAmount += breakdown.lunch;
+      components.push(`Lunch $${breakdown.lunch}`);
+    }
+    if (day.dinner) {
+      dayAmount += breakdown.dinner;
+      components.push(`Dinner $${breakdown.dinner}`);
+    }
+    if (day.incidentals) {
+      dayAmount += breakdown.incidentals;
+      components.push(`Incidentals $${breakdown.incidentals}`);
+    }
+    
+    if (day.isPartialDay && components.length > 0) {
+      dayAmount = Math.round(dayAmount * 0.75 * 100) / 100;
+      components.push('(75% partial day)');
+    }
+    
+    totalAmount += dayAmount;
+    dailyBreakdown.push({ date: day.date, amount: dayAmount, components });
+  }
+  
+  return {
+    totalAmount: Math.round(totalAmount * 100) / 100,
+    breakdown,
+    dailyBreakdown
+  };
+}
+
+/**
+ * Calculate simple OCONUS per diem (days × M&IE rate)
+ */
+export function calculateOconusPerDiem(
+  rate: OconusGSARate,
+  days: number,
+  includePartialDays: boolean = true,
+  includeLodging: boolean = false
+): { totalAmount: number; mealsTotal: number; lodgingTotal: number } {
+  let mealsTotal = 0;
+  let lodgingTotal = 0;
+  
+  if (includePartialDays && days > 1) {
+    const fullDays = days - 2;
+    const partialDays = 2;
+    mealsTotal = (fullDays * rate.meals) + (partialDays * rate.meals * 0.75);
+  } else {
+    mealsTotal = days * rate.meals;
+  }
+  
+  if (includeLodging) {
+    lodgingTotal = days * rate.lodging;
+  }
+  
+  return {
+    totalAmount: Math.round((mealsTotal + lodgingTotal) * 100) / 100,
+    mealsTotal: Math.round(mealsTotal * 100) / 100,
+    lodgingTotal: Math.round(lodgingTotal * 100) / 100
+  };
+}
+
+/**
+ * Check if a location is OCONUS (Outside Continental US)
+ * Returns true for Alaska, Hawaii, US territories, and foreign countries
+ */
+export function isOconusLocation(country: string): boolean {
+  const oconusRegions = [
+    'ALASKA', 'HAWAII', 'PUERTO RICO', 'GUAM', 'US VIRGIN ISLANDS',
+    'AMERICAN SAMOA', 'NORTHERN MARIANA ISLANDS'
+  ];
+  
+  const upperCountry = country.toUpperCase();
+  
+  // If it matches a US OCONUS region
+  if (oconusRegions.includes(upperCountry)) {
+    return true;
+  }
+  
+  // If it's not a US state abbreviation or 'US', it's likely foreign
+  const usStates = [
+    'AL', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'ID', 'IL', 'IN', 'IA',
+    'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV',
+    'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD',
+    'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
+  ];
+  
+  // If it's a two-letter code that's a US state, it's CONUS
+  if (upperCountry.length === 2 && usStates.includes(upperCountry)) {
+    return false;
+  }
+  
+  // Otherwise assume OCONUS (foreign country)
+  return true;
+}

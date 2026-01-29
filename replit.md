@@ -95,6 +95,24 @@ Preferred communication style: Simple, everyday language.
   - OurAirports format: `ident,type,name,...,iata_code,...,municipality,iso_country,iso_region,...,coordinates`
   - Only rows with valid 3-letter IATA codes are imported; others are skipped
 
+### OCONUS Per Diem Rates (System-wide)
+- **Table**: `oconus_per_diem_rates` - Per diem rates for Outside Continental US locations
+- **Not tenant-scoped**: This is reference data shared across all tenants
+- **Data Source**: DoD OCONUS Per Diem ASCII files (no API available, updated annually)
+- **Endpoints**:
+  - `GET /api/oconus/rates?search=GERMANY&limit=50` - Search OCONUS rates by country/location
+  - `GET /api/oconus/rate?country=GERMANY&location=BERLIN&date=2026-03-15` - Get rate for specific location/date
+  - `GET /api/oconus/countries` - List all available countries
+  - `GET /api/oconus/locations/:country` - Get locations for a country
+  - `GET /api/oconus/stats/count` - Get total rate count
+  - `POST /api/platform/oconus/upload` - Platform admin file upload (global_admin/constellation_admin only)
+  - `POST /api/perdiem/oconus/calculate` - Calculate OCONUS per diem for expense entry
+  - `POST /api/perdiem/oconus/calculate-with-components` - Calculate with meal component selections
+- **Rate Fields**: country, location, seasonStart/End (MM/DD), lodging, M&IE, maxPerDiem, effectiveDate, fiscalYear
+- **Seasonal Rates**: Some locations have different rates for different seasons (e.g., Alaska summer vs winter)
+- **Script**: `scripts/ingest-oconus-rates.ts` for bulk data ingestion from ZIP files
+- **2026 Data**: 1,613 rates loaded covering foreign countries and US territories (Alaska, Hawaii, etc.)
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).
@@ -105,7 +123,7 @@ Preferred communication style: Simple, everyday language.
 - **Document Storage**: Replit Object Storage, Microsoft SharePoint Online, Microsoft SharePoint Embedded.
 - **Email Notifications**: Outlook/Microsoft 365 via Microsoft Graph Client.
 - **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI.
-- **Per Diem Rates**: GSA Per Diem API.
+- **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database (uploaded annually).
 - **Airport Codes**: IATA 3-letter code database (5,163 airports).
 - **Exchange Rates**: Open Exchange Rates API for multi-currency invoice generation (1-hour cache, with fallback rates).
 
