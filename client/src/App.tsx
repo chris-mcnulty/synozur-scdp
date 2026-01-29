@@ -82,7 +82,7 @@ function Router() {
   // Update page title based on environment
   useEffect(() => {
     const isDevelopment = import.meta.env.MODE === 'development';
-    const baseTitle = 'Synozur Consulting Delivery Platform';
+    const baseTitle = 'Constellation';
     document.title = isDevelopment ? `Development - ${baseTitle}` : baseTitle;
   }, []);
   
