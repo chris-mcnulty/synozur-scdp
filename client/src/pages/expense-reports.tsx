@@ -55,7 +55,7 @@ interface ExpenseReport {
 
 export default function ExpenseReports() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [selectedReport, setSelectedReport] = useState<ExpenseReport | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [availableExpenses, setAvailableExpenses] = useState<(Expense & { project: Project & { client: Client } })[]>([]);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
@@ -74,6 +74,12 @@ export default function ExpenseReports() {
   // Fetch expense reports
   const { data: reports = [], isLoading } = useQuery<ExpenseReport[]>({
     queryKey: ["/api/expense-reports"],
+  });
+
+  // Fetch full details of selected report (with all expense items)
+  const { data: selectedReport, isLoading: isLoadingReport } = useQuery<ExpenseReport>({
+    queryKey: ["/api/expense-reports", selectedReportId],
+    enabled: !!selectedReportId && showDetailDialog,
   });
 
   // Fetch user's expenses that are not yet in a report
@@ -130,6 +136,7 @@ export default function ExpenseReports() {
         description: "Expense report submitted for approval",
       });
       setShowDetailDialog(false);
+      setSelectedReportId(null);
     },
     onError: (error: any) => {
       toast({
@@ -154,6 +161,7 @@ export default function ExpenseReports() {
         description: "Expense report deleted",
       });
       setShowDetailDialog(false);
+      setSelectedReportId(null);
     },
     onError: (error: any) => {
       toast({
@@ -240,7 +248,7 @@ export default function ExpenseReports() {
           {reports.map((report) => (
             <Card key={report.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="cursor-pointer" onClick={() => {
-                setSelectedReport(report);
+                setSelectedReportId(report.id);
                 setShowDetailDialog(true);
               }}>
                 <div className="flex justify-between items-start">
@@ -390,16 +398,22 @@ export default function ExpenseReports() {
         </Dialog>
 
         {/* Report Detail Dialog */}
-        <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+        <Dialog open={showDetailDialog} onOpenChange={(open) => { setShowDetailDialog(open); if (!open) setSelectedReportId(null); }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{selectedReport?.title}</DialogTitle>
+              <DialogTitle>{selectedReport?.title || "Loading..."}</DialogTitle>
               <DialogDescription>
                 {selectedReport?.reportNumber} • {getStatusBadge(selectedReport?.status || '')}
               </DialogDescription>
             </DialogHeader>
 
-            {selectedReport && (
+            {isLoadingReport && (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-muted-foreground">Loading report details...</div>
+              </div>
+            )}
+
+            {selectedReport && !isLoadingReport && (
               <div className="space-y-4">
                 {selectedReport.description && (
                   <div>
@@ -466,7 +480,7 @@ export default function ExpenseReports() {
                       </Button>
                     </>
                   )}
-                  <Button variant="outline" onClick={() => setShowDetailDialog(false)} data-testid="button-close-detail">
+                  <Button variant="outline" onClick={() => { setShowDetailDialog(false); setSelectedReportId(null); }} data-testid="button-close-detail">
                     Close
                   </Button>
                 </DialogFooter>
