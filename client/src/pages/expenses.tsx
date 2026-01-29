@@ -1862,6 +1862,7 @@ export default function Expenses() {
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="USD">USD</SelectItem>
+                              <SelectItem value="CAD">CAD</SelectItem>
                               <SelectItem value="EUR">EUR</SelectItem>
                               <SelectItem value="GBP">GBP</SelectItem>
                             </SelectContent>
