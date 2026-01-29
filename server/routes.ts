@@ -11671,6 +11671,202 @@ export async function registerRoutes(app: Express): Promise<void> {
     return result;
   }
 
+  // ============================================================================
+  // OCONUS Per Diem Rate Endpoints (Outside Continental US)
+  // ============================================================================
+
+  app.get("/api/oconus/rates", requireAuth, async (req, res) => {
+    try {
+      const { search, country, fiscalYear, limit = "50" } = req.query;
+      const maxLimit = Math.min(parseInt(limit as string) || 50, 200);
+      const year = fiscalYear ? parseInt(fiscalYear as string) : undefined;
+      
+      let rates;
+      
+      if (search && typeof search === "string" && search.length >= 2) {
+        rates = await storage.searchOconusRates(search, year, maxLimit);
+      } else if (country && typeof country === "string") {
+        rates = await storage.getOconusRatesByCountry(country, year, maxLimit);
+      } else {
+        rates = await storage.searchOconusRates("", year, maxLimit);
+      }
+      
+      res.json(rates);
+    } catch (error) {
+      console.error("Error fetching OCONUS rates:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS rates" });
+    }
+  });
+
+  app.get("/api/oconus/rate", requireAuth, async (req, res) => {
+    try {
+      const { country, location, date, fiscalYear } = req.query;
+      
+      if (!country || !location) {
+        return res.status(400).json({ message: "Country and location are required" });
+      }
+      
+      const travelDate = date ? new Date(date as string) : new Date();
+      const year = fiscalYear ? parseInt(fiscalYear as string) : undefined;
+      
+      const rate = await storage.getOconusRate(
+        country as string,
+        location as string,
+        travelDate,
+        year
+      );
+      
+      if (!rate) {
+        return res.status(404).json({ message: "OCONUS rate not found for this location" });
+      }
+      
+      res.json(rate);
+    } catch (error) {
+      console.error("Error fetching OCONUS rate:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS rate" });
+    }
+  });
+
+  app.get("/api/oconus/countries", requireAuth, async (req, res) => {
+    try {
+      const { fiscalYear } = req.query;
+      const year = fiscalYear ? parseInt(fiscalYear as string) : undefined;
+      
+      const countries = await storage.getOconusCountries(year);
+      res.json(countries);
+    } catch (error) {
+      console.error("Error fetching OCONUS countries:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS countries" });
+    }
+  });
+
+  app.get("/api/oconus/locations/:country", requireAuth, async (req, res) => {
+    try {
+      const { country } = req.params;
+      const { fiscalYear } = req.query;
+      const year = fiscalYear ? parseInt(fiscalYear as string) : undefined;
+      
+      const locations = await storage.getOconusLocations(country, year);
+      res.json(locations);
+    } catch (error) {
+      console.error("Error fetching OCONUS locations:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS locations" });
+    }
+  });
+
+  app.get("/api/oconus/stats/count", requireAuth, async (req, res) => {
+    try {
+      const { fiscalYear } = req.query;
+      const year = fiscalYear ? parseInt(fiscalYear as string) : undefined;
+      
+      const count = await storage.getOconusRateCount(year);
+      res.json({ count, fiscalYear: year || new Date().getFullYear() });
+    } catch (error) {
+      console.error("Error fetching OCONUS rate count:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS rate count" });
+    }
+  });
+
+  app.post("/api/platform/oconus/upload", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const platformRole = user?.platformRole;
+      
+      if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+        return res.status(403).json({ message: "Only platform admins can upload OCONUS data" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const { fiscalYear } = req.body;
+      const targetYear = fiscalYear ? parseInt(fiscalYear) : new Date().getFullYear();
+      
+      const content = req.file.buffer.toString('utf-8');
+      const lines = content.split('\n');
+      
+      const rates: Array<{
+        country: string;
+        location: string;
+        seasonStart: string;
+        seasonEnd: string;
+        lodging: number;
+        mie: number;
+        proportionalMeals: number | null;
+        incidentals: number | null;
+        maxPerDiem: number;
+        effectiveDate: string | null;
+        fiscalYear: number;
+        isActive: boolean;
+      }> = [];
+      
+      const seenLocations = new Set<string>();
+      let skipped = 0;
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        
+        const parts = line.split(';');
+        if (parts.length < 12) {
+          skipped++;
+          continue;
+        }
+        
+        const country = parts[0]?.trim() || "";
+        const location = parts[1]?.trim() || "";
+        const seasonStart = parts[2]?.trim() || "";
+        const seasonEnd = parts[3]?.trim() || "";
+        const lodging = parseInt(parts[4]) || 0;
+        const mie = parseInt(parts[5]) || 0;
+        const proportionalMeals = parts[6] ? parseInt(parts[6]) : null;
+        const incidentals = parts[7] ? parseInt(parts[7]) : null;
+        const maxPerDiem = parseInt(parts[10]) || 0;
+        const effectiveDate = parts[11]?.trim() || null;
+        
+        if (!country || !location || !seasonStart || !seasonEnd) {
+          skipped++;
+          continue;
+        }
+        
+        const locationKey = `${country}|${location}|${seasonStart}|${seasonEnd}`;
+        if (seenLocations.has(locationKey)) {
+          skipped++;
+          continue;
+        }
+        seenLocations.add(locationKey);
+        
+        rates.push({
+          country,
+          location,
+          seasonStart,
+          seasonEnd,
+          lodging,
+          mie,
+          proportionalMeals,
+          incidentals,
+          maxPerDiem,
+          effectiveDate,
+          fiscalYear: targetYear,
+          isActive: true,
+        });
+      }
+      
+      await storage.deleteOconusRatesByFiscalYear(targetYear);
+      const inserted = await storage.bulkInsertOconusRates(rates);
+      
+      res.json({
+        message: "OCONUS rates uploaded successfully",
+        inserted,
+        skipped,
+        fiscalYear: targetYear
+      });
+    } catch (error) {
+      console.error("Error uploading OCONUS rates:", error);
+      res.status(500).json({ message: "Failed to upload OCONUS rates" });
+    }
+  });
+
   // Per Diem GSA Rate Endpoints
   app.get("/api/perdiem/rates/city/:city/state/:state", requireAuth, async (req, res) => {
     try {

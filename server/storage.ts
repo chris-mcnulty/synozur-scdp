@@ -3,7 +3,7 @@ import {
   estimateMilestones, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
-  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes,
+  projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
   vocabularyCatalog, organizationVocabulary, tenants,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   expenseReports, expenseReportItems, reimbursementBatches,
@@ -34,6 +34,7 @@ import {
   type UserRateSchedule, type InsertUserRateSchedule,
   type SystemSetting, type InsertSystemSetting,
   type AirportCode, type InsertAirportCode,
+  type OconusPerDiemRate, type InsertOconusPerDiemRate,
   type VocabularyCatalog, type InsertVocabularyCatalog,
   type OrganizationVocabulary, type InsertOrganizationVocabulary,
   type ContainerType, type InsertContainerType,
@@ -817,6 +818,16 @@ export interface IStorage {
   updateAirportCode(id: string, updates: Partial<InsertAirportCode>): Promise<AirportCode>;
   deleteAirportCode(id: string): Promise<void>;
   bulkUpsertAirportCodes(airports: InsertAirportCode[]): Promise<number>;
+  
+  // OCONUS Per Diem Rate Methods
+  searchOconusRates(searchTerm: string, fiscalYear?: number, limit?: number): Promise<OconusPerDiemRate[]>;
+  getOconusRatesByCountry(country: string, fiscalYear?: number, limit?: number): Promise<OconusPerDiemRate[]>;
+  getOconusRate(country: string, location: string, travelDate: Date, fiscalYear?: number): Promise<OconusPerDiemRate | undefined>;
+  getOconusCountries(fiscalYear?: number): Promise<string[]>;
+  getOconusLocations(country: string, fiscalYear?: number): Promise<string[]>;
+  getOconusRateCount(fiscalYear?: number): Promise<number>;
+  bulkInsertOconusRates(rates: InsertOconusPerDiemRate[]): Promise<number>;
+  deleteOconusRatesByFiscalYear(fiscalYear: number): Promise<void>;
   
   // Vocabulary System Methods (Legacy - uses JSON text fields)
   getOrganizationVocabulary(): Promise<VocabularyTerms>;
@@ -8070,6 +8081,169 @@ export class DatabaseStorage implements IStorage {
     }
     
     return inserted;
+  }
+
+  // OCONUS Per Diem Rate Methods
+  async searchOconusRates(searchTerm: string, fiscalYear?: number, limit: number = 50): Promise<OconusPerDiemRate[]> {
+    const search = searchTerm.toUpperCase();
+    const targetYear = fiscalYear || new Date().getFullYear();
+    
+    return db.select()
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true),
+          or(
+            ilike(oconusPerDiemRates.country, `%${search}%`),
+            ilike(oconusPerDiemRates.location, `%${search}%`)
+          )
+        )
+      )
+      .orderBy(oconusPerDiemRates.country, oconusPerDiemRates.location)
+      .limit(limit);
+  }
+
+  async getOconusRatesByCountry(country: string, fiscalYear?: number, limit: number = 100): Promise<OconusPerDiemRate[]> {
+    const targetYear = fiscalYear || new Date().getFullYear();
+    
+    return db.select()
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true),
+          ilike(oconusPerDiemRates.country, country.toUpperCase())
+        )
+      )
+      .orderBy(oconusPerDiemRates.location)
+      .limit(limit);
+  }
+
+  async getOconusRate(country: string, location: string, travelDate: Date, fiscalYear?: number): Promise<OconusPerDiemRate | undefined> {
+    const targetYear = fiscalYear || travelDate.getFullYear();
+    const month = travelDate.getMonth() + 1;
+    const day = travelDate.getDate();
+    const mmdd = `${month.toString().padStart(2, '0')}/${day.toString().padStart(2, '0')}`;
+    
+    const rates = await db.select()
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true),
+          ilike(oconusPerDiemRates.country, country.toUpperCase()),
+          ilike(oconusPerDiemRates.location, location.toUpperCase())
+        )
+      );
+    
+    for (const rate of rates) {
+      if (this.isDateInSeason(mmdd, rate.seasonStart, rate.seasonEnd)) {
+        return rate;
+      }
+    }
+    
+    const [otherRate] = await db.select()
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true),
+          ilike(oconusPerDiemRates.country, country.toUpperCase()),
+          ilike(oconusPerDiemRates.location, '[OTHER]')
+        )
+      );
+    
+    if (otherRate && this.isDateInSeason(mmdd, otherRate.seasonStart, otherRate.seasonEnd)) {
+      return otherRate;
+    }
+    
+    return rates[0];
+  }
+
+  private isDateInSeason(dateMMDD: string, seasonStart: string, seasonEnd: string): boolean {
+    const toNum = (mmdd: string) => {
+      const [m, d] = mmdd.split('/').map(Number);
+      return m * 100 + d;
+    };
+    
+    const dateNum = toNum(dateMMDD);
+    const startNum = toNum(seasonStart);
+    const endNum = toNum(seasonEnd);
+    
+    if (startNum <= endNum) {
+      return dateNum >= startNum && dateNum <= endNum;
+    } else {
+      return dateNum >= startNum || dateNum <= endNum;
+    }
+  }
+
+  async getOconusCountries(fiscalYear?: number): Promise<string[]> {
+    const targetYear = fiscalYear || new Date().getFullYear();
+    
+    const results = await db.selectDistinct({ country: oconusPerDiemRates.country })
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true)
+        )
+      )
+      .orderBy(oconusPerDiemRates.country);
+    
+    return results.map(r => r.country);
+  }
+
+  async getOconusLocations(country: string, fiscalYear?: number): Promise<string[]> {
+    const targetYear = fiscalYear || new Date().getFullYear();
+    
+    const results = await db.selectDistinct({ location: oconusPerDiemRates.location })
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true),
+          ilike(oconusPerDiemRates.country, country.toUpperCase())
+        )
+      )
+      .orderBy(oconusPerDiemRates.location);
+    
+    return results.map(r => r.location);
+  }
+
+  async getOconusRateCount(fiscalYear?: number): Promise<number> {
+    const targetYear = fiscalYear || new Date().getFullYear();
+    
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(oconusPerDiemRates)
+      .where(
+        and(
+          eq(oconusPerDiemRates.fiscalYear, targetYear),
+          eq(oconusPerDiemRates.isActive, true)
+        )
+      );
+    
+    return result?.count || 0;
+  }
+
+  async bulkInsertOconusRates(rates: InsertOconusPerDiemRate[]): Promise<number> {
+    if (rates.length === 0) return 0;
+    
+    let inserted = 0;
+    const batchSize = 500;
+    
+    for (let i = 0; i < rates.length; i += batchSize) {
+      const batch = rates.slice(i, i + batchSize);
+      await db.insert(oconusPerDiemRates).values(batch);
+      inserted += batch.length;
+    }
+    
+    return inserted;
+  }
+
+  async deleteOconusRatesByFiscalYear(fiscalYear: number): Promise<void> {
+    await db.delete(oconusPerDiemRates)
+      .where(eq(oconusPerDiemRates.fiscalYear, fiscalYear));
   }
 
   // Vocabulary System Methods
