@@ -43,15 +43,15 @@ export default function PlatformOconus() {
   const [uploadResult, setUploadResult] = useState<{ inserted: number; updated: number; skipped: number; errors: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: stats } = useQuery<OconusStats>({
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useQuery<OconusStats>({
     queryKey: ["/api/oconus/stats/count"],
   });
 
-  const { data: fiscalYearsData } = useQuery<FiscalYearsResponse>({
+  const { data: fiscalYearsData, isLoading: fyLoading, isError: fyError } = useQuery<FiscalYearsResponse>({
     queryKey: ["/api/oconus/stats/fiscal-years"],
   });
 
-  const { data: countries } = useQuery<string[]>({
+  const { data: countries, isLoading: countriesLoading, isError: countriesError } = useQuery<string[]>({
     queryKey: ["/api/oconus/countries"],
   });
 
@@ -61,7 +61,7 @@ export default function PlatformOconus() {
     ? `/api/oconus/rates?search=${encodeURIComponent(selectedCountry)}&limit=50`
     : `/api/oconus/rates?limit=50`;
     
-  const { data: rates, isLoading } = useQuery<OconusRate[]>({
+  const { data: rates, isLoading: ratesLoading, isError: ratesError } = useQuery<OconusRate[]>({
     queryKey: ["/api/oconus/rates", searchTerm, selectedCountry],
     queryFn: async () => {
       const res = await fetch(ratesQueryUrl, {
@@ -72,6 +72,9 @@ export default function PlatformOconus() {
     },
     enabled: searchTerm.length >= 2 || searchTerm.length === 0,
   });
+
+  const isLoading = statsLoading || fyLoading || countriesLoading || ratesLoading;
+  const hasError = statsError || fyError || countriesError || ratesError;
 
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -146,6 +149,37 @@ export default function PlatformOconus() {
               You don't have permission to access this page. Only platform administrators can manage OCONUS rates.
             </AlertDescription>
           </Alert>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <Layout>
+        <div className="container mx-auto p-6">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error Loading Data</AlertTitle>
+            <AlertDescription>
+              There was an error loading OCONUS rate data. Please try refreshing the page.
+            </AlertDescription>
+          </Alert>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isLoading && !rates) {
+    return (
+      <Layout>
+        <div className="container mx-auto p-6">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading OCONUS rates data...</p>
+            </div>
+          </div>
         </div>
       </Layout>
     );

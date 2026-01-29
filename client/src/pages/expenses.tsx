@@ -398,6 +398,9 @@ export default function Expenses() {
         perDiemDays: "",
         perDiemIncludeLodging: false,
         perDiemItemize: false,
+        perDiemLocationType: "conus" as PerDiemLocationType,
+        perDiemOconusCountry: "",
+        perDiemOconusLocation: "",
         departureAirport: "",
         arrivalAirport: "",
         isRoundTrip: false,
@@ -653,6 +656,9 @@ export default function Expenses() {
             perDiemDays: "",
             perDiemIncludeLodging: false,
             perDiemItemize: false,
+            perDiemLocationType: "conus" as PerDiemLocationType,
+            perDiemOconusCountry: "",
+            perDiemOconusLocation: "",
             departureAirport: "",
             arrivalAirport: "",
             isRoundTrip: false,
@@ -1206,6 +1212,7 @@ export default function Expenses() {
       departureAirport: "",
       arrivalAirport: "",
       isRoundTrip: false,
+      perDiemLocationType: "conus" as PerDiemLocationType,
     });
   };
 
