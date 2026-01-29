@@ -1145,6 +1145,7 @@ export default function Expenses() {
       departureAirport: "",
       arrivalAirport: "",
       isRoundTrip: false,
+      perDiemLocationType: "conus" as PerDiemLocationType,
     };
 
     // For mileage expenses, populate the miles field and trigger amount recalculation
@@ -1616,68 +1617,8 @@ export default function Expenses() {
                   {watchedCategory === "perdiem" && (
                     <div className="space-y-4 p-4 border rounded-md bg-muted/50">
                       <div className="text-sm font-medium">GSA Per Diem Calculator</div>
+                      <p className="text-xs text-muted-foreground">Select your travel dates first, then choose your location type and enter location details below.</p>
                       
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="perDiemCity"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>City</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="San Francisco"
-                                  {...field}
-                                  data-testid="input-perdiem-city"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={form.control}
-                          name="perDiemState"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>State</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="CA"
-                                  maxLength={2}
-                                  {...field}
-                                  data-testid="input-perdiem-state"
-                                />
-                              </FormControl>
-                              <FormDescription>2-letter code</FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="text-center text-xs text-muted-foreground">OR</div>
-
-                      <FormField
-                        control={form.control}
-                        name="perDiemZip"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>ZIP Code</FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder="94102"
-                                {...field}
-                                data-testid="input-perdiem-zip"
-                              />
-                            </FormControl>
-                            <FormDescription>Enter ZIP instead of city/state</FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
                       <div className="grid grid-cols-2 gap-4">
                         <FormField
                           control={form.control}
