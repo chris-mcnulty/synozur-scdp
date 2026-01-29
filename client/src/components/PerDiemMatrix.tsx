@@ -5,7 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
+
+export type PerDiemLocationType = "conus" | "oconus";
 
 export interface PerDiemDay {
   date: string;
@@ -31,10 +35,16 @@ interface PerDiemMatrixProps {
   city?: string;
   state?: string;
   zip?: string;
+  locationType?: PerDiemLocationType;
+  oconusCountry?: string;
+  oconusLocation?: string;
   initialDays?: PerDiemDay[];
   onDaysChange: (days: PerDiemDay[]) => void;
   onTotalChange: (total: number) => void;
   onBreakdownChange?: (breakdown: MIEBreakdown | null) => void;
+  onLocationTypeChange?: (type: PerDiemLocationType) => void;
+  onOconusCountryChange?: (country: string) => void;
+  onOconusLocationChange?: (location: string) => void;
 }
 
 function generateDateRange(start: string, end: string): string[] {
@@ -65,10 +75,16 @@ export function PerDiemMatrix({
   city,
   state,
   zip,
+  locationType = "conus",
+  oconusCountry,
+  oconusLocation,
   initialDays,
   onDaysChange,
   onTotalChange,
   onBreakdownChange,
+  onLocationTypeChange,
+  onOconusCountryChange,
+  onOconusLocationChange,
 }: PerDiemMatrixProps) {
   const [days, setDays] = useState<PerDiemDay[]>([]);
   const [breakdown, setBreakdown] = useState<MIEBreakdown | null>(null);
@@ -76,6 +92,10 @@ export function PerDiemMatrix({
   const [isLoading, setIsLoading] = useState(false);
   const [totalAmount, setTotalAmount] = useState(0);
   const [rateError, setRateError] = useState<string | null>(null);
+  const [countries, setCountries] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [countriesLoading, setCountriesLoading] = useState(false);
+  const [locationsLoading, setLocationsLoading] = useState(false);
 
   useEffect(() => {
     if (!startDate || !endDate) return;
@@ -100,7 +120,74 @@ export function PerDiemMatrix({
   }, [startDate, endDate]);
 
   useEffect(() => {
+    const fetchCountries = async () => {
+      if (locationType !== "oconus") return;
+      setCountriesLoading(true);
+      try {
+        const result = await apiRequest("/api/oconus/countries");
+        setCountries(result || []);
+      } catch (error) {
+        console.error("Error fetching OCONUS countries:", error);
+        setCountries([]);
+      } finally {
+        setCountriesLoading(false);
+      }
+    };
+    fetchCountries();
+  }, [locationType]);
+
+  useEffect(() => {
+    const fetchLocations = async () => {
+      if (locationType !== "oconus" || !oconusCountry) {
+        setLocations([]);
+        return;
+      }
+      setLocationsLoading(true);
+      try {
+        const result = await apiRequest(`/api/oconus/locations/${encodeURIComponent(oconusCountry)}`);
+        setLocations(result || []);
+      } catch (error) {
+        console.error("Error fetching OCONUS locations:", error);
+        setLocations([]);
+      } finally {
+        setLocationsLoading(false);
+      }
+    };
+    fetchLocations();
+  }, [locationType, oconusCountry]);
+
+  useEffect(() => {
     const fetchBreakdown = async () => {
+      if (locationType === "oconus") {
+        if (!oconusCountry || !oconusLocation) {
+          setBreakdown(null);
+          setGsaRate(0);
+          setRateError(null);
+          return;
+        }
+        
+        setIsLoading(true);
+        setRateError(null);
+        try {
+          const rate = await apiRequest(`/api/oconus/rate?country=${encodeURIComponent(oconusCountry)}&location=${encodeURIComponent(oconusLocation)}&date=${startDate}`);
+          if (rate && rate.mie) {
+            setGsaRate(rate.mie);
+            const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.mie}`);
+            setBreakdown(mieBreakdown);
+          } else {
+            setRateError("Could not find OCONUS rates for this location.");
+            setBreakdown(null);
+          }
+        } catch (error) {
+          console.error("Error fetching OCONUS rates:", error);
+          setRateError("Could not load OCONUS rates for this location.");
+          setBreakdown(null);
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+      
       const hasLocation = (city && state) || zip;
       if (!hasLocation) {
         setBreakdown(null);
@@ -140,7 +227,7 @@ export function PerDiemMatrix({
     };
     
     fetchBreakdown();
-  }, [city, state, zip]);
+  }, [city, state, zip, locationType, oconusCountry, oconusLocation, startDate]);
 
   // Notify parent when breakdown changes
   useEffect(() => {
@@ -234,8 +321,74 @@ export function PerDiemMatrix({
         <CardDescription>
           Uncheck any meals provided by the client. Uncheck entire days with no client engagement.
         </CardDescription>
+        
+        <div className="mt-4 space-y-4">
+          <div className="flex items-center gap-4">
+            <Label className="text-sm font-medium">Travel Location:</Label>
+            <Select 
+              value={locationType} 
+              onValueChange={(value: PerDiemLocationType) => onLocationTypeChange?.(value)}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select location type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="conus">Continental US (CONUS)</SelectItem>
+                <SelectItem value="oconus">International / OCONUS</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {locationType === "oconus" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm">Country</Label>
+                <Select
+                  value={oconusCountry || ""}
+                  onValueChange={(value) => {
+                    onOconusCountryChange?.(value);
+                    onOconusLocationChange?.("");
+                  }}
+                  disabled={countriesLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={countriesLoading ? "Loading..." : "Select country"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {countries.map((country) => (
+                      <SelectItem key={country} value={country}>
+                        {country}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-sm">City / Location</Label>
+                <Select
+                  value={oconusLocation || ""}
+                  onValueChange={(value) => onOconusLocationChange?.(value)}
+                  disabled={!oconusCountry || locationsLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={locationsLoading ? "Loading..." : "Select location"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    {locations.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+        </div>
+        
         {breakdown && (
-          <div className="flex flex-wrap gap-2 mt-2">
+          <div className="flex flex-wrap gap-2 mt-4">
             <Badge variant="outline">Breakfast: ${breakdown.breakfast}</Badge>
             <Badge variant="outline">Lunch: ${breakdown.lunch}</Badge>
             <Badge variant="outline">Dinner: ${breakdown.dinner}</Badge>
@@ -250,7 +403,7 @@ export function PerDiemMatrix({
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading GSA rates...</p>
+          <p className="text-sm text-muted-foreground">Loading {locationType === "oconus" ? "OCONUS" : "GSA"} rates...</p>
         ) : (
           <>
             <div className="overflow-x-auto">

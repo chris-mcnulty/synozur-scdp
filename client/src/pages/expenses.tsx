@@ -25,7 +25,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
-import { PerDiemMatrix, type PerDiemDay } from "@/components/PerDiemMatrix";
+import { PerDiemMatrix, type PerDiemDay, type PerDiemLocationType } from "@/components/PerDiemMatrix";
 import { AirportSearchInput } from "@/components/airport-search-input";
 
 const expenseFormSchema = insertExpenseSchema.omit({
@@ -44,6 +44,9 @@ const expenseFormSchema = insertExpenseSchema.omit({
   perDiemCity: z.string().optional(), // Per diem location
   perDiemState: z.string().optional(),
   perDiemZip: z.string().optional(),
+  perDiemLocationType: z.enum(["conus", "oconus"]).optional().default("conus"), // CONUS vs OCONUS
+  perDiemOconusCountry: z.string().optional(), // OCONUS country
+  perDiemOconusLocation: z.string().optional(), // OCONUS city/location
   perDiemStartDate: z.string().optional(), // Start date for per diem range
   perDiemEndDate: z.string().optional(), // End date for per diem range
   perDiemDays: z.string().optional(), // Number of days for per diem (auto-calculated from date range)
@@ -69,7 +72,11 @@ const expenseFormSchema = insertExpenseSchema.omit({
     if (isNaN(days) || days <= 0) {
       return false;
     }
-    // Must have either city/state OR zip
+    // Must have location for either CONUS or OCONUS
+    if (data.perDiemLocationType === "oconus") {
+      return !!(data.perDiemOconusCountry && data.perDiemOconusLocation);
+    }
+    // CONUS: Must have either city/state OR zip
     const hasLocation = (data.perDiemCity && data.perDiemState) || data.perDiemZip;
     return !!hasLocation;
   }
@@ -164,6 +171,9 @@ export default function Expenses() {
       perDiemCity: "",
       perDiemState: "",
       perDiemZip: "",
+      perDiemLocationType: "conus" as PerDiemLocationType,
+      perDiemOconusCountry: "",
+      perDiemOconusLocation: "",
       perDiemStartDate: "",
       perDiemEndDate: "",
       perDiemDays: "",
@@ -928,8 +938,10 @@ export default function Expenses() {
       submitData.unit = "day";
       submitData.quantity = data.perDiemDays || null;
       
-      // Construct location string
-      if (data.perDiemZip) {
+      // Construct location string based on CONUS vs OCONUS
+      if (data.perDiemLocationType === "oconus" && data.perDiemOconusCountry && data.perDiemOconusLocation) {
+        submitData.perDiemLocation = `${data.perDiemOconusLocation}, ${data.perDiemOconusCountry} (OCONUS)`;
+      } else if (data.perDiemZip) {
         submitData.perDiemLocation = `ZIP ${data.perDiemZip}`;
       } else if (data.perDiemCity && data.perDiemState) {
         submitData.perDiemLocation = `${data.perDiemCity}, ${data.perDiemState}`;
@@ -938,6 +950,7 @@ export default function Expenses() {
       console.log('Per diem transformation:', { 
         days: data.perDiemDays, 
         location: submitData.perDiemLocation,
+        locationType: data.perDiemLocationType,
         amount: submitData.amount
       });
     } else if (data.category === "airfare") {
@@ -1013,6 +1026,9 @@ export default function Expenses() {
       perDiemCity: "",
       perDiemState: "",
       perDiemZip: "",
+      perDiemLocationType: "conus" as PerDiemLocationType,
+      perDiemOconusCountry: "",
+      perDiemOconusLocation: "",
       perDiemDays: "",
       perDiemIncludeLodging: false,
       perDiemItemize: false,
@@ -1777,6 +1793,9 @@ export default function Expenses() {
                           city={form.watch("perDiemCity")}
                           state={form.watch("perDiemState")}
                           zip={form.watch("perDiemZip")}
+                          locationType={form.watch("perDiemLocationType") || "conus"}
+                          oconusCountry={form.watch("perDiemOconusCountry")}
+                          oconusLocation={form.watch("perDiemOconusLocation")}
                           onDaysChange={(days) => {
                             setPerDiemDaySelections(days);
                             form.setValue("perDiemDays", String(days.length));
@@ -1787,6 +1806,24 @@ export default function Expenses() {
                           }}
                           onBreakdownChange={(breakdown) => {
                             setPerDiemMieBreakdown(breakdown);
+                          }}
+                          onLocationTypeChange={(type) => {
+                            form.setValue("perDiemLocationType", type);
+                            if (type === "conus") {
+                              form.setValue("perDiemOconusCountry", "");
+                              form.setValue("perDiemOconusLocation", "");
+                            } else {
+                              form.setValue("perDiemCity", "");
+                              form.setValue("perDiemState", "");
+                              form.setValue("perDiemZip", "");
+                            }
+                          }}
+                          onOconusCountryChange={(country) => {
+                            form.setValue("perDiemOconusCountry", country);
+                            form.setValue("perDiemOconusLocation", "");
+                          }}
+                          onOconusLocationChange={(location) => {
+                            form.setValue("perDiemOconusLocation", location);
                           }}
                         />
                       )}
