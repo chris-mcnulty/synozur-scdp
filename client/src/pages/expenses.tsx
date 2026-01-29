@@ -134,6 +134,9 @@ export default function Expenses() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importProgress, setImportProgress] = useState<boolean>(false);
   const [importResults, setImportResults] = useState<any>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState<boolean>(false);
+  const [perDiemStartDateOpen, setPerDiemStartDateOpen] = useState<boolean>(false);
+  const [perDiemEndDateOpen, setPerDiemEndDateOpen] = useState<boolean>(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { hasAnyRole } = useAuth();
@@ -1378,7 +1381,7 @@ export default function Expenses() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Date</FormLabel>
-                        <Popover>
+                        <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
@@ -1402,7 +1405,10 @@ export default function Expenses() {
                             <Calendar
                               mode="single"
                               selected={field.value ? parseBusinessDate(field.value) ?? undefined : undefined}
-                              onSelect={(date) => field.onChange(date ? format(date, 'yyyy-MM-dd') : '')}
+                              onSelect={(date) => {
+                                field.onChange(date ? format(date, 'yyyy-MM-dd') : '');
+                                setDatePickerOpen(false);
+                              }}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -1663,7 +1669,7 @@ export default function Expenses() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Start Date</FormLabel>
-                              <Popover>
+                              <Popover open={perDiemStartDateOpen} onOpenChange={setPerDiemStartDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
@@ -1699,6 +1705,7 @@ export default function Expenses() {
                                           }
                                         }
                                       }
+                                      setPerDiemStartDateOpen(false);
                                     }}
                                     initialFocus
                                   />
@@ -1714,7 +1721,7 @@ export default function Expenses() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>End Date</FormLabel>
-                              <Popover>
+                              <Popover open={perDiemEndDateOpen} onOpenChange={setPerDiemEndDateOpen}>
                                 <PopoverTrigger asChild>
                                   <FormControl>
                                     <Button
@@ -1751,6 +1758,7 @@ export default function Expenses() {
                                           form.setValue("perDiemDays", String(days));
                                         }
                                       }
+                                      setPerDiemEndDateOpen(false);
                                     }}
                                     initialFocus
                                   />
