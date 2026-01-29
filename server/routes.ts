@@ -11151,13 +11151,23 @@ export async function registerRoutes(app: Express): Promise<void> {
                 billable = row.Billable;
               }
 
+              // Support both old "Phase" column and new "Stage"/"Workstream" columns
+              // Combine Stage and Workstream into phase field if Phase is not provided
+              let phase = row.Phase || "";
+              if (!phase && (row.Stage || row.Workstream)) {
+                const parts = [];
+                if (row.Stage) parts.push(row.Stage);
+                if (row.Workstream) parts.push(row.Workstream);
+                phase = parts.join(' - ');
+              }
+
               const timeEntryData = {
                 date: formattedDate,
                 projectId: projectId,
                 description: row.Description || "",
                 hours: String(row.Hours || 0), // Convert number to string for schema validation
                 billable: billable,
-                phase: row.Phase || "",
+                phase: phase,
                 personId: personId
               };
 
@@ -11173,11 +11183,16 @@ export async function registerRoutes(app: Express): Promise<void> {
           if (data.length > 0 && errors.length > 0) {
             const firstRow = data[0] as any;
             const columnNames = Object.keys(firstRow);
-            const expectedColumns = ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", "Phase"];
-            const missingColumns = expectedColumns.filter(col => !columnNames.includes(col));
+            // Core required columns (Phase is optional if Stage/Workstream are present)
+            const coreColumns = ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable"];
+            const missingCoreColumns = coreColumns.filter(col => !columnNames.includes(col));
+            // Phase is required only if Stage/Workstream are also missing
+            const hasPhaseInfo = columnNames.includes("Phase") || columnNames.includes("Stage") || columnNames.includes("Workstream");
             
-            if (missingColumns.length > 0) {
-              errors.unshift('COLUMN MISMATCH: Excel file is missing required columns: ' + missingColumns.join(', ') + '. Found columns: ' + columnNames.join(', ') + '. Please use the download template button to get the correct format.');
+            if (missingCoreColumns.length > 0 || !hasPhaseInfo) {
+              const allMissing = [...missingCoreColumns];
+              if (!hasPhaseInfo) allMissing.push("Phase (or Stage/Workstream)");
+              errors.unshift('COLUMN MISMATCH: Excel file is missing required columns: ' + allMissing.join(', ') + '. Found columns: ' + columnNames.join(', ') + '. Please use the download template button to get the correct format.');
             }
           }
           
