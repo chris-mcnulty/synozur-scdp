@@ -1045,6 +1045,9 @@ export const invoiceLines = pgTable("invoice_lines", {
   sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW if applicable
   taxable: boolean("taxable").notNull().default(true), // Whether this line is subject to tax (expenses default to false)
   expenseCategory: text("expense_category"), // Category for expense lines (e.g., "Per Diem", "Hotel", "Travel"); null for service lines
+  originalCurrency: text("original_currency"), // Original currency of expense (USD, CAD, EUR, GBP)
+  originalCurrencyAmount: decimal("original_currency_amount", { precision: 12, scale: 2 }), // Amount in original currency
+  exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // Exchange rate used for conversion
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
