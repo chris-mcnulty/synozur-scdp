@@ -46,7 +46,7 @@ export default function ExpenseApproval() {
   const queryClient = useQueryClient();
 
   // Fetch all expense reports (admin/executive view)
-  const { data: allReports = [], isLoading } = useQuery<ExpenseReport[]>({
+  const { data: allReports = [], isLoading, isError, error } = useQuery<ExpenseReport[]>({
     queryKey: ["/api/expense-reports"],
   });
 
@@ -222,6 +222,49 @@ export default function ExpenseApproval() {
       </div>
     );
   };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold">Expense Report Approval</h1>
+            <p className="text-muted-foreground mt-1">
+              Review and approve employee expense reports
+            </p>
+          </div>
+          <Card>
+            <CardContent className="py-8 text-center text-muted-foreground">
+              Loading expense reports...
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Layout>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold">Expense Report Approval</h1>
+            <p className="text-muted-foreground mt-1">
+              Review and approve employee expense reports
+            </p>
+          </div>
+          <Card>
+            <CardContent className="py-8 text-center">
+              <p className="text-destructive font-medium">Failed to load expense reports</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                {(error as Error)?.message || "An unexpected error occurred"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
