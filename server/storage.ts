@@ -405,7 +405,7 @@ export interface IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User })[]>;
+  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string } }[] })[]>;
   getExpenseReport(id: string): Promise<(ExpenseReport & { 
     submitter: User; 
     approver?: User; 
@@ -3869,7 +3869,7 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User })[]> {
+  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string } }[] })[]> {
     const conditions = [];
     
     if (filters.submitterId) {
@@ -3893,11 +3893,38 @@ export class DatabaseStorage implements IStorage {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(expenseReports.createdAt));
 
+    // Get all report IDs to fetch items
+    const reportIds = results.map(r => r.expense_reports.id);
+    
+    // Fetch all items for these reports
+    const allItems = reportIds.length > 0
+      ? await db.select({
+          id: expenseReportItems.id,
+          reportId: expenseReportItems.reportId,
+          expenseId: expenseReportItems.expenseId,
+          amount: expenses.amount,
+        })
+        .from(expenseReportItems)
+        .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
+        .where(inArray(expenseReportItems.reportId, reportIds))
+      : [];
+    
+    // Group items by reportId
+    const itemsByReport = allItems.reduce((acc, item) => {
+      if (!acc[item.reportId]) acc[item.reportId] = [];
+      acc[item.reportId].push({
+        id: item.id,
+        expense: { id: item.expenseId, amount: item.amount },
+      });
+      return acc;
+    }, {} as Record<string, { id: string; expense: { id: string; amount: string } }[]>);
+
     return results.map(row => ({
       ...row.expense_reports,
       submitter: row.users!,
       approver: row.users_approver || undefined,
       rejecter: row.users_rejecter || undefined,
+      items: itemsByReport[row.expense_reports.id] || [],
     }));
   }
 
