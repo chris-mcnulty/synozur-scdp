@@ -1,4 +1,6 @@
-import { getUncachableOutlookClient } from './outlook-client.js';
+// Email notifications via SendGrid
+// Reference: connection:conn_sendgrid_01K7J5YQ6FY2TCBHA5B8JBJEXT
+import { getUncachableSendGridClient } from './sendgrid-client.js';
 
 interface EmailRecipient {
   email: string;
@@ -28,33 +30,28 @@ interface SendEmailOptions {
 
 export class EmailNotificationService {
   /**
-   * Send an email using Microsoft Graph API via Outlook
+   * Send an email using SendGrid API
+   * From address is configured in the SendGrid connection (donotreply@synozur.com)
    */
   async sendEmail({ to, subject, body }: SendEmailOptions): Promise<void> {
     try {
-      const client = await getUncachableOutlookClient();
+      const { client, fromEmail } = await getUncachableSendGridClient();
       
-      const message = {
-        subject,
-        body: {
-          contentType: 'HTML',
-          content: body
+      const msg = {
+        to: to.email,
+        from: {
+          email: fromEmail,
+          name: 'Constellation (SCDP)'
         },
-        toRecipients: [
-          {
-            emailAddress: {
-              address: to.email,
-              name: to.name
-            }
-          }
-        ]
+        subject,
+        html: body
       };
 
-      await client.api('/me/sendMail').post({ message });
+      await client.send(msg);
       
-      console.log(`[EMAIL] Sent email to ${to.email}: ${subject}`);
+      console.log(`[EMAIL] Sent email via SendGrid to ${to.email}: ${subject}`);
     } catch (error) {
-      console.error('[EMAIL] Failed to send email:', error);
+      console.error('[EMAIL] Failed to send email via SendGrid:', error);
       // Don't throw - we don't want email failures to break the workflow
       // Log the error and continue
     }
