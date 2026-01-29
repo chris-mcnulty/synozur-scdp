@@ -24,7 +24,8 @@ import {
   Shield,
   Crown,
   Package,
-  Plane
+  Plane,
+  Globe
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -266,6 +267,12 @@ export function Sidebar() {
                 href="/platform/airports"
                 icon={<Plane />}
                 label="Airport Codes"
+              />
+              
+              <SidebarItem
+                href="/platform/oconus"
+                icon={<Globe />}
+                label="OCONUS Rates"
               />
             </>
           )}

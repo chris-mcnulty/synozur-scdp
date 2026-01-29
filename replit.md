@@ -71,7 +71,7 @@ Preferred communication style: Simple, everyday language.
   3. Email domain matching (user's email domain → tenant's `allowedDomains`)
   4. Default tenant fallback
 - **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
-- **Platform Admin UI**: Available at `/platform/tenants`, `/platform/service-plans`, and `/platform/users` for platform admins to create/manage tenants, service plans, and user assignments.
+- **Platform Admin UI**: Available at `/platform/tenants`, `/platform/service-plans`, `/platform/users`, `/platform/airports`, and `/platform/oconus` for platform admins to create/manage tenants, service plans, user assignments, airport codes, and OCONUS per diem rates.
 - **Settings Separation**:
   - **Tenant Settings**: Company name, logo, address, phone, email, website, payment terms, showConstellationFooter - stored on `tenants` table, managed via `/api/tenant/settings`
   - **Platform Settings**: Default billing/cost rates, estimation factors, mileage rate - stored in `system_settings` table, visible to platform admins
