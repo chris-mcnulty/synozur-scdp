@@ -17,7 +17,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertTimeEntrySchema, type TimeEntry, type Project, type Client, type User, type ProjectMilestone, type ProjectWorkstream } from "@shared/schema";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2 } from "lucide-react";
+import { CalendarIcon, Plus, Clock, Download, Upload, FileText, Filter, ChevronDown, ChevronRight, User as UserIcon, Lock, Edit, Trash2, FileDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -710,46 +711,106 @@ export default function TimeTracking() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  const sessionId = localStorage.getItem('sessionId');
-                  const response = await fetch('/api/time-entries/template', {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
-                  });
-                  
-                  if (!response.ok) {
-                    throw new Error('Failed to download template');
-                  }
-                  
-                  const blob = await response.blob();
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'time-entries-template.xlsx';
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                  
-                  toast({
-                    title: "Template downloaded",
-                    description: "Check your downloads folder for the template file.",
-                  });
-                } catch (error) {
-                  toast({
-                    title: "Download failed",
-                    description: "Unable to download the template. Please try again.",
-                    variant: "destructive",
-                  });
-                }
-              }}
-              data-testid="button-download-template"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              Download Template
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" data-testid="button-download-template">
+                  <FileText className="w-4 h-4 mr-2" />
+                  Download Template
+                  <ChevronDown className="w-4 h-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Download Template</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={async () => {
+                    try {
+                      const sessionId = localStorage.getItem('sessionId');
+                      const response = await fetch('/api/time-entries/template', {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                      });
+                      
+                      if (!response.ok) {
+                        throw new Error('Failed to download template');
+                      }
+                      
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'time-entries-template.xlsx';
+                      a.click();
+                      window.URL.revokeObjectURL(url);
+                      
+                      toast({
+                        title: "Template downloaded",
+                        description: "Generic template with example data.",
+                      });
+                    } catch (error) {
+                      toast({
+                        title: "Download failed",
+                        description: "Unable to download the template. Please try again.",
+                        variant: "destructive",
+                      });
+                    }
+                  }}
+                >
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Generic Template
+                </DropdownMenuItem>
+                {projects && projects.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      Project-Specific Template
+                    </DropdownMenuLabel>
+                    {projects.slice(0, 10).map((project: ProjectWithClient) => (
+                      <DropdownMenuItem
+                        key={project.id}
+                        onClick={async () => {
+                          try {
+                            const sessionId = localStorage.getItem('sessionId');
+                            const response = await fetch(`/api/time-entries/template?projectId=${project.id}`, {
+                              method: 'GET',
+                              credentials: 'include',
+                              headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+                            });
+                            
+                            if (!response.ok) {
+                              throw new Error('Failed to download template');
+                            }
+                            
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `time-entries-${project.code || project.name}.xlsx`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            
+                            toast({
+                              title: "Template downloaded",
+                              description: `Template with ${project.name} stages and workstreams.`,
+                            });
+                          } catch (error) {
+                            toast({
+                              title: "Download failed",
+                              description: "Unable to download the template. Please try again.",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                      >
+                        <FileText className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <span className="truncate">{formatProjectLabel(project)}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="outline"
               onClick={async () => {

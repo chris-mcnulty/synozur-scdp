@@ -10880,6 +10880,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/time-entries/template", requireAuth, async (req, res) => {
     try {
       const xlsx = await import("xlsx");
+      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
+      const tenantId = req.user?.tenantId;
 
       // Get organization vocabulary for column headers
       const orgVocabulary = await storage.getOrganizationVocabulary();
@@ -10888,12 +10890,72 @@ export async function registerRoutes(app: Express): Promise<void> {
         workstream: orgVocabulary?.workstream || 'Workstream'
       };
 
+      // Default example data
+      let projectName = "Example Project";
+      let exampleStages: string[] = ["Development", "QA"];
+      let exampleWorkstreams: string[] = ["Frontend", "Testing"];
+      let exampleResources: string[] = ["John Smith", "Jane Doe"];
+
+      // If a project ID is provided, get actual project data
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        if (project) {
+          projectName = project.name;
+          
+          // Get estimate lines for this project to find unique stages and workstreams
+          const estimates = await storage.getEstimates(projectId);
+          const stagesSet = new Set<string>();
+          const workstreamsSet = new Set<string>();
+          
+          for (const estimate of estimates) {
+            const lines = await storage.getEstimateLines(estimate.id);
+            for (const line of lines) {
+              if (line.stage) stagesSet.add(line.stage);
+              if (line.workstream) workstreamsSet.add(line.workstream);
+            }
+          }
+          
+          if (stagesSet.size > 0) exampleStages = Array.from(stagesSet).slice(0, 5);
+          if (workstreamsSet.size > 0) exampleWorkstreams = Array.from(workstreamsSet).slice(0, 5);
+          
+          // Get project resources for name suggestions
+          const projectResources = await storage.getProjectResources(projectId);
+          if (projectResources.length > 0) {
+            const resourceNames: string[] = [];
+            for (const pr of projectResources) {
+              const user = await storage.getUser(pr.userId);
+              if (user?.name) resourceNames.push(user.name);
+            }
+            if (resourceNames.length > 0) exampleResources = resourceNames.slice(0, 5);
+          }
+        }
+      }
+
+      // Build example rows using the stages and workstreams
+      const exampleRows: string[][] = [];
+      const today = new Date();
+      for (let i = 0; i < Math.max(2, Math.min(5, exampleStages.length)); i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        exampleRows.push([
+          dateStr,
+          projectName,
+          exampleResources[i % exampleResources.length] || "Resource Name",
+          `Example: Work related to ${exampleStages[i % exampleStages.length] || 'development'}`,
+          "8",
+          "TRUE",
+          exampleStages[i % exampleStages.length] || "",
+          exampleWorkstreams[i % exampleWorkstreams.length] || "",
+          ""
+        ]);
+      }
+
       const worksheetData = [
         ["Time Entries Import Template"],
         ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact."],
         ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", vocabularyForTemplate.stage, vocabularyForTemplate.workstream, "Milestone"],
-        ["2024-01-15", "Example Project", "John Smith", "Example: Frontend development work", "8", "TRUE", "Development", "Frontend", "Sprint 1"],
-        ["2024-01-16", "Example Project", "Jane Doe", "Example: Code review and testing", "4", "TRUE", "QA", "Testing", "Sprint 1"],
+        ...exampleRows,
         ["", "", "", "", "", "TRUE", "", "", ""],
       ];
 
