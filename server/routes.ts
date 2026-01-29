@@ -11767,6 +11767,16 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/oconus/stats/fiscal-years", requireAuth, async (req, res) => {
+    try {
+      const fiscalYears = await storage.getOconusFiscalYears();
+      res.json({ fiscalYears });
+    } catch (error) {
+      console.error("Error fetching OCONUS fiscal years:", error);
+      res.status(500).json({ message: "Failed to fetch OCONUS fiscal years" });
+    }
+  });
+
   app.post("/api/platform/oconus/upload", requireAuth, upload.single('file'), async (req, res) => {
     try {
       const user = (req as any).user;

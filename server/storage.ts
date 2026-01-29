@@ -826,6 +826,7 @@ export interface IStorage {
   getOconusCountries(fiscalYear?: number): Promise<string[]>;
   getOconusLocations(country: string, fiscalYear?: number): Promise<string[]>;
   getOconusRateCount(fiscalYear?: number): Promise<number>;
+  getOconusFiscalYears(): Promise<number[]>;
   bulkInsertOconusRates(rates: InsertOconusPerDiemRate[]): Promise<number>;
   deleteOconusRatesByFiscalYear(fiscalYear: number): Promise<void>;
   
@@ -8224,6 +8225,15 @@ export class DatabaseStorage implements IStorage {
       );
     
     return result?.count || 0;
+  }
+
+  async getOconusFiscalYears(): Promise<number[]> {
+    const results = await db.selectDistinct({ fiscalYear: oconusPerDiemRates.fiscalYear })
+      .from(oconusPerDiemRates)
+      .where(eq(oconusPerDiemRates.isActive, true))
+      .orderBy(oconusPerDiemRates.fiscalYear);
+    
+    return results.map(r => r.fiscalYear);
   }
 
   async bulkInsertOconusRates(rates: InsertOconusPerDiemRate[]): Promise<number> {

@@ -436,7 +436,7 @@ export default function Projects() {
                 <div className="text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <h3 className="text-lg font-medium mb-2">No projects found</h3>
-                  <p>Create your first project to get started with SCDP.</p>
+                  <p>Create your first project to get started with Constellation.</p>
                 </div>
                 <Button className="mt-4" onClick={() => setCreateDialogOpen(true)} data-testid="button-create-first-project">
                   <Plus className="w-4 h-4 mr-2" />

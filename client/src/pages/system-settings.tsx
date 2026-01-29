@@ -160,6 +160,15 @@ export default function SystemSettings() {
     queryKey: ["/api/tenant/settings"],
   });
 
+  // Fetch OCONUS per diem rate stats
+  const { data: oconusFiscalYears } = useQuery<{ fiscalYears: number[] }>({
+    queryKey: ["/api/oconus/stats/fiscal-years"],
+  });
+
+  const { data: oconusStats } = useQuery<{ count: number; fiscalYear: number }>({
+    queryKey: ["/api/oconus/stats/count"],
+  });
+
   // Get current rate settings
   const defaultBillingRate = settings.find(s => s.settingKey === 'DEFAULT_BILLING_RATE')?.settingValue || '0';
   const defaultCostRate = settings.find(s => s.settingKey === 'DEFAULT_COST_RATE')?.settingValue || '0';
@@ -869,6 +878,61 @@ export default function SystemSettings() {
                     </div>
                   </form>
                 </Form>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Globe className="w-5 h-5" />
+                  <span>Per Diem Rates</span>
+                </CardTitle>
+                <CardDescription>
+                  Per diem rates for travel expenses are sourced from federal government data.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline">CONUS</Badge>
+                      <span className="text-sm font-medium">Continental US</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Rates are fetched live from the GSA (General Services Administration) API based on the travel location and date.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Source: GSA Per Diem API
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline">OCONUS</Badge>
+                      <span className="text-sm font-medium">International / Outside US</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Rates are from the Department of Defense OCONUS per diem database.
+                    </p>
+                    <div className="flex items-center gap-4 mt-3">
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Fiscal Years:</span>{" "}
+                        <span className="font-medium">
+                          {oconusFiscalYears?.fiscalYears?.length 
+                            ? oconusFiscalYears.fiscalYears.join(", ")
+                            : "None loaded"}
+                        </span>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Locations:</span>{" "}
+                        <span className="font-medium">{oconusStats?.count?.toLocaleString() || 0}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      OCONUS rates require annual upload. Contact platform admin to update for the new fiscal year.
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

@@ -1,8 +1,8 @@
-# SCDP User Guide
+# Constellation User Guide
 
-## Welcome to SCDP by Synozur
+## Welcome to Constellation by Synozur
 
-The Synozur Consulting Delivery Platform (SCDP) is a comprehensive solution designed to streamline the entire lifecycle of consulting projects. From initial estimation through final billing, SCDP helps you manage clients, track time, record expenses, and generate invoices efficiently.
+Constellation (the Synozur Consulting Delivery Platform) is a comprehensive solution designed to streamline the entire lifecycle of consulting projects. From initial estimation through final billing, Constellation helps you manage clients, track time, record expenses, and generate invoices efficiently.
 
 ---
 
@@ -10,7 +10,7 @@ The Synozur Consulting Delivery Platform (SCDP) is a comprehensive solution desi
 
 ### Logging In
 
-1. Navigate to the SCDP login page
+1. Navigate to the Constellation login page
 2. Enter your email address and password
 3. Click "Log In"
 
@@ -28,7 +28,7 @@ After logging in, you'll see your personalized dashboard showing:
 
 ## Understanding User Roles
 
-SCDP uses role-based access control to manage permissions. Your role determines which features you can access:
+Constellation uses role-based access control to manage permissions. Your role determines which features you can access:
 
 ### Employee
 - Track time on assigned projects
@@ -120,6 +120,36 @@ Your personal workspace provides quick access to your daily tasks and activities
 7. Add description
 8. Click "Submit"
 
+**Expense Categories**:
+- **General**: Miscellaneous business expenses
+- **Mileage**: Vehicle travel reimbursement (auto-calculated from miles driven)
+- **Per Diem**: Daily meal and incidental allowances for business travel
+- **Airfare**: Flight costs with airport codes tracking
+- **Lodging**: Hotel and accommodation expenses
+- **Other Travel**: Ground transportation, parking, tolls
+
+**Per Diem Expenses**:
+
+Per diem (daily allowance) expenses cover meals and incidental expenses during business travel. Constellation automatically calculates per diem rates based on your travel location.
+
+*Submitting a Per Diem Expense*:
+1. Select "Per Diem" as the expense category
+2. Enter your travel start and end dates
+3. Choose your location type:
+   - **Continental US (CONUS)**: For travel within the 48 contiguous states
+   - **International / OCONUS**: For travel outside the continental US (including Alaska, Hawaii, US territories, and foreign countries)
+4. Enter your travel location:
+   - For CONUS: Enter city, state, or ZIP code
+   - For OCONUS: Select country and city from the dropdown menus
+5. The system automatically fetches the appropriate daily meal rate
+6. Use the meal matrix to check/uncheck meals provided by the client (meals you didn't pay for)
+7. First and last travel days are automatically calculated at 75% of the full day rate
+8. Review the calculated total and submit
+
+*Per Diem Rate Sources*:
+- **CONUS rates**: Fetched live from the GSA (General Services Administration) API
+- **OCONUS rates**: Sourced from the Department of Defense per diem database, updated annually
+
 **Expense Status**:
 - **Pending**: Awaiting approval
 - **Approved**: Approved for reimbursement
@@ -167,7 +197,7 @@ Your personal workspace provides quick access to your daily tasks and activities
 8. Click "Create Project"
 
 **Project Structure**:
-SCDP uses customizable vocabulary for project organization:
+Constellation uses customizable vocabulary for project organization:
 - **Epics/Programs**: High-level project phases
 - **Stages/Sprints**: Project execution stages
 - **Workstreams/Tracks**: Parallel work areas
@@ -325,6 +355,34 @@ SCDP uses customizable vocabulary for project organization:
 - Organization vocabulary preferences
 - System defaults
 
+**Per Diem Rate Information**:
+
+The System Settings page displays information about per diem rate sources:
+
+- **CONUS (Continental US)**: Rates are fetched live from the GSA API. No manual updates required.
+- **OCONUS (International/Outside US)**: Rates are stored in the database and require annual updates.
+
+The settings page shows:
+- Currently loaded OCONUS fiscal years
+- Number of OCONUS locations available
+
+### Updating OCONUS Rates (Platform Administrators)
+
+OCONUS per diem rates are published annually by the Department of Defense (DoD). Platform administrators must upload new rate data each fiscal year (typically around October 1).
+
+**To Update OCONUS Rates**:
+1. Download the new fiscal year's OCONUS per diem rate file from the Defense Travel Management Office (DTMO) website
+2. Navigate to Platform Admin > OCONUS Rates
+3. Upload the rate file (ZIP format containing the ASCII data)
+4. Specify the fiscal year
+5. The system will parse and import the new rates
+
+**Important Notes**:
+- OCONUS data includes Alaska, Hawaii, US territories, and foreign countries
+- Some locations have seasonal rates (e.g., different summer/winter rates)
+- Historical rates are preserved for expense lookups on past travel dates
+- If rates aren't updated, users selecting OCONUS locations may see outdated rates or errors
+
 ### Vocabulary
 
 **Purpose**: Customize project terminology
@@ -390,7 +448,7 @@ Configure terms for:
 ## Common Workflows
 
 ### Weekly Time Entry Workflow
-1. Log in to SCDP
+1. Log in to Constellation
 2. Navigate to "My Time"
 3. Review projects you worked on
 4. Enter time for each day
@@ -456,8 +514,8 @@ A: Contact your PM or billing administrator to correct the entry.
 **Q: How do I download reports?**
 A: Most reports include an export function. Look for download or export buttons within each report view.
 
-**Q: Can clients access SCDP?**
-A: No, SCDP is for internal use only. Invoices and reports are exported and shared with clients externally.
+**Q: Can clients access Constellation?**
+A: No, Constellation is for internal use only. Invoices and reports are exported and shared with clients externally.
 
 **Q: How do I request new features?**
 A: Contact IT Support with your feature request or suggestion.
@@ -523,7 +581,7 @@ When reporting issues, include:
 
 ### Platform Details
 
-**SCDP (Synozur Consulting Delivery Platform)** is designed to:
+**Constellation** is designed to:
 - Streamline consulting project management
 - Simplify time and expense tracking
 - Automate billing and invoicing
@@ -561,6 +619,6 @@ For questions about:
 
 ---
 
-**Ready to streamline your consulting delivery? Start using SCDP today!**
+**Ready to streamline your consulting delivery? Start using Constellation today!**
 
-*SCDP by Synozur - Delivering Excellence Together*
+*Constellation by Synozur - Delivering Excellence Together*
