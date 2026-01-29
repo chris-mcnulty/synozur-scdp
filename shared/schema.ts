@@ -308,6 +308,30 @@ export const airportCodes = pgTable("airport_codes", {
   nameIdx: index("idx_airport_name").on(table.name),
 }));
 
+// OCONUS Per Diem Rates - Outside Continental US per diem rates (system-wide, no tenant scoping)
+// Data uploaded annually from DoD OCONUS Per Diem files (no API available)
+export const oconusPerDiemRates = pgTable("oconus_per_diem_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  country: text("country").notNull(), // Country or US territory name (e.g., "GERMANY", "ALASKA")
+  location: text("location").notNull(), // City or location name (e.g., "BERLIN", "ANCHORAGE")
+  seasonStart: varchar("season_start", { length: 5 }).notNull(), // MM/DD format (e.g., "01/01", "04/01")
+  seasonEnd: varchar("season_end", { length: 5 }).notNull(), // MM/DD format (e.g., "12/31", "09/30")
+  lodging: integer("lodging").notNull(), // Lodging rate in USD
+  mie: integer("mie").notNull(), // Meals & Incidental Expenses (M&IE) rate in USD
+  proportionalMeals: integer("proportional_meals"), // Proportional meal rate (for partial days)
+  incidentals: integer("incidentals"), // Incidentals portion
+  maxPerDiem: integer("max_per_diem").notNull(), // Total max per diem (lodging + M&IE)
+  effectiveDate: varchar("effective_date", { length: 10 }), // MM/DD/YYYY format
+  fiscalYear: integer("fiscal_year").notNull(), // Fiscal year for this rate (e.g., 2026)
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  countryLocationIdx: index("idx_oconus_country_location").on(table.country, table.location),
+  countryIdx: index("idx_oconus_country").on(table.country),
+  fiscalYearIdx: index("idx_oconus_fiscal_year").on(table.fiscalYear),
+}));
+
 // Vocabulary Catalog - Predefined term options
 export const vocabularyCatalog = pgTable("vocabulary_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1691,6 +1715,12 @@ export const insertAirportCodeSchema = createInsertSchema(airportCodes).omit({
   updatedAt: true,
 });
 
+export const insertOconusPerDiemRateSchema = createInsertSchema(oconusPerDiemRates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 // ============================================================================
 // Types - Multi-Tenancy Tables
@@ -1732,6 +1762,9 @@ export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 
 export type AirportCode = typeof airportCodes.$inferSelect;
 export type InsertAirportCode = z.infer<typeof insertAirportCodeSchema>;
+
+export type OconusPerDiemRate = typeof oconusPerDiemRates.$inferSelect;
+export type InsertOconusPerDiemRate = z.infer<typeof insertOconusPerDiemRateSchema>;
 
 export type VocabularyCatalog = typeof vocabularyCatalog.$inferSelect;
 export type InsertVocabularyCatalog = z.infer<typeof insertVocabularyCatalogSchema>;
