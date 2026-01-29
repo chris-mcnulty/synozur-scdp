@@ -390,6 +390,10 @@
             <td class="value">{{paymentTerms}}</td>
           </tr>
           <tr>
+            <td class="label">CURRENCY</td>
+            <td class="value">{{invoiceCurrency}}</td>
+          </tr>
+          <tr>
             <td class="label">DUE DATE</td>
             <td class="value">{{dueDate}}</td>
           </tr>
@@ -419,16 +423,30 @@
         </tr>
         {{#each this.lines}}
         <tr>
-          <td>{{this.description}}</td>
+          <td>
+            {{this.description}}
+            {{#if this.hasCurrencyConversion}}
+            <div style="font-size: 9px; color: #6b7280; margin-top: 2px;">
+              Original: {{this.originalCurrency}} {{this.originalCurrencyAmount}} @ {{this.exchangeRate}}
+            </div>
+            {{/if}}
+          </td>
           <td>{{#if this.expenseCategory}}{{this.expenseCategory}}{{else}}{{this.type}}{{/if}}</td>
           <td class="text-right font-mono">{{#if this.quantity}}{{this.quantity}}{{else}}-{{/if}}</td>
-          <td class="text-right font-mono">{{#if this.rate}}${{this.rate}}{{else}}-{{/if}}</td>
-          <td class="text-right font-mono amount">${{this.billedAmount}}</td>
+          <td class="text-right font-mono">{{#if this.rate}}{{@root.invoiceCurrency}} {{this.rate}}{{else}}-{{/if}}</td>
+          <td class="text-right font-mono amount">{{@root.invoiceCurrency}} {{this.billedAmount}}</td>
         </tr>
         {{/each}}
         {{/each}}
       </tbody>
     </table>
+
+    <!-- Currency Conversion Note -->
+    {{#if hasCurrencyConversions}}
+    <div class="adjustment-note" style="background: #e0f2fe; border-color: #0284c7; color: #0c4a6e;">
+      <strong>Currency Note:</strong> Some expenses were converted from their original currency to {{invoiceCurrency}} using current exchange rates. Original amounts are shown below each converted item.
+    </div>
+    {{/if}}
 
     <!-- Adjustments Section -->
     {{#if adjustments}}
@@ -436,7 +454,7 @@
     <div class="adjustment-note">
       <strong>Adjustment:</strong> {{this.reason}}
       {{#if this.sowNumber}} (SOW: {{this.sowNumber}}){{/if}}
-      - Target: ${{this.targetAmount}} ({{this.method}})
+      - Target: {{@root.invoiceCurrency}} {{this.targetAmount}} ({{this.method}})
     </div>
     {{/each}}
     {{/if}}
@@ -446,27 +464,27 @@
       <table class="totals-table">
         <tr class="subtotal-row">
           <td>Subtotal:</td>
-          <td class="text-right font-mono">${{subtotal}}</td>
+          <td class="text-right font-mono">{{invoiceCurrency}} {{subtotal}}</td>
         </tr>
         {{#if discountAmount}}
         <tr>
           <td>Discount {{#if discountPercent}}({{discountPercent}}%){{/if}}:</td>
-          <td class="text-right font-mono">-${{discountAmount}}</td>
+          <td class="text-right font-mono">-{{invoiceCurrency}} {{discountAmount}}</td>
         </tr>
         <tr>
           <td>Subtotal after Discount:</td>
-          <td class="text-right font-mono">${{subtotalAfterDiscount}}</td>
+          <td class="text-right font-mono">{{invoiceCurrency}} {{subtotalAfterDiscount}}</td>
         </tr>
         {{/if}}
         {{#if taxAmount}}
         <tr>
           <td>Tax {{#if effectiveTaxPercent}}({{effectiveTaxPercent}}%){{/if}}:</td>
-          <td class="text-right font-mono">${{taxAmount}}</td>
+          <td class="text-right font-mono">{{invoiceCurrency}} {{taxAmount}}</td>
         </tr>
         {{/if}}
         <tr class="total-row">
           <td><strong>Total Amount:</strong></td>
-          <td class="text-right font-mono"><strong>${{total}}</strong></td>
+          <td class="text-right font-mono"><strong>{{invoiceCurrency}} {{total}}</strong></td>
         </tr>
       </table>
     </div>

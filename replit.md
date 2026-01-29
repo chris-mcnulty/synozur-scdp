@@ -107,7 +107,7 @@ Preferred communication style: Simple, everyday language.
 - **AI Integration**: Replit AI (OpenAI GPT-5 compatible API), Azure OpenAI.
 - **Per Diem Rates**: GSA Per Diem API.
 - **Airport Codes**: IATA 3-letter code database (5,163 airports).
-- **Exchange Rates**: Open Exchange Rates API for multi-currency invoice generation.
+- **Exchange Rates**: Open Exchange Rates API for multi-currency invoice generation (1-hour cache, with fallback rates).
 
 ## Backlog / Future Enhancements
 

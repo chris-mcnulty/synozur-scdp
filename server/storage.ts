@@ -10077,6 +10077,9 @@ export async function generateInvoicePDF(params: {
       ? (EXPENSE_CATEGORY_LABELS[line.expenseCategory] || line.expenseCategory)
       : null;
     
+    // Check if this line has currency conversion info
+    const hasCurrencyConversion = line.originalCurrency && line.originalCurrencyAmount && line.exchangeRate;
+    
     const lineData = {
       ...line,
       originalAmount: originalAmount.toFixed(2),
@@ -10085,7 +10088,12 @@ export async function generateInvoicePDF(params: {
       varianceIsPositive: variance >= 0,
       amount: parseFloat(line.amount || '0').toFixed(2),
       rate: line.rate ? parseFloat(line.rate).toFixed(2) : null,
-      expenseCategory: expenseCategoryLabel // Use friendly label instead of code
+      expenseCategory: expenseCategoryLabel, // Use friendly label instead of code
+      // Currency conversion display
+      hasCurrencyConversion,
+      originalCurrency: line.originalCurrency || null,
+      originalCurrencyAmount: line.originalCurrencyAmount ? parseFloat(line.originalCurrencyAmount).toFixed(2) : null,
+      exchangeRate: line.exchangeRate ? parseFloat(line.exchangeRate).toFixed(4) : null
     };
     
     clientProjectMap[key].lines.push(lineData);
@@ -10156,6 +10164,12 @@ export async function generateInvoicePDF(params: {
   });
 
   const hasAdjustments = adjustments.length > 0 || lines.some(l => l.billedAmount && l.billedAmount !== l.amount);
+  
+  // Check if any lines have currency conversions
+  const hasCurrencyConversions = lines.some(l => l.originalCurrency && l.originalCurrencyAmount);
+  
+  // Determine invoice currency (from first client or default to USD)
+  const invoiceCurrency = uniqueClients[0]?.currency || 'USD';
 
   // Fetch receipt attachments for expense lines
   console.log('[PDF] Fetching receipt attachments for invoice...');
@@ -10401,6 +10415,10 @@ export async function generateInvoicePDF(params: {
     
     // Client info
     uniqueClients,
+    
+    // Currency info
+    invoiceCurrency,
+    hasCurrencyConversions,
     
     // Line items
     groupedLines,
