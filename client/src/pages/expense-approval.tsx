@@ -37,7 +37,7 @@ interface ExpenseReport {
 }
 
 export default function ExpenseApproval() {
-  const [selectedReport, setSelectedReport] = useState<ExpenseReport | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [rejectionNote, setRejectionNote] = useState("");
@@ -48,6 +48,19 @@ export default function ExpenseApproval() {
   // Fetch all expense reports (admin/executive view)
   const { data: allReports = [], isLoading } = useQuery<ExpenseReport[]>({
     queryKey: ["/api/expense-reports"],
+  });
+
+  // Fetch selected report details
+  const { data: selectedReport, isLoading: isLoadingDetail } = useQuery<ExpenseReport>({
+    queryKey: ["/api/expense-reports", selectedReportId],
+    queryFn: async () => {
+      const res = await fetch(`/api/expense-reports/${selectedReportId}`, {
+        headers: { "X-Session-Id": localStorage.getItem("sessionId") || "" }
+      });
+      if (!res.ok) throw new Error("Failed to fetch report details");
+      return res.json();
+    },
+    enabled: !!selectedReportId,
   });
 
   // Filter reports by status
@@ -70,7 +83,7 @@ export default function ExpenseApproval() {
         description: "Expense report approved successfully",
       });
       setShowApproveDialog(false);
-      setSelectedReport(null);
+      setSelectedReportId(null);
     },
     onError: (error: any) => {
       toast({
@@ -96,7 +109,7 @@ export default function ExpenseApproval() {
         description: "Expense report rejected",
       });
       setShowRejectDialog(false);
-      setSelectedReport(null);
+      setSelectedReportId(null);
       setRejectionNote("");
     },
     onError: (error: any) => {
@@ -163,7 +176,7 @@ export default function ExpenseApproval() {
           <Card 
             key={report.id} 
             className="hover:shadow-md transition-shadow cursor-pointer"
-            onClick={() => setSelectedReport(report)}
+            onClick={() => setSelectedReportId(report.id)}
             data-testid={`card-report-${report.id}`}
           >
             <CardHeader>
@@ -254,16 +267,20 @@ export default function ExpenseApproval() {
         </Tabs>
 
         {/* Report Detail Dialog with Approve/Reject Actions */}
-        <Dialog open={!!selectedReport && !showApproveDialog && !showRejectDialog} onOpenChange={(open) => !open && setSelectedReport(null)}>
+        <Dialog open={!!selectedReportId && !showApproveDialog && !showRejectDialog} onOpenChange={(open) => !open && setSelectedReportId(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{selectedReport?.title}</DialogTitle>
+              <DialogTitle>{selectedReport?.title || "Loading..."}</DialogTitle>
               <DialogDescription>
                 {selectedReport?.reportNumber} • {getStatusBadge(selectedReport?.status || '')}
               </DialogDescription>
             </DialogHeader>
 
-            {selectedReport && (
+            {isLoadingDetail ? (
+              <div className="py-8 text-center text-muted-foreground">
+                Loading report details...
+              </div>
+            ) : selectedReport && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -353,7 +370,7 @@ export default function ExpenseApproval() {
                       </Button>
                     </>
                   )}
-                  <Button variant="outline" onClick={() => setSelectedReport(null)} data-testid="button-close-detail">
+                  <Button variant="outline" onClick={() => setSelectedReportId(null)} data-testid="button-close-detail">
                     Close
                   </Button>
                 </DialogFooter>
