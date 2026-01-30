@@ -289,17 +289,17 @@ export default function PlatformOconus() {
               />
               <span className="text-muted-foreground">or</span>
               <Select 
-                value={selectedCountry} 
+                value={selectedCountry || "all"} 
                 onValueChange={(value) => {
-                  setSelectedCountry(value);
-                  if (value) setSearchTerm("");
+                  setSelectedCountry(value === "all" ? "" : value);
+                  if (value !== "all") setSearchTerm("");
                 }}
               >
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Select country" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Countries</SelectItem>
+                  <SelectItem value="all">All Countries</SelectItem>
                   {countries?.map((country) => (
                     <SelectItem key={country} value={country}>
                       {country}
