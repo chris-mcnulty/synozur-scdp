@@ -370,17 +370,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       const pathParts = firstPath.split('/').filter((p: string) => p);
       const bucketName = pathParts[0];
       
-      // Initialize GCS client
+      const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+      
+      // Initialize GCS client with Replit sidecar credentials
       const { Storage } = await import('@google-cloud/storage');
       const objectStorageClient = new Storage({
-        apiEndpoint: "https://storage.googleapis.com",
         credentials: {
-          client_email: "",
-          private_key: "",
-          type: "authorized_user",
-          client_id: "",
-          refresh_token: process.env.REPLIT_OBJECT_STORAGE_REFRESH_TOKEN || "",
-          client_secret: "",
+          audience: "replit",
+          subject_token_type: "access_token",
+          token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+          type: "external_account",
+          credential_source: {
+            url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+            format: {
+              type: "json",
+              subject_token_field_name: "access_token",
+            },
+          },
           universe_domain: "googleapis.com",
         },
         projectId: "",
