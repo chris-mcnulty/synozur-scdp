@@ -13130,11 +13130,18 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
+        // Build report URL
+        const appUrl = process.env.APP_URL 
+          || process.env.REPLIT_DEPLOYMENT_URL 
+          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+        const reportUrl = appUrl ? `${appUrl}/expenses?report=${submitted.id}` : undefined;
+        
         await emailService.notifyExpenseReportSubmitted(
           { email: submitter.email, name: submitter.name },
           submitted.reportNumber,
           submitted.title,
-          branding
+          branding,
+          reportUrl
         );
         
         // Send email notification to admins/approvers
@@ -13152,7 +13159,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             submitted.title,
             submitted.totalAmount,
             submitted.currency,
-            branding
+            branding,
+            reportUrl
           );
         }
       }
@@ -13182,13 +13190,20 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
+        // Build report URL
+        const appUrl = process.env.APP_URL 
+          || process.env.REPLIT_DEPLOYMENT_URL 
+          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+        const reportUrl = appUrl ? `${appUrl}/expenses?report=${approved.id}` : undefined;
+        
         await emailService.notifyExpenseReportApproved(
           { email: submitter.email, name: submitter.name },
           { email: req.user.email, name: req.user.name },
           approved.reportNumber,
           approved.title,
           undefined,
-          branding
+          branding,
+          reportUrl
         );
       }
       
@@ -13222,13 +13237,20 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
+        // Build report URL
+        const appUrl = process.env.APP_URL 
+          || process.env.REPLIT_DEPLOYMENT_URL 
+          || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
+        const reportUrl = appUrl ? `${appUrl}/expenses?report=${rejected.id}` : undefined;
+        
         await emailService.notifyExpenseReportRejected(
           { email: submitter.email, name: submitter.name },
           { email: req.user.email, name: req.user.name },
           rejected.reportNumber,
           rejected.title,
           rejected.rejectionNote ?? undefined,
-          branding
+          branding,
+          reportUrl
         );
       }
       
