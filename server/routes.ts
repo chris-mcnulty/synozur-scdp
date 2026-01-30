@@ -13352,8 +13352,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
-        // Build report URL
+        // Build report URL - prefer production domain
         const appUrl = process.env.APP_URL 
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${submitted.id}` : undefined;
@@ -13412,8 +13413,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
-        // Build report URL
+        // Build report URL - prefer production domain
         const appUrl = process.env.APP_URL 
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${approved.id}` : undefined;
@@ -13459,8 +13461,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
-        // Build report URL
+        // Build report URL - prefer production domain
         const appUrl = process.env.APP_URL 
+          || (process.env.REPLIT_DEPLOYMENT === '1' || process.env.NODE_ENV === 'production' ? 'https://scdp.synozur.com' : null)
           || process.env.REPLIT_DEPLOYMENT_URL 
           || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null);
         const reportUrl = appUrl ? `${appUrl}/expenses?report=${rejected.id}` : undefined;
