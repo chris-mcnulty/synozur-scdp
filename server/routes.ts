@@ -16467,8 +16467,17 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Memo - batch-level notes
           const memo = batchDetails.notes || '';
           
-          // Generate unique invoice number per client: INV-batchId-C1, INV-batchId-C2, etc.
-          const clientInvoiceNo = `INV-${batchId.substring(0, 8)}-C${group.clientIndex}`;
+          // Use GL custom invoice number if available, otherwise generate from batch ID
+          // Format: GL number if set, else INV-batchId-C1, INV-batchId-C2, etc.
+          let clientInvoiceNo: string;
+          if (batchDetails.glInvoiceNumber) {
+            // If multiple clients, append client index to GL number
+            clientInvoiceNo = Object.keys(linesByClient).length > 1 
+              ? `${batchDetails.glInvoiceNumber}-C${group.clientIndex}`
+              : batchDetails.glInvoiceNumber;
+          } else {
+            clientInvoiceNo = `INV-${batchId.substring(0, 8)}-C${group.clientIndex}`;
+          }
           
           // Add row with all required QBO fields
           // Invoice-level fields repeat on every line (QBO merges them automatically)
