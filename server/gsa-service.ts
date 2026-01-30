@@ -55,11 +55,25 @@ const MIE_BREAKDOWN_TABLE: MIEBreakdown[] = [
  * Finds the closest matching tier from the GSA breakdown table
  */
 export function getMIEBreakdown(mieTotal: number): MIEBreakdown {
+  // Handle invalid input
+  if (isNaN(mieTotal) || mieTotal <= 0) {
+    return { mieTotal: 0, breakfast: 0, lunch: 0, dinner: 0, incidentals: 0 };
+  }
+  
   // Find exact match first
   const exactMatch = MIE_BREAKDOWN_TABLE.find(b => b.mieTotal === mieTotal);
   if (exactMatch) return exactMatch;
   
-  // Find closest match
+  // For low values (less than lowest tier), calculate proportionally
+  if (mieTotal < 59) {
+    const breakfast = Math.round(mieTotal * 0.22); // ~22% for breakfast
+    const lunch = Math.round(mieTotal * 0.25);     // ~25% for lunch
+    const dinner = Math.round(mieTotal * 0.44);    // ~44% for dinner
+    const incidentals = Math.max(0, mieTotal - breakfast - lunch - dinner); // remainder for incidentals
+    return { mieTotal, breakfast, lunch, dinner, incidentals };
+  }
+  
+  // Find closest match for values between tiers
   let closest = MIE_BREAKDOWN_TABLE[0];
   let minDiff = Math.abs(mieTotal - closest.mieTotal);
   

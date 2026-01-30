@@ -248,10 +248,10 @@ export function PerDiemMatrix({
       if (!day.isClientEngagement) continue;
       
       let dayAmount = 0;
-      if (day.breakfast) dayAmount += breakdown.breakfast;
-      if (day.lunch) dayAmount += breakdown.lunch;
-      if (day.dinner) dayAmount += breakdown.dinner;
-      if (day.incidentals) dayAmount += breakdown.incidentals;
+      if (day.breakfast && !isNaN(breakdown.breakfast)) dayAmount += breakdown.breakfast;
+      if (day.lunch && !isNaN(breakdown.lunch)) dayAmount += breakdown.lunch;
+      if (day.dinner && !isNaN(breakdown.dinner)) dayAmount += breakdown.dinner;
+      if (day.incidentals && !isNaN(breakdown.incidentals)) dayAmount += breakdown.incidentals;
       
       if (day.isPartialDay && dayAmount > 0) {
         dayAmount = Math.round(dayAmount * 0.75 * 100) / 100;
@@ -260,8 +260,9 @@ export function PerDiemMatrix({
       total += dayAmount;
     }
     
-    setTotalAmount(Math.round(total * 100) / 100);
-    onTotalChange(Math.round(total * 100) / 100);
+    const finalTotal = isNaN(total) ? 0 : Math.round(total * 100) / 100;
+    setTotalAmount(finalTotal);
+    onTotalChange(finalTotal);
     onDaysChange(days);
   }, [days, breakdown]);
 
@@ -296,16 +297,16 @@ export function PerDiemMatrix({
     if (!breakdown || !day.isClientEngagement) return 0;
     
     let total = 0;
-    if (day.breakfast) total += breakdown.breakfast;
-    if (day.lunch) total += breakdown.lunch;
-    if (day.dinner) total += breakdown.dinner;
-    if (day.incidentals) total += breakdown.incidentals;
+    if (day.breakfast && !isNaN(breakdown.breakfast)) total += breakdown.breakfast;
+    if (day.lunch && !isNaN(breakdown.lunch)) total += breakdown.lunch;
+    if (day.dinner && !isNaN(breakdown.dinner)) total += breakdown.dinner;
+    if (day.incidentals && !isNaN(breakdown.incidentals)) total += breakdown.incidentals;
     
     if (day.isPartialDay && total > 0) {
       total = Math.round(total * 0.75 * 100) / 100;
     }
     
-    return total;
+    return isNaN(total) ? 0 : total;
   };
 
   if (!startDate || !endDate) {
@@ -410,10 +411,10 @@ export function PerDiemMatrix({
         
         {breakdown && (
           <div className="flex flex-wrap gap-2 mt-4">
-            <Badge variant="outline">Breakfast: ${breakdown.breakfast}</Badge>
-            <Badge variant="outline">Lunch: ${breakdown.lunch}</Badge>
-            <Badge variant="outline">Dinner: ${breakdown.dinner}</Badge>
-            <Badge variant="outline">Incidentals: ${breakdown.incidentals}</Badge>
+            <Badge variant="outline">Breakfast: ${isNaN(breakdown.breakfast) ? '-' : breakdown.breakfast}</Badge>
+            <Badge variant="outline">Lunch: ${isNaN(breakdown.lunch) ? '-' : breakdown.lunch}</Badge>
+            <Badge variant="outline">Dinner: ${isNaN(breakdown.dinner) ? '-' : breakdown.dinner}</Badge>
+            <Badge variant="outline">Incidentals: ${isNaN(breakdown.incidentals) ? '-' : breakdown.incidentals}</Badge>
           </div>
         )}
         {rateError && (
@@ -440,25 +441,25 @@ export function PerDiemMatrix({
                     <TableHead className="text-center w-[90px]">
                       <div className="flex flex-col items-center gap-1">
                         <span>Breakfast</span>
-                        <span className="text-xs text-muted-foreground">${breakdown?.breakfast || '-'}</span>
+                        <span className="text-xs text-muted-foreground">${breakdown?.breakfast && !isNaN(breakdown.breakfast) ? breakdown.breakfast : '-'}</span>
                       </div>
                     </TableHead>
                     <TableHead className="text-center w-[90px]">
                       <div className="flex flex-col items-center gap-1">
                         <span>Lunch</span>
-                        <span className="text-xs text-muted-foreground">${breakdown?.lunch || '-'}</span>
+                        <span className="text-xs text-muted-foreground">${breakdown?.lunch && !isNaN(breakdown.lunch) ? breakdown.lunch : '-'}</span>
                       </div>
                     </TableHead>
                     <TableHead className="text-center w-[90px]">
                       <div className="flex flex-col items-center gap-1">
                         <span>Dinner</span>
-                        <span className="text-xs text-muted-foreground">${breakdown?.dinner || '-'}</span>
+                        <span className="text-xs text-muted-foreground">${breakdown?.dinner && !isNaN(breakdown.dinner) ? breakdown.dinner : '-'}</span>
                       </div>
                     </TableHead>
                     <TableHead className="text-center w-[90px]">
                       <div className="flex flex-col items-center gap-1">
                         <span>Incidentals</span>
-                        <span className="text-xs text-muted-foreground">${breakdown?.incidentals || '-'}</span>
+                        <span className="text-xs text-muted-foreground">${breakdown?.incidentals && !isNaN(breakdown.incidentals) ? breakdown.incidentals : '-'}</span>
                       </div>
                     </TableHead>
                     <TableHead className="text-right w-[80px]">Day Total</TableHead>
