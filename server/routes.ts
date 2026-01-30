@@ -16274,6 +16274,35 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Mark invoice batch as exported to QuickBooks
+  app.post("/api/invoice-batches/:batchId/export", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      
+      // Get batch details to check status
+      const batchDetails = await storage.getInvoiceBatchDetails(batchId);
+      
+      if (!batchDetails) {
+        return res.status(404).json({ message: "Invoice batch not found" });
+      }
+      
+      // Only allow export for finalized batches
+      if (batchDetails.status !== 'finalized') {
+        return res.status(400).json({ message: "Only finalized batches can be exported to QuickBooks" });
+      }
+      
+      // Mark as exported
+      await storage.updateInvoiceBatch(batchId, { exportedToQBO: true });
+      
+      res.json({ success: true, message: "Invoice batch marked as exported to QuickBooks" });
+    } catch (error: any) {
+      console.error("[ERROR] Failed to mark batch as exported:", error);
+      res.status(500).json({ 
+        message: error.message || "Failed to mark batch as exported" 
+      });
+    }
+  });
+
   // Export invoice batch to QuickBooks CSV
   app.get("/api/invoice-batches/:batchId/export-qbo-csv", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
