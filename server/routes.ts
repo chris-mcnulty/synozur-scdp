@@ -12184,6 +12184,31 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // DEBUG: Check GSA API status (temporary)
+  app.get("/api/debug/gsa-status", async (req, res) => {
+    const hasKey = !!process.env.GSA_API_KEY;
+    const keyLength = process.env.GSA_API_KEY?.length || 0;
+    
+    // Test the actual API
+    try {
+      const { getPerDiemRatesByZip } = await import("./gsa-service.js");
+      const rate = await getPerDiemRatesByZip("90210");
+      res.json({ 
+        hasKey, 
+        keyLength, 
+        testResult: rate ? "SUCCESS" : "NULL_RESULT",
+        rate 
+      });
+    } catch (error: any) {
+      res.json({ 
+        hasKey, 
+        keyLength, 
+        testResult: "ERROR",
+        error: error.message 
+      });
+    }
+  });
+
   // Per Diem GSA Rate Endpoints
   app.get("/api/perdiem/rates/city/:city/state/:state", requireAuth, async (req, res) => {
     try {
