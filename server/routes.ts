@@ -2246,6 +2246,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Upload email header image (admin only)
   app.post("/api/tenant/email-header/upload", requireAuth, upload.single('file'), async (req, res) => {
+    console.log("[EMAIL_HEADER_UPLOAD] === Request received ===");
+    console.log("[EMAIL_HEADER_UPLOAD] Headers:", JSON.stringify(req.headers, null, 2));
+    console.log("[EMAIL_HEADER_UPLOAD] File present:", !!req.file);
     try {
       const user = req.user as any;
       console.log("[EMAIL_HEADER_UPLOAD] User context:", {
