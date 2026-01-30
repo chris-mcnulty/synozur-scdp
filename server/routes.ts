@@ -2218,6 +2218,32 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Send test email (admin only)
+  app.post("/api/tenant/test-email", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+      
+      if (!user?.email || !user?.name) {
+        return res.status(400).json({ message: "User email and name are required" });
+      }
+
+      // Get tenant branding
+      const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+      const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+      
+      await emailService.sendTestEmail(
+        { email: user.email, name: user.name },
+        branding
+      );
+      
+      res.json({ message: "Test email sent successfully", sentTo: user.email });
+    } catch (error: any) {
+      console.error("[TEST_EMAIL] Failed to send test email:", error);
+      res.status(500).json({ message: "Failed to send test email" });
+    }
+  });
+
   // System Settings (admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

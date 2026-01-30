@@ -148,6 +148,58 @@ type CompanySettingsData = z.infer<typeof companySettingsSchema>;
 type VocabularySelectionsData = z.infer<typeof vocabularySelectionsSchema>;
 type EstimationFactorsData = z.infer<typeof estimationFactorsSchema>;
 
+function TestEmailButton() {
+  const { toast } = useToast();
+  const testEmailMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("/api/tenant/test-email", {
+        method: "POST",
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Test email sent",
+        description: `A test email has been sent to ${data.sentTo}`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to send test email",
+        description: "Please check your email configuration and try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <div className="flex items-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => testEmailMutation.mutate()}
+        disabled={testEmailMutation.isPending}
+      >
+        {testEmailMutation.isPending ? (
+          <>
+            <span className="animate-spin mr-2">&#8987;</span>
+            Sending...
+          </>
+        ) : (
+          <>
+            <Mail className="h-4 w-4 mr-2" />
+            Send Test Email
+          </>
+        )}
+      </Button>
+      <span className="text-sm text-muted-foreground">
+        Sends a test email to your account to preview branding
+      </span>
+    </div>
+  );
+}
+
 export default function SystemSettings() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("company");
@@ -608,6 +660,8 @@ export default function SystemSettings() {
                         </FormItem>
                       )}
                     />
+
+                    <TestEmailButton />
 
                     <FormField
                       control={companyForm.control}

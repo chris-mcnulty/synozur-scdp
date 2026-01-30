@@ -213,6 +213,38 @@ export class EmailNotificationService {
   }
 
   /**
+   * Send a test email to verify branding and email configuration
+   */
+  async sendTestEmail(recipient: EmailRecipient, branding?: TenantBranding): Promise<void> {
+    const subject = `Test Email from ${branding?.companyName || 'Constellation'}`;
+    const header = getEmailHeader(branding);
+    const testButton = `
+      <p style="margin: 20px 0;">
+        <a href="#" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Sample Button</a>
+      </p>
+    `;
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #7C3AED;">Test Email</h2>
+          <p>Hi ${escapeHtml(recipient.name)},</p>
+          <p>This is a test email to verify your email branding configuration.</p>
+          <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
+            <strong>Company Name:</strong> ${escapeHtml(branding?.companyName || 'Not configured')}<br>
+            <strong>Email Header:</strong> ${branding?.emailHeaderUrl ? 'Configured' : 'Not configured'}
+          </div>
+          ${testButton}
+          <p>If you see your branded header at the top of this email, your configuration is working correctly!</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+
+    await this.sendEmail({ to: recipient, subject, body });
+  }
+
+  /**
    * Notify employee that their expenses have been included in a reimbursement batch
    */
   async notifyReimbursementBatchProcessed(employee: EmailRecipient, batchNumber: string, totalAmount: string, currency: string, expenseCount: number, branding?: TenantBranding): Promise<void> {
