@@ -183,10 +183,18 @@ function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string)
       const formData = new FormData();
       formData.append('file', file);
 
+      // Get session ID from localStorage for authentication
+      const sessionId = localStorage.getItem('sessionId');
+      const headers: Record<string, string> = {};
+      if (sessionId) {
+        headers['x-session-id'] = sessionId;
+      }
+
       const response = await fetch('/api/tenant/email-header/upload', {
         method: 'POST',
         body: formData,
         credentials: 'include',
+        headers,
       });
 
       if (!response.ok) {
