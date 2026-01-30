@@ -163,6 +163,16 @@ export function PerDiemMatrix({
   }, [locationType, oconusCountry]);
 
   useEffect(() => {
+    // For ZIP codes, only lookup if it's a valid 5-digit format
+    // Skip API calls for partial ZIP codes
+    const isValidZip = zip && /^\d{5}$/.test(zip);
+    const isPartialZip = zip && zip.length > 0 && zip.length < 5;
+    
+    // If typing a partial ZIP, don't do anything yet
+    if (isPartialZip) {
+      return;
+    }
+    
     const fetchBreakdown = async () => {
       if (locationType === "oconus") {
         if (!oconusCountry || !oconusLocation) {
@@ -194,16 +204,9 @@ export function PerDiemMatrix({
         return;
       }
       
-      // For ZIP codes, only lookup if it's a valid 5-digit format
-      const isValidZip = zip && /^\d{5}$/.test(zip);
       const hasLocation = (city && state) || isValidZip;
       
       if (!hasLocation) {
-        // Don't show error while user is still typing ZIP
-        if (zip && zip.length > 0 && zip.length < 5) {
-          // User is typing - don't clear or show error
-          return;
-        }
         setBreakdown(null);
         setGsaRate(0);
         setRateError(null);
@@ -244,7 +247,7 @@ export function PerDiemMatrix({
     };
     
     // Debounce the fetch to avoid calling API on every keystroke
-    const timeoutId = setTimeout(fetchBreakdown, 300);
+    const timeoutId = setTimeout(fetchBreakdown, 500);
     return () => clearTimeout(timeoutId);
   }, [city, state, zip, locationType, oconusCountry, oconusLocation, startDate]);
 
