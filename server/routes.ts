@@ -2244,6 +2244,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Test upload endpoint (for debugging)
+  app.post("/api/tenant/email-header/test", (req, res) => {
+    console.log("[EMAIL_HEADER_TEST] Test endpoint hit");
+    res.json({ message: "Test endpoint working", timestamp: Date.now() });
+  });
+
   // Upload email header image (admin only)
   app.post("/api/tenant/email-header/upload", requireAuth, upload.single('file'), async (req, res) => {
     console.log("[EMAIL_HEADER_UPLOAD] === Request received ===");
