@@ -281,10 +281,10 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       const frontendApp = express();
       await setupVite(frontendApp, server);
       
-      // Conditionally mount Vite: forward only non-/api requests to prevent HTML responses for API calls
+      // Conditionally mount Vite: forward only non-/api and non-/object-storage requests to prevent HTML responses
       app.use((req, res, next) => {
-        if (req.originalUrl.startsWith('/api')) {
-          // Let API routes handle the request
+        if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/object-storage')) {
+          // Let API routes and object storage routes handle the request
           next();
         } else {
           // Forward to Vite's middleware
