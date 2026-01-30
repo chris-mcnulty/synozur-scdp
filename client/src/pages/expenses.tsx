@@ -151,8 +151,7 @@ export default function Expenses() {
   const [, navigate] = useLocation();
 
   // Check if current user can assign expenses to other people (create on behalf of others)
-  // Only admins can create expenses on behalf of other users
-  const canAssignToPerson = hasAnyRole(['admin', 'billing-admin']);
+  const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive', 'global_admin', 'constellation_admin']);
 
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
