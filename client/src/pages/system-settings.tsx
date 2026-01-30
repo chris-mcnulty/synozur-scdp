@@ -250,10 +250,9 @@ function TestEmailButton() {
   const { toast } = useToast();
   const testEmailMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("/api/tenant/test-email", {
+      return await apiRequest("/api/tenant/test-email", {
         method: "POST",
       });
-      return response.json();
     },
     onSuccess: (data) => {
       toast({
