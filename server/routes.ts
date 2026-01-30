@@ -12041,7 +12041,50 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { fiscalYear } = req.body;
       const targetYear = fiscalYear ? parseInt(fiscalYear) : new Date().getFullYear();
       
-      const content = req.file.buffer.toString('utf-8');
+      let content: string;
+      const fileName = req.file.originalname?.toLowerCase() || '';
+      const isZipFile = fileName.endsWith('.zip') || 
+        (req.file.buffer[0] === 0x50 && req.file.buffer[1] === 0x4B);
+      
+      if (isZipFile) {
+        const fs = await import('fs');
+        const path = await import('path');
+        const { execSync } = await import('child_process');
+        
+        const tempDir = `/tmp/oconus_upload_${Date.now()}`;
+        const tempZipPath = path.default.join(tempDir, 'uploaded.zip');
+        
+        fs.default.mkdirSync(tempDir, { recursive: true });
+        fs.default.writeFileSync(tempZipPath, req.file.buffer);
+        
+        try {
+          execSync(`unzip -o "${tempZipPath}" -d "${tempDir}"`, { stdio: 'pipe' });
+          
+          const files = fs.default.readdirSync(tempDir);
+          const oconusFile = files
+            .filter((f: string) => f.endsWith('oconus.txt') && !f.includes('oconusnm'))
+            .sort()
+            .pop();
+          
+          if (!oconusFile) {
+            fs.default.rmSync(tempDir, { recursive: true });
+            return res.status(400).json({ 
+              message: "No OCONUS data file found in ZIP. Expected a file ending with 'oconus.txt'" 
+            });
+          }
+          
+          content = fs.default.readFileSync(path.default.join(tempDir, oconusFile), 'utf-8');
+          fs.default.rmSync(tempDir, { recursive: true });
+        } catch (err) {
+          if (fs.default.existsSync(tempDir)) {
+            fs.default.rmSync(tempDir, { recursive: true });
+          }
+          throw err;
+        }
+      } else {
+        content = req.file.buffer.toString('utf-8');
+      }
+      
       const lines = content.split('\n');
       
       const rates: Array<{
