@@ -2248,17 +2248,29 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/tenant/email-header/upload", requireAuth, upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
+      console.log("[EMAIL_HEADER_UPLOAD] User context:", {
+        id: user?.id,
+        email: user?.email,
+        role: user?.role,
+        platformRole: user?.platformRole,
+        primaryTenantId: user?.primaryTenantId,
+        tenantId: user?.tenantId
+      });
       
       // Check if user has admin permissions (tenant admin or platform admin)
+      const platformRole = user?.platformRole || '';
       const isAdmin = ['admin', 'billing-admin'].includes(user?.role) || 
-                      (user?.platformRoles || []).includes('global_admin') || 
-                      (user?.platformRoles || []).includes('constellation_admin');
+                      platformRole === 'global_admin' || 
+                      platformRole === 'constellation_admin';
+      
+      console.log("[EMAIL_HEADER_UPLOAD] Permission check:", { platformRole, role: user?.role, isAdmin });
       
       if (!isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
       
-      const tenantId = user?.primaryTenantId || 'platform';
+      const tenantId = user?.primaryTenantId || user?.tenantId || 'platform';
+      console.log("[EMAIL_HEADER_UPLOAD] Using tenantId:", tenantId);
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
