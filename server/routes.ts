@@ -13313,8 +13313,15 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const filters: any = {};
       
+      // Check if user has admin permissions (tenant role or platform role)
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'executive', 'billing-admin'].includes(userRole) ||
+                      platformRoles.includes('global_admin') ||
+                      platformRoles.includes('constellation_admin');
+      
       // Non-admin users can only see their own expense reports
-      if (!['admin', 'executive', 'billing-admin'].includes(req.user!.role)) {
+      if (!isAdmin) {
         filters.submitterId = req.user!.id;
       } else if (submitterId) {
         filters.submitterId = submitterId;
@@ -13340,11 +13347,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Permission check: only owner, admin, executive, or billing-admin can view
-      if (
-        report.submitterId !== req.user!.id &&
-        !['admin', 'executive', 'billing-admin'].includes(req.user!.role)
-      ) {
+      // Check if user has admin permissions (tenant role or platform role)
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'executive', 'billing-admin'].includes(userRole) ||
+                      platformRoles.includes('global_admin') ||
+                      platformRoles.includes('constellation_admin');
+
+      // Permission check: only owner or admin can view
+      if (report.submitterId !== req.user!.id && !isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
@@ -13384,8 +13395,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Only owner can update draft reports
-      if (report.submitterId !== req.user!.id) {
+      // Check if user has admin permissions (tenant role or platform role)
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'billing-admin'].includes(userRole) ||
+                      platformRoles.includes('global_admin') ||
+                      platformRoles.includes('constellation_admin');
+
+      // Owner or admin can update draft reports
+      if (report.submitterId !== req.user!.id && !isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
@@ -13409,8 +13427,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Only owner can delete draft reports
-      if (report.submitterId !== req.user!.id) {
+      // Check if user has admin permissions (tenant role or platform role)
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'billing-admin'].includes(userRole) ||
+                      platformRoles.includes('global_admin') ||
+                      platformRoles.includes('constellation_admin');
+
+      // Owner or admin can delete draft reports
+      if (report.submitterId !== req.user!.id && !isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
