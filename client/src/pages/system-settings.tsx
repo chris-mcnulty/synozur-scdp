@@ -65,6 +65,7 @@ interface TenantSettings {
   color: string | null;
   faviconUrl: string | null;
   showConstellationFooter: boolean;
+  emailHeaderUrl: string | null;
 }
 
 // Form schemas
@@ -131,6 +132,7 @@ const companySettingsSchema = z.object({
   companyWebsite: z.string().url("Invalid website URL").optional().or(z.literal("")),
   paymentTerms: z.string().optional(),
   showConstellationFooter: z.boolean().default(true),
+  emailHeaderUrl: z.string().url().optional().or(z.literal("")),
 });
 
 const vocabularySelectionsSchema = z.object({
@@ -214,6 +216,7 @@ export default function SystemSettings() {
       companyWebsite: "",
       paymentTerms: "",
       showConstellationFooter: true,
+      emailHeaderUrl: "",
     },
     values: {
       companyName: tenantSettings?.name || "",
@@ -224,6 +227,7 @@ export default function SystemSettings() {
       companyWebsite: tenantSettings?.companyWebsite || "",
       paymentTerms: tenantSettings?.paymentTerms || "Payment due within 30 days",
       showConstellationFooter: tenantSettings?.showConstellationFooter ?? true,
+      emailHeaderUrl: tenantSettings?.emailHeaderUrl || "",
     },
   });
   
@@ -358,6 +362,7 @@ export default function SystemSettings() {
           companyWebsite: data.companyWebsite || null,
           paymentTerms: data.paymentTerms || "Payment due within 30 days",
           showConstellationFooter: data.showConstellationFooter,
+          emailHeaderUrl: data.emailHeaderUrl || null,
         }),
       });
     },
@@ -574,6 +579,30 @@ export default function SystemSettings() {
                           </FormControl>
                           <FormDescription>
                             Enter a URL to your logo image. For best results, use a PNG with transparent background.
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="emailHeaderUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-2">
+                            <Mail className="h-4 w-4" />
+                            Email Header Image (optional)
+                          </FormLabel>
+                          <FormControl>
+                            <Input 
+                              {...field} 
+                              placeholder="https://example.com/email-header.png" 
+                              data-testid="input-email-header"
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Enter a URL to a header image that will appear at the top of all outgoing emails. Recommended size: 600px wide.
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

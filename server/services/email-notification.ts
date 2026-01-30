@@ -7,6 +7,11 @@ interface EmailRecipient {
   name: string;
 }
 
+interface TenantBranding {
+  emailHeaderUrl?: string | null;
+  companyName?: string | null;
+}
+
 /**
  * Escape HTML to prevent injection in email templates
  */
@@ -20,6 +25,20 @@ function escapeHtml(text: string): string {
     '/': '&#x2F;'
   };
   return text.replace(/[&<>"'\/]/g, (char) => htmlEscapeMap[char] || char);
+}
+
+/**
+ * Generate email header HTML with optional branding image
+ */
+function getEmailHeader(branding?: TenantBranding): string {
+  if (branding?.emailHeaderUrl) {
+    return `
+      <div style="text-align: center; margin-bottom: 20px;">
+        <img src="${escapeHtml(branding.emailHeaderUrl)}" alt="${escapeHtml(branding.companyName || 'Company')}" style="max-width: 100%; height: auto; max-height: 120px;" />
+      </div>
+    `;
+  }
+  return '';
 }
 
 interface SendEmailOptions {
@@ -60,11 +79,13 @@ export class EmailNotificationService {
   /**
    * Notify submitter that their expense report was submitted successfully
    */
-  async notifyExpenseReportSubmitted(submitter: EmailRecipient, reportNumber: string, reportTitle: string): Promise<void> {
+  async notifyExpenseReportSubmitted(submitter: EmailRecipient, reportNumber: string, reportTitle: string, branding?: TenantBranding): Promise<void> {
     const subject = `Expense Report ${reportNumber} Submitted for Approval`;
+    const header = getEmailHeader(branding);
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
           <h2 style="color: #7C3AED;">Expense Report Submitted</h2>
           <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Your expense report has been successfully submitted for approval:</p>
@@ -73,7 +94,7 @@ export class EmailNotificationService {
             <strong>Title:</strong> ${escapeHtml(reportTitle)}
           </div>
           <p>You'll receive a notification once your report has been reviewed.</p>
-          <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>
       </html>
     `;
@@ -84,11 +105,13 @@ export class EmailNotificationService {
   /**
    * Notify approver that a new expense report needs approval
    */
-  async notifyExpenseReportNeedsApproval(approver: EmailRecipient, submitter: EmailRecipient, reportNumber: string, reportTitle: string, totalAmount: string, currency: string): Promise<void> {
+  async notifyExpenseReportNeedsApproval(approver: EmailRecipient, submitter: EmailRecipient, reportNumber: string, reportTitle: string, totalAmount: string, currency: string, branding?: TenantBranding): Promise<void> {
     const subject = `New Expense Report Awaiting Approval: ${reportNumber}`;
+    const header = getEmailHeader(branding);
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
           <h2 style="color: #7C3AED;">Expense Report Awaiting Your Approval</h2>
           <p>Hi ${escapeHtml(approver.name)},</p>
           <p>A new expense report has been submitted and requires your approval:</p>
@@ -99,7 +122,7 @@ export class EmailNotificationService {
             <strong>Total Amount:</strong> ${escapeHtml(currency)} ${escapeHtml(totalAmount)}
           </div>
           <p>Please review this report at your earliest convenience.</p>
-          <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>
       </html>
     `;
@@ -110,12 +133,14 @@ export class EmailNotificationService {
   /**
    * Notify submitter that their expense report was approved
    */
-  async notifyExpenseReportApproved(submitter: EmailRecipient, approver: EmailRecipient, reportNumber: string, reportTitle: string, approverNote?: string): Promise<void> {
+  async notifyExpenseReportApproved(submitter: EmailRecipient, approver: EmailRecipient, reportNumber: string, reportTitle: string, approverNote?: string, branding?: TenantBranding): Promise<void> {
     const subject = `Expense Report ${reportNumber} Approved`;
     const escapedNote = approverNote ? escapeHtml(approverNote) : '';
+    const header = getEmailHeader(branding);
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
           <h2 style="color: #22C55E;">Expense Report Approved</h2>
           <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Great news! Your expense report has been approved:</p>
@@ -126,7 +151,7 @@ export class EmailNotificationService {
             ${escapedNote ? `<br><strong>Note:</strong> ${escapedNote}` : ''}
           </div>
           <p>Your expenses will be processed for reimbursement shortly.</p>
-          <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>
       </html>
     `;
@@ -137,12 +162,14 @@ export class EmailNotificationService {
   /**
    * Notify submitter that their expense report was rejected
    */
-  async notifyExpenseReportRejected(submitter: EmailRecipient, rejecter: EmailRecipient, reportNumber: string, reportTitle: string, rejectionNote?: string): Promise<void> {
+  async notifyExpenseReportRejected(submitter: EmailRecipient, rejecter: EmailRecipient, reportNumber: string, reportTitle: string, rejectionNote?: string, branding?: TenantBranding): Promise<void> {
     const subject = `Expense Report ${reportNumber} Requires Revision`;
     const escapedNote = rejectionNote ? escapeHtml(rejectionNote) : '';
+    const header = getEmailHeader(branding);
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
           <h2 style="color: #EF4444;">Expense Report Requires Revision</h2>
           <p>Hi ${escapeHtml(submitter.name)},</p>
           <p>Your expense report has been reviewed and requires some changes:</p>
@@ -153,7 +180,7 @@ export class EmailNotificationService {
             ${escapedNote ? `<br><br><strong>Reason:</strong><br>${escapedNote.replace(/\n/g, '<br>')}` : ''}
           </div>
           <p>Please review the feedback and resubmit your report with the necessary corrections.</p>
-          <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>
       </html>
     `;
@@ -164,11 +191,13 @@ export class EmailNotificationService {
   /**
    * Notify employee that their expenses have been included in a reimbursement batch
    */
-  async notifyReimbursementBatchProcessed(employee: EmailRecipient, batchNumber: string, totalAmount: string, currency: string, expenseCount: number): Promise<void> {
+  async notifyReimbursementBatchProcessed(employee: EmailRecipient, batchNumber: string, totalAmount: string, currency: string, expenseCount: number, branding?: TenantBranding): Promise<void> {
     const subject = `Reimbursement Batch ${batchNumber} Processed`;
+    const header = getEmailHeader(branding);
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
           <h2 style="color: #7C3AED;">Reimbursement Batch Processed</h2>
           <p>Hi ${escapeHtml(employee.name)},</p>
           <p>Your approved expenses have been included in a reimbursement batch and are being processed for payment:</p>
@@ -178,7 +207,7 @@ export class EmailNotificationService {
             <strong>Number of Expenses:</strong> ${expenseCount}
           </div>
           <p>You can expect payment according to your organization's reimbursement schedule.</p>
-          <p>Thank you,<br>Synozur Consulting Delivery Platform</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>
       </html>
     `;
@@ -186,5 +215,8 @@ export class EmailNotificationService {
     await this.sendEmail({ to: employee, subject, body });
   }
 }
+
+// Export the TenantBranding type for use in routes
+export type { TenantBranding };
 
 export const emailService = new EmailNotificationService();

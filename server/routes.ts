@@ -2144,11 +2144,26 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyWebsite: tenant.companyWebsite,
         paymentTerms: tenant.paymentTerms,
         showConstellationFooter: tenant.showConstellationFooter ?? true,
+        emailHeaderUrl: tenant.emailHeaderUrl,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
       res.status(500).json({ message: "Failed to fetch tenant settings" });
     }
+  });
+
+  // Validation schema for tenant settings update
+  const tenantSettingsUpdateSchema = z.object({
+    name: z.string().min(1, "Company name is required").max(255),
+    logoUrl: z.string().url().max(2000).optional().nullable().or(z.literal("")),
+    logoUrlDark: z.string().url().max(2000).optional().nullable().or(z.literal("")),
+    companyAddress: z.string().max(1000).optional().nullable(),
+    companyPhone: z.string().max(50).optional().nullable(),
+    companyEmail: z.string().email().max(255).optional().nullable().or(z.literal("")),
+    companyWebsite: z.string().url().max(500).optional().nullable().or(z.literal("")),
+    paymentTerms: z.string().max(500).optional().nullable(),
+    showConstellationFooter: z.boolean().optional(),
+    emailHeaderUrl: z.string().url().max(2000).optional().nullable().or(z.literal("")),
   });
 
   app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
@@ -2160,7 +2175,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "No tenant associated with user" });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter } = req.body;
+      // Validate input
+      const validationResult = tenantSettingsUpdateSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid tenant settings data", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl } = validationResult.data;
 
       const updatedTenant = await storage.updateTenant(tenantId, {
         name,
@@ -2172,6 +2196,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyWebsite,
         paymentTerms,
         showConstellationFooter,
+        emailHeaderUrl,
       });
 
       res.json({
@@ -2185,6 +2210,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyWebsite: updatedTenant.companyWebsite,
         paymentTerms: updatedTenant.paymentTerms,
         showConstellationFooter: updatedTenant.showConstellationFooter ?? true,
+        emailHeaderUrl: updatedTenant.emailHeaderUrl,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
@@ -13099,10 +13125,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Send email notification to submitter
       const submitter = await storage.getUser(submitted.submitterId);
       if (submitter && submitter.email && submitter.name) {
+        // Get tenant branding for email header
+        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+        const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+        
         await emailService.notifyExpenseReportSubmitted(
           { email: submitter.email, name: submitter.name },
           submitted.reportNumber,
-          submitted.title
+          submitted.title,
+          branding
         );
         
         // Send email notification to admins/approvers
@@ -13119,7 +13151,8 @@ export async function registerRoutes(app: Express): Promise<void> {
             submitted.reportNumber,
             submitted.title,
             submitted.totalAmount,
-            submitted.currency
+            submitted.currency,
+            branding
           );
         }
       }
@@ -13144,11 +13177,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Send email notification to submitter
       const submitter = await storage.getUser(approved.submitterId);
       if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
+        // Get tenant branding for email header
+        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+        const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+        
         await emailService.notifyExpenseReportApproved(
           { email: submitter.email, name: submitter.name },
           { email: req.user.email, name: req.user.name },
           approved.reportNumber,
-          approved.title
+          approved.title,
+          undefined,
+          branding
         );
       }
       
@@ -13177,12 +13217,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Send email notification to submitter
       const submitter = await storage.getUser(rejected.submitterId);
       if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
+        // Get tenant branding for email header
+        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+        const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+        
         await emailService.notifyExpenseReportRejected(
           { email: submitter.email, name: submitter.name },
           { email: req.user.email, name: req.user.name },
           rejected.reportNumber,
           rejected.title,
-          rejected.rejectionNote ?? undefined
+          rejected.rejectionNote ?? undefined,
+          branding
         );
       }
       
