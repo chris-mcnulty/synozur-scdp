@@ -132,6 +132,11 @@ export const tenants = pgTable("tenants", {
   // Email branding
   emailHeaderUrl: text("email_header_url"), // Optional email header image for outgoing emails
   
+  // Notification Settings
+  expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false), // Enable weekly expense submission reminders
+  expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"), // Time to send reminders (HH:MM)
+  expenseReminderDay: integer("expense_reminder_day").default(1), // Day of week (0=Sunday, 1=Monday, etc.)
+  
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
@@ -169,6 +174,7 @@ export const users = pgTable("users", {
   isSalaried: boolean("is_salaried").notNull().default(false), // Salaried resources don't contribute to direct project costs
   isActive: boolean("is_active").notNull().default(true),
   receiveTimeReminders: boolean("receive_time_reminders").notNull().default(true), // Opt-in for weekly time entry reminders
+  receiveExpenseReminders: boolean("receive_expense_reminders").notNull().default(true), // Opt-in for weekly expense submission reminders
   // Multi-tenancy fields
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
   platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin
