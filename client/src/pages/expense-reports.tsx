@@ -13,7 +13,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseReportSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
-import { Plus, Send, Edit, Trash2, FileText } from "lucide-react";
+import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -60,6 +61,7 @@ export default function ExpenseReports() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [availableExpenses, setAvailableExpenses] = useState<(Expense & { project: Project & { client: Client } })[]>([]);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<string>("draft");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -101,6 +103,27 @@ export default function ExpenseReports() {
       (report.items || []).some(item => item?.expense?.id === exp.id)
     )
   );
+
+  // Filter reports by status for tabs
+  const draftReports = reports.filter(r => r.status === 'draft' || r.status === 'rejected');
+  const pendingReports = reports.filter(r => r.status === 'submitted');
+  const approvedReports = reports.filter(r => r.status === 'approved');
+
+  // Get reports for active tab
+  const getFilteredReports = () => {
+    switch (activeTab) {
+      case 'draft':
+        return draftReports;
+      case 'pending':
+        return pendingReports;
+      case 'approved':
+        return approvedReports;
+      default:
+        return reports;
+    }
+  };
+
+  const filteredReports = getFilteredReports();
 
   // Create expense report mutation
   const createReportMutation = useMutation({
@@ -251,49 +274,80 @@ export default function ExpenseReports() {
           </Card>
         )}
 
-        {/* Reports List */}
-        <div className="grid gap-4">
-          {reports.map((report) => (
-            <Card key={report.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="cursor-pointer" onClick={() => {
-                setSelectedReportId(report.id);
-                setShowDetailDialog(true);
-              }}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5" />
-                      {report.title}
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {getStatusBadge(report.status)}
-                    <span className="text-lg font-semibold">
-                      {report.currency} {parseFloat(report.totalAmount).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-                {report.description && (
-                  <p className="text-sm text-muted-foreground mt-2">{report.description}</p>
-                )}
-                <p className="text-xs text-muted-foreground mt-2">
-                  Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
-                  {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
-                  {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
-                </p>
-                {report.rejectionNote && (
-                  <div className="mt-2 p-2 bg-destructive/10 rounded">
-                    <p className="text-sm font-medium text-destructive">Rejection Reason:</p>
-                    <p className="text-sm text-muted-foreground">{report.rejectionNote}</p>
-                  </div>
-                )}
-              </CardHeader>
-            </Card>
-          ))}
-        </div>
+        {/* Reports List with Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="draft" className="flex items-center gap-2" data-testid="tab-draft">
+              <FileEdit className="h-4 w-4" />
+              Draft ({draftReports.length})
+            </TabsTrigger>
+            <TabsTrigger value="pending" className="flex items-center gap-2" data-testid="tab-pending">
+              <Clock className="h-4 w-4" />
+              Pending Approval ({pendingReports.length})
+            </TabsTrigger>
+            <TabsTrigger value="approved" className="flex items-center gap-2" data-testid="tab-approved">
+              <CheckCircle className="h-4 w-4" />
+              Approved ({approvedReports.length})
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} className="mt-4">
+            <div className="grid gap-4">
+              {filteredReports.length === 0 ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <p className="text-center text-muted-foreground">
+                      {activeTab === 'draft' && 'No draft or rejected reports.'}
+                      {activeTab === 'pending' && 'No reports pending approval.'}
+                      {activeTab === 'approved' && 'No approved reports.'}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredReports.map((report) => (
+                  <Card key={report.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader className="cursor-pointer" onClick={() => {
+                      setSelectedReportId(report.id);
+                      setShowDetailDialog(true);
+                    }}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            {report.title}
+                          </CardTitle>
+                          <CardDescription className="mt-1">
+                            {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
+                          </CardDescription>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          {getStatusBadge(report.status)}
+                          <span className="text-lg font-semibold">
+                            {report.currency} {parseFloat(report.totalAmount).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                      {report.description && (
+                        <p className="text-sm text-muted-foreground mt-2">{report.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
+                        {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
+                        {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
+                      </p>
+                      {report.rejectionNote && (
+                        <div className="mt-2 p-2 bg-destructive/10 rounded">
+                          <p className="text-sm font-medium text-destructive">Rejection Reason:</p>
+                          <p className="text-sm text-muted-foreground">{report.rejectionNote}</p>
+                        </div>
+                      )}
+                    </CardHeader>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
 
         {/* Create Report Dialog */}
         <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
