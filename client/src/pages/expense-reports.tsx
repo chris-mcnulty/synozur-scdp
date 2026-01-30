@@ -93,16 +93,28 @@ export default function ExpenseReports() {
   });
 
   // Fetch user's expenses that are not yet in a report
-  const { data: myExpenses = [] } = useQuery<(Expense & { project: Project & { client: Client } })[]>({
+  const { data: myExpenses = [] } = useQuery<(Expense & { project: Project & { client: Client }; projectResource?: { id: string } })[]>({
     queryKey: ["/api/expenses"],
   });
 
-  // Filter to show only expenses without a report (not attached to any expense report yet)
-  const unassignedExpenses = myExpenses.filter(exp => 
-    !reports.some(report => 
+  // Filter to show only expenses:
+  // 1. Where the current user incurred them (projectResourceId matches user, or no projectResourceId and personId matches user)
+  // 2. Not attached to any expense report yet
+  const unassignedExpenses = myExpenses.filter(exp => {
+    // Check if expense belongs to current user (who incurred it)
+    const expenseProjectResourceId = (exp as any).projectResourceId || exp.projectResource?.id;
+    const belongsToUser = expenseProjectResourceId 
+      ? expenseProjectResourceId === user?.id 
+      : (exp as any).personId === user?.id;
+    
+    if (!belongsToUser) return false;
+    
+    // Check if not already in a report
+    const inReport = reports.some(report => 
       (report.items || []).some(item => item?.expense?.id === exp.id)
-    )
-  );
+    );
+    return !inReport;
+  });
 
   // Filter reports by status for tabs
   const draftReports = reports.filter(r => r.status === 'draft' || r.status === 'rejected');
