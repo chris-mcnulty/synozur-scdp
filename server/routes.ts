@@ -2275,8 +2275,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const tenantId = user?.primaryTenantId || user?.tenantId || 'platform';
       console.log("[EMAIL_HEADER_UPLOAD] Using tenantId:", tenantId);
       
+      if (!tenantId || tenantId === 'platform') {
+        console.log("[EMAIL_HEADER_UPLOAD] Warning: No tenant ID found, using platform default");
+      }
+      
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return res.status(400).json({ message: "No file uploaded - please select an image" });
       }
 
       const file = req.file;
