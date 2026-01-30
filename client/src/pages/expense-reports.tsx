@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Checkbox } from "@/components/ui/checkbox";
 import { z } from "zod";
+import { useAuth } from "@/hooks/use-auth";
 
 const reportFormSchema = insertExpenseReportSchema.omit({
   submitterId: true,
@@ -61,6 +62,13 @@ export default function ExpenseReports() {
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  
+  const isAdmin = user && (
+    ['admin', 'billing-admin'].includes(user.role || '') ||
+    user.platformRole === 'global_admin' ||
+    user.platformRole === 'constellation_admin'
+  );
 
   const form = useForm<ReportFormData>({
     resolver: zodResolver(reportFormSchema),
@@ -461,23 +469,27 @@ export default function ExpenseReports() {
                 <DialogFooter className="gap-2">
                   {selectedReport.status?.toLowerCase() === 'draft' && (
                     <>
-                      <Button
-                        variant="destructive"
-                        onClick={() => deleteReportMutation.mutate(selectedReport.id)}
-                        disabled={deleteReportMutation.isPending}
-                        data-testid="button-delete-report"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </Button>
-                      <Button
-                        onClick={() => submitReportMutation.mutate(selectedReport.id)}
-                        disabled={submitReportMutation.isPending || (selectedReport.items || []).length === 0}
-                        data-testid="button-submit-report"
-                      >
-                        <Send className="mr-2 h-4 w-4" />
-                        Submit for Approval
-                      </Button>
+                      {(selectedReport.submitter?.id === user?.id || isAdmin) && (
+                        <Button
+                          variant="destructive"
+                          onClick={() => deleteReportMutation.mutate(selectedReport.id)}
+                          disabled={deleteReportMutation.isPending}
+                          data-testid="button-delete-report"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </Button>
+                      )}
+                      {(selectedReport.submitter?.id === user?.id || isAdmin) && (
+                        <Button
+                          onClick={() => submitReportMutation.mutate(selectedReport.id)}
+                          disabled={submitReportMutation.isPending || (selectedReport.items || []).length === 0}
+                          data-testid="button-submit-report"
+                        >
+                          <Send className="mr-2 h-4 w-4" />
+                          Submit for Approval
+                        </Button>
+                      )}
                     </>
                   )}
                   <Button variant="outline" onClick={() => { setShowDetailDialog(false); setSelectedReportId(null); }} data-testid="button-close-detail">
