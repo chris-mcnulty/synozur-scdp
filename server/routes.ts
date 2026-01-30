@@ -16400,7 +16400,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Build CSV content with QuickBooks required format
       // Required fields: Invoice Number, Customer, Invoice Date, Due Date, Item Amount
       // Recommended fields: Product/Service, Description, Qty, Rate, Memo
-      let csv = 'Invoice Number,Customer,Invoice Date,Due Date,Product/Service,Description,Qty,Rate,Item Amount,Memo\n';
+      // Optional fields: Terms, Billing Address, Service Date
+      let csv = 'Invoice Number,Customer,Invoice Date,Due Date,Terms,Billing Address,Service Date,Product/Service,Description,Qty,Rate,Item Amount,Memo\n';
       
       // Group lines by client to generate one invoice per client
       const linesByClient = lines.reduce((acc: any, line) => {
@@ -16489,6 +16490,15 @@ export async function registerRoutes(app: Express): Promise<void> {
           // Memo - batch-level notes
           const memo = batchDetails.notes || '';
           
+          // Terms - payment terms for QBO (e.g., "Net 30", "Due on Receipt")
+          const terms = paymentTerms;
+          
+          // Billing Address - client contact address
+          const billingAddress = group.client.contactAddress || '';
+          
+          // Service Date - use invoice date for the service (QBO optional field)
+          const serviceDate = invoiceDate;
+          
           // Use GL custom invoice number if available, otherwise generate from batch ID
           // Format: GL number if set, else INV-batchId-C1, INV-batchId-C2, etc.
           let clientInvoiceNo: string;
@@ -16501,9 +16511,10 @@ export async function registerRoutes(app: Express): Promise<void> {
             clientInvoiceNo = `INV-${batchId.substring(0, 8)}-C${group.clientIndex}`;
           }
           
-          // Add row with all required QBO fields
+          // Add row with all QBO fields
           // Invoice-level fields repeat on every line (QBO merges them automatically)
-          csv += `${csvField(clientInvoiceNo)},${csvField(group.client.name)},${csvField(invoiceDate)},${csvField(dueDate)},${csvField(productService)},${csvField(description)},${csvField(quantity)},${csvField(rate)},${csvField(itemAmount)},${csvField(memo)}\n`;
+          // Order: Invoice Number, Customer, Invoice Date, Due Date, Terms, Billing Address, Service Date, Product/Service, Description, Qty, Rate, Item Amount, Memo
+          csv += `${csvField(clientInvoiceNo)},${csvField(group.client.name)},${csvField(invoiceDate)},${csvField(dueDate)},${csvField(terms)},${csvField(billingAddress)},${csvField(serviceDate)},${csvField(productService)},${csvField(description)},${csvField(quantity)},${csvField(rate)},${csvField(itemAmount)},${csvField(memo)}\n`;
         }
       }
       
