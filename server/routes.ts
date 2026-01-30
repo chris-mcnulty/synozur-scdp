@@ -16456,13 +16456,35 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
           
           // Product/Service - use hierarchical format "Project:Type" for QBO
+          // For expenses, include category; for services, just type
           let productService = line.project.name;
-          if (line.type) {
+          if (line.type === 'expense' && line.expenseCategory) {
+            // Expense: Project:Expense:Category (e.g., "AI Strategy:Expense:Per Diem")
+            const categoryFormatted = line.expenseCategory.charAt(0).toUpperCase() + line.expenseCategory.slice(1);
+            productService = `${line.project.name}:Expense:${categoryFormatted}`;
+          } else if (line.type) {
             productService = `${line.project.name}:${line.type.charAt(0).toUpperCase() + line.type.slice(1)}`;
           }
           
-          // Description - detailed line description
-          const description = line.description || '';
+          // Description - build detailed description based on line type
+          // For expenses: include category and notes
+          // For services: include person name and description (like printed invoices)
+          let description = '';
+          if (line.type === 'expense') {
+            // Expense line: "Category - Description" or just "Category"
+            const categoryLabel = line.expenseCategory 
+              ? line.expenseCategory.charAt(0).toUpperCase() + line.expenseCategory.slice(1)
+              : 'Expense';
+            description = line.description 
+              ? `${categoryLabel}: ${line.description}`
+              : categoryLabel;
+          } else if (line.type === 'time') {
+            // Time/service line: include the full description (which should have person and work details)
+            description = line.description || 'Professional Services';
+          } else {
+            // Other types (milestone, discount, etc.)
+            description = line.description || '';
+          }
           
           // Memo - batch-level notes
           const memo = batchDetails.notes || '';
