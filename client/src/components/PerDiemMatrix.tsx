@@ -223,9 +223,10 @@ export function PerDiemMatrix({
             setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching GSA rates:', error);
-        setRateError("Could not load GSA rates. Using default rates.");
+        const errorMessage = error?.message || 'Unknown error';
+        setRateError(`Could not load GSA rates: ${errorMessage}. Using default rates.`);
         setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
       } finally {
         setIsLoading(false);
