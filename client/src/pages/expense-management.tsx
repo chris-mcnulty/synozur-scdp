@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -77,7 +77,11 @@ const expenseFilterSchema = z.object({
   minAmount: z.string().optional(),
   maxAmount: z.string().optional(),
   vendor: z.string().optional(),
+  notInExpenseReport: z.string().optional(), // "true" = not in any expense report
 });
+
+// Quick filter presets
+type QuickFilter = 'all' | 'uninvoiced' | 'unsubmitted' | 'missing-receipt-over-50' | 'by-person';
 
 const APPROVAL_STATUS_OPTIONS = [
   { value: "draft", label: "Draft (Not Submitted)" },
@@ -116,14 +120,18 @@ const individualEditSchema = z.object({
 type IndividualEditData = z.infer<typeof individualEditSchema>;
 
 export default function ExpenseManagement() {
-  const [filters, setFilters] = useState<ExpenseFilters>({});
+  // Default filter: uninvoiced expenses
+  const [filters, setFilters] = useState<ExpenseFilters>({ billedFlag: 'false' });
+  const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilter>('uninvoiced');
+  const [groupByPerson, setGroupByPerson] = useState(false);
   const [selectedExpenses, setSelectedExpenses] = useState<string[]>([]);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
   const [individualEditDialogOpen, setIndividualEditDialogOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<(Expense & { 
     project: Project & { client: Client }, 
     person: User,
-    projectResource?: User 
+    projectResource?: User,
+    expenseReport?: { id: string; reportNumber: string; title: string; status: string } | null
   }) | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
@@ -144,8 +152,38 @@ export default function ExpenseManagement() {
 
   const filterForm = useForm<ExpenseFilters>({
     resolver: zodResolver(expenseFilterSchema),
-    defaultValues: {},
+    defaultValues: { billedFlag: 'false' }, // Default: uninvoiced
   });
+
+  // Quick filter handler
+  const applyQuickFilter = (quickFilter: QuickFilter) => {
+    setActiveQuickFilter(quickFilter);
+    setGroupByPerson(quickFilter === 'by-person');
+    
+    let newFilters: ExpenseFilters = {};
+    
+    switch (quickFilter) {
+      case 'uninvoiced':
+        newFilters = { billedFlag: 'false' };
+        break;
+      case 'unsubmitted':
+        newFilters = { notInExpenseReport: 'true' };
+        break;
+      case 'missing-receipt-over-50':
+        newFilters = { hasReceipt: 'false', minAmount: '50' };
+        break;
+      case 'by-person':
+        newFilters = { notInExpenseReport: 'true' };
+        break;
+      case 'all':
+      default:
+        newFilters = {};
+        break;
+    }
+    
+    filterForm.reset(newFilters);
+    setFilters(newFilters);
+  };
 
   const bulkEditForm = useForm<BulkEditData>({
     resolver: zodResolver(bulkEditSchema),
@@ -306,13 +344,42 @@ export default function ExpenseManagement() {
   });
 
   const handleApplyFilters = (data: ExpenseFilters) => {
+    setActiveQuickFilter('all'); // Custom filters = no quick filter active
+    setGroupByPerson(false); // Reset grouped view when custom filters applied
     setFilters(data);
   };
 
   const handleResetFilters = () => {
-    filterForm.reset();
-    setFilters({});
+    filterForm.reset({ billedFlag: 'false' });
+    setFilters({ billedFlag: 'false' });
+    setActiveQuickFilter('uninvoiced');
+    setGroupByPerson(false);
   };
+
+  // Group expenses by person for the grouped view
+  const expensesByPerson = useMemo(() => {
+    if (!groupByPerson) return null;
+    const grouped: Record<string, typeof expenses> = {};
+    for (const expense of expenses) {
+      const personId = expense.person?.id || 'unknown';
+      const personName = expense.person?.name || 'Unknown';
+      const key = `${personId}|${personName}`;
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(expense);
+    }
+    return Object.entries(grouped).map(([key, exps]) => {
+      const [personId, personName] = key.split('|');
+      return {
+        personId,
+        personName,
+        expenses: exps,
+        totalAmount: exps.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0),
+        count: exps.length,
+      };
+    }).sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [expenses, groupByPerson]);
 
   const handleSelectExpense = (expenseId: string, checked: boolean) => {
     if (checked) {
@@ -524,6 +591,55 @@ export default function ExpenseManagement() {
               </>
             )}
           </div>
+        </div>
+
+        {/* Quick Filter Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-muted-foreground mr-2">Quick Filters:</span>
+          <Button
+            variant={activeQuickFilter === 'uninvoiced' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('uninvoiced')}
+            data-testid="quick-filter-uninvoiced"
+          >
+            <DollarSign className="w-4 h-4 mr-1" />
+            Uninvoiced
+          </Button>
+          <Button
+            variant={activeQuickFilter === 'unsubmitted' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('unsubmitted')}
+            data-testid="quick-filter-unsubmitted"
+          >
+            <FileText className="w-4 h-4 mr-1" />
+            Not in Expense Report
+          </Button>
+          <Button
+            variant={activeQuickFilter === 'missing-receipt-over-50' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('missing-receipt-over-50')}
+            data-testid="quick-filter-missing-receipt"
+          >
+            <Receipt className="w-4 h-4 mr-1" />
+            Missing Receipt ($50+)
+          </Button>
+          <Button
+            variant={activeQuickFilter === 'by-person' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('by-person')}
+            data-testid="quick-filter-by-person"
+          >
+            <UserIcon className="w-4 h-4 mr-1" />
+            By Person
+          </Button>
+          <Button
+            variant={activeQuickFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('all')}
+            data-testid="quick-filter-all"
+          >
+            All Expenses
+          </Button>
         </div>
 
         {/* Filters Section */}
@@ -868,7 +984,82 @@ export default function ExpenseManagement() {
           </CardContent>
         </Card>
 
+        {/* Grouped By Person View */}
+        {groupByPerson && expensesByPerson && expensesByPerson.length > 0 && (
+          <Card data-testid="expenses-grouped-by-person-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="w-5 h-5" />
+                Unsubmitted Expenses by Person ({expensesByPerson.length} people, {expenses.length} expenses)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {expensesByPerson.map((group) => (
+                  <Card key={group.personId} className="border-l-4 border-l-primary">
+                    <CardHeader className="py-3">
+                      <CardTitle className="text-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <UserIcon className="w-4 h-4" />
+                          {group.personName}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-normal text-muted-foreground">
+                            {group.count} expense{group.count !== 1 ? 's' : ''}
+                          </div>
+                          <div className="text-lg font-semibold">
+                            {formatCurrency(group.totalAmount, 'USD')}
+                          </div>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Project</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead>Receipt</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.expenses.map((expense) => (
+                            <TableRow key={expense.id}>
+                              <TableCell>{formatBusinessDate(expense.date, "MMM dd")}</TableCell>
+                              <TableCell>{expense.project?.name || 'N/A'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">
+                                  {EXPENSE_CATEGORIES.find(c => c.value === expense.category)?.label || expense.category}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-32 truncate">{expense.description || '—'}</TableCell>
+                              <TableCell className="text-right font-medium">
+                                {formatCurrency(expense.amount, expense.currency)}
+                              </TableCell>
+                              <TableCell>
+                                {expense.receiptUrl ? (
+                                  <Receipt className="w-4 h-4 text-green-600" />
+                                ) : (
+                                  <Receipt className="w-4 h-4 text-muted-foreground" />
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Expenses Table */}
+        {!groupByPerson && (
         <Card data-testid="expenses-table-card">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
@@ -913,6 +1104,7 @@ export default function ExpenseManagement() {
                       <TableHead>Description</TableHead>
                       <TableHead>Vendor</TableHead>
                       <TableHead>Receipt</TableHead>
+                      <TableHead>Expense Report</TableHead>
                       <TableHead>Approval</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
@@ -1013,6 +1205,18 @@ export default function ExpenseManagement() {
                             </div>
                           )}
                         </TableCell>
+                        <TableCell data-testid={`expense-report-${expense.id}`}>
+                          {(expense as any).expenseReport ? (
+                            <Badge variant="outline" className="text-xs">
+                              {(expense as any).expenseReport.reportNumber}
+                              <span className="ml-1 text-muted-foreground">
+                                ({(expense as any).expenseReport.status})
+                              </span>
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell data-testid={`status-approval-${expense.id}`}>
                           {expense.approvalStatus === 'approved' ? (
                             <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
@@ -1069,6 +1273,7 @@ export default function ExpenseManagement() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Bulk Edit Dialog */}
         <Dialog open={bulkEditDialogOpen} onOpenChange={setBulkEditDialogOpen}>

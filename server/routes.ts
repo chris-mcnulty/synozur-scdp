@@ -12804,7 +12804,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         approvalStatus,
         hasReceipt,
         minAmount,
-        maxAmount
+        maxAmount,
+        notInExpenseReport, // Filter for expenses not yet added to an expense report
       } = req.query as Record<string, string>;
 
       const filters: any = {};
@@ -12824,6 +12825,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (hasReceipt !== undefined) filters.hasReceipt = hasReceipt === 'true';
       if (minAmount) filters.minAmount = parseFloat(minAmount);
       if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
+      if (notInExpenseReport !== undefined) filters.notInExpenseReport = notInExpenseReport === 'true';
 
       const expenses = await storage.getExpensesAdmin(filters);
       res.json(expenses);

@@ -3305,18 +3305,31 @@ export class DatabaseStorage implements IStorage {
       conditions.push(lte(expenses.amount, filters.maxAmount.toString()));
     }
 
+    // Get expense IDs that are in expense reports for the "not in report" filter
+    let expenseIdsInReports: Set<string> | null = null;
+    if (filters.notInExpenseReport !== undefined) {
+      const reportItems = await db.select({ expenseId: expenseReportItems.expenseId })
+        .from(expenseReportItems);
+      expenseIdsInReports = new Set(reportItems.map(item => item.expenseId));
+    }
+
+    const projectResourceAlias = alias(users, 'projectResource');
     const query = db.select({
       expense: expenses,
       person: users,
       project: projects,
       client: clients,
-      projectResource: alias(users, 'projectResource'),
+      projectResource: projectResourceAlias,
+      expenseReportItem: expenseReportItems,
+      expenseReport: expenseReports,
     })
     .from(expenses)
     .innerJoin(users, eq(expenses.personId, users.id))
     .innerJoin(projects, eq(expenses.projectId, projects.id))
     .innerJoin(clients, eq(projects.clientId, clients.id))
-    .leftJoin(alias(users, 'projectResource'), eq(expenses.projectResourceId, alias(users, 'projectResource').id))
+    .leftJoin(projectResourceAlias, eq(expenses.projectResourceId, projectResourceAlias.id))
+    .leftJoin(expenseReportItems, eq(expenses.id, expenseReportItems.expenseId))
+    .leftJoin(expenseReports, eq(expenseReportItems.reportId, expenseReports.id))
     .orderBy(desc(expenses.date));
 
     let results;
@@ -3324,6 +3337,17 @@ export class DatabaseStorage implements IStorage {
       results = await query.where(and(...conditions));
     } else {
       results = await query;
+    }
+
+    // Apply "not in expense report" filter after query if needed
+    if (filters.notInExpenseReport !== undefined && expenseIdsInReports) {
+      if (filters.notInExpenseReport) {
+        // Only expenses NOT in any expense report
+        results = results.filter(row => !expenseIdsInReports!.has(row.expense.id));
+      } else {
+        // Only expenses that ARE in an expense report
+        results = results.filter(row => expenseIdsInReports!.has(row.expense.id));
+      }
     }
 
     return results.map(row => ({
@@ -3335,7 +3359,13 @@ export class DatabaseStorage implements IStorage {
         ...row.project,
         client: row.client
       },
-      projectResource: row.projectResource || undefined
+      projectResource: row.projectResource || undefined,
+      expenseReport: row.expenseReport ? {
+        id: row.expenseReport.id,
+        reportNumber: row.expenseReport.reportNumber,
+        title: row.expenseReport.title,
+        status: row.expenseReport.status,
+      } : null
     }));
   }
 
