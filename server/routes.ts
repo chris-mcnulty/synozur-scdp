@@ -351,6 +351,60 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   };
 
+  // Serve files from object storage (public directory)
+  app.get("/object-storage/*", async (req, res) => {
+    try {
+      const objectPath = req.params[0];
+      
+      // Security: only allow access to public directory
+      if (!objectPath.startsWith('public/')) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      
+      const publicObjectDir = process.env.PUBLIC_OBJECT_SEARCH_PATHS;
+      if (!publicObjectDir) {
+        return res.status(500).json({ message: "Object storage not configured" });
+      }
+      
+      const firstPath = publicObjectDir.split(',')[0].trim();
+      const pathParts = firstPath.split('/').filter((p: string) => p);
+      const bucketName = pathParts[0];
+      
+      // Initialize GCS client
+      const { Storage } = await import('@google-cloud/storage');
+      const objectStorageClient = new Storage({
+        apiEndpoint: "https://storage.googleapis.com",
+        credentials: {
+          client_email: "",
+          private_key: "",
+          type: "authorized_user",
+          client_id: "",
+          refresh_token: process.env.REPLIT_OBJECT_STORAGE_REFRESH_TOKEN || "",
+          client_secret: "",
+          universe_domain: "googleapis.com",
+        },
+        projectId: "",
+      });
+      
+      const bucket = objectStorageClient.bucket(bucketName);
+      const file = bucket.file(objectPath);
+      
+      const [exists] = await file.exists();
+      if (!exists) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      const [metadata] = await file.getMetadata();
+      res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      
+      file.createReadStream().pipe(res);
+    } catch (error: any) {
+      console.error("[OBJECT_STORAGE] Failed to serve file:", error);
+      res.status(500).json({ message: "Failed to retrieve file" });
+    }
+  });
+
   // Environment info endpoint
   app.get("/api/environment", async (req, res) => {
     try {
