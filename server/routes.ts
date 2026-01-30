@@ -2354,9 +2354,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         },
       });
 
-      // Get the public URL - prefer deployment URL (production) for email accessibility
-      const replitDomain = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
-      const publicUrl = `https://${replitDomain}/object-storage/${objectPath}`;
+      // Get the public URL - use production URL for email accessibility
+      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL 
+        || (process.env.NODE_ENV === 'production' ? 'scdp.synozur.com' : null)
+        || process.env.REPLIT_DEV_DOMAIN;
+      const publicUrl = `https://${baseUrl}/object-storage/${objectPath}`;
       
       console.log(`[EMAIL_HEADER_UPLOAD] Stored email header for tenant ${tenantId}: ${objectPath}`);
       
