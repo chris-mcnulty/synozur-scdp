@@ -2248,11 +2248,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/tenant/email-header/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
-      const tenantId = user?.primaryTenantId;
-      
-      if (!tenantId) {
-        return res.status(400).json({ message: "Tenant ID is required" });
-      }
+      const tenantId = user?.primaryTenantId || 'platform';
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
