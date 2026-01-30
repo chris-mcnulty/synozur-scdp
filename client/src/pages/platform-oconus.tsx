@@ -20,7 +20,7 @@ type OconusRate = {
   seasonStart: string | null;
   seasonEnd: string | null;
   lodging: number;
-  mAndIe: number;
+  mie: number;
   maxPerDiem: number;
   effectiveDate: string;
   fiscalYear: number;

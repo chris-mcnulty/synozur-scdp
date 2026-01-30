@@ -45,6 +45,7 @@ interface PerDiemMatrixProps {
   onLocationTypeChange?: (type: PerDiemLocationType) => void;
   onCityChange?: (city: string) => void;
   onStateChange?: (state: string) => void;
+  onZipChange?: (zip: string) => void;
   onOconusCountryChange?: (country: string) => void;
   onOconusLocationChange?: (location: string) => void;
 }
@@ -87,6 +88,7 @@ export function PerDiemMatrix({
   onLocationTypeChange,
   onCityChange,
   onStateChange,
+  onZipChange,
   onOconusCountryChange,
   onOconusLocationChange,
 }: PerDiemMatrixProps) {
@@ -340,24 +342,36 @@ export function PerDiemMatrix({
           </div>
           
           {locationType === "conus" && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm">City</Label>
-                <Input
-                  value={city || ""}
-                  onChange={(e) => onCityChange?.(e.target.value)}
-                  placeholder="e.g. Seattle"
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-sm">City</Label>
+                  <Input
+                    value={city || ""}
+                    onChange={(e) => onCityChange?.(e.target.value)}
+                    placeholder="e.g. Seattle"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">State</Label>
+                  <Input
+                    value={state || ""}
+                    onChange={(e) => onStateChange?.(e.target.value)}
+                    placeholder="e.g. WA"
+                    maxLength={2}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">OR ZIP Code</Label>
+                  <Input
+                    value={zip || ""}
+                    onChange={(e) => onZipChange?.(e.target.value)}
+                    placeholder="e.g. 90210"
+                    maxLength={5}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm">State</Label>
-                <Input
-                  value={state || ""}
-                  onChange={(e) => onStateChange?.(e.target.value)}
-                  placeholder="e.g. WA"
-                  maxLength={2}
-                />
-              </div>
+              <p className="text-xs text-muted-foreground">Enter City/State or ZIP code to look up GSA per diem rates</p>
             </div>
           )}
           

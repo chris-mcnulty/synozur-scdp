@@ -1772,6 +1772,9 @@ export default function Expenses() {
                           onStateChange={(state) => {
                             form.setValue("perDiemState", state);
                           }}
+                          onZipChange={(zip) => {
+                            form.setValue("perDiemZip", zip);
+                          }}
                           onOconusCountryChange={(country) => {
                             form.setValue("perDiemOconusCountry", country);
                             form.setValue("perDiemOconusLocation", "");
