@@ -349,7 +349,7 @@ export default function PlatformOconus() {
                           )}
                         </TableCell>
                         <TableCell className="text-right font-mono">{formatCurrency(rate.lodging)}</TableCell>
-                        <TableCell className="text-right font-mono">{formatCurrency(rate.mAndIe)}</TableCell>
+                        <TableCell className="text-right font-mono">{formatCurrency(rate.mie)}</TableCell>
                         <TableCell className="text-right font-mono font-bold">{formatCurrency(rate.maxPerDiem)}</TableCell>
                         <TableCell>
                           <Badge variant="secondary">{rate.fiscalYear}</Badge>
