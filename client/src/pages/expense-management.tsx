@@ -505,13 +505,15 @@ export default function ExpenseManagement() {
     setGroupByPerson(false);
   };
 
-  // Group expenses by person for the grouped view
+  // Group expenses by the person who incurred the expense (projectResource, falls back to person who entered)
   const expensesByPerson = useMemo(() => {
     if (!groupByPerson) return null;
     const grouped: Record<string, typeof expenses> = {};
     for (const expense of expenses) {
-      const personId = expense.person?.id || 'unknown';
-      const personName = expense.person?.name || 'Unknown';
+      // Use projectResource (who incurred the expense) if available, otherwise fall back to person (who entered)
+      const incurredBy = expense.projectResource || expense.person;
+      const personId = incurredBy?.id || 'unknown';
+      const personName = incurredBy?.name || 'Unknown';
       const key = `${personId}|${personName}`;
       if (!grouped[key]) {
         grouped[key] = [];
