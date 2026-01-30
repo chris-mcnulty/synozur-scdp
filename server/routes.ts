@@ -12190,8 +12190,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { city, state } = req.params;
       const { year } = req.query;
       
+      console.log(`[PERDIEM_ROUTE] Looking up city: ${city}, state: ${state}, year: ${year || 'current'}`);
+      
       const { getPerDiemRatesByCity } = await import("./gsa-service.js");
       const rate = await getPerDiemRatesByCity(city, state, year ? parseInt(year as string) : undefined);
+      
+      console.log(`[PERDIEM_ROUTE] Result:`, rate ? JSON.stringify(rate) : 'null');
       
       if (!rate) {
         return res.status(404).json({ message: "GSA rate not found for this location" });
@@ -12199,7 +12203,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       res.json(rate);
     } catch (error) {
-      console.error("Error fetching GSA rates by city:", error);
+      console.error("[PERDIEM_ROUTE] Error fetching GSA rates by city:", error);
       res.status(500).json({ message: "Failed to fetch GSA rates" });
     }
   });
@@ -12209,8 +12213,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { zip } = req.params;
       const { year } = req.query;
       
+      console.log(`[PERDIEM_ROUTE] Looking up ZIP: ${zip}, year: ${year || 'current'}`);
+      
       const { getPerDiemRatesByZip } = await import("./gsa-service.js");
       const rate = await getPerDiemRatesByZip(zip, year ? parseInt(year as string) : undefined);
+      
+      console.log(`[PERDIEM_ROUTE] Result:`, rate ? JSON.stringify(rate) : 'null');
       
       if (!rate) {
         return res.status(404).json({ message: "GSA rate not found for this ZIP code" });
@@ -12218,7 +12226,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       res.json(rate);
     } catch (error) {
-      console.error("Error fetching GSA rates by ZIP:", error);
+      console.error("[PERDIEM_ROUTE] Error fetching GSA rates by ZIP:", error);
       res.status(500).json({ message: "Failed to fetch GSA rates" });
     }
   });

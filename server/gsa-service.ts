@@ -188,10 +188,13 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
     
     console.log(`[GSA_API] Fetching rates from URL: ${url}`);
     
-    // GSA API key from environment variable (optional - API works without key but has rate limits)
+    // GSA API key from environment variable (required - API no longer works without key)
     const headers: HeadersInit = {};
     if (process.env.GSA_API_KEY) {
       headers['X-Api-Key'] = process.env.GSA_API_KEY;
+      console.log(`[GSA_API] Using API key (length: ${process.env.GSA_API_KEY.length})`);
+    } else {
+      console.warn(`[GSA_API] No GSA_API_KEY environment variable set - API calls will fail`);
     }
 
     const response = await fetch(url, { headers });
@@ -199,12 +202,17 @@ export async function getPerDiemRatesByCity(city: string, state: string, year?: 
     console.log(`[GSA_API] Response status: ${response.status}`);
     
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[GSA_API] Error response (${response.status}): ${errorText}`);
+      
       if (response.status === 404) {
         console.log(`[GSA_API] Rate not found for ${city}, ${state} in ${targetYear}`);
         return null;
       }
-      const errorText = await response.text();
-      console.error(`[GSA_API] Error response: ${errorText}`);
+      if (response.status === 401 || response.status === 403) {
+        console.error(`[GSA_API] Authentication error - check GSA_API_KEY`);
+        throw new Error(`GSA API authentication error - API key may be missing or invalid`);
+      }
       throw new Error(`GSA API error: ${response.statusText}`);
     }
 
@@ -262,17 +270,31 @@ export async function getPerDiemRatesByZip(zip: string, year?: number): Promise<
     const targetYear = year || new Date().getFullYear();
     const url = `${GSA_API_BASE}/rates/zip/${zip}/year/${targetYear}`;
     
+    console.log(`[GSA_API] Fetching rates by ZIP from URL: ${url}`);
+    
     const headers: HeadersInit = {};
     if (process.env.GSA_API_KEY) {
       headers['X-Api-Key'] = process.env.GSA_API_KEY;
+      console.log(`[GSA_API] Using API key (length: ${process.env.GSA_API_KEY.length})`);
+    } else {
+      console.warn(`[GSA_API] No GSA_API_KEY environment variable set - API calls will fail`);
     }
 
     const response = await fetch(url, { headers });
     
+    console.log(`[GSA_API] Response status: ${response.status}`);
+    
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[GSA_API] Error response (${response.status}): ${errorText}`);
+      
       if (response.status === 404) {
-        console.log(`GSA rate not found for ZIP ${zip} in ${targetYear}`);
+        console.log(`[GSA_API] Rate not found for ZIP ${zip} in ${targetYear}`);
         return null;
+      }
+      if (response.status === 401 || response.status === 403) {
+        console.error(`[GSA_API] Authentication error - check GSA_API_KEY`);
+        throw new Error(`GSA API authentication error - API key may be missing or invalid`);
       }
       throw new Error(`GSA API error: ${response.statusText}`);
     }
