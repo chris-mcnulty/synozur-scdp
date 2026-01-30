@@ -553,13 +553,25 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "You can only update your own reminder settings" });
       }
       
-      const { receiveTimeReminders } = req.body;
-      if (typeof receiveTimeReminders !== 'boolean') {
-        return res.status(400).json({ message: "receiveTimeReminders must be a boolean" });
+      const { receiveTimeReminders, receiveExpenseReminders } = req.body;
+      
+      const updates: any = {};
+      if (typeof receiveTimeReminders === 'boolean') {
+        updates.receiveTimeReminders = receiveTimeReminders;
+      }
+      if (typeof receiveExpenseReminders === 'boolean') {
+        updates.receiveExpenseReminders = receiveExpenseReminders;
       }
       
-      const user = await storage.updateUser(userId, { receiveTimeReminders });
-      res.json({ receiveTimeReminders: user.receiveTimeReminders });
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "At least one of receiveTimeReminders or receiveExpenseReminders must be provided as a boolean" });
+      }
+      
+      const user = await storage.updateUser(userId, updates);
+      res.json({ 
+        receiveTimeReminders: user.receiveTimeReminders,
+        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true
+      });
     } catch (error) {
       console.error("Error updating reminder settings:", error);
       res.status(500).json({ message: "Failed to update reminder settings" });
@@ -581,10 +593,36 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      res.json({ receiveTimeReminders: user.receiveTimeReminders });
+      res.json({ 
+        receiveTimeReminders: user.receiveTimeReminders,
+        receiveExpenseReminders: (user as any).receiveExpenseReminders ?? true
+      });
     } catch (error) {
       console.error("Error fetching reminder settings:", error);
       res.status(500).json({ message: "Failed to fetch reminder settings" });
+    }
+  });
+
+  // Admin expense reminder management
+  app.post("/api/admin/expense-reminders/run", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+      
+      if (!tenantId) {
+        return res.status(400).json({ message: "No tenant associated with user" });
+      }
+      
+      const { runExpenseRemindersForTenant } = await import('./services/expense-reminder-scheduler.js');
+      const result = await runExpenseRemindersForTenant(tenantId);
+      res.json({ 
+        success: true, 
+        message: `Expense reminders sent successfully`,
+        ...result
+      });
+    } catch (error) {
+      console.error("Error running expense reminders:", error);
+      res.status(500).json({ message: "Failed to run expense reminders" });
     }
   });
 
@@ -2205,6 +2243,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms: tenant.paymentTerms,
         showConstellationFooter: tenant.showConstellationFooter ?? true,
         emailHeaderUrl: tenant.emailHeaderUrl,
+        expenseRemindersEnabled: tenant.expenseRemindersEnabled ?? false,
+        expenseReminderTime: tenant.expenseReminderTime ?? "08:00",
+        expenseReminderDay: tenant.expenseReminderDay ?? 1,
+        defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -2224,6 +2266,10 @@ export async function registerRoutes(app: Express): Promise<void> {
     paymentTerms: z.string().max(500).optional().nullable(),
     showConstellationFooter: z.boolean().optional(),
     emailHeaderUrl: z.string().url().max(2000).optional().nullable().or(z.literal("")),
+    expenseRemindersEnabled: z.boolean().optional(),
+    expenseReminderTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional(),
+    expenseReminderDay: z.number().int().min(0).max(6).optional(),
+    defaultTimezone: z.string().max(50).optional(),
   });
 
   app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
@@ -2244,7 +2290,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone } = validationResult.data;
 
       const updatedTenant = await storage.updateTenant(tenantId, {
         name,
@@ -2257,7 +2303,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms,
         showConstellationFooter,
         emailHeaderUrl,
+        expenseRemindersEnabled,
+        expenseReminderTime,
+        expenseReminderDay,
+        defaultTimezone,
       });
+
+      // Update the expense reminder scheduler if settings changed
+      if (expenseRemindersEnabled !== undefined || expenseReminderTime !== undefined || expenseReminderDay !== undefined) {
+        const { updateTenantExpenseSchedule } = await import('./services/expense-reminder-scheduler.js');
+        await updateTenantExpenseSchedule(tenantId);
+      }
 
       res.json({
         id: updatedTenant.id,
@@ -2271,6 +2327,10 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms: updatedTenant.paymentTerms,
         showConstellationFooter: updatedTenant.showConstellationFooter ?? true,
         emailHeaderUrl: updatedTenant.emailHeaderUrl,
+        expenseRemindersEnabled: updatedTenant.expenseRemindersEnabled ?? false,
+        expenseReminderTime: updatedTenant.expenseReminderTime ?? "08:00",
+        expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
+        defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);

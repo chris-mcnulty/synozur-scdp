@@ -235,6 +235,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       }).catch((importError: any) => {
         log(`⚠️ Failed to import time reminder scheduler: ${importError.message}`);
       });
+      
+      // Start the expense reminder scheduler
+      log('🔄 Starting expense reminder scheduler...');
+      import('./services/expense-reminder-scheduler.js').then(({ startExpenseReminderScheduler }) => {
+        startExpenseReminderScheduler().then(() => {
+          log('✅ Expense reminder scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Expense reminder scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import expense reminder scheduler: ${importError.message}`);
+      });
     }).catch((dbError: any) => {
       log(`⚠️ Database not available: ${dbError.message}`);
       log('Server will continue without database features');
