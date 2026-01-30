@@ -16374,9 +16374,33 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       const invoiceDate = formatQBODate(rawInvoiceDate);
       
-      // Build CSV content with QuickBooks format
-      // Header: Customer, InvoiceDate, InvoiceNo, Item, ItemQuantity, ItemRate, ItemAmount
-      let csv = 'Customer,InvoiceDate,InvoiceNo,Item,ItemQuantity,ItemRate,ItemAmount\n';
+      // Calculate Due Date based on payment terms (default Net 30)
+      const calculateDueDate = (invoiceDateStr: string, paymentTerms?: string): string => {
+        const [year, month, day] = invoiceDateStr.split('-').map(Number);
+        const invoiceDateObj = new Date(year, month - 1, day);
+        
+        // Parse payment terms (e.g., "Net 30", "Net 45", "Due on Receipt")
+        let daysToAdd = 30; // Default
+        if (paymentTerms) {
+          const match = paymentTerms.match(/Net\s*(\d+)/i);
+          if (match) {
+            daysToAdd = parseInt(match[1], 10);
+          } else if (paymentTerms.toLowerCase().includes('receipt')) {
+            daysToAdd = 0;
+          }
+        }
+        
+        invoiceDateObj.setDate(invoiceDateObj.getDate() + daysToAdd);
+        const dueMonth = String(invoiceDateObj.getMonth() + 1).padStart(2, '0');
+        const dueDay = String(invoiceDateObj.getDate()).padStart(2, '0');
+        const dueYear = invoiceDateObj.getFullYear();
+        return `${dueMonth}/${dueDay}/${dueYear}`;
+      };
+      
+      // Build CSV content with QuickBooks required format
+      // Required fields: Invoice Number, Customer, Invoice Date, Due Date, Item Amount
+      // Recommended fields: Product/Service, Description, Qty, Rate, Memo
+      let csv = 'Invoice Number,Customer,Invoice Date,Due Date,Product/Service,Description,Qty,Rate,Item Amount,Memo\n';
       
       // Group lines by client to generate one invoice per client
       const linesByClient = lines.reduce((acc: any, line) => {
@@ -16392,8 +16416,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         return acc;
       }, {});
       
+      // Warn if total lines exceed QBO limit
+      const totalLines = lines.length;
+      if (totalLines > 1000) {
+        console.warn(`[QBO Export] Warning: ${totalLines} lines exceeds QBO limit of 1000 rows per CSV`);
+      }
+      
       // Generate CSV rows
       for (const [clientId, group] of Object.entries(linesByClient) as any[]) {
+        // Calculate due date based on client payment terms or batch setting
+        const paymentTerms = group.client.paymentTerms || batchDetails.paymentTerms || 'Net 30';
+        const dueDate = calculateDueDate(rawInvoiceDate, paymentTerms);
         
         for (const line of group.lines) {
           // Validate required fields
@@ -16409,8 +16442,6 @@ export async function registerRoutes(app: Express): Promise<void> {
           const itemAmount = formatAmount(rawAmount);
           
           // Handle quantity and rate properly for fixed-price vs time-based items
-          // For time/rate items: provide Qty and Rate, leave ItemAmount empty (QBO calculates it)
-          // For fixed-price items: Qty=1, Rate=amount, leave ItemAmount empty
           let quantity: string;
           let rate: string;
           
@@ -16424,22 +16455,24 @@ export async function registerRoutes(app: Express): Promise<void> {
             rate = itemAmount;
           }
           
-          // Build item description: "Project: [Name] - [Type] - [Description]"
-          let itemParts: string[] = [line.project.name];
+          // Product/Service - use hierarchical format "Project:Type" for QBO
+          let productService = line.project.name;
           if (line.type) {
-            itemParts.push(line.type.charAt(0).toUpperCase() + line.type.slice(1));
+            productService = `${line.project.name}:${line.type.charAt(0).toUpperCase() + line.type.slice(1)}`;
           }
-          if (line.description) {
-            itemParts.push(line.description);
-          }
-          const itemDescription = itemParts.join(' - ');
           
-          // Generate unique invoice number per client: batchId-C1, batchId-C2, etc.
-          const clientInvoiceNo = `${batchId}-C${group.clientIndex}`;
+          // Description - detailed line description
+          const description = line.description || '';
           
-          // Add row with all fields properly CSV-escaped and quoted
-          // Leave ItemAmount empty to let QuickBooks calculate Qty × Rate
-          csv += `${csvField(group.client.name)},${csvField(invoiceDate)},${csvField(clientInvoiceNo)},${csvField(itemDescription)},${csvField(quantity)},${csvField(rate)},\n`;
+          // Memo - batch-level notes
+          const memo = batchDetails.notes || '';
+          
+          // Generate unique invoice number per client: INV-batchId-C1, INV-batchId-C2, etc.
+          const clientInvoiceNo = `INV-${batchId.substring(0, 8)}-C${group.clientIndex}`;
+          
+          // Add row with all required QBO fields
+          // Invoice-level fields repeat on every line (QBO merges them automatically)
+          csv += `${csvField(clientInvoiceNo)},${csvField(group.client.name)},${csvField(invoiceDate)},${csvField(dueDate)},${csvField(productService)},${csvField(description)},${csvField(quantity)},${csvField(rate)},${csvField(itemAmount)},${csvField(memo)}\n`;
         }
       }
       
