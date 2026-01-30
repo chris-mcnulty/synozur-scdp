@@ -2244,6 +2244,98 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Upload email header image (admin only)
+  app.post("/api/tenant/email-header/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+      
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant ID is required" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const file = req.file;
+      const allowedTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+      
+      if (!allowedTypes.includes(file.mimetype)) {
+        return res.status(400).json({ message: "Only PNG, JPEG, GIF, and WebP images are allowed" });
+      }
+      
+      // Size limit: 2MB
+      if (file.size > 2 * 1024 * 1024) {
+        return res.status(400).json({ message: "File size must be under 2MB" });
+      }
+
+      // Store in object storage
+      const { Storage } = await import("@google-cloud/storage");
+      const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+      
+      const objectStorageClient = new Storage({
+        credentials: {
+          audience: "replit",
+          subject_token_type: "access_token",
+          token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+          type: "external_account",
+          credential_source: {
+            url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+            format: {
+              type: "json",
+              subject_token_field_name: "access_token",
+            },
+          },
+          universe_domain: "googleapis.com",
+        },
+        projectId: "",
+      });
+
+      // Use public directory for email headers so they're accessible via URL
+      const publicObjectDir = process.env.PUBLIC_OBJECT_SEARCH_PATHS;
+      if (!publicObjectDir) {
+        return res.status(500).json({ message: "Object storage not configured" });
+      }
+
+      // Parse the public object directory path
+      const firstPath = publicObjectDir.split(',')[0].trim();
+      const pathParts = firstPath.split('/').filter((p: string) => p);
+      if (pathParts.length < 1) {
+        return res.status(500).json({ message: "Invalid object storage configuration" });
+      }
+
+      const bucketName = pathParts[0];
+      const bucketPath = pathParts.slice(1).join('/');
+      
+      // Create unique filename
+      const ext = file.originalname.split('.').pop() || 'png';
+      const filename = `email-header-${tenantId}-${Date.now()}.${ext}`;
+      const objectPath = `${bucketPath}/email-headers/${filename}`;
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const gcsFile = bucket.file(objectPath);
+
+      await gcsFile.save(file.buffer, {
+        contentType: file.mimetype,
+        metadata: {
+          cacheControl: 'public, max-age=86400',
+        },
+      });
+
+      // Get the public URL
+      const replitDomain = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DEPLOYMENT_URL;
+      const publicUrl = `https://${replitDomain}/object-storage/${objectPath}`;
+      
+      console.log(`[EMAIL_HEADER_UPLOAD] Stored email header for tenant ${tenantId}: ${objectPath}`);
+      
+      res.json({ url: publicUrl, filename });
+    } catch (error: any) {
+      console.error("[EMAIL_HEADER_UPLOAD] Failed to upload email header:", error);
+      res.status(500).json({ message: "Failed to upload email header" });
+    }
+  });
+
   // System Settings (admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {

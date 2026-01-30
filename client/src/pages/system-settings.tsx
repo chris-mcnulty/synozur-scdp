@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -147,6 +147,104 @@ type RateSettingsData = z.infer<typeof rateSettingsSchema>;
 type CompanySettingsData = z.infer<typeof companySettingsSchema>;
 type VocabularySelectionsData = z.infer<typeof vocabularySelectionsSchema>;
 type EstimationFactorsData = z.infer<typeof estimationFactorsSchema>;
+
+function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string) => void }) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a PNG, JPEG, GIF, or WebP image.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please upload an image under 2MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/tenant/email-header/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Upload failed');
+      }
+
+      const data = await response.json();
+      onUploadSuccess(data.url);
+      toast({
+        title: "Image uploaded",
+        description: "Email header image uploaded successfully. Save settings to apply.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload image. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  return (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isUploading}
+      >
+        {isUploading ? (
+          <>
+            <span className="animate-spin mr-2">&#8987;</span>
+            Uploading...
+          </>
+        ) : (
+          <>
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Image
+          </>
+        )}
+      </Button>
+    </>
+  );
+}
 
 function TestEmailButton() {
   const { toast } = useToast();
@@ -646,16 +744,33 @@ export default function SystemSettings() {
                             <Mail className="h-4 w-4" />
                             Email Header Image (optional)
                           </FormLabel>
-                          <FormControl>
-                            <Input 
-                              {...field} 
-                              placeholder="https://example.com/email-header.png" 
-                              data-testid="input-email-header"
-                            />
-                          </FormControl>
+                          <div className="flex gap-2">
+                            <FormControl>
+                              <Input 
+                                {...field} 
+                                placeholder="https://example.com/email-header.png" 
+                                data-testid="input-email-header"
+                                className="flex-1"
+                              />
+                            </FormControl>
+                            <EmailHeaderUpload onUploadSuccess={(url) => field.onChange(url)} />
+                          </div>
                           <FormDescription>
-                            Enter a URL to a header image that will appear at the top of all outgoing emails. Recommended size: 600px wide.
+                            Upload an image or enter a URL. Recommended size: 600px wide, PNG or JPG format.
                           </FormDescription>
+                          {field.value && (
+                            <div className="mt-2 p-2 border rounded bg-muted/50">
+                              <p className="text-xs text-muted-foreground mb-2">Preview:</p>
+                              <img 
+                                src={field.value} 
+                                alt="Email header preview" 
+                                className="max-h-20 max-w-full object-contain"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            </div>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

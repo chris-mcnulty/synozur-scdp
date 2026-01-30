@@ -4,7 +4,7 @@ modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "atk", "cairo", "chromium", "cups", "dbus", "expat", "fontconfig", "freetype", "gdk-pixbuf", "glib", "glibcLocales", "gtk3", "libxkbcommon", "mesa", "nspr", "nss", "pango", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "zulu11", "unzip"]
+packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "atk", "cairo", "chromium", "cups", "dbus", "expat", "fontconfig", "freetype", "gdk-pixbuf", "glib", "glibcLocales", "gtk3", "libxkbcommon", "mesa", "nspr", "nss", "pango", "unzip", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "zulu11"]
 
 [deployment]
 run = ["sh", "-c", "npm start"]
