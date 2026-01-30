@@ -12041,7 +12041,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/platform/oconus/upload", requireAuth, upload.single('file'), async (req, res) => {
+  app.post("/api/platform/oconus/upload", requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
       const platformRole = user?.platformRole;
@@ -12049,6 +12049,36 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
         return res.status(403).json({ message: "Only platform admins can upload OCONUS data" });
       }
+      
+      // Use a custom multer configuration that accepts ZIP and TXT files
+      const oconusUpload = multer({
+        storage: multer.memoryStorage(),
+        limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+        fileFilter: (req, file, cb) => {
+          const allowedMimeTypes = [
+            'application/zip',
+            'application/x-zip-compressed',
+            'application/x-zip',
+            'text/plain',
+            'application/octet-stream' // Some systems send ZIP as this
+          ];
+          if (allowedMimeTypes.includes(file.mimetype) || 
+              file.originalname.endsWith('.zip') || 
+              file.originalname.endsWith('.txt')) {
+            cb(null, true);
+          } else {
+            cb(new Error(`File type ${file.mimetype} not allowed. Please upload a ZIP or TXT file.`));
+          }
+        }
+      });
+      
+      // Handle the file upload
+      await new Promise<void>((resolve, reject) => {
+        oconusUpload.single('file')(req, res, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
