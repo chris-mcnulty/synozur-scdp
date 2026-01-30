@@ -13233,8 +13233,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Only owner can submit
-      if (report.submitterId !== req.user!.id) {
+      // Owner or admin roles can submit
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'billing-admin'].includes(userRole) || 
+                      platformRoles.includes('global_admin') || 
+                      platformRoles.includes('constellation_admin');
+      
+      if (report.submitterId !== req.user!.id && !isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
 
