@@ -2245,12 +2245,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Upload email header image (admin only)
-  app.post("/api/tenant/email-header/upload", requireAuth, requireRole(["admin"]), upload.single('file'), async (req, res) => {
+  app.post("/api/tenant/email-header/upload", requireAuth, upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
-      console.log("[EMAIL_HEADER_UPLOAD] User:", user?.id, "primaryTenantId:", user?.primaryTenantId, "role:", user?.role);
+      
+      // Check if user has admin permissions (tenant admin or platform admin)
+      const isAdmin = ['admin', 'billing-admin'].includes(user?.role) || 
+                      (user?.platformRoles || []).includes('global_admin') || 
+                      (user?.platformRoles || []).includes('constellation_admin');
+      
+      if (!isAdmin) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      
       const tenantId = user?.primaryTenantId || 'platform';
-      console.log("[EMAIL_HEADER_UPLOAD] Using tenantId:", tenantId);
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
