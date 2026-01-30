@@ -2360,6 +2360,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       console.log(`[EMAIL_HEADER_UPLOAD] Stored email header for tenant ${tenantId}: ${objectPath}`);
       
+      // Save the URL to the tenant record
+      if (tenantId) {
+        await storage.updateTenant(tenantId, { emailHeaderUrl: publicUrl });
+        console.log(`[EMAIL_HEADER_UPLOAD] Updated tenant ${tenantId} with emailHeaderUrl: ${publicUrl}`);
+      }
+      
       res.json({ url: publicUrl, filename });
     } catch (error: any) {
       console.error("[EMAIL_HEADER_UPLOAD] Failed to upload email header:", error);
