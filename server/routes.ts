@@ -2284,20 +2284,33 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user as any;
       const tenantId = user?.primaryTenantId;
       
+      console.log("[TEST_EMAIL] Starting test email send", {
+        userEmail: user?.email,
+        userName: user?.name,
+        tenantId: tenantId
+      });
+      
       if (!user?.email || !user?.name) {
         return res.status(400).json({ message: "User email and name are required" });
       }
 
       // Get tenant branding
       const tenant = tenantId ? await storage.getTenant(tenantId) : null;
+      console.log("[TEST_EMAIL] Tenant fetched:", tenant ? {
+        id: tenant.id,
+        name: tenant.name,
+        emailHeaderUrl: tenant.emailHeaderUrl
+      } : null);
+      
       const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
+      console.log("[TEST_EMAIL] Branding to be used:", branding);
       
       await emailService.sendTestEmail(
         { email: user.email, name: user.name },
         branding
       );
       
-      res.json({ message: "Test email sent successfully", sentTo: user.email });
+      res.json({ message: "Test email sent successfully", sentTo: user.email, branding });
     } catch (error: any) {
       console.error("[TEST_EMAIL] Failed to send test email:", error);
       res.status(500).json({ message: "Failed to send test email" });
@@ -2414,10 +2427,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         },
       });
 
-      // Get the public URL - use production URL for email accessibility
-      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL 
-        || (process.env.NODE_ENV === 'production' ? 'scdp.synozur.com' : null)
-        || process.env.REPLIT_DEV_DOMAIN;
+      // Get the public URL - use the appropriate domain for the current environment
+      // In production (deployment), use REPLIT_DEPLOYMENT_URL
+      // In development, use REPLIT_DEV_DOMAIN so emails work correctly
+      const baseUrl = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
+      if (!baseUrl) {
+        return res.status(500).json({ message: "Unable to determine public URL for email header" });
+      }
       const publicUrl = `https://${baseUrl}/object-storage/${objectPath}`;
       
       console.log(`[EMAIL_HEADER_UPLOAD] Stored email header for tenant ${tenantId}: ${objectPath}`);

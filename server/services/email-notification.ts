@@ -216,8 +216,10 @@ export class EmailNotificationService {
    * Send a test email to verify branding and email configuration
    */
   async sendTestEmail(recipient: EmailRecipient, branding?: TenantBranding): Promise<void> {
+    console.log("[EMAIL_SERVICE] sendTestEmail called with branding:", JSON.stringify(branding, null, 2));
     const subject = `Test Email from ${branding?.companyName || 'Constellation'}`;
     const header = getEmailHeader(branding);
+    console.log("[EMAIL_SERVICE] Generated header HTML:", header ? header.substring(0, 200) + '...' : '(empty)');
     const testButton = `
       <p style="margin: 20px 0;">
         <a href="#" style="background-color: #7C3AED; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Sample Button</a>
