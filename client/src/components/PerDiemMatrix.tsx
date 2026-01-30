@@ -194,8 +194,16 @@ export function PerDiemMatrix({
         return;
       }
       
-      const hasLocation = (city && state) || zip;
+      // For ZIP codes, only lookup if it's a valid 5-digit format
+      const isValidZip = zip && /^\d{5}$/.test(zip);
+      const hasLocation = (city && state) || isValidZip;
+      
       if (!hasLocation) {
+        // Don't show error while user is still typing ZIP
+        if (zip && zip.length > 0 && zip.length < 5) {
+          // User is typing - don't clear or show error
+          return;
+        }
         setBreakdown(null);
         setGsaRate(0);
         setRateError(null);
@@ -206,7 +214,7 @@ export function PerDiemMatrix({
       setRateError(null);
       try {
         let url = '';
-        if (zip) {
+        if (isValidZip) {
           url = `/api/perdiem/rates/zip/${zip}`;
         } else if (city && state) {
           url = `/api/perdiem/rates/city/${encodeURIComponent(city)}/state/${state}`;
@@ -214,7 +222,6 @@ export function PerDiemMatrix({
         
         if (url) {
           console.log('[PerDiemMatrix] Fetching GSA rates from:', url);
-          console.log('[PerDiemMatrix] Current values - city:', city, 'state:', state, 'zip:', zip);
           const rate = await apiRequest(url);
           console.log('[PerDiemMatrix] Response:', JSON.stringify(rate));
           if (rate && rate.meals) {
@@ -236,7 +243,9 @@ export function PerDiemMatrix({
       }
     };
     
-    fetchBreakdown();
+    // Debounce the fetch to avoid calling API on every keystroke
+    const timeoutId = setTimeout(fetchBreakdown, 300);
+    return () => clearTimeout(timeoutId);
   }, [city, state, zip, locationType, oconusCountry, oconusLocation, startDate]);
 
   // Notify parent when breakdown changes
