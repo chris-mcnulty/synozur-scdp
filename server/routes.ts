@@ -2350,7 +2350,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({ url: publicUrl, filename });
     } catch (error: any) {
       console.error("[EMAIL_HEADER_UPLOAD] Failed to upload email header:", error);
-      res.status(500).json({ message: "Failed to upload email header" });
+      console.error("[EMAIL_HEADER_UPLOAD] Error details:", {
+        message: error.message,
+        stack: error.stack,
+        code: error.code
+      });
+      res.status(500).json({ message: error.message || "Failed to upload email header" });
     }
   });
 

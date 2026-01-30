@@ -55,7 +55,7 @@ export async function getDbSession(sessionId: string): Promise<any> {
       name: session.name,
       role: session.role,
       platformRole,
-      tenantId,
+      primaryTenantId: tenantId,
       ssoProvider: session.ssoProvider,
       ssoToken: session.ssoToken,
       ssoRefreshToken: session.ssoRefreshToken,
