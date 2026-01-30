@@ -459,7 +459,7 @@ export default function ExpenseReports() {
                 </div>
 
                 <DialogFooter className="gap-2">
-                  {selectedReport.status === 'draft' && (
+                  {selectedReport.status?.toLowerCase() === 'draft' && (
                     <>
                       <Button
                         variant="destructive"
