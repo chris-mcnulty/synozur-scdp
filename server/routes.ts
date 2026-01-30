@@ -2354,8 +2354,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         },
       });
 
-      // Get the public URL
-      const replitDomain = process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DEPLOYMENT_URL;
+      // Get the public URL - prefer deployment URL (production) for email accessibility
+      const replitDomain = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
       const publicUrl = `https://${replitDomain}/object-storage/${objectPath}`;
       
       console.log(`[EMAIL_HEADER_UPLOAD] Stored email header for tenant ${tenantId}: ${objectPath}`);
