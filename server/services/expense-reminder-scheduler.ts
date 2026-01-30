@@ -9,7 +9,7 @@ interface ExpenseReminderRecipient {
   email: string;
   name: string;
   tenantId: string;
-  draftExpenseCount: number;
+  unsubmittedExpenseCount: number;
 }
 
 interface TenantSchedule {
@@ -49,18 +49,20 @@ async function getUsersWithUnsubmittedExpenses(tenantId: string): Promise<Expens
   for (const user of tenantUsers) {
     const expenses = await storage.getExpenses({ personId: user.id });
     
-    const draftExpenses = expenses.filter(exp => 
-      exp.approvalStatus === 'draft' && 
-      !expenseIdsInReports.has(exp.id)
+    // Filter to only expenses that belong to this tenant AND are not in any expense report
+    // The key criteria is: expense is NOT associated with any expense report (regardless of approvalStatus)
+    const unsubmittedExpenses = expenses.filter(exp => 
+      (exp as any).tenantId === tenantId && // Tenant isolation
+      !expenseIdsInReports.has(exp.id) // Not in any expense report
     );
     
-    if (draftExpenses.length > 0) {
+    if (unsubmittedExpenses.length > 0) {
       recipients.push({
         userId: user.id,
         email: user.email!,
         name: user.name,
         tenantId: tenantId,
-        draftExpenseCount: draftExpenses.length
+        unsubmittedExpenseCount: unsubmittedExpenses.length
       });
     }
   }
@@ -77,14 +79,15 @@ async function sendExpenseReminderEmail(
     ? `<img src="${branding.emailHeaderUrl}" alt="${escapeHtml(branding.companyName || 'Company')}" style="max-width: 100%; height: auto; margin-bottom: 20px;" />`
     : '';
 
-  const subject = `Expense Reminder: ${recipient.draftExpenseCount} expense${recipient.draftExpenseCount === 1 ? '' : 's'} pending submission`;
+  const count = recipient.unsubmittedExpenseCount;
+  const subject = `Expense Reminder: ${count} expense${count === 1 ? '' : 's'} pending submission`;
   const body = `
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
         ${headerHtml}
         <h2 style="color: #7C3AED;">Expense Submission Reminder</h2>
         <p>Hi ${escapeHtml(recipient.name)},</p>
-        <p>This is a friendly reminder that you have <strong>${recipient.draftExpenseCount} expense${recipient.draftExpenseCount === 1 ? '' : 's'}</strong> that ${recipient.draftExpenseCount === 1 ? 'has' : 'have'} not been added to an expense report for approval.</p>
+        <p>This is a friendly reminder that you have <strong>${count} expense${count === 1 ? '' : 's'}</strong> that ${count === 1 ? 'has' : 'have'} not been added to an expense report for approval.</p>
         <p style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
           To get reimbursed, please add your expenses to an expense report and submit it for approval.
         </p>
