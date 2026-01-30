@@ -10084,6 +10084,16 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated;
   }
+
+  async getTenants(): Promise<Tenant[]> {
+    return await db.select().from(tenants);
+  }
+
+  async getExpenseIdsInReports(): Promise<Set<string>> {
+    const items = await db.select({ expenseId: expenseReportItems.expenseId })
+      .from(expenseReportItems);
+    return new Set(items.map(item => item.expenseId));
+  }
 }
 
 export const storage = new DatabaseStorage();
