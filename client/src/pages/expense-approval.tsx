@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
-import { CheckCircle, XCircle, FileText, Receipt, User } from "lucide-react";
+import { CheckCircle, XCircle, FileText, Receipt, User, Send } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -116,6 +116,30 @@ export default function ExpenseApproval() {
       toast({
         title: "Error",
         description: error.message || "Failed to reject expense report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Submit report mutation (for admins to submit on behalf of users)
+  const submitReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return await apiRequest(`/api/expense-reports/${reportId}/submit`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      toast({
+        title: "Success",
+        description: "Expense report submitted for approval",
+      });
+      setSelectedReportId(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit expense report",
         variant: "destructive",
       });
     },
@@ -392,6 +416,16 @@ export default function ExpenseApproval() {
                 </div>
 
                 <DialogFooter className="gap-2">
+                  {selectedReport.status === 'draft' && (
+                    <Button
+                      onClick={() => submitReportMutation.mutate(selectedReport.id)}
+                      disabled={submitReportMutation.isPending || (selectedReport.items || []).length === 0}
+                      data-testid="button-submit-report"
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      {submitReportMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                    </Button>
+                  )}
                   {selectedReport.status === 'submitted' && (
                     <>
                       <Button
