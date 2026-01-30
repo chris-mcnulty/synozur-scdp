@@ -213,7 +213,9 @@ export function PerDiemMatrix({
         }
         
         if (url) {
+          console.log('[PerDiemMatrix] Fetching GSA rates from:', url);
           const rate = await apiRequest(url);
+          console.log('[PerDiemMatrix] Response:', rate);
           if (rate && rate.meals) {
             setGsaRate(rate.meals);
             const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.meals}`);
