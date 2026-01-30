@@ -354,7 +354,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Serve files from object storage (public directory)
   app.get("/object-storage/*", async (req, res) => {
     try {
-      const objectPath = req.params[0];
+      const objectPath = (req.params as any)[0] as string;
       
       // Security: only allow access to public directory
       if (!objectPath.startsWith('public/')) {
