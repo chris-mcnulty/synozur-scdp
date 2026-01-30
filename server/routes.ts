@@ -12514,7 +12514,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Regular expenses endpoint - "My Expenses" page always shows current user's expenses only
   app.get("/api/expenses", requireAuth, async (req, res) => {
     try {
-      const { projectId, startDate, endDate } = req.query as Record<string, string>;
+      const { projectId, startDate, endDate, pendingOnly } = req.query as Record<string, string>;
 
       // Always filter to current user's expenses - this is the "My Expenses" endpoint
       // Admins who want to see all expenses should use /api/expenses-admin
@@ -12525,6 +12525,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (projectId) filters.projectId = projectId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
+      // Default to pendingOnly=true (show only pending expenses), unless explicitly set to false
+      filters.pendingOnly = pendingOnly !== 'false';
 
       const expenses = await storage.getExpenses(filters);
       res.json(expenses);

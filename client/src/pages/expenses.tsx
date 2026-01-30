@@ -127,6 +127,7 @@ export default function Expenses() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [showAllExpenses, setShowAllExpenses] = useState<boolean>(false); // Default: show pending only
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
   const [perDiemBreakdown, setPerDiemBreakdown] = useState<any>(null); // Per diem calculation breakdown
@@ -150,7 +151,8 @@ export default function Expenses() {
   const [, navigate] = useLocation();
 
   // Check if current user can assign expenses to other people (create on behalf of others)
-  const canAssignToPerson = hasAnyRole(['admin', 'pm', 'billing-admin', 'executive']);
+  // Only admins can create expenses on behalf of other users
+  const canAssignToPerson = hasAnyRole(['admin', 'billing-admin']);
 
   const form = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseFormSchema),
@@ -189,8 +191,22 @@ export default function Expenses() {
     queryKey: ["/api/projects"],
   });
 
-  const { data: expenses = [], isLoading } = useQuery<(Expense & { project: Project & { client: Client } })[]>({
-    queryKey: ["/api/expenses"],
+  const { data: expenses = [], isLoading } = useQuery<(Expense & { 
+    project: Project & { client: Client };
+    expenseReport?: { id: string; reportNumber: string; title: string; status: string } | null;
+  })[]>({
+    queryKey: ["/api/expenses", { pendingOnly: !showAllExpenses }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('pendingOnly', (!showAllExpenses).toString());
+      const response = await fetch(`/api/expenses?${params.toString()}`, {
+        headers: {
+          'X-Session-Id': localStorage.getItem('sessionId') || '',
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch expenses');
+      return response.json();
+    },
   });
 
   // Filter and format projects: only active, with CLIENTSHORTNAME | Project name format
@@ -1980,10 +1996,25 @@ export default function Expenses() {
           {/* Expenses List - hidden when Per Diem is selected */}
           <Card className={cn("lg:col-span-2", form.watch("category") === "perdiem" && "hidden")} data-testid="expenses-list">
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <Receipt className="w-5 h-5 mr-2" />
-                Recent Expenses
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center">
+                  <Receipt className="w-5 h-5 mr-2" />
+                  {showAllExpenses ? 'All Expenses' : 'Pending Expenses'}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {showAllExpenses ? 'Showing all' : 'Showing pending only'}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAllExpenses(!showAllExpenses)}
+                    data-testid="toggle-all-expenses"
+                  >
+                    {showAllExpenses ? 'Show Pending Only' : 'Show All'}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -2027,6 +2058,21 @@ export default function Expenses() {
                           {expense.reimbursable && (
                             <Badge className="bg-secondary/10 text-secondary">
                               Reimbursable
+                            </Badge>
+                          )}
+                          {expense.expenseReport && (
+                            <Badge 
+                              variant="outline" 
+                              className={cn(
+                                expense.expenseReport.status === 'approved' && 'border-green-500 text-green-600',
+                                expense.expenseReport.status === 'submitted' && 'border-yellow-500 text-yellow-600',
+                                expense.expenseReport.status === 'draft' && 'border-gray-400 text-gray-500',
+                                expense.expenseReport.status === 'rejected' && 'border-red-500 text-red-600'
+                              )}
+                              data-testid={`expense-report-badge-${expense.id}`}
+                            >
+                              <FileText className="w-3 h-3 mr-1" />
+                              {expense.expenseReport.reportNumber} ({expense.expenseReport.status})
                             </Badge>
                           )}
                         </div>

@@ -3035,11 +3035,13 @@ export class DatabaseStorage implements IStorage {
     projectId?: string; 
     projectResourceId?: string; 
     startDate?: string; 
-    endDate?: string 
+    endDate?: string;
+    pendingOnly?: boolean; // If true, exclude expenses in approved expense reports
   }): Promise<(Expense & { 
     person: User; 
     project: Project & { client: Client }; 
-    projectResource?: User; 
+    projectResource?: User;
+    expenseReport?: { id: string; reportNumber: string; title: string; status: string } | null;
   })[]> {
     // OPTIMIZED: Use single query with all necessary joins to avoid N+1 problem
     // We'll use separate queries but batch them efficiently to get all project resources at once
@@ -3081,8 +3083,44 @@ export class DatabaseStorage implements IStorage {
       });
     }
     
+    // BATCH FETCH: Get expense report info for all expenses
+    const expenseIds = rows.map(row => row.expenses.id);
+    let expenseReportMap = new Map<string, { id: string; reportNumber: string; title: string; status: string }>();
+    
+    if (expenseIds.length > 0) {
+      const reportItems = await db.select({
+        expenseId: expenseReportItems.expenseId,
+        reportId: expenseReports.id,
+        reportNumber: expenseReports.reportNumber,
+        title: expenseReports.title,
+        status: expenseReports.status,
+      })
+        .from(expenseReportItems)
+        .innerJoin(expenseReports, eq(expenseReportItems.reportId, expenseReports.id))
+        .where(inArray(expenseReportItems.expenseId, expenseIds));
+      
+      reportItems.forEach(item => {
+        expenseReportMap.set(item.expenseId, {
+          id: item.reportId,
+          reportNumber: item.reportNumber,
+          title: item.title,
+          status: item.status,
+        });
+      });
+    }
+    
+    // Filter results if pendingOnly is true (exclude expenses in approved reports)
+    let filteredRows = rows;
+    if (filters.pendingOnly) {
+      filteredRows = rows.filter(row => {
+        const report = expenseReportMap.get(row.expenses.id);
+        // Include if: no report, or report not approved
+        return !report || report.status !== 'approved';
+      });
+    }
+    
     // Transform results to expected format with batched project resources
-    return rows.map(row => {
+    return filteredRows.map(row => {
       // Handle case where person might not exist (deleted user, etc.)
       const person = row.users || {
         id: row.expenses.personId,
@@ -3173,6 +3211,9 @@ export class DatabaseStorage implements IStorage {
         date: formatDateToYYYYMMDD(row.expenses.date) || row.expenses.date
       };
 
+      // Get expense report info from our batched fetch
+      const expenseReport = expenseReportMap.get(row.expenses.id) || null;
+
       return {
         ...expense,
         person,
@@ -3180,7 +3221,8 @@ export class DatabaseStorage implements IStorage {
           ...project,
           client
         },
-        projectResource
+        projectResource,
+        expenseReport
       };
     });
   }
