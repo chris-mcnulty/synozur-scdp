@@ -119,6 +119,127 @@ const individualEditSchema = z.object({
 
 type IndividualEditData = z.infer<typeof individualEditSchema>;
 
+// Form component for creating expense reports on behalf of users
+function CreateExpenseReportForm({
+  expenses,
+  selectedExpenseIds,
+  onSubmit,
+  onCancel,
+  isPending,
+}: {
+  expenses: any[];
+  selectedExpenseIds: string[];
+  onSubmit: (data: { title: string; description?: string; expenseIds: string[]; submitterId: string }) => void;
+  onCancel: () => void;
+  isPending: boolean;
+}) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  // Get selected expenses details
+  const selectedExpensesDetails = expenses.filter(e => selectedExpenseIds.includes(e.id));
+  
+  // Check if all selected expenses belong to the same person
+  const personIds = new Set(selectedExpensesDetails.map(e => e.person?.id).filter(Boolean));
+  const singlePerson = personIds.size === 1;
+  const submitterId = singlePerson ? Array.from(personIds)[0] : null;
+  const personName = singlePerson ? selectedExpensesDetails[0]?.person?.name : null;
+  
+  // Calculate total
+  const totalAmount = selectedExpensesDetails.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!submitterId || !title.trim()) return;
+    onSubmit({
+      title: title.trim(),
+      description: description.trim() || undefined,
+      expenseIds: selectedExpenseIds,
+      submitterId,
+    });
+  };
+
+  if (selectedExpenseIds.length === 0) {
+    return (
+      <div className="py-4 text-center text-muted-foreground">
+        No expenses selected. Please select expenses to include in the report.
+      </div>
+    );
+  }
+
+  if (!singlePerson) {
+    return (
+      <div className="py-4">
+        <div className="text-center text-destructive mb-4">
+          Selected expenses belong to multiple people. Please select expenses from only one person.
+        </div>
+        <div className="text-sm text-muted-foreground">
+          <p className="font-medium mb-2">Selected expenses by person:</p>
+          {Array.from(new Set(selectedExpensesDetails.map(e => e.person?.name || 'Unknown'))).map(name => {
+            const count = selectedExpensesDetails.filter(e => e.person?.name === name).length;
+            return <p key={name}>{name}: {count} expense{count !== 1 ? 's' : ''}</p>;
+          })}
+        </div>
+        <div className="flex justify-end mt-4">
+          <Button variant="outline" onClick={onCancel}>Close</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="p-4 bg-muted rounded-lg">
+        <p className="text-sm font-medium">Creating expense report for: <span className="text-primary">{personName}</span></p>
+        <p className="text-sm text-muted-foreground">
+          {selectedExpenseIds.length} expense{selectedExpenseIds.length !== 1 ? 's' : ''} totaling ${totalAmount.toFixed(2)}
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Report Title *</label>
+        <Input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g., March 2026 Travel Expenses"
+          required
+          data-testid="input-report-title"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Description (optional)</label>
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Optional notes about this expense report..."
+          rows={3}
+          data-testid="input-report-description"
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isPending || !title.trim()}>
+          {isPending ? (
+            <>
+              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+              Creating...
+            </>
+          ) : (
+            <>
+              <FileText className="w-4 h-4 mr-2" />
+              Create Report
+            </>
+          )}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 export default function ExpenseManagement() {
   // Default filter: uninvoiced expenses
   const [filters, setFilters] = useState<ExpenseFilters>({ billedFlag: 'false' });
@@ -126,6 +247,7 @@ export default function ExpenseManagement() {
   const [groupByPerson, setGroupByPerson] = useState(false);
   const [selectedExpenses, setSelectedExpenses] = useState<string[]>([]);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [createReportDialogOpen, setCreateReportDialogOpen] = useState(false);
   const [individualEditDialogOpen, setIndividualEditDialogOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<(Expense & { 
     project: Project & { client: Client }, 
@@ -338,6 +460,33 @@ export default function ExpenseManagement() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete expense. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create expense report on behalf of user mutation
+  const createReportMutation = useMutation({
+    mutationFn: async (data: { title: string; description?: string; expenseIds: string[]; submitterId: string }) => {
+      return await apiRequest("/api/expense-reports", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses/admin"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      setCreateReportDialogOpen(false);
+      setSelectedExpenses([]);
+      toast({
+        title: "Expense report created",
+        description: "The expense report has been created successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create expense report.",
         variant: "destructive",
       });
     },
@@ -588,6 +737,16 @@ export default function ExpenseManagement() {
                   <Edit className="w-4 h-4 mr-2" />
                   Bulk Edit ({selectedExpenses.length})
                 </Button>
+                {hasAnyRole(['admin', 'billing-admin']) && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setCreateReportDialogOpen(true)}
+                    data-testid="button-create-report"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Create Expense Report
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -1370,6 +1529,22 @@ export default function ExpenseManagement() {
                 </DialogFooter>
               </form>
             </Form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Expense Report Dialog */}
+        <Dialog open={createReportDialogOpen} onOpenChange={setCreateReportDialogOpen}>
+          <DialogContent data-testid="dialog-create-report">
+            <DialogHeader>
+              <DialogTitle>Create Expense Report</DialogTitle>
+            </DialogHeader>
+            <CreateExpenseReportForm
+              expenses={expenses}
+              selectedExpenseIds={selectedExpenses}
+              onSubmit={(data) => createReportMutation.mutate(data)}
+              onCancel={() => setCreateReportDialogOpen(false)}
+              isPending={createReportMutation.isPending}
+            />
           </DialogContent>
         </Dialog>
 

@@ -13431,11 +13431,36 @@ export async function registerRoutes(app: Express): Promise<void> {
   // POST /api/expense-reports - Create expense report
   app.post("/api/expense-reports", requireAuth, async (req, res) => {
     try {
-      const { expenseIds, ...reportData } = req.body;
+      const { expenseIds, submitterId: requestedSubmitterId, ...reportData } = req.body;
+      
+      // Determine the submitter
+      let submitterId = req.user!.id;
+      
+      // Admins can create expense reports on behalf of other users
+      if (requestedSubmitterId && requestedSubmitterId !== req.user!.id) {
+        const userRole = (req.user as any)?.role;
+        const platformRoles = (req.user as any)?.platformRoles || [];
+        const isAdmin = ['admin', 'billing-admin'].includes(userRole) || 
+                        platformRoles.includes('global_admin') || 
+                        platformRoles.includes('constellation_admin');
+        
+        if (!isAdmin) {
+          return res.status(403).json({ message: "Only admins can create expense reports on behalf of other users" });
+        }
+        
+        // Verify the requested submitter exists
+        const targetUser = await storage.getUser(requestedSubmitterId);
+        if (!targetUser) {
+          return res.status(400).json({ message: "Specified submitter user not found" });
+        }
+        
+        submitterId = requestedSubmitterId;
+        console.log(`[EXPENSE_REPORTS] Admin ${req.user!.id} creating report on behalf of user ${submitterId}`);
+      }
       
       const validatedData = insertExpenseReportSchema.parse({
         ...reportData,
-        submitterId: req.user!.id, // Always use the authenticated user
+        submitterId,
       });
 
       const report = await storage.createExpenseReport(validatedData, expenseIds || []);
