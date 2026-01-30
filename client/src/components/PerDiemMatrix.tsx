@@ -43,6 +43,8 @@ interface PerDiemMatrixProps {
   onTotalChange: (total: number) => void;
   onBreakdownChange?: (breakdown: MIEBreakdown | null) => void;
   onLocationTypeChange?: (type: PerDiemLocationType) => void;
+  onCityChange?: (city: string) => void;
+  onStateChange?: (state: string) => void;
   onOconusCountryChange?: (country: string) => void;
   onOconusLocationChange?: (location: string) => void;
 }
@@ -83,6 +85,8 @@ export function PerDiemMatrix({
   onTotalChange,
   onBreakdownChange,
   onLocationTypeChange,
+  onCityChange,
+  onStateChange,
   onOconusCountryChange,
   onOconusLocationChange,
 }: PerDiemMatrixProps) {
@@ -323,21 +327,38 @@ export function PerDiemMatrix({
         </CardDescription>
         
         <div className="mt-4 space-y-4">
-          <div className="flex items-center gap-4">
-            <Label className="text-sm font-medium">Travel Location:</Label>
-            <Select 
-              value={locationType} 
-              onValueChange={(value: PerDiemLocationType) => onLocationTypeChange?.(value)}
-            >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select location type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="conus">Continental US (CONUS)</SelectItem>
-                <SelectItem value="oconus">International / OCONUS</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center space-x-3">
+            <Checkbox
+              id="oconus-checkbox"
+              checked={locationType === "oconus"}
+              onCheckedChange={(checked) => onLocationTypeChange?.(checked ? "oconus" : "conus")}
+            />
+            <Label htmlFor="oconus-checkbox" className="text-sm font-medium cursor-pointer">
+              Outside Continental US (OCONUS)
+            </Label>
           </div>
+          
+          {locationType === "conus" && (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm">City</Label>
+                <Input
+                  value={city || ""}
+                  onChange={(e) => onCityChange?.(e.target.value)}
+                  placeholder="e.g. Seattle"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm">State</Label>
+                <Input
+                  value={state || ""}
+                  onChange={(e) => onStateChange?.(e.target.value)}
+                  placeholder="e.g. WA"
+                  maxLength={2}
+                />
+              </div>
+            </div>
+          )}
           
           {locationType === "oconus" && (
             <div className="grid grid-cols-2 gap-4">

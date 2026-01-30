@@ -1766,6 +1766,12 @@ export default function Expenses() {
                               form.setValue("perDiemZip", "");
                             }
                           }}
+                          onCityChange={(city) => {
+                            form.setValue("perDiemCity", city);
+                          }}
+                          onStateChange={(state) => {
+                            form.setValue("perDiemState", state);
+                          }}
                           onOconusCountryChange={(country) => {
                             form.setValue("perDiemOconusCountry", country);
                             form.setValue("perDiemOconusLocation", "");
