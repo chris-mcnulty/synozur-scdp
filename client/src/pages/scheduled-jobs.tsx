@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Play, CheckCircle, XCircle, AlertCircle, Loader2, Calendar, Mail, RefreshCw, History } from "lucide-react";
+import { Clock, Play, CheckCircle, XCircle, AlertCircle, Loader2, Calendar, Mail, RefreshCw, History, GitBranch } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
 interface ScheduledJobRun {
@@ -27,6 +27,11 @@ interface ScheduledJobRun {
     errors?: number;
     recipientCount?: number;
     reason?: string;
+    projectsSynced?: number;
+    projectsSkipped?: number;
+    projectsFailed?: number;
+    totalCreated?: number;
+    totalUpdated?: number;
   } | null;
   errorMessage: string | null;
 }
@@ -54,6 +59,13 @@ const JOB_TYPES = [
     description: 'Sends email reminders to users who haven\'t logged time',
     icon: Clock,
     schedule: 'Weekly (configurable in settings)'
+  },
+  { 
+    id: 'planner_sync', 
+    name: 'Planner Sync', 
+    description: 'Syncs project assignments with Microsoft Planner tasks',
+    icon: GitBranch,
+    schedule: 'Every 30 minutes'
   },
 ];
 
@@ -148,6 +160,28 @@ export default function ScheduledJobsPage() {
     },
   });
 
+  const runPlannerSyncMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/admin/scheduled-jobs/planner-sync/run');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Planner sync completed",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/runs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/stats'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to run Planner sync",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatsForJob = (jobType: string): JobStats | undefined => {
     return jobStats.find(s => s.jobType === jobType);
   };
@@ -173,13 +207,25 @@ export default function ScheduledJobsPage() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {JOB_TYPES.map((job) => {
                 const stats = getStatsForJob(job.id);
                 const Icon = job.icon;
                 const isRunning = job.id === 'expense_reminder' 
                   ? runExpenseRemindersMutation.isPending 
-                  : runTimeRemindersMutation.isPending;
+                  : job.id === 'time_reminder'
+                  ? runTimeRemindersMutation.isPending
+                  : runPlannerSyncMutation.isPending;
+
+                const handleRunJob = () => {
+                  if (job.id === 'expense_reminder') {
+                    runExpenseRemindersMutation.mutate();
+                  } else if (job.id === 'time_reminder') {
+                    runTimeRemindersMutation.mutate();
+                  } else if (job.id === 'planner_sync') {
+                    runPlannerSyncMutation.mutate();
+                  }
+                };
 
                 return (
                   <Card key={job.id}>
@@ -235,10 +281,7 @@ export default function ScheduledJobsPage() {
 
                       <Button 
                         className="w-full" 
-                        onClick={() => job.id === 'expense_reminder' 
-                          ? runExpenseRemindersMutation.mutate() 
-                          : runTimeRemindersMutation.mutate()
-                        }
+                        onClick={handleRunJob}
                         disabled={isRunning}
                       >
                         {isRunning ? (
@@ -331,6 +374,21 @@ export default function ScheduledJobsPage() {
                                 <div className="text-sm">
                                   {run.resultSummary.reason ? (
                                     <span className="text-muted-foreground">{run.resultSummary.reason}</span>
+                                  ) : run.jobType === 'planner_sync' ? (
+                                    <span>
+                                      {run.resultSummary.projectsSynced !== undefined && (
+                                        <span className="text-green-600">{run.resultSummary.projectsSynced} synced</span>
+                                      )}
+                                      {run.resultSummary.totalCreated !== undefined && run.resultSummary.totalCreated > 0 && (
+                                        <span className="text-blue-600 ml-2">+{run.resultSummary.totalCreated}</span>
+                                      )}
+                                      {run.resultSummary.totalUpdated !== undefined && run.resultSummary.totalUpdated > 0 && (
+                                        <span className="text-muted-foreground ml-2">~{run.resultSummary.totalUpdated}</span>
+                                      )}
+                                      {run.resultSummary.projectsFailed !== undefined && run.resultSummary.projectsFailed > 0 && (
+                                        <span className="text-red-600 ml-2">{run.resultSummary.projectsFailed} failed</span>
+                                      )}
+                                    </span>
                                   ) : (
                                     <span>
                                       {run.resultSummary.sent !== undefined && (

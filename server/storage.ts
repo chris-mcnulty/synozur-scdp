@@ -939,6 +939,7 @@ export interface IStorage {
   
   // Planner Integration Methods
   getProjectPlannerConnection(projectId: string): Promise<ProjectPlannerConnection | undefined>;
+  getAllPlannerConnectionsWithSyncEnabled(): Promise<ProjectPlannerConnection[]>;
   createProjectPlannerConnection(connection: InsertProjectPlannerConnection): Promise<ProjectPlannerConnection>;
   updateProjectPlannerConnection(id: string, updates: Partial<InsertProjectPlannerConnection>): Promise<ProjectPlannerConnection>;
   deleteProjectPlannerConnection(projectId: string): Promise<void>;
@@ -10025,6 +10026,12 @@ export class DatabaseStorage implements IStorage {
       .from(projectPlannerConnections)
       .where(eq(projectPlannerConnections.projectId, projectId));
     return connection || undefined;
+  }
+
+  async getAllPlannerConnectionsWithSyncEnabled(): Promise<ProjectPlannerConnection[]> {
+    return await db.select()
+      .from(projectPlannerConnections)
+      .where(eq(projectPlannerConnections.syncEnabled, true));
   }
 
   async createProjectPlannerConnection(connection: InsertProjectPlannerConnection): Promise<ProjectPlannerConnection> {

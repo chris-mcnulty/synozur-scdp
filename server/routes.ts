@@ -684,6 +684,38 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Manual trigger for Planner sync job
+  app.post("/api/admin/scheduled-jobs/planner-sync/run", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { projectId } = req.body;
+      
+      const { runPlannerSyncJob } = await import('./services/planner-sync-scheduler.js');
+      const result = await runPlannerSyncJob('manual', user.id, projectId);
+      
+      res.json({
+        success: true,
+        message: `Planner sync completed: ${result.projectsSynced} synced, ${result.projectsSkipped} skipped, ${result.projectsFailed} failed`,
+        result
+      });
+    } catch (error) {
+      console.error("Error running Planner sync:", error);
+      res.status(500).json({ message: "Failed to run Planner sync" });
+    }
+  });
+
+  // Restart Planner sync scheduler
+  app.post("/api/admin/scheduled-jobs/planner-sync/restart", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { restartPlannerSyncScheduler } = await import('./services/planner-sync-scheduler.js');
+      await restartPlannerSyncScheduler();
+      res.json({ success: true, message: "Planner sync scheduler restarted" });
+    } catch (error) {
+      console.error("Error restarting Planner sync scheduler:", error);
+      res.status(500).json({ message: "Failed to restart Planner sync scheduler" });
+    }
+  });
+
   // Missing time entries report for a project
   app.get("/api/admin/time-reminders/missing", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
