@@ -149,41 +149,76 @@ async function sendReminderEmail(recipient: ReminderRecipient, appUrl: string): 
  * Run the time reminder job
  * This is called by the scheduler or can be triggered manually
  */
-export async function runTimeReminders(): Promise<{ sent: number; skipped: number; errors: number }> {
+export async function runTimeReminders(
+  triggeredBy: 'scheduled' | 'manual' = 'scheduled',
+  triggeredByUserId?: string
+): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log('[TIME-REMINDERS] Starting time reminder job...');
   
-  const remindersEnabled = await storage.getSystemSettingValue('TIME_REMINDERS_ENABLED', 'true');
-  if (remindersEnabled !== 'true') {
-    console.log('[TIME-REMINDERS] Time reminders are disabled at system level. Skipping.');
-    return { sent: 0, skipped: 0, errors: 0 };
-  }
-
-  const appUrl = process.env.APP_URL 
-    || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
-    || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
-    || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
-    || 'https://scdp.synozur.com';
-
-  const recipients = await getUsersNeedingReminders();
-  console.log(`[TIME-REMINDERS] Found ${recipients.length} users to remind`);
-
-  let sent = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  for (const recipient of recipients) {
-    try {
-      await sendReminderEmail(recipient, appUrl);
-      sent++;
-      console.log(`[TIME-REMINDERS] Sent reminder to ${recipient.email}`);
-    } catch (error) {
-      errors++;
-      console.error(`[TIME-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+  // Create job run record (no tenant - this is system-wide)
+  const jobRun = await storage.createScheduledJobRun({
+    tenantId: null,
+    jobType: 'time_reminder',
+    status: 'running',
+    triggeredBy,
+    triggeredByUserId: triggeredByUserId || null,
+  });
+  
+  try {
+    const remindersEnabled = await storage.getSystemSettingValue('TIME_REMINDERS_ENABLED', 'true');
+    if (remindersEnabled !== 'true') {
+      console.log('[TIME-REMINDERS] Time reminders are disabled at system level. Skipping.');
+      await storage.updateScheduledJobRun(jobRun.id, {
+        status: 'completed',
+        completedAt: new Date(),
+        resultSummary: { sent: 0, skipped: 0, errors: 0, reason: 'Reminders disabled' },
+      });
+      return { sent: 0, skipped: 0, errors: 0 };
     }
-  }
 
-  console.log(`[TIME-REMINDERS] Completed: ${sent} sent, ${skipped} skipped, ${errors} errors`);
-  return { sent, skipped, errors };
+    const appUrl = process.env.APP_URL 
+      || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
+      || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
+      || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+      || 'https://scdp.synozur.com';
+
+    const recipients = await getUsersNeedingReminders();
+    console.log(`[TIME-REMINDERS] Found ${recipients.length} users to remind`);
+
+    let sent = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const recipient of recipients) {
+      try {
+        await sendReminderEmail(recipient, appUrl);
+        sent++;
+        console.log(`[TIME-REMINDERS] Sent reminder to ${recipient.email}`);
+      } catch (error) {
+        errors++;
+        console.error(`[TIME-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+      }
+    }
+
+    console.log(`[TIME-REMINDERS] Completed: ${sent} sent, ${skipped} skipped, ${errors} errors`);
+    
+    // Update job run with results
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: errors > 0 && sent === 0 ? 'failed' : 'completed',
+      completedAt: new Date(),
+      resultSummary: { sent, skipped, errors, recipientCount: recipients.length },
+    });
+    
+    return { sent, skipped, errors };
+  } catch (error: any) {
+    console.error(`[TIME-REMINDERS] Job failed:`, error);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: 'failed',
+      completedAt: new Date(),
+      errorMessage: error.message || 'Unknown error',
+    });
+    return { sent: 0, skipped: 0, errors: 1 };
+  }
 }
 
 let scheduledTask: cron.ScheduledTask | null = null;

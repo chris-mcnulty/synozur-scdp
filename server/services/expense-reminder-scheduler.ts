@@ -111,51 +111,92 @@ async function sendExpenseReminderEmail(
   });
 }
 
-export async function runExpenseRemindersForTenant(tenantId: string): Promise<{ sent: number; skipped: number; errors: number }> {
+export async function runExpenseRemindersForTenant(
+  tenantId: string, 
+  triggeredBy: 'scheduled' | 'manual' = 'scheduled',
+  triggeredByUserId?: string
+): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log(`[EXPENSE-REMINDERS] Running reminders for tenant ${tenantId}...`);
   
-  const tenant = await storage.getTenant(tenantId);
-  if (!tenant) {
-    console.log(`[EXPENSE-REMINDERS] Tenant ${tenantId} not found. Skipping.`);
-    return { sent: 0, skipped: 0, errors: 0 };
-  }
-
-  if (!tenant.expenseRemindersEnabled) {
-    console.log(`[EXPENSE-REMINDERS] Expense reminders disabled for tenant ${tenant.name}. Skipping.`);
-    return { sent: 0, skipped: 0, errors: 0 };
-  }
-
-  const appUrl = process.env.APP_URL 
-    || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
-    || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
-    || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
-    || 'https://scdp.synozur.com';
-
-  const branding = { 
-    emailHeaderUrl: tenant.emailHeaderUrl, 
-    companyName: tenant.name 
-  };
-
-  const recipients = await getUsersWithUnsubmittedExpenses(tenantId);
-  console.log(`[EXPENSE-REMINDERS] Found ${recipients.length} users to remind for tenant ${tenant.name}`);
-
-  let sent = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  for (const recipient of recipients) {
-    try {
-      await sendExpenseReminderEmail(recipient, appUrl, branding);
-      sent++;
-      console.log(`[EXPENSE-REMINDERS] Sent reminder to ${recipient.email}`);
-    } catch (error) {
-      errors++;
-      console.error(`[EXPENSE-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+  // Create job run record
+  const jobRun = await storage.createScheduledJobRun({
+    tenantId,
+    jobType: 'expense_reminder',
+    status: 'running',
+    triggeredBy,
+    triggeredByUserId: triggeredByUserId || null,
+  });
+  
+  try {
+    const tenant = await storage.getTenant(tenantId);
+    if (!tenant) {
+      console.log(`[EXPENSE-REMINDERS] Tenant ${tenantId} not found. Skipping.`);
+      await storage.updateScheduledJobRun(jobRun.id, {
+        status: 'completed',
+        completedAt: new Date(),
+        resultSummary: { sent: 0, skipped: 0, errors: 0, reason: 'Tenant not found' },
+      });
+      return { sent: 0, skipped: 0, errors: 0 };
     }
-  }
 
-  console.log(`[EXPENSE-REMINDERS] Completed for ${tenant.name}: ${sent} sent, ${skipped} skipped, ${errors} errors`);
-  return { sent, skipped, errors };
+    if (!tenant.expenseRemindersEnabled) {
+      console.log(`[EXPENSE-REMINDERS] Expense reminders disabled for tenant ${tenant.name}. Skipping.`);
+      await storage.updateScheduledJobRun(jobRun.id, {
+        status: 'completed',
+        completedAt: new Date(),
+        resultSummary: { sent: 0, skipped: 0, errors: 0, reason: 'Reminders disabled' },
+      });
+      return { sent: 0, skipped: 0, errors: 0 };
+    }
+
+    const appUrl = process.env.APP_URL 
+      || (process.env.REPLIT_DEPLOYMENT === '1' ? 'https://scdp.synozur.com' : null)
+      || (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : null)
+      || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+      || 'https://scdp.synozur.com';
+
+    const branding = { 
+      emailHeaderUrl: tenant.emailHeaderUrl, 
+      companyName: tenant.name 
+    };
+
+    const recipients = await getUsersWithUnsubmittedExpenses(tenantId);
+    console.log(`[EXPENSE-REMINDERS] Found ${recipients.length} users to remind for tenant ${tenant.name}`);
+
+    let sent = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const recipient of recipients) {
+      try {
+        await sendExpenseReminderEmail(recipient, appUrl, branding);
+        sent++;
+        console.log(`[EXPENSE-REMINDERS] Sent reminder to ${recipient.email}`);
+      } catch (error) {
+        errors++;
+        console.error(`[EXPENSE-REMINDERS] Failed to send reminder to ${recipient.email}:`, error);
+      }
+    }
+
+    console.log(`[EXPENSE-REMINDERS] Completed for ${tenant.name}: ${sent} sent, ${skipped} skipped, ${errors} errors`);
+    
+    // Update job run with results
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: errors > 0 && sent === 0 ? 'failed' : 'completed',
+      completedAt: new Date(),
+      resultSummary: { sent, skipped, errors, recipientCount: recipients.length },
+    });
+    
+    return { sent, skipped, errors };
+  } catch (error: any) {
+    console.error(`[EXPENSE-REMINDERS] Job failed for tenant ${tenantId}:`, error);
+    await storage.updateScheduledJobRun(jobRun.id, {
+      status: 'failed',
+      completedAt: new Date(),
+      errorMessage: error.message || 'Unknown error',
+    });
+    return { sent: 0, skipped: 0, errors: 1 };
+  }
 }
 
 const scheduledTasks: Map<string, cron.ScheduledTask> = new Map();

@@ -614,7 +614,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       const { runExpenseRemindersForTenant } = await import('./services/expense-reminder-scheduler.js');
-      const result = await runExpenseRemindersForTenant(tenantId);
+      const result = await runExpenseRemindersForTenant(tenantId, 'manual', user.id);
       res.json({ 
         success: true, 
         message: `Expense reminders sent successfully`,
@@ -629,8 +629,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Admin time reminder management
   app.post("/api/admin/time-reminders/run", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
+      const user = req.user as any;
       const { runTimeReminders } = await import('./services/time-reminder-scheduler.js');
-      const result = await runTimeReminders();
+      const result = await runTimeReminders('manual', user.id);
       res.json({ 
         success: true, 
         message: `Time reminders sent successfully`,
@@ -650,6 +651,36 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error restarting scheduler:", error);
       res.status(500).json({ message: "Failed to restart scheduler" });
+    }
+  });
+
+  // Scheduled Job Runs - get run history
+  app.get("/api/admin/scheduled-jobs/runs", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { jobType, limit } = req.query;
+      
+      const runs = await storage.getScheduledJobRuns({
+        tenantId: user.primaryTenantId,
+        jobType: jobType as string,
+        limit: limit ? parseInt(limit as string) : 50,
+      });
+      res.json(runs);
+    } catch (error) {
+      console.error("Error fetching scheduled job runs:", error);
+      res.status(500).json({ message: "Failed to fetch scheduled job runs" });
+    }
+  });
+
+  // Scheduled Job Runs - get job statistics
+  app.get("/api/admin/scheduled-jobs/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const stats = await storage.getScheduledJobStats(user.primaryTenantId);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching scheduled job stats:", error);
+      res.status(500).json({ message: "Failed to fetch scheduled job stats" });
     }
   });
 
