@@ -57,7 +57,13 @@ Preferred communication style: Simple, everyday language.
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download (ZIP of all receipts for an invoice batch). Configurable Constellation footer branding (tenant-level toggle).
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation (GSA federal rates).
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
-- **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks, including status, dates, and assignees.
+- **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks, including status, dates, and assignees. Background scheduler syncs every 30 minutes.
+- **Scheduled Jobs**: Background job system with admin monitoring at `/admin/scheduled-jobs`:
+  - **Expense Reminders**: Weekly emails to users with unsubmitted expenses (tenant-configurable day/time)
+  - **Time Reminders**: Weekly emails to users who haven't logged time (configurable in settings)
+  - **Planner Sync**: Automatic sync of all projects with `syncEnabled=true` every 30 minutes
+  - All jobs log runs to `scheduled_job_runs` table with status, trigger type, and results
+  - Manual trigger buttons and run history available in admin UI
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring. Revenue calculations exclude tax.
 
 ### Multi-Tenancy (Active)
