@@ -1,6 +1,44 @@
 # Constellation Product Backlog
 
-## ✅ Recently Completed (Week of Oct 7-11, 2025)
+## ✅ Recently Completed (January 31, 2026)
+
+### Scheduled Jobs Monitoring System ✅ COMPLETE
+- [x] Created `scheduled_job_runs` database table for job execution tracking
+- [x] Storage methods for creating, updating, and querying job runs
+- [x] Admin UI at `/admin/scheduled-jobs` with:
+  - [x] Overview cards showing job statistics
+  - [x] Run history with filtering by job type
+  - [x] Status badges (success, failed, running)
+  - [x] Manual trigger buttons for each job type
+- [x] Three scheduled job types tracked:
+  - [x] Expense Reminders (tenant-configurable, weekly)
+  - [x] Time Reminders (system-wide, weekly) 
+  - [x] Planner Sync (automatic, every 30 minutes)
+- [x] Job run logging includes trigger type (scheduled vs manual), user who triggered, result summary, and errors
+- [x] Navigation integrated into admin sidebar and mobile menu
+
+### Microsoft Planner Automatic Sync ✅ COMPLETE
+- [x] Planner sync scheduler service running every 30 minutes
+- [x] Automatic sync of all projects with `syncEnabled=true`
+- [x] Handles deleted Planner tasks by recreating them
+- [x] Task creation with proper bucket mapping (by stage)
+- [x] User assignment mapping (Constellation user → Azure AD user)
+- [x] Status synchronization (open/in_progress/completed → percent complete)
+- [x] Date synchronization (planned start/end dates)
+- [x] Task notes include Constellation link and hours allocation
+- [x] Comprehensive error handling and logging
+- [x] Manual trigger endpoint for on-demand sync
+- [x] Job run history visible in admin UI
+
+### QBO Export Enhancements ✅ COMPLETE
+- [x] 13-column QBO Invoice IIF format with Terms, Billing Address, Service Date
+- [x] Hierarchical Product/Service format (Project:Type:Category)
+- [x] Improved descriptions matching printed invoice format
+- [x] Custom transaction number support (requires QBO settings enabled)
+
+---
+
+## ✅ Previously Completed (Week of Oct 7-11, 2025)
 
 ### Days 1-3: Foundation & Vocabulary System
 - [x] Fixed 11 TypeScript errors in server/storage.ts (schema alignment)
@@ -182,8 +220,8 @@
   - Resource demand vs. supply analysis
   - Historical utilization trends
 
-### Microsoft 365 Project Integration - NEW
-**Status:** DESIGN COMPLETE - Ready for implementation  
+### Microsoft 365 Project Integration - PARTIALLY COMPLETE
+**Status:** Planner sync implemented, Teams integration pending  
 **Priority:** P1 - High priority for collaboration  
 **Added:** January 2026  
 **Design Document:** `docs/design/microsoft-365-project-integration.md`
@@ -204,7 +242,7 @@
   - Default Team template selection
   - Test connection functionality
 
-- [ ] **Database Schema**
+- [x] **Database Schema** ✅ COMPLETE
   - `clientTeams` table: Maps clients to Microsoft Teams
   - `projectChannels` table: Maps projects to channels and Planner plans
   - `userAzureMapping` table: Links Constellation users to Azure AD accounts
@@ -216,11 +254,14 @@
   - SharePoint site provisioning with Team
   - Team member management (add/remove based on assignments)
 
-- [ ] **Microsoft Planner Integration (Phase 1: One-Way Copy)**
+- [x] **Microsoft Planner Integration (Phase 1: One-Way Sync)** ✅ COMPLETE
   - Create Planner plan per project
-  - Weekly buckets matching allocation periods
-  - Task creation from allocations (one task per user per week)
+  - Stage-based buckets (not weekly - based on project stages)
+  - Task creation from allocations (one task per assignment)
   - Sync status tracking and error handling
+  - Automatic 30-minute sync scheduler for enabled projects
+  - Manual sync trigger via admin UI
+  - Deleted task detection and recreation
 
 - [ ] **Microsoft Planner Integration (Phase 2: Bidirectional Sync)**
   - Microsoft Graph webhooks for change notifications
@@ -234,18 +275,19 @@
   - Checkbox options for Teams, Planner, auto-member management
   - Visual preview of what will be created
 
-- [ ] **Project Detail M365 Tab**
+- [x] **Project Detail M365 Tab** ✅ PARTIAL
   - Links to Team, Channel, SharePoint site, Planner
   - Sync status display with manual sync button
-  - Team member mapping status with retry for failures
-  - External user handling for non-Azure AD consultants
+  - [x] Planner connection UI with sync toggle
+  - [ ] Team member mapping status with retry for failures
+  - [ ] External user handling for non-Azure AD consultants
 
 **Dependencies:**
 - Extended Microsoft Graph permissions (Team.Create, Channel.Create, Tasks.ReadWrite, etc.)
 - Existing Outlook connector or new Teams connector
 - User email matching between Constellation and Azure AD
 
-**Timeline:** 6-8 weeks (phased implementation)  
+**Timeline:** 4-6 weeks remaining (Teams integration only)  
 **Complexity:** High (multiple Microsoft Graph APIs, sync logic, error handling)
 
 ### Multi-Tenancy Architecture - NEW

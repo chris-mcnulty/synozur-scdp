@@ -1,8 +1,8 @@
 # SCDP Administrator Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.0  
-**Last Updated:** October 31, 2025  
+**Version:** 1.1  
+**Last Updated:** January 31, 2026  
 **Document Type:** System Administrator Reference  
 **Audience:** SCDP System Administrators
 
@@ -1842,7 +1842,96 @@ Set up alerts for:
 
 ---
 
-### 8.3 Data Backup
+### 8.3 Scheduled Jobs Monitoring
+
+**Overview:**
+
+SCDP runs automated background jobs to handle routine tasks. Administrators can monitor these jobs and trigger them manually when needed.
+
+**Accessing Scheduled Jobs:**
+
+```
+Navigation:
+1. Log in as Administrator
+2. Click "Admin" in the menu
+3. Select "Scheduled Jobs"
+4. View the scheduled jobs dashboard
+```
+
+**Job Types:**
+
+| Job Type | Schedule | Description |
+|----------|----------|-------------|
+| **Expense Reminders** | Weekly (configurable) | Emails users with unsubmitted expenses |
+| **Time Reminders** | Weekly (configurable) | Emails users who haven't logged time |
+| **Planner Sync** | Every 30 minutes | Syncs project assignments to Microsoft Planner |
+
+**Dashboard Overview:**
+
+The Scheduled Jobs page shows:
+- **Overview Tab:** Summary cards for each job type showing:
+  - Total runs
+  - Successful runs
+  - Failed runs
+  - Last run time and status
+  - "Run Now" button for manual trigger
+
+- **History Tab:** Detailed run history with:
+  - Job type filter
+  - Run date/time
+  - Status (success, failed, running)
+  - Trigger type (scheduled vs manual)
+  - Result summary
+  - Error messages (if any)
+
+**Planner Sync Details:**
+
+When enabled on a project, the automatic Planner sync:
+- Creates Planner tasks for each project assignment
+- Organizes tasks into buckets by project stage
+- Maps Constellation users to Azure AD accounts
+- Syncs status (open → 0%, in_progress → 50%, completed → 100%)
+- Syncs planned start and end dates
+- Includes task notes with Constellation link and hours
+
+**Job Run History Fields:**
+
+For Planner Sync jobs, the result summary includes:
+```
+Projects Synced: Number of projects successfully synced
+Projects Skipped: Projects with sync disabled or no allocations
+Projects Failed: Projects that encountered errors
+Tasks Created: New Planner tasks created
+Tasks Updated: Existing Planner tasks updated
+```
+
+**Manual Trigger:**
+
+Use the "Run Now" button to:
+- Force immediate execution of any job
+- Test job functionality after configuration changes
+- Catch up after system downtime
+
+Manual triggers are logged with the administrator's user ID for audit purposes.
+
+**Troubleshooting:**
+
+```
+If Planner sync fails:
+→ Check Microsoft Graph connection status
+→ Verify user Azure AD mappings are configured
+→ Ensure project has Planner connection with sync enabled
+→ Review error message in run history
+
+If reminders not sending:
+→ Check tenant reminder settings
+→ Verify email configuration
+→ Review user notification preferences
+```
+
+---
+
+### 8.4 Data Backup
 
 **Automated Backups:**
 

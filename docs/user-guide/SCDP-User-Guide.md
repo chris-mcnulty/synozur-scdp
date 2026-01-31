@@ -1,8 +1,8 @@
 # SCDP User Guide
 ## Synozur Consulting Delivery Platform
 
-**Version:** 1.0  
-**Last Updated:** October 31, 2025  
+**Version:** 1.1  
+**Last Updated:** January 31, 2026  
 **Document Type:** Employee User Guide
 
 ---
@@ -860,6 +860,62 @@ Filter allocations by:
 - **Project:** Single or multiple projects
 - **Utilization:** Over/under allocated
 - **Status:** Active, upcoming, past
+
+---
+
+#### Microsoft Planner Integration
+
+SCDP integrates with Microsoft Planner to sync project assignments as tasks, enabling team members to manage their work from Microsoft 365.
+
+**Connecting a Project to Planner:**
+
+1. Open the project detail page
+2. Navigate to the **Delivery** tab
+3. Click **"Connect to Planner"** or configure in project settings
+4. Enter the Planner Plan ID (from Microsoft Planner URL)
+5. Enable **"Auto Sync"** toggle for automatic updates
+
+**How Sync Works:**
+
+When auto-sync is enabled:
+- SCDP automatically syncs every 30 minutes
+- Creates a Planner task for each project assignment
+- Organizes tasks into buckets by project stage
+- Syncs assignment status:
+  - Open → 0% complete
+  - In Progress → 50% complete
+  - Completed → 100% complete
+- Syncs planned start and end dates
+- Includes task notes with Constellation link and hours allocation
+
+**Manual Sync:**
+
+You can trigger a manual sync at any time:
+1. Go to the project's Delivery tab
+2. Click the **"Sync to Planner"** button
+3. All assignments will be synced immediately
+
+**Task Details in Planner:**
+
+Each synced task includes:
+- **Title:** Team member name - Role
+- **Bucket:** Assigned based on project stage
+- **Dates:** Planned start and end dates
+- **Assignee:** Mapped to Azure AD user (if email matches)
+- **Notes:** Link back to Constellation + allocated hours
+
+**User Mapping:**
+
+For team members to be assigned tasks in Planner:
+- Their Constellation email must match their Azure AD email
+- Or an explicit Azure AD mapping must be configured
+- Unmapped users create tasks without assignees
+
+**Tips:**
+- ✅ Enable auto-sync for active projects
+- ✅ Ensure user emails match between systems
+- ✅ Use stages to organize work into logical buckets
+- ❌ Don't manually edit synced tasks in Planner (changes won't sync back)
 
 ---
 
