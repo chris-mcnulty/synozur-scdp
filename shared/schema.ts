@@ -2432,6 +2432,31 @@ export const insertSessionSchema = createInsertSchema(sessions).omit({
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
 
+// Scheduled Job Runs - for tracking scheduled job execution history
+export const scheduledJobRuns = pgTable("scheduled_job_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  jobType: text("job_type").notNull(), // 'expense_reminder', 'time_reminder', etc.
+  status: text("status").notNull(), // 'running', 'completed', 'failed'
+  startedAt: timestamp("started_at").notNull().default(sql`now()`),
+  completedAt: timestamp("completed_at"),
+  triggeredBy: text("triggered_by").notNull(), // 'scheduled', 'manual'
+  triggeredByUserId: varchar("triggered_by_user_id").references(() => users.id),
+  resultSummary: jsonb("result_summary"), // { sent: 5, skipped: 2, errors: 0 }
+  errorMessage: text("error_message"),
+}, (table) => ({
+  tenantIdIdx: index("scheduled_job_runs_tenant_id_idx").on(table.tenantId),
+  jobTypeIdx: index("scheduled_job_runs_job_type_idx").on(table.jobType),
+  startedAtIdx: index("scheduled_job_runs_started_at_idx").on(table.startedAt),
+}));
+
+export const insertScheduledJobRunSchema = createInsertSchema(scheduledJobRuns).omit({
+  id: true,
+  startedAt: true,
+});
+export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
+export type ScheduledJobRun = typeof scheduledJobRuns.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,
