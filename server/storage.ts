@@ -50,7 +50,8 @@ import {
   type PlannerTaskSync, type InsertPlannerTaskSync,
   type UserAzureMapping, type InsertUserAzureMapping,
   type Tenant,
-  type VocabularyTerms, DEFAULT_VOCABULARY
+  type VocabularyTerms, DEFAULT_VOCABULARY,
+  scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
@@ -961,6 +962,19 @@ export interface IStorage {
   // Tenant Methods
   getTenant(id: string): Promise<Tenant | undefined>;
   updateTenant(id: string, updates: Partial<Tenant>): Promise<Tenant>;
+  
+  // Scheduled Job Run Methods
+  createScheduledJobRun(run: InsertScheduledJobRun): Promise<ScheduledJobRun>;
+  updateScheduledJobRun(id: string, updates: Partial<ScheduledJobRun>): Promise<ScheduledJobRun>;
+  getScheduledJobRuns(filters?: { tenantId?: string; jobType?: string; limit?: number }): Promise<ScheduledJobRun[]>;
+  getScheduledJobStats(tenantId?: string): Promise<{
+    jobType: string;
+    lastRun: Date | null;
+    lastStatus: string | null;
+    totalRuns: number;
+    successfulRuns: number;
+    failedRuns: number;
+  }[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -10165,6 +10179,86 @@ export class DatabaseStorage implements IStorage {
     const items = await db.select({ expenseId: expenseReportItems.expenseId })
       .from(expenseReportItems);
     return new Set(items.map(item => item.expenseId));
+  }
+
+  async createScheduledJobRun(run: InsertScheduledJobRun): Promise<ScheduledJobRun> {
+    const [created] = await db.insert(scheduledJobRuns)
+      .values(run)
+      .returning();
+    return created;
+  }
+
+  async updateScheduledJobRun(id: string, updates: Partial<ScheduledJobRun>): Promise<ScheduledJobRun> {
+    const [updated] = await db.update(scheduledJobRuns)
+      .set(updates)
+      .where(eq(scheduledJobRuns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getScheduledJobRuns(filters?: { tenantId?: string; jobType?: string; limit?: number }): Promise<ScheduledJobRun[]> {
+    let query = db.select().from(scheduledJobRuns);
+    
+    const conditions = [];
+    if (filters?.tenantId) {
+      conditions.push(eq(scheduledJobRuns.tenantId, filters.tenantId));
+    }
+    if (filters?.jobType) {
+      conditions.push(eq(scheduledJobRuns.jobType, filters.jobType));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as typeof query;
+    }
+    
+    query = query.orderBy(desc(scheduledJobRuns.startedAt)) as typeof query;
+    
+    if (filters?.limit) {
+      query = query.limit(filters.limit) as typeof query;
+    }
+    
+    return await query;
+  }
+
+  async getScheduledJobStats(tenantId?: string): Promise<{
+    jobType: string;
+    lastRun: Date | null;
+    lastStatus: string | null;
+    totalRuns: number;
+    successfulRuns: number;
+    failedRuns: number;
+  }[]> {
+    const conditions = tenantId ? [eq(scheduledJobRuns.tenantId, tenantId)] : [];
+    
+    const stats = await db.select({
+      jobType: scheduledJobRuns.jobType,
+      lastRun: sql<Date>`MAX(${scheduledJobRuns.startedAt})`,
+      totalRuns: sql<number>`COUNT(*)::int`,
+      successfulRuns: sql<number>`COUNT(*) FILTER (WHERE ${scheduledJobRuns.status} = 'completed')::int`,
+      failedRuns: sql<number>`COUNT(*) FILTER (WHERE ${scheduledJobRuns.status} = 'failed')::int`,
+    })
+    .from(scheduledJobRuns)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .groupBy(scheduledJobRuns.jobType);
+
+    const result = await Promise.all(stats.map(async (stat) => {
+      const conditions2 = tenantId 
+        ? [eq(scheduledJobRuns.tenantId, tenantId), eq(scheduledJobRuns.jobType, stat.jobType)]
+        : [eq(scheduledJobRuns.jobType, stat.jobType)];
+      
+      const [lastRunRecord] = await db.select({ status: scheduledJobRuns.status })
+        .from(scheduledJobRuns)
+        .where(and(...conditions2))
+        .orderBy(desc(scheduledJobRuns.startedAt))
+        .limit(1);
+      
+      return {
+        ...stat,
+        lastStatus: lastRunRecord?.status || null,
+      };
+    }));
+
+    return result;
   }
 }
 
