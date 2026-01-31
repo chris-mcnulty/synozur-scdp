@@ -23,7 +23,8 @@ import {
   Calculator,
   CreditCard,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  CalendarClock
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -272,6 +273,13 @@ export function MobileNav() {
                     href="/system-settings"
                     icon={<Settings />}
                     label="System Settings"
+                    onClick={handleNavClick}
+                  />
+                  
+                  <MobileNavItem
+                    href="/admin/scheduled-jobs"
+                    icon={<CalendarClock />}
+                    label="Scheduled Jobs"
                     onClick={handleNavClick}
                   />
                   

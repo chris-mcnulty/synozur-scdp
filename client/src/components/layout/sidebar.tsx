@@ -25,7 +25,8 @@ import {
   Crown,
   Package,
   Plane,
-  Globe
+  Globe,
+  CalendarClock
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -218,6 +219,12 @@ export function Sidebar() {
                 href="/system-settings"
                 icon={<Settings />}
                 label="System Settings"
+              />
+              
+              <SidebarItem
+                href="/admin/scheduled-jobs"
+                icon={<CalendarClock />}
+                label="Scheduled Jobs"
               />
               
               <SidebarItem
