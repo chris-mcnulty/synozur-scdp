@@ -71,6 +71,8 @@ Preferred communication style: Simple, everyday language.
   - **Planner Sync**: Automatic sync of all projects with `syncEnabled=true` every 30 minutes
   - All jobs log runs to `scheduled_job_runs` table with status, trigger type, and results
   - Manual trigger buttons and run history available in admin UI
+  - **Multi-tenant Scoping**: Job runs, stats, and history are tenant-scoped; regular admins see only their tenant's jobs; platform admins (global_admin/constellation_admin) can view all jobs across tenants
+  - **Stuck Job Detection**: Jobs running 30+ minutes are marked as "stuck" with orange highlighting; individual cancel buttons and bulk cleanup available
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring. Revenue calculations exclude tax.
 
 ### Multi-Tenancy (Active)
