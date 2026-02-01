@@ -939,8 +939,22 @@ class PlannerService {
    */
   formatDateForPlanner(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
+    
+    // Validate the date is parseable
+    if (isNaN(d.getTime())) {
+      console.warn(`[PLANNER] Invalid date value: ${date}`);
+      throw new Error(`Invalid date: ${date}`);
+    }
+    
     // Set to noon UTC to avoid timezone issues that could shift the date
     const year = d.getUTCFullYear();
+    
+    // Validate year is reasonable (1900-2100) to catch corrupted data
+    if (year < 1900 || year > 2100) {
+      console.warn(`[PLANNER] Invalid year ${year} in date: ${date}`);
+      throw new Error(`Invalid year ${year} in date - must be between 1900 and 2100`);
+    }
+    
     const month = String(d.getUTCMonth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}T12:00:00.000Z`;
