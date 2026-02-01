@@ -246,7 +246,13 @@ async function syncProjectToPlanner(
           result.created++;
         }
       } catch (allocErr: any) {
-        result.errors.push(`Allocation ${allocation.id}: ${allocErr.message}`);
+        // Build a friendly error message with context for manual debugging
+        const personName = allocation.person?.name || allocation.personId || 'Unknown person';
+        const taskDesc = allocation.taskDescription || allocation.notes || 'No description';
+        const dates = `${allocation.plannedStartDate || 'no start'} to ${allocation.plannedEndDate || 'no end'}`;
+        const friendlyError = `Assignment for "${personName}" (${taskDesc.substring(0, 50)}${taskDesc.length > 50 ? '...' : ''}) with dates ${dates}: ${allocErr.message}`;
+        result.errors.push(friendlyError);
+        console.error(`[PLANNER-SYNC] ${friendlyError} (Allocation ID: ${allocation.id})`);
       }
     }
 
