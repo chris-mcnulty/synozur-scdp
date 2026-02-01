@@ -271,12 +271,21 @@ async function syncProjectToPlanner(
 export async function runPlannerSyncJob(
   triggeredBy: 'scheduled' | 'manual' = 'scheduled',
   triggeredByUserId?: string,
-  specificProjectId?: string
+  specificProjectId?: string,
+  tenantId?: string
 ): Promise<PlannerSyncJobResult> {
   console.log('[PLANNER-SYNC] Starting Planner sync job...');
 
+  // Determine tenant ID: use provided, or get from specific project, or null for system-wide scheduled runs
+  let jobTenantId: string | null = tenantId || null;
+  
+  if (specificProjectId && !jobTenantId) {
+    const project = await storage.getProject(specificProjectId);
+    jobTenantId = project?.tenantId || null;
+  }
+
   const jobRun = await storage.createScheduledJobRun({
-    tenantId: null,
+    tenantId: jobTenantId,
     jobType: 'planner_sync',
     status: 'running',
     triggeredBy,
@@ -299,6 +308,8 @@ export async function runPlannerSyncJob(
       const conn = await storage.getProjectPlannerConnection(specificProjectId);
       connections = conn ? [conn] : [];
     } else {
+      // For scheduled runs, get all connections (system-wide)
+      // Future: Filter by tenant's service plan to only sync eligible tenants
       connections = await storage.getAllPlannerConnectionsWithSyncEnabled();
     }
 

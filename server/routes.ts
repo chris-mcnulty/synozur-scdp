@@ -655,13 +655,17 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Scheduled Job Runs - get run history
+  // Get job runs (tenant-scoped with platform admin bypass)
   app.get("/api/admin/scheduled-jobs/runs", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
       const { jobType, limit } = req.query;
+      const platformRole = user.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       
+      // Platform admins see all jobs, regular admins see their tenant only
       const runs = await storage.getScheduledJobRuns({
-        tenantId: user.primaryTenantId,
+        tenantId: isPlatformAdmin ? undefined : user.primaryTenantId,
         jobType: jobType as string,
         limit: limit ? parseInt(limit as string) : 50,
       });
@@ -673,10 +677,15 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Scheduled Job Runs - get job statistics
+  // Get job statistics (tenant-scoped with platform admin bypass)
   app.get("/api/admin/scheduled-jobs/stats", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
-      const stats = await storage.getScheduledJobStats(user.primaryTenantId);
+      const platformRole = user.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      // Platform admins see all tenant stats, regular admins see their tenant only
+      const stats = await storage.getScheduledJobStats(isPlatformAdmin ? undefined : user.primaryTenantId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching scheduled job stats:", error);
@@ -684,14 +693,15 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Manual trigger for Planner sync job
+  // Manual trigger for Planner sync (tenant-scoped)
   app.post("/api/admin/scheduled-jobs/planner-sync/run", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {
       const user = req.user as any;
       const { projectId } = req.body;
       
       const { runPlannerSyncJob } = await import('./services/planner-sync-scheduler.js');
-      const result = await runPlannerSyncJob('manual', user.id, projectId);
+      // Pass user's tenant ID for proper job scoping
+      const result = await runPlannerSyncJob('manual', user.id, projectId, user.primaryTenantId);
       
       res.json({
         success: true,
@@ -716,11 +726,25 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Cancel a stuck job
+  // Cancel a stuck job (tenant-scoped with platform admin bypass)
   app.post("/api/admin/scheduled-jobs/:jobId/cancel", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { jobId } = req.params;
       const user = req.user as any;
+      const userTenantId = user.primaryTenantId;
+      const platformRole = user.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      // Get the job to check tenant ownership
+      const job = await storage.getScheduledJobRunById(jobId);
+      if (!job) {
+        return res.status(404).json({ message: "Job not found" });
+      }
+      
+      // Verify tenant access (platform admins can access all)
+      if (!isPlatformAdmin && job.tenantId && job.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied: Job belongs to a different tenant" });
+      }
       
       const updated = await storage.updateScheduledJobRun(jobId, {
         status: 'cancelled',
@@ -735,14 +759,19 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Cleanup all stuck running jobs (running for more than 30 minutes)
+  // Cleanup all stuck running jobs (tenant-scoped with platform admin bypass)
   app.post("/api/admin/scheduled-jobs/cleanup-stuck", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
+      const userTenantId = user.primaryTenantId;
+      const platformRole = user.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
       
-      // Get all running jobs
-      const allRuns = await storage.getScheduledJobRuns({ limit: 100 });
+      // Get jobs - platform admins see all, regular admins see their tenant only
+      const allRuns = await storage.getScheduledJobRuns(
+        isPlatformAdmin ? { limit: 100 } : { tenantId: userTenantId, limit: 100 }
+      );
       const stuckJobs = allRuns.filter(run => 
         run.status === 'running' && 
         new Date(run.startedAt) < thirtyMinutesAgo
