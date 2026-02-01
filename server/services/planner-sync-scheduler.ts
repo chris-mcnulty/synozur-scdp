@@ -275,7 +275,7 @@ async function syncProjectToPlanner(
 }
 
 export async function runPlannerSyncJob(
-  triggeredBy: 'scheduled' | 'manual' = 'scheduled',
+  triggeredBy: 'scheduled' | 'manual' | 'catchup' = 'scheduled',
   triggeredByUserId?: string,
   specificProjectId?: string,
   tenantId?: string

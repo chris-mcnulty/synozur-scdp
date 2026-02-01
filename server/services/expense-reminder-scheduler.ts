@@ -113,7 +113,7 @@ async function sendExpenseReminderEmail(
 
 export async function runExpenseRemindersForTenant(
   tenantId: string, 
-  triggeredBy: 'scheduled' | 'manual' = 'scheduled',
+  triggeredBy: 'scheduled' | 'manual' | 'catchup' = 'scheduled',
   triggeredByUserId?: string
 ): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log(`[EXPENSE-REMINDERS] Running reminders for tenant ${tenantId}...`);
@@ -225,6 +225,35 @@ async function scheduleForTenant(tenant: TenantSchedule): Promise<void> {
   });
 
   scheduledTasks.set(tenant.tenantId, task);
+}
+
+export async function runAllExpenseReminders(
+  triggeredBy: 'scheduled' | 'manual' | 'catchup' = 'scheduled',
+  triggeredByUserId?: string
+): Promise<{ sent: number; skipped: number; errors: number }> {
+  console.log('[EXPENSE-REMINDERS] Running expense reminders for all enabled tenants...');
+  
+  const tenants = await storage.getTenants();
+  const enabledTenants = tenants.filter(t => t.expenseRemindersEnabled);
+  
+  let totalSent = 0;
+  let totalSkipped = 0;
+  let totalErrors = 0;
+  
+  for (const tenant of enabledTenants) {
+    try {
+      const result = await runExpenseRemindersForTenant(tenant.id, triggeredBy, triggeredByUserId);
+      totalSent += result.sent;
+      totalSkipped += result.skipped;
+      totalErrors += result.errors;
+    } catch (err: any) {
+      console.error(`[EXPENSE-REMINDERS] Failed for tenant ${tenant.name}:`, err.message);
+      totalErrors++;
+    }
+  }
+  
+  console.log(`[EXPENSE-REMINDERS] All tenants complete: ${totalSent} sent, ${totalSkipped} skipped, ${totalErrors} errors`);
+  return { sent: totalSent, skipped: totalSkipped, errors: totalErrors };
 }
 
 export async function startExpenseReminderScheduler(): Promise<void> {

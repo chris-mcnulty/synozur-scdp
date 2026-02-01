@@ -150,7 +150,7 @@ async function sendReminderEmail(recipient: ReminderRecipient, appUrl: string): 
  * This is called by the scheduler or can be triggered manually
  */
 export async function runTimeReminders(
-  triggeredBy: 'scheduled' | 'manual' = 'scheduled',
+  triggeredBy: 'scheduled' | 'manual' | 'catchup' = 'scheduled',
   triggeredByUserId?: string
 ): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log('[TIME-REMINDERS] Starting time reminder job...');

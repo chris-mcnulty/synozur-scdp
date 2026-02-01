@@ -259,6 +259,23 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
       }).catch((importError: any) => {
         log(`⚠️ Failed to import Planner sync scheduler: ${importError.message}`);
       });
+      
+      // Check for missed jobs after a short delay to allow schedulers to initialize
+      setTimeout(async () => {
+        log('🔄 Checking for missed scheduled jobs...');
+        try {
+          const { checkAndRunMissedJobs } = await import('./services/job-catchup-service.js');
+          const results = await checkAndRunMissedJobs();
+          const triggered = results.filter(r => r.triggered).length;
+          if (triggered > 0) {
+            log(`✅ Catch-up complete: triggered ${triggered} overdue job(s)`);
+          } else {
+            log('✅ All scheduled jobs are up to date');
+          }
+        } catch (catchupError: any) {
+          log(`⚠️ Job catch-up check failed: ${catchupError.message}`);
+        }
+      }, 5000); // 5 second delay
     }).catch((dbError: any) => {
       log(`⚠️ Database not available: ${dbError.message}`);
       log('Server will continue without database features');
