@@ -73,6 +73,7 @@ Preferred communication style: Simple, everyday language.
   - Manual trigger buttons and run history available in admin UI
   - **Multi-tenant Scoping**: Job runs, stats, and history are tenant-scoped; regular admins see only their tenant's jobs; platform admins (global_admin/constellation_admin) can view all jobs across tenants
   - **Stuck Job Detection**: Jobs running 30+ minutes are marked as "stuck" with orange highlighting; individual cancel buttons and bulk cleanup available
+  - **Startup Catch-up**: On server boot, checks for missed jobs and runs them automatically. Weekly reminders catch up if no run in 8+ days; Planner sync catches up if no run in 35+ minutes. Prevents missed jobs when auto-scale deployment sleeps.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring. Revenue calculations exclude tax.
 
 ### Multi-Tenancy (Active)
