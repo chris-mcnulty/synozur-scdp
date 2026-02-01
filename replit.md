@@ -49,7 +49,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Agent Test Account (Development Only)
 - **Email**: agent.admin@synozur.com
-- **Password**: AgentTest2026!
+- **Password**: Stored in `AGENT_TEST_PASSWORD` secret
 - **User ID**: agent-test-admin-001
 - **Role**: admin
 - **Purpose**: Automated testing by Replit Agent. This account is in the dev credentials list in `server/auth-routes.ts`.
