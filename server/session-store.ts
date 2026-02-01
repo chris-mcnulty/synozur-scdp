@@ -224,9 +224,25 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 };
 
 // Role-based access control middleware
+// Platform admins (global_admin, constellation_admin) have access to all admin features
 export const requireRole = (roles: string[]) => (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user || !roles.includes(req.user.role)) {
-    console.log("[AUTH] Insufficient permissions - User role:", req.user?.role, "Required:", roles);
+  const user = req.user;
+  if (!user) {
+    console.log("[AUTH] Insufficient permissions - No user");
+    return res.status(403).json({ message: "Insufficient permissions" });
+  }
+  
+  // Platform admins have access to all admin-level features
+  const platformRole = user.platformRole;
+  const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+  
+  // Check if user has required role OR is a platform admin (for admin-level access)
+  const hasRequiredRole = roles.includes(user.role);
+  const adminRoles = ['admin', 'billing-admin', 'pm', 'executive'];
+  const isAdminLevelAccess = roles.some(r => adminRoles.includes(r));
+  
+  if (!hasRequiredRole && !(isPlatformAdmin && isAdminLevelAccess)) {
+    console.log("[AUTH] Insufficient permissions - User role:", user.role, "Platform role:", platformRole, "Required:", roles);
     return res.status(403).json({ message: "Insufficient permissions" });
   }
   next();

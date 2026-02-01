@@ -106,9 +106,7 @@ export default function ScheduledJobsPage() {
         params.set('jobType', selectedJobType);
       }
       params.set('limit', '50');
-      const response = await fetch(`/api/admin/scheduled-jobs/runs?${params}`, { credentials: 'include' });
-      if (!response.ok) throw new Error('Failed to fetch job runs');
-      return response.json();
+      return apiRequest(`/api/admin/scheduled-jobs/runs?${params}`);
     },
   });
 
@@ -118,8 +116,8 @@ export default function ScheduledJobsPage() {
 
   const runExpenseRemindersMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/admin/expense-reminders/run');
-      return response.json();
+      const response = await apiRequest('/api/admin/expense-reminders/run', { method: 'POST' });
+      return response;
     },
     onSuccess: (data) => {
       toast({
@@ -140,8 +138,8 @@ export default function ScheduledJobsPage() {
 
   const runTimeRemindersMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/admin/time-reminders/run');
-      return response.json();
+      const response = await apiRequest('/api/admin/time-reminders/run', { method: 'POST' });
+      return response;
     },
     onSuccess: (data) => {
       toast({
@@ -162,8 +160,8 @@ export default function ScheduledJobsPage() {
 
   const runPlannerSyncMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/admin/scheduled-jobs/planner-sync/run');
-      return response.json();
+      const response = await apiRequest('/api/admin/scheduled-jobs/planner-sync/run', { method: 'POST' });
+      return response;
     },
     onSuccess: (data) => {
       toast({
@@ -187,7 +185,7 @@ export default function ScheduledJobsPage() {
   };
 
   return (
-    <Layout title="Scheduled Jobs" showBack>
+    <Layout>
       <div className="container mx-auto py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
