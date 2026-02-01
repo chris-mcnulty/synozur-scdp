@@ -716,6 +716,59 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Cancel a stuck job
+  app.post("/api/admin/scheduled-jobs/:jobId/cancel", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { jobId } = req.params;
+      const user = req.user as any;
+      
+      const updated = await storage.updateScheduledJobRun(jobId, {
+        status: 'cancelled',
+        completedAt: new Date(),
+        errorMessage: `Manually cancelled by ${user.email || user.name || 'admin'}`
+      });
+      
+      res.json({ success: true, job: updated });
+    } catch (error) {
+      console.error("Error cancelling job:", error);
+      res.status(500).json({ message: "Failed to cancel job" });
+    }
+  });
+
+  // Cleanup all stuck running jobs (running for more than 30 minutes)
+  app.post("/api/admin/scheduled-jobs/cleanup-stuck", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      
+      // Get all running jobs
+      const allRuns = await storage.getScheduledJobRuns({ limit: 100 });
+      const stuckJobs = allRuns.filter(run => 
+        run.status === 'running' && 
+        new Date(run.startedAt) < thirtyMinutesAgo
+      );
+      
+      let cleanedCount = 0;
+      for (const job of stuckJobs) {
+        await storage.updateScheduledJobRun(job.id, {
+          status: 'failed',
+          completedAt: new Date(),
+          errorMessage: `Auto-cancelled: Job was stuck running for more than 30 minutes (cleaned up by ${user.email || 'admin'})`
+        });
+        cleanedCount++;
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Cleaned up ${cleanedCount} stuck job(s)`,
+        cleanedCount
+      });
+    } catch (error) {
+      console.error("Error cleaning up stuck jobs:", error);
+      res.status(500).json({ message: "Failed to cleanup stuck jobs" });
+    }
+  });
+
   // Missing time entries report for a project
   app.get("/api/admin/time-reminders/missing", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {

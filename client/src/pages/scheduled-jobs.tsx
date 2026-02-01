@@ -77,9 +77,18 @@ function getStatusBadge(status: string) {
       return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
     case 'running':
       return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
+    case 'cancelled':
+      return <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"><XCircle className="h-3 w-3 mr-1" />Cancelled</Badge>;
     default:
       return <Badge variant="secondary">{status}</Badge>;
   }
+}
+
+function isJobStuck(run: ScheduledJobRun): boolean {
+  if (run.status !== 'running') return false;
+  const startTime = new Date(run.startedAt).getTime();
+  const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+  return startTime < thirtyMinutesAgo;
 }
 
 function getTriggerBadge(triggeredBy: string) {
@@ -180,9 +189,55 @@ export default function ScheduledJobsPage() {
     },
   });
 
+  const cancelJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const response = await apiRequest(`/api/admin/scheduled-jobs/${jobId}/cancel`, { method: 'POST' });
+      return response;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Job cancelled",
+        description: "The stuck job has been marked as cancelled.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/runs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/stats'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to cancel job",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const cleanupStuckJobsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/admin/scheduled-jobs/cleanup-stuck', { method: 'POST' });
+      return response;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Cleanup complete",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/runs'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduled-jobs/stats'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to cleanup stuck jobs",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatsForJob = (jobType: string): JobStats | undefined => {
     return jobStats.find(s => s.jobType === jobType);
   };
+
+  const stuckJobsCount = jobRuns.filter(run => isJobStuck(run)).length;
 
   return (
     <Layout>
@@ -192,10 +247,27 @@ export default function ScheduledJobsPage() {
             <h1 className="text-2xl font-bold">Scheduled Jobs</h1>
             <p className="text-muted-foreground">Monitor and manage automated tasks</p>
           </div>
-          <Button variant="outline" onClick={() => refetchRuns()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {stuckJobsCount > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => cleanupStuckJobsMutation.mutate()}
+                disabled={cleanupStuckJobsMutation.isPending}
+              >
+                {cleanupStuckJobsMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4 mr-2" />
+                )}
+                Cleanup {stuckJobsCount} Stuck Job{stuckJobsCount !== 1 ? 's' : ''}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => refetchRuns()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -338,6 +410,7 @@ export default function ScheduledJobsPage() {
                         <TableHead>Started</TableHead>
                         <TableHead>Duration</TableHead>
                         <TableHead>Results</TableHead>
+                        <TableHead className="w-[80px]">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -346,13 +419,23 @@ export default function ScheduledJobsPage() {
                         const duration = run.completedAt 
                           ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
                           : null;
+                        const stuck = isJobStuck(run);
 
                         return (
-                          <TableRow key={run.id}>
+                          <TableRow key={run.id} className={stuck ? 'bg-orange-50 dark:bg-orange-950/20' : ''}>
                             <TableCell className="font-medium">
                               {jobInfo?.name || run.jobType}
                             </TableCell>
-                            <TableCell>{getStatusBadge(run.status)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {getStatusBadge(run.status)}
+                                {stuck && (
+                                  <Badge variant="outline" className="border-orange-500 text-orange-600 text-xs">
+                                    Stuck
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
                             <TableCell>{getTriggerBadge(run.triggeredBy)}</TableCell>
                             <TableCell>
                               <div className="text-sm">
@@ -363,7 +446,11 @@ export default function ScheduledJobsPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              {duration !== null ? `${duration}s` : '-'}
+                              {duration !== null ? `${duration}s` : run.status === 'running' ? (
+                                <span className="text-muted-foreground">
+                                  {formatDistanceToNow(new Date(run.startedAt))}
+                                </span>
+                              ) : '-'}
                             </TableCell>
                             <TableCell>
                               {run.errorMessage ? (
@@ -400,6 +487,19 @@ export default function ScheduledJobsPage() {
                                 </div>
                               ) : (
                                 <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {run.status === 'running' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => cancelJobMutation.mutate(run.id)}
+                                  disabled={cancelJobMutation.isPending}
+                                  title="Cancel this job"
+                                >
+                                  <XCircle className="h-4 w-4 text-red-500" />
+                                </Button>
                               )}
                             </TableCell>
                           </TableRow>
