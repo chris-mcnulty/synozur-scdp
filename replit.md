@@ -47,6 +47,13 @@ Preferred communication style: Simple, everyday language.
 - **Development Auth**: Local email/password.
 - **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
 
+### Agent Test Account (Development Only)
+- **Email**: agent.admin@synozur.com
+- **Password**: AgentTest2026!
+- **User ID**: agent-test-admin-001
+- **Role**: admin
+- **Purpose**: Automated testing by Replit Agent. This account is in the dev credentials list in `server/auth-routes.ts`.
+
 ### Document Storage
 - **Strategy**: Multi-tier with SharePoint Online (primary for business documents) and Replit Object Storage (for legacy data).
 
