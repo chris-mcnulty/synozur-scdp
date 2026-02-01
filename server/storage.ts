@@ -51,7 +51,14 @@ import {
   type UserAzureMapping, type InsertUserAzureMapping,
   type Tenant,
   type VocabularyTerms, DEFAULT_VOCABULARY,
-  scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun
+  scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun,
+  helpdeskApps, helpdeskTickets, helpdeskFeedback, helpdeskAttachments, helpdeskPlannerSync, helpdeskComments,
+  type HelpdeskApp, type InsertHelpdeskApp,
+  type HelpdeskTicket, type InsertHelpdeskTicket,
+  type HelpdeskFeedback, type InsertHelpdeskFeedback,
+  type HelpdeskAttachment, type InsertHelpdeskAttachment,
+  type HelpdeskPlannerSync, type InsertHelpdeskPlannerSync,
+  type HelpdeskComment, type InsertHelpdeskComment
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
@@ -977,6 +984,48 @@ export interface IStorage {
     successfulRuns: number;
     failedRuns: number;
   }[]>;
+
+  // Help Desk Apps
+  getHelpdeskApps(): Promise<HelpdeskApp[]>;
+  getHelpdeskApp(id: string): Promise<HelpdeskApp | undefined>;
+  getHelpdeskAppByCode(appCode: string): Promise<HelpdeskApp | undefined>;
+  createHelpdeskApp(app: InsertHelpdeskApp): Promise<HelpdeskApp>;
+  updateHelpdeskApp(id: string, updates: Partial<InsertHelpdeskApp>): Promise<HelpdeskApp>;
+
+  // Help Desk Tickets
+  getHelpdeskTickets(filters: { tenantId: string; appId?: string; status?: string; limit?: number }): Promise<HelpdeskTicket[]>;
+  getHelpdeskTicket(id: string): Promise<HelpdeskTicket | undefined>;
+  getHelpdeskTicketByNumber(ticketNumber: string): Promise<HelpdeskTicket | undefined>;
+  createHelpdeskTicket(ticket: InsertHelpdeskTicket): Promise<HelpdeskTicket>;
+  updateHelpdeskTicket(id: string, updates: Partial<InsertHelpdeskTicket>): Promise<HelpdeskTicket>;
+  getNextTicketNumber(tenantId: string): Promise<string>;
+
+  // Help Desk Feedback
+  getHelpdeskFeedbackList(filters: { tenantId: string; appId?: string; status?: string; feedbackType?: string; limit?: number }): Promise<HelpdeskFeedback[]>;
+  getHelpdeskFeedback(id: string): Promise<HelpdeskFeedback | undefined>;
+  getHelpdeskFeedbackByNumber(feedbackNumber: string): Promise<HelpdeskFeedback | undefined>;
+  createHelpdeskFeedback(feedback: InsertHelpdeskFeedback): Promise<HelpdeskFeedback>;
+  updateHelpdeskFeedback(id: string, updates: Partial<InsertHelpdeskFeedback>): Promise<HelpdeskFeedback>;
+  getNextFeedbackNumber(tenantId: string): Promise<string>;
+
+  // Help Desk Attachments
+  getHelpdeskAttachments(filters: { ticketId?: string; feedbackId?: string }): Promise<HelpdeskAttachment[]>;
+  getHelpdeskAttachment(id: string): Promise<HelpdeskAttachment | undefined>;
+  createHelpdeskAttachment(attachment: InsertHelpdeskAttachment): Promise<HelpdeskAttachment>;
+  deleteHelpdeskAttachment(id: string): Promise<void>;
+
+  // Help Desk Planner Sync
+  getHelpdeskPlannerSync(ticketId: string): Promise<HelpdeskPlannerSync | undefined>;
+  getHelpdeskPlannerSyncByTaskId(plannerTaskId: string): Promise<HelpdeskPlannerSync | undefined>;
+  createHelpdeskPlannerSync(sync: InsertHelpdeskPlannerSync): Promise<HelpdeskPlannerSync>;
+  updateHelpdeskPlannerSync(id: string, updates: Partial<InsertHelpdeskPlannerSync>): Promise<HelpdeskPlannerSync>;
+  getPendingHelpdeskSyncs(tenantId?: string): Promise<HelpdeskPlannerSync[]>;
+
+  // Help Desk Comments
+  getHelpdeskComments(filters: { ticketId?: string; feedbackId?: string }): Promise<HelpdeskComment[]>;
+  createHelpdeskComment(comment: InsertHelpdeskComment): Promise<HelpdeskComment>;
+  updateHelpdeskComment(id: string, updates: Partial<InsertHelpdeskComment>): Promise<HelpdeskComment>;
+  deleteHelpdeskComment(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
