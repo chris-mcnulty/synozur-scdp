@@ -967,6 +967,7 @@ export interface IStorage {
   // Scheduled Job Run Methods
   createScheduledJobRun(run: InsertScheduledJobRun): Promise<ScheduledJobRun>;
   updateScheduledJobRun(id: string, updates: Partial<ScheduledJobRun>): Promise<ScheduledJobRun>;
+  getScheduledJobRunById(id: string): Promise<ScheduledJobRun | null>;
   getScheduledJobRuns(filters?: { tenantId?: string; jobType?: string; limit?: number }): Promise<ScheduledJobRun[]>;
   getScheduledJobStats(tenantId?: string): Promise<{
     jobType: string;
@@ -10201,6 +10202,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(scheduledJobRuns.id, id))
       .returning();
     return updated;
+  }
+
+  async getScheduledJobRunById(id: string): Promise<ScheduledJobRun | null> {
+    const [run] = await db.select()
+      .from(scheduledJobRuns)
+      .where(eq(scheduledJobRuns.id, id))
+      .limit(1);
+    return run || null;
   }
 
   async getScheduledJobRuns(filters?: { tenantId?: string; jobType?: string; limit?: number }): Promise<ScheduledJobRun[]> {
