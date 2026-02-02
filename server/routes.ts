@@ -3944,9 +3944,38 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.put("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.put("/api/projects/:projectId/allocations/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateProjectAllocation(req.params.id, req.body);
+      const user = req.user!;
+      const allocation = await storage.getProjectAllocation(req.params.id);
+      
+      if (!allocation) {
+        return res.status(404).json({ message: "Allocation not found" });
+      }
+      
+      // Check permissions: admin/pm can update any allocation,
+      // regular users can only update status fields on their own assignments
+      const isAdminOrPm = user.role === 'admin' || user.role === 'pm' || 
+                          user.role === 'global_admin' || user.role === 'constellation_admin';
+      const isOwnAssignment = allocation.personId === user.id;
+      
+      if (!isAdminOrPm && !isOwnAssignment) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      
+      // If regular user updating their own assignment, only allow status-related fields
+      let updateData = req.body;
+      if (!isAdminOrPm && isOwnAssignment) {
+        const allowedFields = ['status', 'startedDate', 'completedDate', 'notes'];
+        updateData = {};
+        for (const field of allowedFields) {
+          if (req.body[field] !== undefined) {
+            updateData[field] = req.body[field];
+          }
+        }
+      }
+      
+      const updated = await storage.updateProjectAllocation(req.params.id, updateData);
       
       // Auto-create or reactivate engagement when a person is assigned
       if (req.body.personId) {

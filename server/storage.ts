@@ -248,6 +248,7 @@ export interface IStorage {
   createProjectFromEstimate(estimateId: string, projectData: InsertProject, blockHourDescription?: string, kickoffDate?: string, copyAssignments?: boolean): Promise<Project>;
   
   // Project Allocations
+  getProjectAllocation(id: string): Promise<ProjectAllocation | undefined>;
   getProjectAllocations(projectId: string): Promise<any[]>;
   getUserAllocations(userId: string): Promise<any[]>;
   createProjectAllocation(allocation: InsertProjectAllocation): Promise<ProjectAllocation>;
@@ -5180,6 +5181,14 @@ export class DatabaseStorage implements IStorage {
       console.error("Error creating project from estimate:", error);
       throw new Error(`Failed to create project from estimate: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  async getProjectAllocation(id: string): Promise<ProjectAllocation | undefined> {
+    const [allocation] = await db
+      .select()
+      .from(projectAllocations)
+      .where(eq(projectAllocations.id, id));
+    return allocation;
   }
 
   async getProjectAllocations(projectId: string): Promise<any[]> {
