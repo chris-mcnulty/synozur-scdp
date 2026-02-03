@@ -127,8 +127,10 @@ export default function Expenses() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [editReceiptFile, setEditReceiptFile] = useState<File | null>(null);
   const [showAllExpenses, setShowAllExpenses] = useState<boolean>(false); // Default: show pending only
   const receiptInputRef = useRef<HTMLInputElement>(null);
+  const editReceiptInputRef = useRef<HTMLInputElement>(null);
   const [mileageRate, setMileageRate] = useState<number>(0.70); // Default mileage rate
   const [perDiemBreakdown, setPerDiemBreakdown] = useState<any>(null); // Per diem calculation breakdown
   const [isCalculatingPerDiem, setIsCalculatingPerDiem] = useState<boolean>(false);
@@ -445,23 +447,54 @@ export default function Expenses() {
   const updateExpenseMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
       // Data should already have numbers from handleUpdateExpense
-      return apiRequest(`/api/expenses/${id}`, {
+      const result = await apiRequest(`/api/expenses/${id}`, {
         method: "PATCH",
         body: JSON.stringify(data),
       });
+      
+      // If there's a receipt file to upload, do it now
+      if (editReceiptFile) {
+        const formData = new FormData();
+        formData.append('file', editReceiptFile);
+        
+        try {
+          const response = await fetch(`/api/expenses/${id}/attachments`, {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+            headers: {
+              'X-Session-Id': localStorage.getItem('sessionId') || '',
+            },
+          });
+          
+          if (!response.ok) {
+            console.error('Failed to upload receipt:', await response.text());
+            throw new Error('Receipt upload failed');
+          }
+        } catch (uploadError) {
+          console.error('Receipt upload error:', uploadError);
+          throw new Error('Expense updated but receipt upload failed');
+        }
+      }
+      
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
       setEditingExpenseId(null);
+      setEditReceiptFile(null);
+      if (editReceiptInputRef.current) {
+        editReceiptInputRef.current.value = '';
+      }
       toast({
         title: "Expense updated",
-        description: "Your expense has been updated successfully.",
+        description: editReceiptFile ? "Your expense and receipt have been updated successfully." : "Your expense has been updated successfully.",
       });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
-        description: "Failed to update expense. Please try again.",
+        description: error.message || "Failed to update expense. Please try again.",
         variant: "destructive",
       });
     },
@@ -910,6 +943,13 @@ export default function Expenses() {
     }
   };
 
+  const handleEditFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setEditReceiptFile(file);
+    }
+  };
+
   // Helper function to transform form data for backend
   // Pass mileageRate as parameter to avoid closure issues - FIXED 2024-09-27
   const transformExpenseFormData = (data: ExpenseFormData, currentMileageRate: number) => {
@@ -1209,6 +1249,10 @@ export default function Expenses() {
   const handleCancelEdit = () => {
     setEditingExpenseId(null);
     setEditPrevCategory("");
+    setEditReceiptFile(null);
+    if (editReceiptInputRef.current) {
+      editReceiptInputRef.current.value = '';
+    }
     // Reset edit form to clean state
     editForm.reset({
       date: getTodayBusinessDate(),
@@ -2436,6 +2480,32 @@ export default function Expenses() {
                   )}
                 />
               </div>
+
+              <div className="space-y-2">
+                <FormLabel>Upload Receipt</FormLabel>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    ref={editReceiptInputRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.pdf,.heic,.heif"
+                    onChange={handleEditFileChange}
+                    className="flex-1"
+                    data-testid="edit-input-receipt-file"
+                  />
+                </div>
+                {editReceiptFile && (
+                  <p className="text-sm text-muted-foreground">
+                    Selected: {editReceiptFile.name}
+                  </p>
+                )}
+                {editingExpenseId && expenses?.find(e => e.id === editingExpenseId)?.receiptUrl && (
+                  <p className="text-sm text-green-600 flex items-center gap-1">
+                    <Receipt className="w-3 h-3" />
+                    Current receipt attached
+                  </p>
+                )}
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={handleCancelEdit}>
                   Cancel
