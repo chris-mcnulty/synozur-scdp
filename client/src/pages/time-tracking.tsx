@@ -88,6 +88,8 @@ export default function TimeTracking() {
   const [editingEntry, setEditingEntry] = useState<TimeEntryWithRelations | null>(null);
   const [deletingEntry, setDeletingEntry] = useState<TimeEntryWithRelations | null>(null);
   const [editProjectId, setEditProjectId] = useState<string>("");
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [editDatePickerOpen, setEditDatePickerOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -895,7 +897,7 @@ export default function TimeTracking() {
                             </Button>
                           )}
                         </div>
-                        <Popover>
+                        <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
@@ -919,7 +921,10 @@ export default function TimeTracking() {
                             <Calendar
                               mode="single"
                               selected={field.value ? parseLocalDate(field.value) : undefined}
-                              onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
+                              onSelect={(date) => {
+                                field.onChange(date ? formatLocalDate(date) : '');
+                                setDatePickerOpen(false);
+                              }}
                               disabled={(date) =>
                                 date > new Date() || date < new Date("1900-01-01")
                               }
@@ -1321,7 +1326,7 @@ export default function TimeTracking() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Date</FormLabel>
-                      <Popover>
+                      <Popover open={editDatePickerOpen} onOpenChange={setEditDatePickerOpen}>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button
@@ -1345,7 +1350,10 @@ export default function TimeTracking() {
                           <Calendar
                             mode="single"
                             selected={field.value ? parseLocalDate(field.value) : undefined}
-                            onSelect={(date) => field.onChange(date ? formatLocalDate(date) : '')}
+                            onSelect={(date) => {
+                              field.onChange(date ? formatLocalDate(date) : '');
+                              setEditDatePickerOpen(false);
+                            }}
                             disabled={(date) =>
                               date > new Date() || date < new Date("1900-01-01")
                             }
