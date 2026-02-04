@@ -1,8 +1,67 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
+
+// Error Boundary for catching render errors
+interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+}
+
+class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[PROJECT_DETAIL_ERROR] Render error caught:', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack
+    });
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 bg-red-50 dark:bg-red-900/20 rounded-lg m-4">
+          <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4">
+            Something went wrong loading project details
+          </h2>
+          <details className="mb-4">
+            <summary className="cursor-pointer text-sm font-medium">Error Details (click to expand)</summary>
+            <pre className="mt-2 p-4 bg-white dark:bg-gray-800 rounded text-xs overflow-auto max-h-64">
+              {this.state.error?.message}
+              {'\n\n'}
+              {this.state.error?.stack}
+            </pre>
+          </details>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Reload Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -1660,6 +1719,22 @@ export default function ProjectDetail() {
     projectedCompletion: null
   };
 
+  // Debug logging for production issues
+  console.log('[PROJECT_DETAIL] Analytics loaded:', {
+    projectId: id,
+    projectName: project?.name,
+    hasProject: !!project,
+    hasClient: !!project?.client,
+    clientName: project?.client?.name,
+    monthlyMetricsCount: monthlyMetrics?.length,
+    teamHoursCount: teamHours?.length,
+    burnRate: {
+      totalBudget: burnRate.totalBudget,
+      consumedBudget: burnRate.consumedBudget,
+      burnRatePercentage: burnRate.burnRatePercentage
+    }
+  });
+
   // Calculate project health status
   const getProjectHealth = () => {
     if (burnRate.burnRatePercentage > 100) return { status: "critical", color: "bg-red-500", icon: AlertCircle };
@@ -1704,6 +1779,7 @@ export default function ProjectDetail() {
   ];
 
   return (
+    <ProjectDetailErrorBoundary>
     <Layout>
       <div className="space-y-6">
         {/* Header */}
@@ -2068,11 +2144,11 @@ export default function ProjectDetail() {
                   <div>
                     <p className="text-sm text-muted-foreground">Efficiency Rate</p>
                     <p className="text-xl font-semibold">
-                      {teamHours.length > 0 
-                        ? ((teamHours.reduce((sum, t) => sum + t.billableHours, 0) / 
-                           teamHours.reduce((sum, t) => sum + t.totalHours, 0)) * 100).toFixed(1)
-                        : '0'
-                      }%
+                      {(() => {
+                        const totalHrs = teamHours.reduce((sum, t) => sum + (t.totalHours || 0), 0);
+                        const billableHrs = teamHours.reduce((sum, t) => sum + (t.billableHours || 0), 0);
+                        return totalHrs > 0 ? ((billableHrs / totalHrs) * 100).toFixed(1) : '0';
+                      })()}%
                     </p>
                   </div>
                 </div>
@@ -2192,13 +2268,13 @@ export default function ProjectDetail() {
                     {teamHours.map((member) => (
                       <TableRow key={member.personId} data-testid={`team-member-${member.personId}`}>
                         <TableCell className="font-medium">{member.personName}</TableCell>
-                        <TableCell className="text-right">{member.billableHours.toFixed(1)}</TableCell>
-                        <TableCell className="text-right">{member.nonBillableHours.toFixed(1)}</TableCell>
-                        <TableCell className="text-right">{member.totalHours.toFixed(1)}</TableCell>
-                        <TableCell className="text-right">${member.revenue.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{(member.billableHours || 0).toFixed(1)}</TableCell>
+                        <TableCell className="text-right">{(member.nonBillableHours || 0).toFixed(1)}</TableCell>
+                        <TableCell className="text-right">{(member.totalHours || 0).toFixed(1)}</TableCell>
+                        <TableCell className="text-right">${(member.revenue || 0).toLocaleString()}</TableCell>
                         <TableCell className="text-right">
-                          <Badge variant={member.billableHours / member.totalHours > 0.8 ? "default" : "secondary"}>
-                            {((member.billableHours / member.totalHours) * 100).toFixed(0)}%
+                          <Badge variant={(member.totalHours || 0) > 0 && (member.billableHours || 0) / member.totalHours > 0.8 ? "default" : "secondary"}>
+                            {(member.totalHours || 0) > 0 ? (((member.billableHours || 0) / member.totalHours) * 100).toFixed(0) : '0'}%
                           </Badge>
                         </TableCell>
                       </TableRow>
@@ -2368,13 +2444,13 @@ export default function ProjectDetail() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {[...epics].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((epic: any) => {
+                        {[...epics].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).map((epic: any) => {
                           const epicMilestones = [...milestones]
                             .filter((m: any) => m.projectEpicId === epic.id)
-                            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+                            .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
                           const epicStages = [...stages]
                             .filter((s: any) => s.epicId === epic.id)
-                            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+                            .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''));
                           return (
                             <div key={epic.id} className="border rounded-lg p-4" data-testid={`epic-card-${epic.id}`}>
                               <div className="flex items-start justify-between mb-3">
@@ -2475,7 +2551,7 @@ export default function ProjectDetail() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[...workstreams].sort((a: any, b: any) => a.name.localeCompare(b.name)).map((workstream: any) => {
+                        {[...workstreams].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).map((workstream: any) => {
                           const variance = (workstream.budgetHours || 0) - (workstream.actualHours || 0);
                           return (
                             <div key={workstream.id} className="border rounded-lg p-4" data-testid={`workstream-card-${workstream.id}`}>
@@ -5533,10 +5609,10 @@ export default function ProjectDetail() {
                   <SelectContent>
                     {users
                       .filter((user: any) => !engagements.some((e: any) => e.userId === user.id))
-                      .sort((a: any, b: any) => a.name.localeCompare(b.name))
+                      .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
                       .map((user: any) => (
                         <SelectItem key={user.id} value={user.id}>
-                          {user.name}
+                          {user.name || 'Unknown'}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -6050,5 +6126,6 @@ export default function ProjectDetail() {
         </AlertDialog>
       </div>
     </Layout>
+    </ProjectDetailErrorBoundary>
   );
 }
