@@ -13,7 +13,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseReportSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
-import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit } from "lucide-react";
+import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt } from "lucide-react";
+import { ContractorExpenseInvoiceDialog } from "@/components/contractor-expense-invoice-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +60,7 @@ export default function ExpenseReports() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [availableExpenses, setAvailableExpenses] = useState<(Expense & { project: Project & { client: Client } })[]>([]);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<string>("draft");
@@ -558,6 +560,16 @@ export default function ExpenseReports() {
                       )}
                     </>
                   )}
+                  {selectedReport.submitter?.id === user?.id && (selectedReport.items || []).length > 0 && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowInvoiceDialog(true)}
+                      data-testid="button-generate-invoice"
+                    >
+                      <Receipt className="mr-2 h-4 w-4" />
+                      Generate Invoice
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => { setShowDetailDialog(false); setSelectedReportId(null); }} data-testid="button-close-detail">
                     Close
                   </Button>
@@ -566,6 +578,18 @@ export default function ExpenseReports() {
             )}
           </DialogContent>
         </Dialog>
+
+        {selectedReport && (
+          <ContractorExpenseInvoiceDialog
+            open={showInvoiceDialog}
+            onOpenChange={setShowInvoiceDialog}
+            reportId={selectedReport.id}
+            reportNumber={selectedReport.reportNumber}
+            reportTitle={selectedReport.title}
+            totalAmount={selectedReport.totalAmount}
+            currency={selectedReport.currency}
+          />
+        )}
       </div>
     </Layout>
   );
