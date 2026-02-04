@@ -13961,14 +13961,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Recipient company name is required" });
       }
 
-      // Get the expense items from the report
-      const items = await storage.getExpenseReportItems(req.params.id);
+      // Report already has items from getExpenseReport
+      const items = report.items;
       if (!items || items.length === 0) {
         return res.status(400).json({ message: "Expense report has no items" });
       }
 
       // Format expenses for template
-      const formattedExpenses = items.map(item => ({
+      const formattedExpenses = items.map((item: any) => ({
         date: new Date(item.expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         projectName: item.expense.project?.name || 'N/A',
         category: item.expense.category.charAt(0).toUpperCase() + item.expense.category.slice(1),
@@ -14100,8 +14100,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Recipient company name is required" });
       }
 
-      // Get the expense items from the report
-      const items = await storage.getExpenseReportItems(req.params.id);
+      // Report already has items from getExpenseReport
+      const items = report.items;
       if (!items || items.length === 0) {
         return res.status(400).json({ message: "Expense report has no items" });
       }

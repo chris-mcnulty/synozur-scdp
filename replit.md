@@ -75,6 +75,7 @@ Preferred communication style: Simple, everyday language.
   - **Stuck Job Detection**: Jobs running 30+ minutes are marked as "stuck" with orange highlighting; individual cancel buttons and bulk cleanup available
   - **Startup Catch-up**: On server boot, checks for missed jobs and runs them automatically. Weekly reminders catch up if no run in 8+ days; Planner sync catches up if no run in 35+ minutes. Prevents missed jobs when auto-scale deployment sleeps.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring. Revenue calculations exclude tax.
+- **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement. Invoices can be downloaded as PDF or QuickBooks-compatible CSV. Invoice shows contractor's business info as sender and company (e.g., SYNOZUR) as recipient. Default payment terms: "Due upon client reimbursement". Contractor billing profile is saved to user record for future invoices.
 
 ### Multi-Tenancy (Active)
 - **Architecture**: UUID-based tenant IDs (matches Vega production design), tenant-scoped data isolation, service plans, and subdomain routing.
