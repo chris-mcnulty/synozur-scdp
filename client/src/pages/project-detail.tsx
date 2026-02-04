@@ -1721,7 +1721,7 @@ export default function ProjectDetail() {
               </Badge>
             </div>
             <p className="text-muted-foreground" data-testid="client-name">
-              {project.client.name} • {project.type}
+              {project.client?.name || 'Unknown Client'} • {project.type}
             </p>
             {project.description && (
               <p className="text-sm text-muted-foreground mt-2" data-testid="project-description">
@@ -1866,7 +1866,7 @@ export default function ProjectDetail() {
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Client</p>
                   <p className="font-medium flex items-center gap-2">
                     <Building className="h-4 w-4 text-muted-foreground" />
-                    {project.client.name}
+                    {project.client?.name || 'Unknown Client'}
                   </p>
                 </div>
                 
