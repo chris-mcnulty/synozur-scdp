@@ -1727,6 +1727,7 @@ export default function ProjectDetail() {
     hasClient: !!project?.client,
     clientName: project?.client?.name,
     monthlyMetricsCount: monthlyMetrics?.length,
+    monthlyMetricsMonths: monthlyMetrics?.map(m => m.month),
     teamHoursCount: teamHours?.length,
     burnRate: {
       totalBudget: burnRate.totalBudget,
@@ -1744,25 +1745,48 @@ export default function ProjectDetail() {
 
   const health = getProjectHealth();
 
-  // Format monthly data for charts
-  const monthlyChartData = monthlyMetrics.map(m => ({
-    ...m,
-    month: format(parseISO(m.month + "-01"), "MMM yyyy"),
-    totalHours: (m.billableHours || 0) + (m.nonBillableHours || 0),
-    efficiency: m.billableHours > 0 ? ((m.billableHours / ((m.billableHours || 0) + (m.nonBillableHours || 0))) * 100).toFixed(1) : 0
-  }));
+  // Helper function to safely parse month strings (format: "YYYY-MM")
+  const safeFormatMonth = (monthStr: string): string | null => {
+    if (!monthStr || typeof monthStr !== 'string') return null;
+    // Check if it matches YYYY-MM format
+    const monthPattern = /^\d{4}-\d{2}$/;
+    if (!monthPattern.test(monthStr)) {
+      console.warn('[PROJECT_DETAIL] Invalid month format:', monthStr);
+      return null;
+    }
+    try {
+      const parsed = parseISO(monthStr + "-01");
+      if (isNaN(parsed.getTime())) return null;
+      return format(parsed, "MMM yyyy");
+    } catch (e) {
+      console.warn('[PROJECT_DETAIL] Failed to parse month:', monthStr, e);
+      return null;
+    }
+  };
 
-  // Calculate cumulative burn
+  // Format monthly data for charts - filter out entries with invalid months
+  const monthlyChartData = monthlyMetrics
+    .filter(m => safeFormatMonth(m.month) !== null)
+    .map(m => ({
+      ...m,
+      month: safeFormatMonth(m.month)!,
+      totalHours: (m.billableHours || 0) + (m.nonBillableHours || 0),
+      efficiency: m.billableHours > 0 ? ((m.billableHours / ((m.billableHours || 0) + (m.nonBillableHours || 0))) * 100).toFixed(1) : 0
+    }));
+
+  // Calculate cumulative burn - filter out entries with invalid months
   let cumulativeRevenue = 0;
-  const cumulativeBurnData = monthlyMetrics.map(m => {
-    cumulativeRevenue += (m.revenue || 0) + (m.expenseAmount || 0);
-    return {
-      month: format(parseISO(m.month + "-01"), "MMM yyyy"),
-      cumulative: cumulativeRevenue,
-      budget: burnRate.totalBudget,
-      projected: burnRate.consumedBudget > 0 ? burnRate.totalBudget * (cumulativeRevenue / burnRate.consumedBudget) : 0
-    };
-  });
+  const cumulativeBurnData = monthlyMetrics
+    .filter(m => safeFormatMonth(m.month) !== null)
+    .map(m => {
+      cumulativeRevenue += (m.revenue || 0) + (m.expenseAmount || 0);
+      return {
+        month: safeFormatMonth(m.month)!,
+        cumulative: cumulativeRevenue,
+        budget: burnRate.totalBudget,
+        projected: burnRate.consumedBudget > 0 ? burnRate.totalBudget * (cumulativeRevenue / burnRate.consumedBudget) : 0
+      };
+    });
 
   // Team hours chart data
   const teamChartData = teamHours.map(t => ({
