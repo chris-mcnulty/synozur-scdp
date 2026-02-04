@@ -1765,6 +1765,22 @@ export default function ProjectDetail() {
     }
   };
 
+  // General safe date formatter - handles any date string
+  const safeFormatDate = (dateStr: string | null | undefined, formatStr: string = "MMM d, yyyy"): string => {
+    if (!dateStr || typeof dateStr !== 'string') return '-';
+    try {
+      const parsed = parseISO(dateStr);
+      if (isNaN(parsed.getTime())) {
+        console.warn('[PROJECT_DETAIL] Invalid date:', dateStr);
+        return '-';
+      }
+      return format(parsed, formatStr);
+    } catch (e) {
+      console.warn('[PROJECT_DETAIL] Failed to parse date:', dateStr, e);
+      return '-';
+    }
+  };
+
   // Format monthly data for charts - filter out entries with invalid months
   const monthlyChartData = monthlyMetrics
     .filter(m => safeFormatMonth(m.month) !== null)
@@ -2944,13 +2960,13 @@ export default function ProjectDetail() {
                           </TableCell>
                           <TableCell>
                             {allocation.plannedStartDate ? 
-                              format(parseISO(allocation.plannedStartDate), "MMM d, yyyy") : 
+                              safeFormatDate(allocation.plannedStartDate, "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
                           <TableCell>
                             {allocation.plannedEndDate ? 
-                              format(parseISO(allocation.plannedEndDate), "MMM d, yyyy") : 
+                              safeFormatDate(allocation.plannedEndDate, "MMM d, yyyy") : 
                               '—'
                             }
                           </TableCell>
@@ -3753,7 +3769,7 @@ export default function ProjectDetail() {
                               <TableRow key={pm.id} data-testid={`payment-milestone-row-${pm.id}`}>
                                 <TableCell className="font-medium">{pm.name}</TableCell>
                                 <TableCell>${Number(pm.amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
-                                <TableCell>{pm.targetDate ? format(parseISO(pm.targetDate), 'MMM d, yyyy') : '-'}</TableCell>
+                                <TableCell>{pm.targetDate ? safeFormatDate(pm.targetDate, 'MMM d, yyyy') : '-'}</TableCell>
                                 <TableCell>
                                   <Badge 
                                     variant={pm.invoiceStatus === 'paid' ? 'default' : pm.invoiceStatus === 'invoiced' ? 'secondary' : 'outline'}
@@ -4037,7 +4053,7 @@ export default function ProjectDetail() {
                       {processedTimeEntries.summary.dateRange && (
                         <div className="col-span-full pt-2 border-t">
                           <p className="text-sm text-muted-foreground">
-                            Date Range: {format(parseISO(processedTimeEntries.summary.dateRange.start), "MMM d, yyyy")} - {format(parseISO(processedTimeEntries.summary.dateRange.end), "MMM d, yyyy")}
+                            Date Range: {safeFormatDate(processedTimeEntries.summary.dateRange.start, "MMM d, yyyy")} - {safeFormatDate(processedTimeEntries.summary.dateRange.end, "MMM d, yyyy")}
                           </p>
                         </div>
                       )}
@@ -4241,7 +4257,7 @@ export default function ProjectDetail() {
                               group.entries.map((entry: any, index: number) => (
                                 <TableRow key={entry.id || index} data-testid={`time-entry-${entry.id}`}>
                                   <TableCell>
-                                    {format(parseISO(entry.date), "MMM d, yyyy")}
+                                    {safeFormatDate(entry.date, "MMM d, yyyy")}
                                   </TableCell>
                                   <TableCell>{entry.personName || "Unknown"}</TableCell>
                                   <TableCell>{entry.hours.toFixed(1)}</TableCell>
@@ -5121,7 +5137,7 @@ export default function ProjectDetail() {
                 Are you sure you want to delete this time entry?
                 {timeEntryToDelete && (
                   <div className="mt-2 text-sm space-y-1">
-                    <div><strong>Date:</strong> {format(parseISO(timeEntryToDelete.date), "PPP")}</div>
+                    <div><strong>Date:</strong> {safeFormatDate(timeEntryToDelete.date, "PPP")}</div>
                     <div><strong>Hours:</strong> {timeEntryToDelete.hours.toFixed(1)}</div>
                     <div><strong>Person:</strong> {timeEntryToDelete.personName || "Unknown"}</div>
                     {timeEntryToDelete.description && (
