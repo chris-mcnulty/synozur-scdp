@@ -1,3 +1,4 @@
+// v2.1 - Safe date parsing for production stability
 import { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
