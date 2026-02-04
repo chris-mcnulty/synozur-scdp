@@ -13924,6 +13924,299 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // ========== CONTRACTOR EXPENSE INVOICE API ==========
+
+  // POST /api/expense-reports/:id/contractor-invoice/pdf - Generate contractor expense invoice PDF
+  app.post("/api/expense-reports/:id/contractor-invoice/pdf", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can generate their own contractor invoice
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "You can only generate invoices for your own expense reports" });
+      }
+
+      // Get contractor billing info from request body (allows overriding stored profile)
+      const {
+        contractorBusinessName,
+        contractorBusinessAddress,
+        contractorBillingId,
+        contractorPhone,
+        contractorEmail,
+        recipientCompanyName,
+        recipientAddress,
+        recipientContact,
+        invoiceNumber,
+        paymentTerms = "Due upon client reimbursement"
+      } = req.body;
+
+      if (!contractorBusinessName) {
+        return res.status(400).json({ message: "Contractor business name is required" });
+      }
+
+      if (!recipientCompanyName) {
+        return res.status(400).json({ message: "Recipient company name is required" });
+      }
+
+      // Get the expense items from the report
+      const items = await storage.getExpenseReportItems(req.params.id);
+      if (!items || items.length === 0) {
+        return res.status(400).json({ message: "Expense report has no items" });
+      }
+
+      // Format expenses for template
+      const formattedExpenses = items.map(item => ({
+        date: new Date(item.expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        projectName: item.expense.project?.name || 'N/A',
+        category: item.expense.category.charAt(0).toUpperCase() + item.expense.category.slice(1),
+        description: item.expense.description,
+        amount: parseFloat(item.expense.amount).toFixed(2)
+      }));
+
+      // Calculate total
+      const total = items.reduce((sum, item) => sum + parseFloat(item.expense.amount), 0);
+
+      // Calculate report period from expenses
+      const dates = items.map(item => new Date(item.expense.date));
+      const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+      const reportPeriod = `${minDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${maxDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+      // Load and compile template
+      const { fileURLToPath } = await import('url');
+      const path = await import('path');
+      const fs = await import('fs');
+      const Handlebars = await import('handlebars');
+      
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const projectRoot = path.resolve(__dirname, '..');
+      const templatePath = path.join(projectRoot, 'server', 'contractor-invoice-template.html');
+      const templateSource = fs.readFileSync(templatePath, 'utf8');
+      const template = Handlebars.compile(templateSource);
+
+      // Prepare template data
+      const templateData = {
+        contractorBusinessName,
+        contractorBusinessAddress,
+        contractorBillingId,
+        contractorPhone,
+        contractorEmail,
+        recipientCompanyName,
+        recipientAddress,
+        recipientContact,
+        invoiceNumber: invoiceNumber || `EXP-${report.reportNumber}`,
+        invoiceDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        generatedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        paymentTerms,
+        currency: report.currency || 'USD',
+        expenseReportTitle: report.title,
+        expenseReportNumber: report.reportNumber,
+        reportPeriod,
+        expenses: formattedExpenses,
+        total: total.toFixed(2)
+      };
+
+      // Generate HTML
+      const html = template(templateData);
+
+      // Generate PDF using Puppeteer
+      const puppeteer = await import('puppeteer');
+      let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      
+      if (!executablePath) {
+        try {
+          const { execSync } = await import('child_process');
+          executablePath = execSync('which chromium').toString().trim();
+        } catch {
+          executablePath = 'chromium';
+        }
+      }
+
+      const browser = await puppeteer.launch({
+        headless: true,
+        executablePath,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--single-process'
+        ]
+      });
+
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      
+      const pdfBuffer = await page.pdf({
+        format: 'Letter',
+        printBackground: true,
+        margin: { top: '0.25in', right: '0.25in', bottom: '0.25in', left: '0.25in' }
+      });
+
+      await browser.close();
+
+      // Send PDF response
+      const fileName = `Expense_Invoice_${invoiceNumber || report.reportNumber}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.send(Buffer.from(pdfBuffer));
+    } catch (error: any) {
+      console.error("[CONTRACTOR_INVOICE] Failed to generate PDF:", error);
+      res.status(500).json({ message: error.message || "Failed to generate contractor invoice PDF" });
+    }
+  });
+
+  // POST /api/expense-reports/:id/contractor-invoice/csv - Generate contractor expense invoice in QuickBooks CSV format
+  app.post("/api/expense-reports/:id/contractor-invoice/csv", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      // Only owner can generate their own contractor invoice
+      if (report.submitterId !== req.user!.id) {
+        return res.status(403).json({ message: "You can only generate invoices for your own expense reports" });
+      }
+
+      // Get contractor billing info from request body
+      const {
+        contractorBusinessName,
+        recipientCompanyName,
+        invoiceNumber,
+        paymentTerms = "Due upon client reimbursement"
+      } = req.body;
+
+      if (!contractorBusinessName) {
+        return res.status(400).json({ message: "Contractor business name is required" });
+      }
+
+      if (!recipientCompanyName) {
+        return res.status(400).json({ message: "Recipient company name is required" });
+      }
+
+      // Get the expense items from the report
+      const items = await storage.getExpenseReportItems(req.params.id);
+      if (!items || items.length === 0) {
+        return res.status(400).json({ message: "Expense report has no items" });
+      }
+
+      // QuickBooks Invoice Import CSV format
+      // Columns: InvoiceNo,Customer,InvoiceDate,DueDate,Terms,Item,Description,Quantity,Rate,Amount,Class,TaxCode,TaxAmount
+      const invoiceNo = invoiceNumber || `EXP-${report.reportNumber}`;
+      const invoiceDate = new Date().toLocaleDateString('en-US');
+      
+      // Build CSV content
+      const csvRows: string[] = [];
+      
+      // Header row (QuickBooks format)
+      csvRows.push('InvoiceNo,Customer,InvoiceDate,DueDate,Terms,Item,Description,Quantity,Rate,Amount,Class,TaxCode,TaxAmount');
+      
+      // Data rows
+      for (const item of items) {
+        const category = item.expense.category.charAt(0).toUpperCase() + item.expense.category.slice(1);
+        const projectName = item.expense.project?.name || 'N/A';
+        const description = `${projectName}: ${item.expense.description}`.replace(/"/g, '""'); // Escape quotes
+        const amount = parseFloat(item.expense.amount).toFixed(2);
+        
+        csvRows.push([
+          invoiceNo,
+          `"${recipientCompanyName.replace(/"/g, '""')}"`,
+          invoiceDate,
+          '', // DueDate - left empty for "Due upon client reimbursement"
+          `"${paymentTerms.replace(/"/g, '""')}"`,
+          `"Expense:${category}"`, // Product/Service hierarchy
+          `"${description}"`,
+          '1',
+          amount,
+          amount,
+          '', // Class
+          '', // TaxCode
+          '0' // TaxAmount
+        ].join(','));
+      }
+
+      const csvContent = csvRows.join('\n');
+      
+      // Send CSV response
+      const fileName = `Expense_Invoice_${invoiceNo}.csv`;
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      res.send(csvContent);
+    } catch (error: any) {
+      console.error("[CONTRACTOR_INVOICE] Failed to generate CSV:", error);
+      res.status(500).json({ message: error.message || "Failed to generate contractor invoice CSV" });
+    }
+  });
+
+  // PATCH /api/users/:id/contractor-profile - Update contractor billing profile
+  app.patch("/api/users/:id/contractor-profile", requireAuth, async (req, res) => {
+    try {
+      // Users can only update their own contractor profile
+      if (req.params.id !== req.user!.id) {
+        return res.status(403).json({ message: "You can only update your own contractor profile" });
+      }
+
+      const {
+        contractorBusinessName,
+        contractorBusinessAddress,
+        contractorBillingId,
+        contractorPhone,
+        contractorEmail
+      } = req.body;
+
+      const updated = await storage.updateUser(req.params.id, {
+        contractorBusinessName,
+        contractorBusinessAddress,
+        contractorBillingId,
+        contractorPhone,
+        contractorEmail
+      });
+
+      res.json({
+        contractorBusinessName: updated.contractorBusinessName,
+        contractorBusinessAddress: updated.contractorBusinessAddress,
+        contractorBillingId: updated.contractorBillingId,
+        contractorPhone: updated.contractorPhone,
+        contractorEmail: updated.contractorEmail
+      });
+    } catch (error: any) {
+      console.error("[CONTRACTOR_PROFILE] Failed to update contractor profile:", error);
+      res.status(500).json({ message: error.message || "Failed to update contractor profile" });
+    }
+  });
+
+  // GET /api/users/:id/contractor-profile - Get contractor billing profile
+  app.get("/api/users/:id/contractor-profile", requireAuth, async (req, res) => {
+    try {
+      // Users can only view their own contractor profile
+      if (req.params.id !== req.user!.id) {
+        return res.status(403).json({ message: "You can only view your own contractor profile" });
+      }
+
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({
+        contractorBusinessName: user.contractorBusinessName,
+        contractorBusinessAddress: user.contractorBusinessAddress,
+        contractorBillingId: user.contractorBillingId,
+        contractorPhone: user.contractorPhone,
+        contractorEmail: user.contractorEmail
+      });
+    } catch (error: any) {
+      console.error("[CONTRACTOR_PROFILE] Failed to get contractor profile:", error);
+      res.status(500).json({ message: error.message || "Failed to get contractor profile" });
+    }
+  });
+
   // ========== REIMBURSEMENT BATCHES API ==========
 
   // GET /api/reimbursement-batches - List reimbursement batches

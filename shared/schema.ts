@@ -175,6 +175,12 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   receiveTimeReminders: boolean("receive_time_reminders").notNull().default(true), // Opt-in for weekly time entry reminders
   receiveExpenseReminders: boolean("receive_expense_reminders").notNull().default(true), // Opt-in for weekly expense submission reminders
+  // Contractor billing profile fields (for generating expense invoices)
+  contractorBusinessName: text("contractor_business_name"), // Contractor's business/company name
+  contractorBusinessAddress: text("contractor_business_address"), // Contractor's business address
+  contractorBillingId: text("contractor_billing_id"), // Contractor's invoice/billing ID or tax ID
+  contractorPhone: text("contractor_phone"), // Contractor's phone number
+  contractorEmail: text("contractor_email"), // Contractor's billing email (may differ from login email)
   // Multi-tenancy fields
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
   platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin

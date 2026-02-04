@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense Invoice {{invoiceNumber}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #333;
+      background: white;
+    }
+
+    .invoice-container {
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 0.5in;
+      background: white;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 40px;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 30px;
+    }
+
+    .contractor-info {
+      flex: 1;
+    }
+
+    .contractor-name {
+      font-size: 24px;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 10px;
+    }
+
+    .contractor-details {
+      font-size: 10px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
+
+    .invoice-info {
+      text-align: right;
+      flex: 0 0 auto;
+      min-width: 200px;
+    }
+
+    .invoice-title {
+      font-size: 32px;
+      font-weight: bold;
+      color: #1f2937;
+      margin-bottom: 10px;
+    }
+
+    .invoice-details {
+      font-size: 11px;
+    }
+
+    .invoice-details div {
+      margin-bottom: 5px;
+    }
+
+    .invoice-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 40px;
+    }
+
+    .bill-to {
+      flex: 1;
+      padding-right: 40px;
+    }
+
+    .invoice-details-section {
+      flex: 0 0 auto;
+      text-align: right;
+    }
+
+    .invoice-info-table {
+      border-collapse: collapse;
+      margin-left: auto;
+    }
+
+    .invoice-info-table td {
+      padding: 4px 0;
+    }
+
+    .invoice-info-table td.label {
+      color: #6b7280;
+      font-size: 11px;
+      text-transform: uppercase;
+      padding-right: 30px;
+      text-align: left;
+    }
+
+    .invoice-info-table td.value {
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: bold;
+      color: #374151;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .recipient-name {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+
+    .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+
+    .invoice-table th {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      padding: 12px 8px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #374151;
+    }
+
+    .invoice-table td {
+      border: 1px solid #e5e7eb;
+      padding: 10px 8px;
+      font-size: 10px;
+      vertical-align: top;
+    }
+
+    .invoice-table tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    .text-right {
+      text-align: right;
+    }
+
+    .font-mono {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    }
+
+    .project-header {
+      background: #1f2937;
+      color: white;
+    }
+
+    .project-header td {
+      font-weight: bold;
+      font-size: 11px;
+      border-color: #374151;
+    }
+
+    .totals-section {
+      margin-top: 40px;
+      text-align: right;
+    }
+
+    .totals-table {
+      margin-left: auto;
+      width: 300px;
+      border-collapse: collapse;
+    }
+
+    .totals-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 11px;
+    }
+
+    .totals-table .total-row {
+      font-weight: bold;
+      font-size: 14px;
+      border-top: 2px solid #1f2937;
+      border-bottom: 2px solid #1f2937;
+    }
+
+    .amount {
+      font-weight: 600;
+      color: #059669;
+    }
+
+    .footer {
+      margin-top: 50px;
+      padding-top: 30px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 10px;
+      color: #6b7280;
+      text-align: center;
+    }
+
+    .expense-report-reference {
+      background: #f0f9ff;
+      border: 1px solid #0284c7;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 20px;
+      font-size: 11px;
+    }
+
+    .expense-report-reference strong {
+      color: #0c4a6e;
+    }
+
+    @media print {
+      body {
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+      
+      .invoice-container {
+        padding: 0.25in;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="contractor-info">
+        <div class="contractor-name">{{contractorBusinessName}}</div>
+        <div class="contractor-details">
+          {{#if contractorBusinessAddress}}
+          <div>{{contractorBusinessAddress}}</div>
+          {{/if}}
+          {{#if contractorPhone}}
+          <div>Phone: {{contractorPhone}}</div>
+          {{/if}}
+          {{#if contractorEmail}}
+          <div>Email: {{contractorEmail}}</div>
+          {{/if}}
+          {{#if contractorBillingId}}
+          <div>Billing ID: {{contractorBillingId}}</div>
+          {{/if}}
+        </div>
+      </div>
+      <div class="invoice-info">
+        <div class="invoice-title">EXPENSE INVOICE</div>
+        <div class="invoice-details">
+          {{#if invoiceNumber}}
+          <div><strong>Invoice #:</strong> {{invoiceNumber}}</div>
+          {{/if}}
+          <div><strong>Generated:</strong> {{generatedDate}}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Invoice Meta Information -->
+    <div class="invoice-meta">
+      <div class="bill-to">
+        <div class="section-title">Bill To</div>
+        <div class="recipient-name">{{recipientCompanyName}}</div>
+        {{#if recipientAddress}}
+        <div>{{recipientAddress}}</div>
+        {{/if}}
+        {{#if recipientContact}}
+        <div>Attn: {{recipientContact}}</div>
+        {{/if}}
+      </div>
+      <div class="invoice-details-section">
+        <table class="invoice-info-table">
+          {{#if invoiceNumber}}
+          <tr>
+            <td class="label">INVOICE</td>
+            <td class="value">{{invoiceNumber}}</td>
+          </tr>
+          {{/if}}
+          <tr>
+            <td class="label">DATE</td>
+            <td class="value">{{invoiceDate}}</td>
+          </tr>
+          <tr>
+            <td class="label">TERMS</td>
+            <td class="value">{{paymentTerms}}</td>
+          </tr>
+          <tr>
+            <td class="label">CURRENCY</td>
+            <td class="value">{{currency}}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Expense Report Reference -->
+    <div class="expense-report-reference">
+      <strong>Expense Report:</strong> {{expenseReportTitle}} ({{expenseReportNumber}})<br>
+      <strong>Report Period:</strong> {{reportPeriod}}
+    </div>
+
+    <!-- Expense Items Table -->
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th style="width: 15%">Date</th>
+          <th style="width: 20%">Project</th>
+          <th style="width: 15%">Category</th>
+          <th style="width: 30%">Description</th>
+          <th style="width: 20%" class="text-right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each expenses}}
+        <tr>
+          <td>{{this.date}}</td>
+          <td>{{this.projectName}}</td>
+          <td>{{this.category}}</td>
+          <td>{{this.description}}</td>
+          <td class="text-right font-mono amount">{{@root.currency}} {{this.amount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <!-- Totals Section -->
+    <div class="totals-section">
+      <table class="totals-table">
+        <tr class="total-row">
+          <td>TOTAL</td>
+          <td class="text-right">{{currency}} {{total}}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <p>Thank you for your business.</p>
+      <p style="margin-top: 10px;">{{paymentTerms}}</p>
+    </div>
+  </div>
+</body>
+</html>
