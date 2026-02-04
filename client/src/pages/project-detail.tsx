@@ -1647,7 +1647,18 @@ export default function ProjectDetail() {
     );
   }
 
-  const { project, monthlyMetrics, burnRate, teamHours } = analytics;
+  const { project, monthlyMetrics = [], teamHours = [] } = analytics;
+  
+  // Provide default values for burnRate to prevent null access errors
+  const burnRate = analytics.burnRate || {
+    totalBudget: 0,
+    consumedBudget: 0,
+    burnRatePercentage: 0,
+    estimatedHours: 0,
+    actualHours: 0,
+    hoursVariance: 0,
+    projectedCompletion: null
+  };
 
   // Calculate project health status
   const getProjectHealth = () => {
@@ -1662,28 +1673,28 @@ export default function ProjectDetail() {
   const monthlyChartData = monthlyMetrics.map(m => ({
     ...m,
     month: format(parseISO(m.month + "-01"), "MMM yyyy"),
-    totalHours: m.billableHours + m.nonBillableHours,
-    efficiency: m.billableHours > 0 ? ((m.billableHours / (m.billableHours + m.nonBillableHours)) * 100).toFixed(1) : 0
+    totalHours: (m.billableHours || 0) + (m.nonBillableHours || 0),
+    efficiency: m.billableHours > 0 ? ((m.billableHours / ((m.billableHours || 0) + (m.nonBillableHours || 0))) * 100).toFixed(1) : 0
   }));
 
   // Calculate cumulative burn
   let cumulativeRevenue = 0;
   const cumulativeBurnData = monthlyMetrics.map(m => {
-    cumulativeRevenue += m.revenue + m.expenseAmount;
+    cumulativeRevenue += (m.revenue || 0) + (m.expenseAmount || 0);
     return {
       month: format(parseISO(m.month + "-01"), "MMM yyyy"),
       cumulative: cumulativeRevenue,
       budget: burnRate.totalBudget,
-      projected: burnRate.totalBudget * (cumulativeRevenue / burnRate.consumedBudget)
+      projected: burnRate.consumedBudget > 0 ? burnRate.totalBudget * (cumulativeRevenue / burnRate.consumedBudget) : 0
     };
   });
 
   // Team hours chart data
   const teamChartData = teamHours.map(t => ({
-    name: t.personName.split(' ')[0], // First name only for chart
-    billable: t.billableHours,
-    nonBillable: t.nonBillableHours,
-    total: t.totalHours
+    name: (t.personName || 'Unknown').split(' ')[0], // First name only for chart
+    billable: t.billableHours || 0,
+    nonBillable: t.nonBillableHours || 0,
+    total: t.totalHours || 0
   })).slice(0, 10); // Top 10 contributors
 
   // Gauge chart data for burn rate
