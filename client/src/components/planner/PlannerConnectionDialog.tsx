@@ -139,17 +139,16 @@ export function PlannerConnectionDialog({
     );
   }, [allGroups, groupSearchQuery]);
 
-  const { data: plans, isLoading: loadingPlans } = useQuery<PlannerPlan[]>({
-    queryKey: ["/api/planner/plans"],
-    enabled: open && step === "select-plan" && method === "existing-plan",
+  // Fetch plans for the selected group - works for both "existing-plan" and "create-in-team" methods
+  const { data: teamPlans, isLoading: loadingTeamPlans } = useQuery<PlannerPlan[]>({
+    queryKey: ["/api/planner/groups", selectedGroup?.id, "plans"],
+    enabled: open && selectedGroup !== null && (method === "existing-plan" || method === "create-in-team"),
     retry: false
   });
 
-  const { data: teamPlans, isLoading: loadingTeamPlans } = useQuery<PlannerPlan[]>({
-    queryKey: ["/api/planner/groups", selectedGroup?.id, "plans"],
-    enabled: open && selectedGroup !== null && method === "create-in-team",
-    retry: false
-  });
+  // Use teamPlans for the select-plan step (existing-plan method now requires team selection first)
+  const plans = teamPlans;
+  const loadingPlans = loadingTeamPlans;
 
   // Fetch channels for the selected team (for pinning the plan as a tab)
   const { data: channels, isLoading: loadingChannels } = useQuery<TeamChannel[]>({
@@ -291,7 +290,9 @@ export function PlannerConnectionDialog({
   const handleMethodSelect = (selectedMethod: ConnectionMethod) => {
     setMethod(selectedMethod);
     if (selectedMethod === "existing-plan") {
-      setStep("select-plan");
+      // With app-only auth, we can't list all user's plans directly
+      // User must first select a team/group, then we list plans for that group
+      setStep("select-team");
     } else if (selectedMethod === "create-in-team") {
       setStep("select-team");
     } else if (selectedMethod === "create-new-team") {
@@ -308,6 +309,9 @@ export function PlannerConnectionDialog({
       // Go to channel creation step
       setNewChannelName(projectName || "");
       setStep("create-channel");
+    } else if (method === "existing-plan") {
+      // Go to plan selection step for this group
+      setStep("select-plan");
     } else {
       setStep("create-plan");
       setNewPlanName(projectName);
@@ -545,11 +549,11 @@ export function PlannerConnectionDialog({
 
             {step === "select-plan" && (
               <div className="space-y-4" data-testid="planner-plan-selection">
-                <Button variant="ghost" size="sm" onClick={() => setStep("choose-method")}>
-                  ← Back
+                <Button variant="ghost" size="sm" onClick={() => setStep("select-team")}>
+                  ← Back to Team Selection
                 </Button>
                 <p className="text-sm text-muted-foreground">
-                  Select a Planner plan to connect:
+                  Select a Planner plan from <strong>{selectedGroup?.displayName}</strong>:
                 </p>
                 
                 {loadingPlans && (
@@ -560,7 +564,7 @@ export function PlannerConnectionDialog({
                 
                 {!loadingPlans && plans && plans.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No Planner plans found. Create one in Microsoft Planner first.
+                    No Planner plans found in this team. Create one in Microsoft Planner first, or select a different team.
                   </p>
                 )}
                 
