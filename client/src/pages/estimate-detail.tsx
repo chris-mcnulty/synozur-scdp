@@ -355,10 +355,12 @@ function EstimateDetailContent() {
   });
 
   const updateStageMutation = useMutation({
-    mutationFn: async ({ stageId, name, order }: { stageId: string; name?: string; order?: number }) => {
-      const body: { name?: string; order?: number } = {};
+    mutationFn: async ({ stageId, name, order, startDate, endDate }: { stageId: string; name?: string; order?: number; startDate?: string | null; endDate?: string | null }) => {
+      const body: any = {};
       if (name !== undefined) body.name = name;
       if (order !== undefined) body.order = order;
+      if (startDate !== undefined) body.startDate = startDate;
+      if (endDate !== undefined) body.endDate = endDate;
       return apiRequest(`/api/estimates/${id}/stages/${stageId}`, {
         method: "PATCH",
         body: JSON.stringify(body)
@@ -3961,7 +3963,7 @@ function EstimateDetailContent() {
                                     isDuplicate ? 'border-red-200 bg-red-50' : 'border-gray-200'
                                   }`}
                                 >
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <div className="w-4 h-0.5 bg-gray-300"></div>
                                     {editingStageId === stage.id ? (
                                       <div className="flex items-center gap-2">
@@ -4013,6 +4015,31 @@ function EstimateDetailContent() {
                                             DUPLICATE
                                           </Badge>
                                         )}
+                                        <div className="flex items-center gap-1 ml-2">
+                                          <Input
+                                            type="date"
+                                            className="h-7 w-[130px] text-xs"
+                                            value={stage.startDate || ''}
+                                            onChange={(e) => {
+                                              updateStageMutation.mutate({ stageId: stage.id, startDate: e.target.value || null });
+                                            }}
+                                            disabled={!isEditable}
+                                            title="Start date"
+                                            data-testid={`input-stage-start-date-${stage.id}`}
+                                          />
+                                          <span className="text-xs text-muted-foreground">to</span>
+                                          <Input
+                                            type="date"
+                                            className="h-7 w-[130px] text-xs"
+                                            value={stage.endDate || ''}
+                                            onChange={(e) => {
+                                              updateStageMutation.mutate({ stageId: stage.id, endDate: e.target.value || null });
+                                            }}
+                                            disabled={!isEditable}
+                                            title="End date"
+                                            data-testid={`input-stage-end-date-${stage.id}`}
+                                          />
+                                        </div>
                                       </>
                                     )}
                                   </div>
