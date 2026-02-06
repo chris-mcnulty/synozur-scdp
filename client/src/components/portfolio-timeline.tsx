@@ -60,6 +60,7 @@ interface TimelineItem {
   status: string;
   startDate: string | null;
   endDate: string | null;
+  projectedEndDate?: string | null;
   clientId: string;
   clientName: string;
   budget: number | null;
@@ -137,9 +138,11 @@ export function PortfolioTimeline() {
 
     let itemEnd: Date;
     const parsedEnd = safeParse(item.endDate);
+    const parsedProjected = safeParse(item.projectedEndDate ?? null);
+    const effectiveEnd = parsedEnd || parsedProjected;
 
-    if (parsedEnd) {
-      itemEnd = parsedEnd;
+    if (effectiveEnd) {
+      itemEnd = effectiveEnd;
     } else if (item.type === "project") {
       itemEnd = viewEnd;
     } else {
@@ -160,17 +163,26 @@ export function PortfolioTimeline() {
     const width = Math.max((widthDays / totalDays) * 100, 1);
 
     const extendsLeft = isBefore(itemStart, viewStart);
-    const extendsRight = parsedEnd ? isAfter(parsedEnd, viewEnd) : true;
+    const extendsRight = effectiveEnd ? isAfter(effectiveEnd, viewEnd) : true;
 
     return { left: `${left}%`, width: `${width}%`, extendsLeft, extendsRight };
   };
 
   const getBarColor = (item: TimelineItem) => {
     if (item.type === "estimate") {
-      return "bg-amber-500/80 dark:bg-amber-600/80 border-amber-600 dark:border-amber-500";
+      if (item.status === "approved") {
+        return "bg-amber-500/80 dark:bg-amber-600/80 border-amber-600 dark:border-amber-500";
+      }
+      if (item.status === "final" || item.status === "sent") {
+        return "bg-amber-400/60 dark:bg-amber-500/60 border-amber-500 dark:border-amber-400 border-dashed";
+      }
+      return "bg-amber-300/50 dark:bg-amber-400/50 border-amber-400 dark:border-amber-300 border-dashed";
     }
     if (item.status === "on-hold") {
       return "bg-gray-400/80 dark:bg-gray-500/80 border-gray-500 dark:border-gray-400";
+    }
+    if (item.projectedEndDate) {
+      return "bg-blue-500/80 dark:bg-blue-600/80 border-blue-600 dark:border-blue-500 border-dashed";
     }
     return "bg-blue-500/80 dark:bg-blue-600/80 border-blue-600 dark:border-blue-500";
   };
@@ -236,7 +248,7 @@ export function PortfolioTimeline() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="active">Active Projects</SelectItem>
-            <SelectItem value="pending">Pending Estimates</SelectItem>
+            <SelectItem value="pending">Estimates (Pipeline)</SelectItem>
             <SelectItem value="both">Both</SelectItem>
           </SelectContent>
         </Select>
@@ -273,14 +285,18 @@ export function PortfolioTimeline() {
           </Button>
         </div>
 
-        <div className="flex items-center gap-2 ml-auto text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 ml-auto text-sm text-muted-foreground flex-wrap">
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-blue-500" />
             <span>Project</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-amber-500" />
-            <span>Estimate</span>
+            <span>Approved</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-3 h-3 rounded bg-amber-300/70 border border-dashed border-amber-400" />
+            <span>Draft/Final</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-3 h-3 rounded bg-gray-400" />
@@ -363,8 +379,8 @@ export function PortfolioTimeline() {
                   {filter === "active"
                     ? "No active projects found."
                     : filter === "pending"
-                    ? "No approved estimates without linked projects found."
-                    : "No active projects or pending estimates found."}
+                    ? "No estimates in the pipeline."
+                    : "No active projects or pipeline estimates found."}
                 </p>
               </div>
             ) : (
@@ -549,6 +565,11 @@ export function PortfolioTimeline() {
                                       <div>
                                         {safeParse(item.endDate)
                                           ? format(safeParse(item.endDate)!, "MMM d, yyyy")
+                                          : item.projectedEndDate
+                                          ? <>
+                                              {format(safeParse(item.projectedEndDate)!, "MMM d, yyyy")}
+                                              <span className="text-muted-foreground ml-1 italic">(projected)</span>
+                                            </>
                                           : item.type === "project"
                                           ? "Ongoing"
                                           : "-"}

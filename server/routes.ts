@@ -7540,18 +7540,83 @@ export async function registerRoutes(app: Express): Promise<void> {
   // PORTFOLIO TIMELINE ENDPOINT
   // ============================================================================
 
+  app.patch("/api/estimates/:id/planning", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const { potentialStartDate } = req.body;
+      if (potentialStartDate !== null && potentialStartDate !== undefined && typeof potentialStartDate !== 'string') {
+        return res.status(400).json({ message: "potentialStartDate must be a date string or null" });
+      }
+      if (potentialStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(potentialStartDate)) {
+        return res.status(400).json({ message: "potentialStartDate must be in YYYY-MM-DD format" });
+      }
+      const estimate = await storage.getEstimate(req.params.id);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+      if (estimate.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const updated = await storage.updateEstimate(req.params.id, { potentialStartDate: potentialStartDate || null });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update planning date" });
+    }
+  });
+
   app.get("/api/portfolio/timeline", requireAuth, async (req, res) => {
     try {
       const tenantId = (req as any).tenantId;
       const filter = (req.query.filter as string) || "active"; // active, pending, both
 
-      // Get active projects with client info
+      const allEstimates = await storage.getEstimates(false, tenantId);
+
+      // Get active projects with client info and compute projected end dates
       let activeProjects: any[] = [];
       if (filter === "active" || filter === "both") {
         const allProjects = await storage.getProjects(tenantId);
-        activeProjects = allProjects
-          .filter(p => p.status === "active" || p.status === "on-hold")
-          .map(p => ({
+        const activeProjectsList = allProjects.filter(p => p.status === "active" || p.status === "on-hold");
+
+        const projectIds = activeProjectsList.map(p => p.id);
+        const projectEstimateMap = new Map<string, number>();
+
+        if (projectIds.length > 0) {
+          const linkedEstimates = allEstimates.filter(e => e.projectId && projectIds.includes(e.projectId));
+          const linkedEstimateIds = linkedEstimates.map(e => e.id);
+
+          if (linkedEstimateIds.length > 0) {
+            const weekResults = await db
+              .select({
+                estimateId: estimateLineItems.estimateId,
+                maxWeek: max(estimateLineItems.week),
+              })
+              .from(estimateLineItems)
+              .where(inArray(estimateLineItems.estimateId, linkedEstimateIds))
+              .groupBy(estimateLineItems.estimateId);
+
+            for (const est of linkedEstimates) {
+              const weekRow = weekResults.find(r => r.estimateId === est.id);
+              const weeks = weekRow?.maxWeek ? Number(weekRow.maxWeek) : 1;
+              const existing = projectEstimateMap.get(est.projectId!) || 0;
+              if (weeks > existing) {
+                projectEstimateMap.set(est.projectId!, weeks);
+              }
+            }
+          }
+        }
+
+        activeProjects = activeProjectsList.map(p => {
+          let projectedEndDate: string | null = null;
+          if (p.startDate && !p.endDate) {
+            const maxWeeks = projectEstimateMap.get(p.id);
+            if (maxWeeks) {
+              const start = new Date(p.startDate);
+              const end = new Date(start);
+              end.setDate(end.getDate() + maxWeeks * 7);
+              projectedEndDate = end.toISOString().split("T")[0];
+            }
+          }
+          return {
             type: "project" as const,
             id: p.id,
             name: p.name,
@@ -7559,23 +7624,24 @@ export async function registerRoutes(app: Express): Promise<void> {
             status: p.status,
             startDate: p.startDate || null,
             endDate: p.endDate || null,
+            projectedEndDate,
             clientId: p.clientId,
             clientName: p.client?.name || "Unknown",
             budget: p.sowValue ? parseFloat(p.sowValue as string) : null,
             commercialScheme: p.commercialScheme,
-          }));
+          };
+        });
       }
 
-      // Get approved estimates with no linked project
+      // Get active estimates (draft, final, sent, approved) not yet linked to a project
       let pendingEstimates: any[] = [];
       if (filter === "pending" || filter === "both") {
-        const allEstimates = await storage.getEstimates(false, tenantId);
-        const unlinkedApproved = allEstimates.filter(
-          e => e.status === "approved" && !e.projectId
+        const activeStatuses = ["draft", "final", "sent", "approved"];
+        const unlinkedEstimates = allEstimates.filter(
+          e => activeStatuses.includes(e.status) && !e.projectId
         );
 
-        // Batch load max week per estimate using a single query (avoid N+1)
-        const estimateIds = unlinkedApproved.map(e => e.id);
+        const estimateIds = unlinkedEstimates.map(e => e.id);
         const maxWeekMap = new Map<string, number>();
         if (estimateIds.length > 0) {
           const weekResults = await db
@@ -7591,7 +7657,7 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
 
-        for (const est of unlinkedApproved) {
+        for (const est of unlinkedEstimates) {
           const durationWeeks = maxWeekMap.get(est.id) || 1;
 
           let computedEndDate: string | null = null;

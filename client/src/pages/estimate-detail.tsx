@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -528,6 +528,22 @@ function EstimateDetailContent() {
         description: error.message || "Please try again",
         variant: "destructive" 
       });
+    }
+  });
+
+  const updatePlanningMutation = useMutation({
+    mutationFn: async (data: { potentialStartDate: string | null }) => {
+      return apiRequest(`/api/estimates/${id}/planning`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      toast({ title: "Planning date updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update planning date", description: error.message, variant: "destructive" });
     }
   });
 
@@ -1648,6 +1664,19 @@ function EstimateDetailContent() {
             onChange={handleImportCSV}
             className="hidden"
           />
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Potential Start:</span>
+            <Input
+              type="date"
+              className="w-[160px] h-8 text-sm"
+              value={estimate?.potentialStartDate || ''}
+              onChange={(e) => {
+                updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+              }}
+              data-testid="input-potential-start-date-header"
+            />
+          </div>
         </div>
       </div>
 
@@ -1976,8 +2005,17 @@ function EstimateDetailContent() {
                 <div className="text-sm">
                   <span className="font-medium">Valid Until:</span> {estimate?.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : 'Not set'}
                 </div>
-                <div className="text-sm">
-                  <span className="font-medium">Potential Start:</span> {estimate?.potentialStartDate ? new Date(estimate.potentialStartDate).toLocaleDateString() : 'Not set'}
+                <div className="text-sm flex items-center gap-2">
+                  <span className="font-medium">Potential Start:</span>
+                  <Input
+                    type="date"
+                    className="w-[160px] h-7 text-sm"
+                    value={estimate?.potentialStartDate || ''}
+                    onChange={(e) => {
+                      updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+                    }}
+                    data-testid="input-potential-start-date-detail"
+                  />
                 </div>
               </div>
             </div>
