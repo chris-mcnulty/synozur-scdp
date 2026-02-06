@@ -63,6 +63,7 @@ class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoun
     return this.props.children;
   }
 }
+import { ProjectRateOverridesSection } from "@/components/ProjectRateOverridesSection";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -3245,6 +3246,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="budget-history" data-testid="tab-contracts-budget">Budget History</TabsTrigger>
                 <TabsTrigger value="payment-milestones" data-testid="tab-contracts-milestones">Payment Milestones</TabsTrigger>
                 <TabsTrigger value="sub-sow" data-testid="tab-contracts-sub-sow">Sub-SOW Generator</TabsTrigger>
+                <TabsTrigger value="rate-overrides" data-testid="tab-contracts-rate-overrides">Rate Overrides</TabsTrigger>
               </TabsList>
               
               <TabsContent value="sows" className="space-y-6">
@@ -3920,6 +3922,13 @@ export default function ProjectDetail() {
               {/* Sub-SOW Generator Tab */}
               <TabsContent value="sub-sow" className="space-y-6">
                 <SubSOWGenerator projectId={id || ''} projectName={analytics?.project?.name || 'Project'} />
+              </TabsContent>
+
+              <TabsContent value="rate-overrides" className="space-y-6">
+                <ProjectRateOverridesSection
+                  projectId={id || ''}
+                  isEditable={['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
+                />
               </TabsContent>
               
             </Tabs>
