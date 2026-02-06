@@ -1781,7 +1781,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateEstimateStage(stageId: string, update: { name?: string; order?: number; startDate?: string | null; endDate?: string | null }): Promise<EstimateStage> {
-    const setData: any = {};
+    const setData: { name?: string; order?: number; startDate?: string | null; endDate?: string | null } = {};
     if (update.name !== undefined) setData.name = update.name;
     if (update.order !== undefined) setData.order = update.order;
     if (update.startDate !== undefined) setData.startDate = update.startDate;

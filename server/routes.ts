@@ -9032,6 +9032,13 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!name && order === undefined && startDate === undefined && endDate === undefined) {
         return res.status(400).json({ message: "At least one field to update is required" });
       }
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (startDate && (!dateRegex.test(startDate) || isNaN(Date.parse(startDate)))) {
+        return res.status(400).json({ message: "Invalid start date format (expected YYYY-MM-DD)" });
+      }
+      if (endDate && (!dateRegex.test(endDate) || isNaN(Date.parse(endDate)))) {
+        return res.status(400).json({ message: "Invalid end date format (expected YYYY-MM-DD)" });
+      }
       const updateData: { name?: string; order?: number; startDate?: string | null; endDate?: string | null } = {};
       if (name) updateData.name = name;
       if (order !== undefined) updateData.order = order;
