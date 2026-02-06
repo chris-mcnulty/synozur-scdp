@@ -47,7 +47,7 @@ interface Estimate {
   projectId?: string;
   projectName?: string;
   status: 'draft' | 'sent' | 'approved' | 'rejected';
-  estimateType?: 'detailed' | 'block';
+  estimateType?: 'detailed' | 'block' | 'retainer';
   totalHours: number;
   totalCost: number;
   totalAmount: number;
@@ -67,6 +67,9 @@ export default function Estimates() {
   const [estimateToCopy, setEstimateToCopy] = useState<Estimate | null>(null);
   const [copyMode, setCopyMode] = useState<'same' | 'different' | 'new'>('same');
   const [estimateType, setEstimateType] = useState<string>('detailed');
+  const [retainerTiers, setRetainerTiers] = useState<Array<{name: string, rate: string, maxHours: string}>>([
+    { name: '', rate: '', maxHours: '' }
+  ]);
   const [activeTab, setActiveTab] = useState<'draft' | 'approved' | 'archive' | 'all'>('draft');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -409,9 +412,9 @@ export default function Estimates() {
                       <TableCell>{estimate.projectName || "-"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          estimate.estimateType === 'block' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'
+                          estimate.estimateType === 'block' ? 'bg-purple-100 text-purple-800' : estimate.estimateType === 'retainer' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {estimate.estimateType === 'block' ? 'Block' : 'Detailed'}
+                          {estimate.estimateType === 'block' ? 'Block' : estimate.estimateType === 'retainer' ? 'Retainer' : 'Detailed'}
                         </span>
                       </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
@@ -554,7 +557,6 @@ export default function Estimates() {
                 potentialStartDate: formData.get('potentialStartDate') as string || undefined,
               };
               
-              // Add block estimate fields if block type
               if (selectedEstimateType === 'block') {
                 const blockHours = formData.get('blockHours') as string;
                 const blockDollars = formData.get('blockDollars') as string;
@@ -565,6 +567,26 @@ export default function Estimates() {
                 if (blockDollars) estimateData.blockDollars = parseFloat(blockDollars);
                 if (blockDescription) estimateData.blockDescription = blockDescription;
                 if (fixedPrice) estimateData.fixedPrice = parseFloat(fixedPrice);
+              }
+
+              if (selectedEstimateType === 'retainer') {
+                const monthCount = parseInt(formData.get('retainerMonths') as string) || 6;
+                const startMonth = formData.get('retainerStartMonth') as string;
+                const validTiers = retainerTiers.filter(t => t.name && t.rate && t.maxHours);
+                if (validTiers.length === 0) {
+                  toast({ title: "Error", description: "Add at least one rate tier", variant: "destructive" });
+                  return;
+                }
+                estimateData.retainerConfig = {
+                  monthCount,
+                  startMonth: startMonth || new Date().toISOString().slice(0, 7),
+                  rateTiers: validTiers.map(t => ({
+                    name: t.name,
+                    rate: parseFloat(t.rate),
+                    maxHours: parseFloat(t.maxHours),
+                  })),
+                };
+                estimateData.potentialStartDate = startMonth ? `${startMonth}-01` : undefined;
               }
               
               createEstimate.mutate(estimateData);
@@ -629,17 +651,18 @@ export default function Estimates() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="estimateType">Estimate Type</Label>
-                    <Select name="estimateType" defaultValue="detailed" onValueChange={setEstimateType}>
+                    <Select name="estimateType" defaultValue="detailed" onValueChange={(v) => { setEstimateType(v); if (v === 'retainer') setRetainerTiers([{ name: '', rate: '', maxHours: '' }]); }}>
                       <SelectTrigger data-testid="select-estimate-type">
                         <SelectValue placeholder="Select estimate type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="detailed">Detailed (with line items)</SelectItem>
                         <SelectItem value="block">Block (simple hours/dollars)</SelectItem>
+                        <SelectItem value="retainer">Retainer (monthly hours)</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      Block estimates are ideal for retainer projects with fixed hours/dollars
+                      {estimateType === 'retainer' ? 'Monthly retainer with rate tiers and hour caps' : 'Block estimates are ideal for simple fixed hours/dollars'}
                     </p>
                   </div>
                   
@@ -708,6 +731,109 @@ export default function Estimates() {
                         className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         data-testid="textarea-block-description"
                       />
+                    </div>
+                  </>
+                )}
+
+                {estimateType === 'retainer' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="retainerStartMonth">Start Month</Label>
+                        <Input
+                          id="retainerStartMonth"
+                          name="retainerStartMonth"
+                          type="month"
+                          defaultValue={new Date().toISOString().slice(0, 7)}
+                          data-testid="input-retainer-start-month"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="retainerMonths">Number of Months</Label>
+                        <Input
+                          id="retainerMonths"
+                          name="retainerMonths"
+                          type="number"
+                          defaultValue="6"
+                          min="1"
+                          max="36"
+                          data-testid="input-retainer-months"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Rate Tiers</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRetainerTiers([...retainerTiers, { name: '', rate: '', maxHours: '' }])}
+                          data-testid="btn-add-tier"
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Add Tier
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Define rate tiers (e.g., Senior Consultant at $200/hr, 40 hrs/month)
+                      </p>
+                      <div className="space-y-2">
+                        {retainerTiers.map((tier, idx) => (
+                          <div key={idx} className="flex gap-2 items-center">
+                            <Input
+                              placeholder="Tier name"
+                              value={tier.name}
+                              onChange={(e) => {
+                                const updated = [...retainerTiers];
+                                updated[idx].name = e.target.value;
+                                setRetainerTiers(updated);
+                              }}
+                              className="flex-1"
+                              data-testid={`input-tier-name-${idx}`}
+                            />
+                            <Input
+                              placeholder="Rate ($/hr)"
+                              type="number"
+                              value={tier.rate}
+                              onChange={(e) => {
+                                const updated = [...retainerTiers];
+                                updated[idx].rate = e.target.value;
+                                setRetainerTiers(updated);
+                              }}
+                              className="w-28"
+                              data-testid={`input-tier-rate-${idx}`}
+                            />
+                            <Input
+                              placeholder="Hrs/mo"
+                              type="number"
+                              value={tier.maxHours}
+                              onChange={(e) => {
+                                const updated = [...retainerTiers];
+                                updated[idx].maxHours = e.target.value;
+                                setRetainerTiers(updated);
+                              }}
+                              className="w-24"
+                              data-testid={`input-tier-hours-${idx}`}
+                            />
+                            {retainerTiers.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setRetainerTiers(retainerTiers.filter((_, i) => i !== idx))}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {retainerTiers.some(t => t.rate && t.maxHours) && (
+                        <div className="text-sm font-medium text-muted-foreground mt-1">
+                          Monthly total: {retainerTiers.reduce((sum, t) => sum + (parseFloat(t.maxHours) || 0), 0)} hrs &middot; ${retainerTiers.reduce((sum, t) => sum + ((parseFloat(t.rate) || 0) * (parseFloat(t.maxHours) || 0)), 0).toLocaleString()}/mo
+                        </div>
+                      )}
                     </div>
                   </>
                 )}

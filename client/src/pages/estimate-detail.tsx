@@ -1884,7 +1884,64 @@ function EstimateDetailContent() {
         </CardContent>
       </Card>
 
-      {/* Show block estimate UI for block type estimates */}
+      {/* Show retainer estimate summary for retainer type estimates */}
+      {estimate?.estimateType === 'retainer' && estimate?.retainerConfig && (
+        <Card className="mb-4">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-blue-600" />
+                  Retainer Configuration
+                </CardTitle>
+                <CardDescription>Monthly retainer with rate tiers</CardDescription>
+              </div>
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                {(estimate.retainerConfig as any).monthCount} months
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-sm">
+                <span className="text-muted-foreground block">Start Month</span>
+                <span className="font-medium">{(estimate.retainerConfig as any).startMonth}</span>
+              </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground block">Duration</span>
+                <span className="font-medium">{(estimate.retainerConfig as any).monthCount} months</span>
+              </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground block">Monthly Hours</span>
+                <span className="font-medium">{((estimate.retainerConfig as any).rateTiers || []).reduce((s: number, t: any) => s + (t.maxHours || 0), 0)} hrs</span>
+              </div>
+              <div className="text-sm">
+                <span className="text-muted-foreground block">Monthly Value</span>
+                <span className="font-medium">${((estimate.retainerConfig as any).rateTiers || []).reduce((s: number, t: any) => s + ((t.rate || 0) * (t.maxHours || 0)), 0).toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <h4 className="text-sm font-medium mb-2">Rate Tiers</h4>
+              <div className="space-y-1">
+                {((estimate.retainerConfig as any).rateTiers || []).map((tier: any, idx: number) => (
+                  <div key={idx} className="flex justify-between items-center py-1 px-3 bg-gray-50 dark:bg-gray-800 rounded text-sm">
+                    <span className="font-medium">{tier.name}</span>
+                    <span>${tier.rate}/hr &middot; {tier.maxHours} hrs/mo &middot; ${(tier.rate * tier.maxHours).toLocaleString()}/mo</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border-t pt-3 mt-3">
+              <div className="flex justify-between text-sm font-semibold">
+                <span>Total Contract Value</span>
+                <span>${(((estimate.retainerConfig as any).rateTiers || []).reduce((s: number, t: any) => s + ((t.rate || 0) * (t.maxHours || 0)), 0) * ((estimate.retainerConfig as any).monthCount || 1)).toLocaleString()}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Show block estimate UI for block type estimates, detailed/retainer use tabs below */}
       {estimate?.estimateType === 'block' ? (
         <Card>
           <CardHeader>

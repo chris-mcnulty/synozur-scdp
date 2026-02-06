@@ -4835,11 +4835,16 @@ export class DatabaseStorage implements IStorage {
           const stages = await tx.select().from(estimateStages).where(eq(estimateStages.epicId, epic.id)).orderBy(estimateStages.order);
           
           for (const stage of stages) {
-            // Create project stage
+            // Create project stage with retainer metadata
             const [projectStage] = await tx.insert(projectStages).values({
               epicId: projectEpic.id,
               name: stage.name,
               order: stage.order,
+              retainerMonthIndex: stage.retainerMonthIndex,
+              retainerMonthLabel: stage.retainerMonthLabel,
+              retainerMaxHours: stage.retainerMaxHours,
+              retainerStartDate: stage.retainerStartDate,
+              retainerEndDate: stage.retainerEndDate,
             }).returning();
             
             // Get all activities for this stage
@@ -4941,11 +4946,16 @@ export class DatabaseStorage implements IStorage {
               sortOrder: stage.order,
             });
             
-            // Create project stage for the structure
+            // Create project stage for the structure with retainer metadata
             const [projectStage] = await tx.insert(projectStages).values({
               epicId: projectEpic.id,
               name: stage.name,
               order: stage.order,
+              retainerMonthIndex: stage.retainerMonthIndex,
+              retainerMonthLabel: stage.retainerMonthLabel,
+              retainerMaxHours: stage.retainerMaxHours,
+              retainerStartDate: stage.retainerStartDate,
+              retainerEndDate: stage.retainerEndDate,
             }).returning();
             
             stageMapping.set(stage.id, projectStage.id);

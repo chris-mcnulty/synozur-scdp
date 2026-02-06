@@ -438,6 +438,11 @@ export default function ProjectDetail() {
     queryKey: ['/api/vocabulary/organization'],
   });
   
+  const { data: retainerUtil } = useQuery<any>({
+    queryKey: [`/api/projects/${id}/retainer-utilization`],
+    enabled: !!id,
+  });
+
   // Get client vocabulary overrides for current project's client
   const currentClientId = analytics?.project?.clientId;
   const { data: currentClient } = useQuery<any>({
@@ -2089,6 +2094,62 @@ export default function ProjectDetail() {
               </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
+            {retainerUtil?.months?.length > 0 && (
+              <Card data-testid="retainer-utilization-card">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-blue-600" />
+                        Retainer Utilization
+                      </CardTitle>
+                      <CardDescription>Monthly hour usage vs. retainer cap</CardDescription>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-bold">
+                        {retainerUtil.totalUsedHours || 0} / {retainerUtil.totalMaxHours || 0} hrs
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {retainerUtil.totalMaxHours > 0 ? Math.round((retainerUtil.totalUsedHours / retainerUtil.totalMaxHours) * 100) : 0}% overall utilization
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {retainerUtil.months.map((month: any) => {
+                      const isOver = month.usedHours > month.maxHours;
+                      const pct = Math.min(month.utilization, 100);
+                      const now = new Date().toISOString().split('T')[0];
+                      const isCurrent = now >= (month.startDate || '') && now <= (month.endDate || '');
+                      return (
+                        <div key={month.monthIndex} className={`p-3 rounded-lg border ${isCurrent ? 'border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-700' : ''}`}>
+                          <div className="flex justify-between items-center mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{month.label}</span>
+                              {isCurrent && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded dark:bg-blue-800 dark:text-blue-200">Current</span>}
+                            </div>
+                            <span className={`text-sm font-medium ${isOver ? 'text-red-600' : month.utilization >= 80 ? 'text-amber-600' : 'text-green-600'}`}>
+                              {month.usedHours} / {month.maxHours} hrs ({month.utilization}%)
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${isOver ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-green-500'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          {isOver && (
+                            <span className="text-xs text-red-600 mt-1 block">Over by {(month.usedHours - month.maxHours).toFixed(1)} hrs</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Hours Distribution */}
               <Card>

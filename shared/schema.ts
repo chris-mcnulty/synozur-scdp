@@ -456,6 +456,7 @@ export const estimates = pgTable("estimates", {
   confidenceMediumMultiplier: decimal("confidence_medium_multiplier", { precision: 4, scale: 2 }).default('1.10'),
   confidenceLowMultiplier: decimal("confidence_low_multiplier", { precision: 4, scale: 2 }).default('1.20'),
   archived: boolean("archived").notNull().default(false), // Archive estimates to hide from default view
+  retainerConfig: jsonb("retainer_config"), // { monthCount, startMonth, rateTiers: [{name, rate, maxHours}] }
   // Referral fee tracking (paid to sellers/referrers)
   referralFeeType: text("referral_fee_type").default("none"), // 'none', 'percentage', 'flat'
   referralFeePercent: decimal("referral_fee_percent", { precision: 5, scale: 2 }), // Percentage of total fees
@@ -568,6 +569,11 @@ export const estimateStages = pgTable("estimate_stages", {
   epicId: varchar("epic_id").notNull().references(() => estimateEpics.id),
   name: text("name").notNull(),
   order: integer("order").notNull(),
+  retainerMonthIndex: integer("retainer_month_index"),
+  retainerMonthLabel: text("retainer_month_label"),
+  retainerMaxHours: decimal("retainer_max_hours", { precision: 10, scale: 2 }),
+  retainerStartDate: date("retainer_start_date"),
+  retainerEndDate: date("retainer_end_date"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -597,6 +603,11 @@ export const projectStages = pgTable("project_stages", {
   epicId: varchar("epic_id").notNull().references(() => projectEpics.id, { onDelete: 'cascade' }),
   name: text("name").notNull(),
   order: integer("order").notNull(),
+  retainerMonthIndex: integer("retainer_month_index"),
+  retainerMonthLabel: text("retainer_month_label"),
+  retainerMaxHours: decimal("retainer_max_hours", { precision: 10, scale: 2 }),
+  retainerStartDate: date("retainer_start_date"),
+  retainerEndDate: date("retainer_end_date"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

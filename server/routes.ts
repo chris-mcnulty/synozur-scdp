@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
 import { eq, sql, inArray, max } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -6800,6 +6800,75 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.get("/api/projects/:id/retainer-utilization", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      const epicIds = epics.map(e => e.id);
+      if (epicIds.length === 0) {
+        return res.json({ months: [], config: null });
+      }
+
+      const stages = await db.select().from(projectStages).where(inArray(projectStages.epicId, epicIds));
+      const retainerStages = stages.filter(s => s.retainerMonthIndex !== null);
+      if (retainerStages.length === 0) {
+        return res.json({ months: [], config: null });
+      }
+
+      const estimate = project.estimateId ? await storage.getEstimate(project.estimateId) : null;
+
+      const timeEntryRows = await db.select({
+        date: timeEntries.date,
+        hours: timeEntries.hours,
+        personId: timeEntries.personId,
+      }).from(timeEntries).where(eq(timeEntries.projectId, req.params.id));
+
+      const months = retainerStages
+        .sort((a, b) => (a.retainerMonthIndex || 0) - (b.retainerMonthIndex || 0))
+        .map(stage => {
+          const startDate = stage.retainerStartDate;
+          const endDate = stage.retainerEndDate;
+          const maxHours = parseFloat(stage.retainerMaxHours || '0');
+
+          const monthEntries = timeEntryRows.filter(te => {
+            const d = te.date;
+            return d && d >= (startDate || '') && d <= (endDate || '');
+          });
+          const usedHours = monthEntries.reduce((s, e) => s + parseFloat(e.hours || '0'), 0);
+
+          return {
+            monthIndex: stage.retainerMonthIndex,
+            label: stage.retainerMonthLabel || `Month ${(stage.retainerMonthIndex || 0) + 1}`,
+            startDate,
+            endDate,
+            maxHours,
+            usedHours: Math.round(usedHours * 100) / 100,
+            utilization: maxHours > 0 ? Math.round((usedHours / maxHours) * 100) : 0,
+            remaining: Math.round((maxHours - usedHours) * 100) / 100,
+          };
+        });
+
+      res.json({
+        months,
+        config: estimate?.retainerConfig || null,
+        totalMaxHours: months.reduce((s, m) => s + m.maxHours, 0),
+        totalUsedHours: months.reduce((s, m) => s + m.usedHours, 0),
+      });
+    } catch (error) {
+      console.error("Error fetching retainer utilization:", error);
+      res.status(500).json({ message: "Failed to fetch retainer utilization" });
+    }
+  });
+
   // Text export for project reporting - summary of project data for copy/paste
   app.get("/api/projects/:id/export-text", requireAuth, async (req, res) => {
     try {
@@ -7605,15 +7674,31 @@ export async function registerRoutes(app: Express): Promise<void> {
           }
         }
 
+        const retainerEstimateMap = new Map<string, any>();
+        for (const est of allEstimates) {
+          if (est.projectId && est.estimateType === 'retainer' && est.retainerConfig) {
+            retainerEstimateMap.set(est.projectId, est.retainerConfig);
+          }
+        }
+
         activeProjects = activeProjectsList.map(p => {
           let projectedEndDate: string | null = null;
           if (p.startDate && !p.endDate) {
-            const maxWeeks = projectEstimateMap.get(p.id);
-            if (maxWeeks) {
+            const retainerConfig = retainerEstimateMap.get(p.id);
+            if (retainerConfig) {
               const start = new Date(p.startDate);
               const end = new Date(start);
-              end.setDate(end.getDate() + maxWeeks * 7);
+              end.setMonth(end.getMonth() + (retainerConfig.monthCount || 6));
+              end.setDate(end.getDate() - 1);
               projectedEndDate = end.toISOString().split("T")[0];
+            } else {
+              const maxWeeks = projectEstimateMap.get(p.id);
+              if (maxWeeks) {
+                const start = new Date(p.startDate);
+                const end = new Date(start);
+                end.setDate(end.getDate() + maxWeeks * 7);
+                projectedEndDate = end.toISOString().split("T")[0];
+              }
             }
           }
           return {
@@ -7628,7 +7713,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             clientId: p.clientId,
             clientName: p.client?.name || "Unknown",
             budget: p.sowValue ? parseFloat(p.sowValue as string) : null,
-            commercialScheme: p.commercialScheme,
+            commercialScheme: p.commercialScheme || (retainerEstimateMap.has(p.id) ? 'retainer' : undefined),
           };
         });
       }
@@ -7663,9 +7748,17 @@ export async function registerRoutes(app: Express): Promise<void> {
           let computedEndDate: string | null = null;
           if (est.potentialStartDate) {
             const start = new Date(est.potentialStartDate);
-            const end = new Date(start);
-            end.setDate(end.getDate() + durationWeeks * 7);
-            computedEndDate = end.toISOString().split("T")[0];
+            if (est.estimateType === 'retainer' && est.retainerConfig) {
+              const rc = est.retainerConfig as any;
+              const end = new Date(start);
+              end.setMonth(end.getMonth() + (rc.monthCount || 6));
+              end.setDate(end.getDate() - 1);
+              computedEndDate = end.toISOString().split("T")[0];
+            } else {
+              const end = new Date(start);
+              end.setDate(end.getDate() + durationWeeks * 7);
+              computedEndDate = end.toISOString().split("T")[0];
+            }
           }
 
           pendingEstimates.push({
@@ -7681,6 +7774,7 @@ export async function registerRoutes(app: Express): Promise<void> {
             budget: est.presentedTotal ? parseFloat(est.presentedTotal as string) : (est.totalFees ? parseFloat(est.totalFees as string) : null),
             durationWeeks,
             estimateDate: est.estimateDate,
+            commercialScheme: est.estimateType === 'retainer' ? 'retainer' : undefined,
           });
         }
       }
@@ -15201,6 +15295,87 @@ export async function registerRoutes(app: Express): Promise<void> {
       console.log("[DEBUG] About to call storage.createEstimate...");
       const estimate = await storage.createEstimate(estimateDataWithTenant);
       console.log("[DEBUG] Created estimate:", estimate.id, "tenantId:", estimate.tenantId);
+
+      if (req.body.estimateType === 'retainer' && req.body.retainerConfig) {
+        const rc = req.body.retainerConfig;
+        const monthCount = Math.min(Math.max(parseInt(rc.monthCount) || 6, 1), 36);
+        rc.monthCount = monthCount;
+        if (!Array.isArray(rc.rateTiers) || rc.rateTiers.length === 0) {
+          return res.status(400).json({ message: "At least one rate tier is required for retainer estimates" });
+        }
+        rc.rateTiers = rc.rateTiers.filter((t: any) => t.name && t.rate > 0 && t.maxHours > 0);
+        if (rc.rateTiers.length === 0) {
+          return res.status(400).json({ message: "Rate tiers must have valid name, rate, and hours" });
+        }
+        await storage.updateEstimate(estimate.id, {
+          estimateType: 'retainer',
+          retainerConfig: rc,
+          potentialStartDate: req.body.potentialStartDate || `${rc.startMonth}-01`,
+        });
+
+        const [epic] = await db.insert(estimateEpics).values({
+          estimateId: estimate.id,
+          name: 'Retainer',
+          order: 0,
+        }).returning();
+
+        const startDate = new Date(`${rc.startMonth}-01`);
+        for (let m = 0; m < rc.monthCount; m++) {
+          const monthDate = new Date(startDate);
+          monthDate.setMonth(monthDate.getMonth() + m);
+          const monthEnd = new Date(monthDate);
+          monthEnd.setMonth(monthEnd.getMonth() + 1);
+          monthEnd.setDate(monthEnd.getDate() - 1);
+          const monthLabel = monthDate.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          const totalMonthHours = rc.rateTiers.reduce((s: number, t: any) => s + (t.maxHours || 0), 0);
+
+          const [stage] = await db.insert(estimateStages).values({
+            epicId: epic.id,
+            name: `Month ${m + 1}: ${monthLabel}`,
+            order: m,
+            retainerMonthIndex: m,
+            retainerMonthLabel: monthLabel,
+            retainerMaxHours: String(totalMonthHours),
+            retainerStartDate: monthDate.toISOString().split('T')[0],
+            retainerEndDate: monthEnd.toISOString().split('T')[0],
+          }).returning();
+
+          const [activity] = await db.insert(estimateActivities).values({
+            stageId: stage.id,
+            name: 'Consulting Services',
+            order: 0,
+          }).returning();
+
+          for (let t = 0; t < rc.rateTiers.length; t++) {
+            const tier = rc.rateTiers[t];
+            const hours = tier.maxHours;
+            const amount = tier.rate * tier.maxHours;
+            await db.insert(estimateLineItems).values({
+              estimateId: estimate.id,
+              epicId: epic.id,
+              stageId: stage.id,
+              description: tier.name,
+              baseHours: String(hours),
+              factor: '1',
+              rate: String(tier.rate),
+              costRate: '0',
+              adjustedHours: String(hours),
+              totalAmount: String(amount),
+              totalCost: '0',
+              margin: String(amount),
+              marginPercent: '100',
+              size: 'small',
+              complexity: 'small',
+              confidence: 'high',
+              sortOrder: t,
+            });
+          }
+        }
+
+        const updatedEstimate = await storage.getEstimate(estimate.id);
+        return res.status(201).json(updatedEstimate);
+      }
+
       res.status(201).json(estimate);
     } catch (error: any) {
       console.error("[ERROR] Failed to create estimate:", error);
