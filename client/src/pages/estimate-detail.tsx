@@ -1976,6 +1976,9 @@ function EstimateDetailContent() {
                 <div className="text-sm">
                   <span className="font-medium">Valid Until:</span> {estimate?.validUntil ? new Date(estimate.validUntil).toLocaleDateString() : 'Not set'}
                 </div>
+                <div className="text-sm">
+                  <span className="font-medium">Potential Start:</span> {estimate?.potentialStartDate ? new Date(estimate.potentialStartDate).toLocaleDateString() : 'Not set'}
+                </div>
               </div>
             </div>
           </CardContent>

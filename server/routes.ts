@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray, max } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -7533,6 +7533,123 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error deleting SOW:", error);
       res.status(500).json({ message: "Failed to delete SOW" });
+    }
+  });
+
+  // ============================================================================
+  // PORTFOLIO TIMELINE ENDPOINT
+  // ============================================================================
+
+  app.get("/api/portfolio/timeline", requireAuth, async (req, res) => {
+    try {
+      const tenantId = (req as any).tenantId;
+      const filter = (req.query.filter as string) || "active"; // active, pending, both
+
+      // Get active projects with client info
+      let activeProjects: any[] = [];
+      if (filter === "active" || filter === "both") {
+        const allProjects = await storage.getProjects(tenantId);
+        activeProjects = allProjects
+          .filter(p => p.status === "active" || p.status === "on-hold")
+          .map(p => ({
+            type: "project" as const,
+            id: p.id,
+            name: p.name,
+            code: p.code,
+            status: p.status,
+            startDate: p.startDate || null,
+            endDate: p.endDate || null,
+            clientId: p.clientId,
+            clientName: p.client?.name || "Unknown",
+            budget: p.sowValue ? parseFloat(p.sowValue as string) : null,
+            commercialScheme: p.commercialScheme,
+          }));
+      }
+
+      // Get approved estimates with no linked project
+      let pendingEstimates: any[] = [];
+      if (filter === "pending" || filter === "both") {
+        const allEstimates = await storage.getEstimates(false, tenantId);
+        const unlinkedApproved = allEstimates.filter(
+          e => e.status === "approved" && !e.projectId
+        );
+
+        // Batch load max week per estimate using a single query (avoid N+1)
+        const estimateIds = unlinkedApproved.map(e => e.id);
+        const maxWeekMap = new Map<string, number>();
+        if (estimateIds.length > 0) {
+          const weekResults = await db
+            .select({
+              estimateId: estimateLineItems.estimateId,
+              maxWeek: max(estimateLineItems.week),
+            })
+            .from(estimateLineItems)
+            .where(inArray(estimateLineItems.estimateId, estimateIds))
+            .groupBy(estimateLineItems.estimateId);
+          for (const row of weekResults) {
+            maxWeekMap.set(row.estimateId, row.maxWeek ? Number(row.maxWeek) : 1);
+          }
+        }
+
+        for (const est of unlinkedApproved) {
+          const durationWeeks = maxWeekMap.get(est.id) || 1;
+
+          let computedEndDate: string | null = null;
+          if (est.potentialStartDate) {
+            const start = new Date(est.potentialStartDate);
+            const end = new Date(start);
+            end.setDate(end.getDate() + durationWeeks * 7);
+            computedEndDate = end.toISOString().split("T")[0];
+          }
+
+          pendingEstimates.push({
+            type: "estimate" as const,
+            id: est.id,
+            name: est.name,
+            code: null,
+            status: est.status,
+            startDate: est.potentialStartDate || null,
+            endDate: computedEndDate,
+            clientId: est.clientId,
+            clientName: est.client?.name || "Unknown",
+            budget: est.presentedTotal ? parseFloat(est.presentedTotal as string) : (est.totalFees ? parseFloat(est.totalFees as string) : null),
+            durationWeeks,
+            estimateDate: est.estimateDate,
+          });
+        }
+      }
+
+      // Combine and group by client
+      const allItems = [...activeProjects, ...pendingEstimates];
+      const clientMap = new Map<string, { id: string; name: string; items: any[] }>();
+
+      for (const item of allItems) {
+        if (!clientMap.has(item.clientId)) {
+          clientMap.set(item.clientId, {
+            id: item.clientId,
+            name: item.clientName,
+            items: [],
+          });
+        }
+        clientMap.get(item.clientId)!.items.push(item);
+      }
+
+      // Sort clients by name, sort items within each client by startDate
+      const clients = Array.from(clientMap.values())
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(c => ({
+          ...c,
+          items: c.items.sort((a: any, b: any) => {
+            const aDate = a.startDate || "9999-12-31";
+            const bDate = b.startDate || "9999-12-31";
+            return aDate.localeCompare(bDate);
+          }),
+        }));
+
+      res.json({ clients });
+    } catch (error: any) {
+      console.error("[PORTFOLIO] Failed to get timeline:", error);
+      res.status(500).json({ message: "Failed to get portfolio timeline: " + error.message });
     }
   });
 

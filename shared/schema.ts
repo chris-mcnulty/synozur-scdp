@@ -438,6 +438,7 @@ export const estimates = pgTable("estimates", {
   margin: decimal("margin", { precision: 5, scale: 2 }), // Margin percentage
   validUntil: date("valid_until"),
   estimateDate: date("estimate_date").notNull().default(sql`CURRENT_DATE`), // Backdateable estimate date
+  potentialStartDate: date("potential_start_date"), // Expected project start date for portfolio timeline
   // Visible vocabulary customization (client can rename Epic/Stage/Activity)
   epicLabel: text("epic_label").default("Epic"),
   stageLabel: text("stage_label").default("Stage"),

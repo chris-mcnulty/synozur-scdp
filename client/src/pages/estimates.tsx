@@ -551,6 +551,7 @@ export default function Estimates() {
                 estimateType: selectedEstimateType,
                 pricingType: formData.get('pricingType') || 'hourly',
                 estimateDate: formData.get('estimateDate') as string || undefined,
+                potentialStartDate: formData.get('potentialStartDate') as string || undefined,
               };
               
               // Add block estimate fields if block type
@@ -737,6 +738,19 @@ export default function Estimates() {
                       data-testid="input-valid-days"
                     />
                   </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="potentialStartDate">Potential Start Date</Label>
+                  <Input
+                    id="potentialStartDate"
+                    name="potentialStartDate"
+                    type="date"
+                    data-testid="input-potential-start-date"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Expected project start date for portfolio planning
+                  </p>
                 </div>
               </div>
 
