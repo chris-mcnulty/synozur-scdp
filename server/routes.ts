@@ -6869,6 +6869,269 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // ============================================================================
+  // PROJECT RETAINER STAGE MANAGEMENT
+  // ============================================================================
+
+  // Get retainer stages for a project
+  app.get("/api/projects/:id/retainer-stages", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      const epicIds = epics.map(e => e.id);
+      if (epicIds.length === 0) {
+        return res.json([]);
+      }
+
+      const stages = await db.select().from(projectStages).where(inArray(projectStages.epicId, epicIds));
+      const retainerStages = stages
+        .filter(s => s.retainerMonthIndex !== null)
+        .sort((a, b) => (a.retainerMonthIndex || 0) - (b.retainerMonthIndex || 0));
+
+      res.json(retainerStages);
+    } catch (error) {
+      console.error("Error fetching retainer stages:", error);
+      res.status(500).json({ message: "Failed to fetch retainer stages" });
+    }
+  });
+
+  // Add a retainer month to a project (creates/reuses "Retainer" epic)
+  app.post("/api/projects/:id/retainer-stages", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { monthLabel, maxHours, startDate, endDate } = req.body;
+      if (!monthLabel || !maxHours || !startDate || !endDate) {
+        return res.status(400).json({ message: "monthLabel, maxHours, startDate, and endDate are required" });
+      }
+
+      // Find or create a "Retainer" epic for this project
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      let retainerEpic = epics.find(e => e.name === 'Retainer');
+      
+      if (!retainerEpic) {
+        const maxOrder = epics.length > 0 ? Math.max(...epics.map(e => e.order)) : -1;
+        const [created] = await db.insert(projectEpics).values({
+          projectId: req.params.id,
+          name: 'Retainer',
+          order: maxOrder + 1,
+        }).returning();
+        retainerEpic = created;
+      }
+
+      // Get existing retainer stages to determine next monthIndex
+      const existingStages = await db.select().from(projectStages).where(eq(projectStages.epicId, retainerEpic.id));
+      const retainerStages = existingStages.filter(s => s.retainerMonthIndex !== null);
+      const nextIndex = retainerStages.length > 0 
+        ? Math.max(...retainerStages.map(s => s.retainerMonthIndex || 0)) + 1 
+        : 0;
+      const nextOrder = existingStages.length > 0 
+        ? Math.max(...existingStages.map(s => s.order)) + 1 
+        : 0;
+
+      const [stage] = await db.insert(projectStages).values({
+        epicId: retainerEpic.id,
+        name: monthLabel,
+        order: nextOrder,
+        retainerMonthIndex: nextIndex,
+        retainerMonthLabel: monthLabel,
+        retainerMaxHours: String(maxHours),
+        retainerStartDate: startDate,
+        retainerEndDate: endDate,
+      }).returning();
+
+      // Ensure project commercial scheme is retainer
+      if (project.commercialScheme !== 'retainer') {
+        await db.update(projects).set({ commercialScheme: 'retainer' }).where(eq(projects.id, req.params.id));
+      }
+
+      res.status(201).json(stage);
+    } catch (error) {
+      console.error("Error creating retainer stage:", error);
+      res.status(500).json({ message: "Failed to create retainer stage" });
+    }
+  });
+
+  // Add multiple retainer months at once (extend retainer)
+  app.post("/api/projects/:id/retainer-stages/extend", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { monthCount, startMonth, hoursPerMonth } = req.body;
+      if (!monthCount || !startMonth || !hoursPerMonth) {
+        return res.status(400).json({ message: "monthCount, startMonth, and hoursPerMonth are required" });
+      }
+
+      // Find or create a "Retainer" epic
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      let retainerEpic = epics.find(e => e.name === 'Retainer');
+      
+      if (!retainerEpic) {
+        const maxOrder = epics.length > 0 ? Math.max(...epics.map(e => e.order)) : -1;
+        const [created] = await db.insert(projectEpics).values({
+          projectId: req.params.id,
+          name: 'Retainer',
+          order: maxOrder + 1,
+        }).returning();
+        retainerEpic = created;
+      }
+
+      // Get existing retainer stages
+      const existingStages = await db.select().from(projectStages).where(eq(projectStages.epicId, retainerEpic.id));
+      const retainerStages = existingStages.filter(s => s.retainerMonthIndex !== null);
+      let nextIndex = retainerStages.length > 0 
+        ? Math.max(...retainerStages.map(s => s.retainerMonthIndex || 0)) + 1 
+        : 0;
+      let nextOrder = existingStages.length > 0 
+        ? Math.max(...existingStages.map(s => s.order)) + 1 
+        : 0;
+
+      const newStages = [];
+      const [startYear, startMonthNum] = startMonth.split('-').map(Number);
+
+      for (let m = 0; m < Math.min(monthCount, 36); m++) {
+        const monthDate = new Date(startYear, startMonthNum - 1 + m, 1);
+        const monthEnd = new Date(startYear, startMonthNum - 1 + m + 1, 0);
+        const label = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+        const [stage] = await db.insert(projectStages).values({
+          epicId: retainerEpic.id,
+          name: label,
+          order: nextOrder + m,
+          retainerMonthIndex: nextIndex + m,
+          retainerMonthLabel: label,
+          retainerMaxHours: String(hoursPerMonth),
+          retainerStartDate: monthDate.toISOString().split('T')[0],
+          retainerEndDate: monthEnd.toISOString().split('T')[0],
+        }).returning();
+        newStages.push(stage);
+      }
+
+      // Ensure project commercial scheme is retainer
+      if (project.commercialScheme !== 'retainer') {
+        await db.update(projects).set({ commercialScheme: 'retainer' }).where(eq(projects.id, req.params.id));
+      }
+
+      res.status(201).json(newStages);
+    } catch (error) {
+      console.error("Error extending retainer:", error);
+      res.status(500).json({ message: "Failed to extend retainer" });
+    }
+  });
+
+  // Update a retainer stage
+  app.patch("/api/projects/:id/retainer-stages/:stageId", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Verify stage belongs to this project
+      const [stage] = await db.select().from(projectStages).where(eq(projectStages.id, req.params.stageId));
+      if (!stage || stage.retainerMonthIndex === null) {
+        return res.status(404).json({ message: "Retainer stage not found" });
+      }
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      const epicIds = epics.map(e => e.id);
+      if (!epicIds.includes(stage.epicId)) {
+        return res.status(403).json({ message: "Stage does not belong to this project" });
+      }
+
+      const { monthLabel, maxHours, startDate, endDate } = req.body;
+      const updates: any = {};
+      if (monthLabel !== undefined) {
+        updates.retainerMonthLabel = monthLabel;
+        updates.name = monthLabel;
+      }
+      if (maxHours !== undefined) {
+        updates.retainerMaxHours = String(maxHours);
+      }
+      if (startDate !== undefined) {
+        updates.retainerStartDate = startDate;
+      }
+      if (endDate !== undefined) {
+        updates.retainerEndDate = endDate;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+
+      const [updated] = await db.update(projectStages)
+        .set(updates)
+        .where(eq(projectStages.id, req.params.stageId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating retainer stage:", error);
+      res.status(500).json({ message: "Failed to update retainer stage" });
+    }
+  });
+
+  // Delete a retainer stage
+  app.delete("/api/projects/:id/retainer-stages/:stageId", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Verify stage belongs to this project
+      const [stage] = await db.select().from(projectStages).where(eq(projectStages.id, req.params.stageId));
+      if (!stage || stage.retainerMonthIndex === null) {
+        return res.status(404).json({ message: "Retainer stage not found" });
+      }
+      const epics = await db.select().from(projectEpics).where(eq(projectEpics.projectId, req.params.id));
+      const epicIds = epics.map(e => e.id);
+      if (!epicIds.includes(stage.epicId)) {
+        return res.status(403).json({ message: "Stage does not belong to this project" });
+      }
+
+      await db.delete(projectStages).where(eq(projectStages.id, req.params.stageId));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting retainer stage:", error);
+      res.status(500).json({ message: "Failed to delete retainer stage" });
+    }
+  });
+
   // Text export for project reporting - summary of project data for copy/paste
   app.get("/api/projects/:id/export-text", requireAuth, async (req, res) => {
     try {

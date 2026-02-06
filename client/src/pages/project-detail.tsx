@@ -64,6 +64,7 @@ class ProjectDetailErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoun
   }
 }
 import { ProjectRateOverridesSection } from "@/components/ProjectRateOverridesSection";
+import { ProjectRetainerManagement } from "@/components/ProjectRetainerManagement";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -3247,6 +3248,7 @@ export default function ProjectDetail() {
                 <TabsTrigger value="payment-milestones" data-testid="tab-contracts-milestones">Payment Milestones</TabsTrigger>
                 <TabsTrigger value="sub-sow" data-testid="tab-contracts-sub-sow">Sub-SOW Generator</TabsTrigger>
                 <TabsTrigger value="rate-overrides" data-testid="tab-contracts-rate-overrides">Rate Overrides</TabsTrigger>
+                <TabsTrigger value="retainer" data-testid="tab-contracts-retainer">Retainer</TabsTrigger>
               </TabsList>
               
               <TabsContent value="sows" className="space-y-6">
@@ -3928,6 +3930,14 @@ export default function ProjectDetail() {
                 <ProjectRateOverridesSection
                   projectId={id || ''}
                   isEditable={['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
+                />
+              </TabsContent>
+
+              <TabsContent value="retainer" className="space-y-6">
+                <ProjectRetainerManagement
+                  projectId={id || ''}
+                  isEditable={['admin', 'billing-admin', 'pm'].includes(user?.role || '')}
+                  commercialScheme={project?.commercialScheme}
                 />
               </TabsContent>
               
