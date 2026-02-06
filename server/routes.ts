@@ -9028,13 +9028,15 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
       
-      const { name, order } = req.body;
-      if (!name && order === undefined) {
-        return res.status(400).json({ message: "Stage name or order is required" });
+      const { name, order, startDate, endDate } = req.body;
+      if (!name && order === undefined && startDate === undefined && endDate === undefined) {
+        return res.status(400).json({ message: "At least one field to update is required" });
       }
-      const updateData: { name?: string; order?: number } = {};
+      const updateData: { name?: string; order?: number; startDate?: string | null; endDate?: string | null } = {};
       if (name) updateData.name = name;
       if (order !== undefined) updateData.order = order;
+      if (startDate !== undefined) updateData.startDate = startDate || null;
+      if (endDate !== undefined) updateData.endDate = endDate || null;
       const stage = await storage.updateEstimateStage(req.params.stageId, updateData);
       res.json(stage);
     } catch (error) {
