@@ -569,6 +569,8 @@ export const estimateStages = pgTable("estimate_stages", {
   epicId: varchar("epic_id").notNull().references(() => estimateEpics.id),
   name: text("name").notNull(),
   order: integer("order").notNull(),
+  startDate: date("start_date"),
+  endDate: date("end_date"),
   retainerMonthIndex: integer("retainer_month_index"),
   retainerMonthLabel: text("retainer_month_label"),
   retainerMaxHours: decimal("retainer_max_hours", { precision: 10, scale: 2 }),

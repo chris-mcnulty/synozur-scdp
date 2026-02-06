@@ -298,7 +298,7 @@ export interface IStorage {
   // Estimate Stages
   getEstimateStages(estimateId: string): Promise<EstimateStage[]>;
   createEstimateStage(estimateId: string, stage: { epicId: string; name: string }): Promise<EstimateStage>;
-  updateEstimateStage(stageId: string, update: { name?: string; order?: number }): Promise<EstimateStage>;
+  updateEstimateStage(stageId: string, update: { name?: string; order?: number; startDate?: string | null; endDate?: string | null }): Promise<EstimateStage>;
   deleteEstimateStage(estimateId: string, stageId: string): Promise<void>;
   mergeEstimateStages(estimateId: string, keepStageId: string, deleteStageId: string): Promise<void>;
   
@@ -1780,10 +1780,12 @@ export class DatabaseStorage implements IStorage {
     return newStage;
   }
 
-  async updateEstimateStage(stageId: string, update: { name?: string; order?: number }): Promise<EstimateStage> {
-    const setData: { name?: string; order?: number } = {};
+  async updateEstimateStage(stageId: string, update: { name?: string; order?: number; startDate?: string | null; endDate?: string | null }): Promise<EstimateStage> {
+    const setData: any = {};
     if (update.name !== undefined) setData.name = update.name;
     if (update.order !== undefined) setData.order = update.order;
+    if (update.startDate !== undefined) setData.startDate = update.startDate;
+    if (update.endDate !== undefined) setData.endDate = update.endDate;
     
     const [updatedStage] = await db.update(estimateStages)
       .set(setData)
