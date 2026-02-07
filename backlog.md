@@ -379,6 +379,90 @@
 
 ## 📊 P2 - IMPORTANT FEATURES (Weeks 5-8)
 
+### "What's New" Changelog Modal - NEW
+**Status:** BACKLOG - Designed, Ready for Implementation  
+**Added:** February 7, 2026  
+**Priority:** P2 - Important UX Enhancement  
+**Complexity:** Medium (schema changes, frontend modal, admin setting, AI summary generation)
+
+**Overview:**  
+Present users with a formatted summary of new features/changes on their next login after a changelog update. Users dismiss the modal once and don't see it again until the next notable update. Controlled by a tenant-level admin setting (on by default, can be switched off).
+
+**Design:**
+
+#### Database Schema Changes
+
+**Table: `users` — New column:**
+- [ ] `lastDismissedChangelogVersion` (varchar, nullable) — Stores the changelog version string (e.g., "1.2026.02.07") the user last dismissed. When `null`, the user hasn't dismissed any changelog modal yet.
+
+**Table: `tenants` — New column:**
+- [ ] `showChangelogOnLogin` (boolean, default `true`) — Tenant-level toggle. When `true`, users in this tenant see the What's New modal. Tenant admins can switch it off in System Settings.
+
+**Table: `system_settings` — New entry:**
+- [ ] `CURRENT_CHANGELOG_VERSION` (string) — The current changelog version string (e.g., "1.2026.02.07"). Updated when a new release is published. This is the source of truth for comparison against each user's `lastDismissedChangelogVersion`.
+
+#### Backend API Endpoints
+
+- [ ] `GET /api/changelog/whats-new` — Returns the What's New content for the current user:
+  - Checks tenant's `showChangelogOnLogin` flag — if `false`, returns `{ show: false }`
+  - Compares `CURRENT_CHANGELOG_VERSION` against user's `lastDismissedChangelogVersion` — if they match, returns `{ show: false }`
+  - If new version available: parses `CHANGELOG.md` to extract the current version section, uses AI (`aiService.customPrompt()`) to generate a user-friendly summary, and returns `{ show: true, version: string, date: string, summary: string, highlights: string[] }`
+  - Cache the AI-generated summary in `system_settings` as `CHANGELOG_SUMMARY_<VERSION>` to avoid regenerating on every user login
+- [ ] `POST /api/changelog/dismiss` — Marks the current changelog version as dismissed for the user:
+  - Updates `users.lastDismissedChangelogVersion` to current version
+  - Returns `{ success: true }`
+- [ ] `PATCH /api/tenants/:id/settings` — Already exists; extend to support `showChangelogOnLogin` toggle
+
+#### Frontend Components
+
+- [ ] **WhatsNewModal** (`client/src/components/WhatsNewModal.tsx`):
+  - Modal dialog using existing shadcn `Dialog` component
+  - Header: "What's New in Constellation" with version number and release date
+  - Body: AI-generated summary with formatted highlights (bullet points, bold labels)
+  - Footer: "Got it" dismiss button + optional "View Full Changelog" link to `/changelog`
+  - Triggered on app load via `useQuery` to `GET /api/changelog/whats-new`
+  - On dismiss: calls `POST /api/changelog/dismiss`, invalidates query cache
+  - Only renders when `show: true` in response
+
+- [ ] **Layout Integration** (`client/src/components/layout/layout.tsx`):
+  - Add `<WhatsNewModal />` component alongside existing `<HelpChat />`
+  - Only shown to authenticated users (same pattern as HelpChat)
+
+- [ ] **Admin Setting** (System Settings page):
+  - Add toggle: "Show 'What's New' to users on login" under a Notifications or Features section
+  - Bound to `tenants.showChangelogOnLogin`
+  - Include helper text: "When enabled, users will see a summary of new features after each platform update"
+
+#### AI Summary Generation
+
+- [ ] On first request for a new changelog version, parse `CHANGELOG.md` to extract the latest version section
+- [ ] Send to `aiService.customPrompt()` with system prompt:
+  - "Summarize these release notes into a friendly, non-technical overview for end users. Group into 3-5 highlights. Use simple language. Format as JSON: `{ summary: string, highlights: string[] }`"
+- [ ] Cache the result in `system_settings` to avoid repeated AI calls
+- [ ] Invalidate cache when `CURRENT_CHANGELOG_VERSION` changes
+
+#### Version Lifecycle
+
+1. Developer updates `CHANGELOG.md` with new version section
+2. Developer/admin updates `CURRENT_CHANGELOG_VERSION` in system_settings (could be automated on deploy)
+3. On next login, each user's `lastDismissedChangelogVersion` is compared against current
+4. If different → modal shown with AI-generated summary
+5. User clicks "Got it" → `lastDismissedChangelogVersion` updated to current version
+6. User won't see modal again until next version change
+
+#### Edge Cases & Considerations
+
+- [ ] New users (no `lastDismissedChangelogVersion`): Show modal on first login after feature goes live
+- [ ] Tenant admin disables feature: No modal for any users in that tenant, regardless of version mismatch
+- [ ] AI service unavailable: Fall back to raw changelog excerpt (first 500 chars of current version section)
+- [ ] Multiple rapid releases: Only the latest version matters; users who skip versions see only the current summary
+- [ ] Mobile responsiveness: Modal should work well on small screens
+
+**Estimated Effort:** 2-3 days  
+**Dependencies:** AI service (already integrated), existing Dialog component, tenant settings infrastructure
+
+---
+
 ### QuickBooks Online Integration
 **Status:** COMPLETELY MISSING - Downgraded from P0
 
