@@ -16180,7 +16180,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status'];
+      const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status', 'potentialStartDate'];
       const isNonDraftSafe = Object.keys(req.body).every(key => nonDraftSafeFields.includes(key));
       
       if (!isNonDraftSafe) {

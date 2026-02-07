@@ -46,7 +46,7 @@ interface Estimate {
   clientName: string;
   projectId?: string;
   projectName?: string;
-  status: 'draft' | 'sent' | 'approved' | 'rejected';
+  status: 'draft' | 'sent' | 'final' | 'approved' | 'rejected';
   estimateType?: 'detailed' | 'block' | 'retainer';
   totalHours: number;
   totalCost: number;
@@ -70,7 +70,7 @@ export default function Estimates() {
   const [retainerTiers, setRetainerTiers] = useState<Array<{name: string, rate: string, maxHours: string}>>([
     { name: '', rate: '', maxHours: '' }
   ]);
-  const [activeTab, setActiveTab] = useState<'draft' | 'approved' | 'archive' | 'all'>('draft');
+  const [activeTab, setActiveTab] = useState<'draft' | 'final' | 'approved' | 'archive' | 'all'>('draft');
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -127,6 +127,8 @@ export default function Estimates() {
     switch (activeTab) {
       case 'draft':
         return !estimate.archived && (estimate.status === 'draft' || estimate.status === 'sent' || estimate.status === 'rejected');
+      case 'final':
+        return !estimate.archived && estimate.status === 'final';
       case 'approved':
         return !estimate.archived && estimate.status === 'approved';
       case 'archive':
@@ -358,6 +360,12 @@ export default function Estimates() {
                     {allEstimates.filter(e => !e.archived && (e.status === 'draft' || e.status === 'sent' || e.status === 'rejected')).length}
                   </span>
                 </TabsTrigger>
+                <TabsTrigger value="final" data-testid="tab-final">
+                  Final
+                  <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {allEstimates.filter(e => !e.archived && e.status === 'final').length}
+                  </span>
+                </TabsTrigger>
                 <TabsTrigger value="approved" data-testid="tab-approved">
                   Approved
                   <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -385,6 +393,7 @@ export default function Estimates() {
             ) : estimates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 {activeTab === 'draft' && "No draft estimates. Create a new estimate to get started."}
+                {activeTab === 'final' && "No final estimates awaiting approval."}
                 {activeTab === 'approved' && "No approved estimates yet."}
                 {activeTab === 'archive' && "No archived estimates."}
                 {activeTab === 'all' && "No estimates yet. Create your first estimate to get started."}

@@ -1416,7 +1416,7 @@ function EstimateDetailContent() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-4">
           {/* Status Badge */}
           {estimate?.status && (
             <div className="flex items-center">
@@ -1431,6 +1431,21 @@ function EstimateDetailContent() {
               </span>
             </div>
           )}
+          
+          {/* Potential Start Date - always editable */}
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Potential Start:</span>
+            <Input
+              type="date"
+              className="w-[160px] h-8 text-sm"
+              value={estimate?.potentialStartDate || ''}
+              onChange={(e) => {
+                updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+              }}
+              data-testid="input-potential-start-date-header"
+            />
+          </div>
           
           {/* Status Management Buttons */}
           {(user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
@@ -1666,19 +1681,6 @@ function EstimateDetailContent() {
             onChange={handleImportCSV}
             className="hidden"
           />
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Potential Start:</span>
-            <Input
-              type="date"
-              className="w-[160px] h-8 text-sm"
-              value={estimate?.potentialStartDate || ''}
-              onChange={(e) => {
-                updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
-              }}
-              data-testid="input-potential-start-date-header"
-            />
-          </div>
         </div>
       </div>
 
