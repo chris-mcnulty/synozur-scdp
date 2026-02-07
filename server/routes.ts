@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
-import { eq, sql, inArray, max } from "drizzle-orm";
+import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
@@ -15016,14 +15016,20 @@ export async function registerRoutes(app: Express): Promise<void> {
   // ========== REIMBURSEMENT BATCHES API ==========
 
   // GET /api/reimbursement-batches - List reimbursement batches
-  app.get("/api/reimbursement-batches", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+  app.get("/api/reimbursement-batches", requireAuth, async (req, res) => {
     try {
       const { status, startDate, endDate } = req.query as Record<string, string>;
+      const user = req.user!;
+      const isPrivileged = ['admin', 'billing-admin', 'executive'].includes(user.role || '');
 
       const filters: any = {};
       if (status) filters.status = status;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
+      if (user.primaryTenantId) filters.tenantId = user.primaryTenantId;
+      if (!isPrivileged) {
+        filters.requestedForUserId = user.id;
+      }
 
       const batches = await storage.getReimbursementBatches(filters);
       res.json(batches);
@@ -15034,11 +15040,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // GET /api/reimbursement-batches/:id - Get single batch
-  app.get("/api/reimbursement-batches/:id", requireAuth, requireRole(["admin", "executive", "billing-admin"]), async (req, res) => {
+  app.get("/api/reimbursement-batches/:id", requireAuth, async (req, res) => {
     try {
       const batch = await storage.getReimbursementBatch(req.params.id);
       if (!batch) {
         return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      const user = req.user!;
+      const isPrivileged = ['admin', 'billing-admin', 'executive'].includes(user.role || '');
+      if (!isPrivileged && batch.requestedForUserId !== user.id) {
+        return res.status(403).json({ message: "Access denied" });
       }
       res.json(batch);
     } catch (error) {
@@ -15047,21 +15058,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // POST /api/reimbursement-batches - Create reimbursement batch
-  app.post("/api/reimbursement-batches", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  // POST /api/reimbursement-batches - Create reimbursement batch (any employee for self, admin/billing-admin for others)
+  app.post("/api/reimbursement-batches", requireAuth, async (req, res) => {
     try {
-      const { expenseIds, ...batchData } = req.body;
-      
-      const validatedData = insertReimbursementBatchSchema.parse({
-        ...batchData,
-        createdBy: req.user!.id,
-      });
+      const { expenseIds, requestedForUserId, ...batchData } = req.body;
+      const user = req.user!;
+      const isPrivileged = ['admin', 'billing-admin'].includes(user.role || '');
+
+      const targetUserId = requestedForUserId || user.id;
+      if (targetUserId !== user.id && !isPrivileged) {
+        return res.status(403).json({ message: "Only admin or billing-admin can create reimbursement requests for other users" });
+      }
 
       if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
         return res.status(400).json({ message: "At least one expense is required" });
       }
 
-      const batch = await storage.createReimbursementBatch(validatedData, expenseIds);
+      const batch = await storage.createReimbursementBatch({
+        ...batchData,
+        tenantId: user.primaryTenantId,
+        requestedBy: user.id,
+        requestedForUserId: targetUserId,
+        currency: batchData.currency || 'USD',
+      }, expenseIds);
       res.status(201).json(batch);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -15084,8 +15103,17 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // DELETE /api/reimbursement-batches/:id - Delete batch
-  app.delete("/api/reimbursement-batches/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.delete("/api/reimbursement-batches/:id", requireAuth, async (req, res) => {
     try {
+      const batch = await storage.getReimbursementBatch(req.params.id);
+      if (!batch) {
+        return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      const user = req.user!;
+      const isPrivileged = ['admin', 'billing-admin'].includes(user.role || '');
+      if (!isPrivileged && batch.requestedForUserId !== user.id) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       await storage.deleteReimbursementBatch(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -15094,10 +15122,68 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // POST /api/reimbursement-batches/:id/process - Process batch (mark as paid)
+  // POST /api/reimbursement-batches/:id/review-line-item - Review individual line item
+  app.post("/api/reimbursement-batches/:id/review-line-item", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { lineItemId, status, reviewNote } = req.body;
+      if (!lineItemId || !['approved', 'declined'].includes(status)) {
+        return res.status(400).json({ message: "lineItemId and valid status (approved/declined) are required" });
+      }
+      const updated = await storage.reviewReimbursementLineItem(lineItemId, status, req.user!.id, reviewNote);
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[REIMBURSEMENT_BATCHES] Failed to review line item:", error);
+      res.status(400).json({ message: error.message || "Failed to review line item" });
+    }
+  });
+
+  // POST /api/reimbursement-batches/:id/process - Process batch (mark as paid with reference number)
   app.post("/api/reimbursement-batches/:id/process", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
-      const processed = await storage.processReimbursementBatch(req.params.id, req.user!.id);
+      const { paymentReferenceNumber } = req.body;
+      if (!paymentReferenceNumber || typeof paymentReferenceNumber !== 'string' || !paymentReferenceNumber.trim()) {
+        return res.status(400).json({ message: "Payment reference number is required" });
+      }
+      const processed = await storage.processReimbursementBatch(req.params.id, req.user!.id, paymentReferenceNumber.trim());
+
+      try {
+        const batch = await storage.getReimbursementBatch(req.params.id);
+        if (batch?.requestedForUser) {
+          let branding;
+          if (batch.tenantId) {
+            const tenantSettings = await storage.getSystemSettings(batch.tenantId);
+            const emailHeaderSetting = tenantSettings.find((s: any) => s.key === 'emailHeaderUrl');
+            const companyNameSetting = tenantSettings.find((s: any) => s.key === 'companyName');
+            branding = {
+              emailHeaderUrl: emailHeaderSetting?.value,
+              companyName: companyNameSetting?.value,
+            };
+          }
+
+          const approvedLineItems = batch.lineItems.filter(li => li.status === 'approved');
+          const expenseDetails = approvedLineItems.map(li => ({
+            date: li.expense.date,
+            category: li.expense.category,
+            description: li.expense.description || '',
+            amount: li.expense.amount,
+            currency: li.expense.currency,
+          }));
+
+          await emailService.notifyReimbursementBatchProcessed(
+            { email: batch.requestedForUser.email, name: batch.requestedForUser.name || '' },
+            batch.batchNumber,
+            batch.totalAmount,
+            batch.currency,
+            approvedLineItems.length,
+            branding,
+            paymentReferenceNumber.trim(),
+            expenseDetails
+          );
+        }
+      } catch (emailError) {
+        console.error("[REIMBURSEMENT_BATCHES] Failed to send notification email:", emailError);
+      }
+
       res.json(processed);
     } catch (error: any) {
       console.error("[REIMBURSEMENT_BATCHES] Failed to process batch:", error);
@@ -15106,13 +15192,45 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // GET /api/expenses/available-for-reimbursement - Get reimbursable expenses
-  app.get("/api/expenses/available-for-reimbursement", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+  app.get("/api/expenses/available-for-reimbursement", requireAuth, async (req, res) => {
     try {
-      const expenses = await storage.getAvailableReimbursableExpenses();
-      res.json(expenses);
+      const user = req.user!;
+      const isPrivileged = ['admin', 'billing-admin', 'executive'].includes(user.role || '');
+      const { userId } = req.query as Record<string, string>;
+
+      let targetUserId: string | undefined;
+      if (isPrivileged && userId) {
+        targetUserId = userId;
+      } else if (!isPrivileged) {
+        targetUserId = user.id;
+      }
+
+      const availableExpenses = await storage.getAvailableReimbursableExpenses(targetUserId);
+      res.json(availableExpenses);
     } catch (error) {
       console.error("[REIMBURSEMENT_BATCHES] Failed to fetch reimbursable expenses:", error);
       res.status(500).json({ message: "Failed to fetch reimbursable expenses" });
+    }
+  });
+
+  // PATCH /api/expenses/:id/rejection-note - Update rejection note on expense (editable by finance)
+  app.patch("/api/expenses/:id/rejection-note", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const { rejectionNote } = req.body;
+      if (typeof rejectionNote !== 'string') {
+        return res.status(400).json({ message: "rejectionNote must be a string" });
+      }
+      const [updated] = await db.update(expenses)
+        .set({ rejectionNote })
+        .where(eq(expenses.id, req.params.id))
+        .returning();
+      if (!updated) {
+        return res.status(404).json({ message: "Expense not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[EXPENSES] Failed to update rejection note:", error);
+      res.status(500).json({ message: "Failed to update rejection note" });
     }
   });
 
@@ -17598,6 +17716,39 @@ export async function registerRoutes(app: Express): Promise<void> {
         ...validatedData,
         updatedBy: userId,
       });
+
+      if (validatedData.paymentStatus === 'paid') {
+        try {
+          const batchLines = await storage.getInvoiceLinesForBatch(batchId);
+          const expenseLineProjectIds = batchLines
+            .filter((line: any) => line.type === 'expense')
+            .map((line: any) => line.projectId);
+
+          if (expenseLineProjectIds.length > 0) {
+            const batchDetails = await storage.getInvoiceBatchByBatchId(batchId);
+            if (batchDetails) {
+              const billedExpenses = await db.select({ id: expenses.id })
+                .from(expenses)
+                .where(and(
+                  eq(expenses.billable, true),
+                  eq(expenses.billedFlag, true),
+                  inArray(expenses.projectId, [...new Set(expenseLineProjectIds)]),
+                  gte(expenses.date, batchDetails.startDate),
+                  lte(expenses.date, batchDetails.endDate),
+                  isNull(expenses.clientPaidAt)
+                ));
+
+              const expenseIds = billedExpenses.map(e => e.id);
+              if (expenseIds.length > 0) {
+                await storage.setExpensesClientPaid(expenseIds);
+                console.log(`[INVOICE_PAYMENT] Auto-flagged ${expenseIds.length} expenses as client-paid for batch ${batchId}`);
+              }
+            }
+          }
+        } catch (flagError) {
+          console.error("[INVOICE_PAYMENT] Failed to auto-flag expenses as client-paid:", flagError);
+        }
+      }
 
       res.json(updatedBatch);
     } catch (error: any) {

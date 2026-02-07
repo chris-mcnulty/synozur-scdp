@@ -249,21 +249,72 @@ export class EmailNotificationService {
   /**
    * Notify employee that their expenses have been included in a reimbursement batch
    */
-  async notifyReimbursementBatchProcessed(employee: EmailRecipient, batchNumber: string, totalAmount: string, currency: string, expenseCount: number, branding?: TenantBranding): Promise<void> {
-    const subject = `Reimbursement Batch ${batchNumber} Processed`;
+  async notifyReimbursementBatchProcessed(
+    employee: EmailRecipient,
+    batchNumber: string,
+    totalAmount: string,
+    currency: string,
+    expenseCount: number,
+    branding?: TenantBranding,
+    paymentReferenceNumber?: string,
+    expenseDetails?: Array<{ date: string; category: string; description: string; amount: string; currency: string }>
+  ): Promise<void> {
+    const subject = `Reimbursement ${batchNumber} Processed`;
     const header = getEmailHeader(branding);
+
+    let expenseTableHtml = '';
+    if (expenseDetails && expenseDetails.length > 0) {
+      const rows = expenseDetails.map(exp => {
+        const dateStr = new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `
+          <tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(dateStr)}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; text-transform: capitalize;">${escapeHtml(exp.category)}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(exp.description)}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${escapeHtml(exp.currency)} ${escapeHtml(parseFloat(exp.amount).toFixed(2))}</td>
+          </tr>
+        `;
+      }).join('');
+
+      expenseTableHtml = `
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Date</th>
+              <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Category</th>
+              <th style="padding: 10px 12px; text-align: left; border-bottom: 2px solid #e5e7eb;">Description</th>
+              <th style="padding: 10px 12px; text-align: right; border-bottom: 2px solid #e5e7eb;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr style="font-weight: bold; background-color: #f9fafb;">
+              <td colspan="3" style="padding: 10px 12px; text-align: right; border-top: 2px solid #e5e7eb;">Total:</td>
+              <td style="padding: 10px 12px; text-align: right; border-top: 2px solid #e5e7eb;">${escapeHtml(currency)} ${escapeHtml(parseFloat(totalAmount).toFixed(2))}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    const referenceHtml = paymentReferenceNumber
+      ? `<strong>Payment Reference:</strong> ${escapeHtml(paymentReferenceNumber)}<br>`
+      : '';
+
     const body = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           ${header}
-          <h2 style="color: #7C3AED;">Reimbursement Batch Processed</h2>
+          <h2 style="color: #7C3AED;">Reimbursement Processed</h2>
           <p>Hi ${escapeHtml(employee.name)},</p>
-          <p>Your approved expenses have been included in a reimbursement batch and are being processed for payment:</p>
+          <p>Your approved expenses have been processed for reimbursement:</p>
           <div style="background-color: #f4f4f4; padding: 15px; border-left: 4px solid #7C3AED; margin: 20px 0;">
             <strong>Batch Number:</strong> ${escapeHtml(batchNumber)}<br>
-            <strong>Total Amount:</strong> ${escapeHtml(currency)} ${escapeHtml(totalAmount)}<br>
+            ${referenceHtml}
+            <strong>Total Amount:</strong> ${escapeHtml(currency)} ${escapeHtml(parseFloat(totalAmount).toFixed(2))}<br>
             <strong>Number of Expenses:</strong> ${expenseCount}
           </div>
+          ${expenseTableHtml}
           <p>You can expect payment according to your organization's reimbursement schedule.</p>
           <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
         </body>

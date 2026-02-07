@@ -6,7 +6,7 @@ import {
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
   vocabularyCatalog, organizationVocabulary, tenants,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
-  expenseReports, expenseReportItems, reimbursementBatches,
+  expenseReports, expenseReportItems, reimbursementBatches, reimbursementLineItems,
   projectPlannerConnections, plannerTaskSync, userAzureMappings,
   type User, type InsertUser, type Client, type InsertClient, 
   type Project, type InsertProject, type Role, type InsertRole,
@@ -46,6 +46,7 @@ import {
   type ExpenseReport, type InsertExpenseReport,
   type ExpenseReportItem, type InsertExpenseReportItem,
   type ReimbursementBatch, type InsertReimbursementBatch,
+  type ReimbursementLineItem, type InsertReimbursementLineItem,
   type ProjectPlannerConnection, type InsertProjectPlannerConnection,
   type PlannerTaskSync, type InsertPlannerTaskSync,
   type UserAzureMapping, type InsertUserAzureMapping,
@@ -72,6 +73,9 @@ import { convertCurrency } from './exchange-rates.js';
 const usersApprover = alias(users, 'users_approver');
 const usersRejecter = alias(users, 'users_rejecter');
 const usersProcessor = alias(users, 'users_processor');
+const usersRequester = alias(users, 'users_requester');
+const usersRequestedFor = alias(users, 'users_requested_for');
+const usersReviewer = alias(users, 'users_reviewer');
 
 // Numeric utility functions for safe operations
 function normalizeAmount(value: any): number {
@@ -430,17 +434,24 @@ export interface IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User })[]>;
+    requestedForUserId?: string;
+    tenantId?: string;
+  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User; requester?: User; requestedForUser?: User })[]>;
   getReimbursementBatch(id: string): Promise<(ReimbursementBatch & { 
     approver?: User; 
     processor?: User;
+    requester?: User;
+    requestedForUser?: User;
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client } }; reviewer?: User })[];
   }) | undefined>;
   createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch>;
   updateReimbursementBatch(id: string, batch: Partial<InsertReimbursementBatch>): Promise<ReimbursementBatch>;
-  approveReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch>;
-  processReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch>;
-  getAvailableReimbursableExpenses(): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
+  deleteReimbursementBatch(id: string): Promise<void>;
+  reviewReimbursementLineItem(lineItemId: string, status: string, reviewerId: string, reviewNote?: string): Promise<ReimbursementLineItem>;
+  processReimbursementBatch(id: string, userId: string, paymentReferenceNumber: string): Promise<ReimbursementBatch>;
+  getAvailableReimbursableExpenses(userId?: string): Promise<(Expense & { person: User; project: Project & { client: Client } })[]>;
+  setExpensesClientPaid(expenseIds: string[]): Promise<void>;
   
   // Change Orders
   getChangeOrders(projectId: string): Promise<ChangeOrder[]>;
@@ -4348,7 +4359,9 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User })[]> {
+    requestedForUserId?: string;
+    tenantId?: string;
+  }): Promise<(ReimbursementBatch & { approver?: User; processor?: User; requester?: User; requestedForUser?: User })[]> {
     const conditions = [];
     
     if (filters?.status) {
@@ -4360,11 +4373,19 @@ export class DatabaseStorage implements IStorage {
     if (filters?.endDate) {
       conditions.push(lte(reimbursementBatches.createdAt, new Date(filters.endDate)));
     }
+    if (filters?.requestedForUserId) {
+      conditions.push(eq(reimbursementBatches.requestedForUserId, filters.requestedForUserId));
+    }
+    if (filters?.tenantId) {
+      conditions.push(eq(reimbursementBatches.tenantId, filters.tenantId));
+    }
 
     const results = await db.select()
       .from(reimbursementBatches)
       .leftJoin(usersApprover, eq(reimbursementBatches.approvedBy, usersApprover.id))
       .leftJoin(usersProcessor, eq(reimbursementBatches.processedBy, usersProcessor.id))
+      .leftJoin(usersRequester, eq(reimbursementBatches.requestedBy, usersRequester.id))
+      .leftJoin(usersRequestedFor, eq(reimbursementBatches.requestedForUserId, usersRequestedFor.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(reimbursementBatches.createdAt));
 
@@ -4372,23 +4393,29 @@ export class DatabaseStorage implements IStorage {
       ...row.reimbursement_batches,
       approver: row.users_approver || undefined,
       processor: row.users_processor || undefined,
+      requester: row.users_requester || undefined,
+      requestedForUser: row.users_requested_for || undefined,
     }));
   }
 
   async getReimbursementBatch(id: string): Promise<(ReimbursementBatch & { 
     approver?: User; 
     processor?: User;
+    requester?: User;
+    requestedForUser?: User;
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];
+    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client } }; reviewer?: User })[];
   }) | undefined> {
     const [batch] = await db.select()
       .from(reimbursementBatches)
       .leftJoin(usersApprover, eq(reimbursementBatches.approvedBy, usersApprover.id))
       .leftJoin(usersProcessor, eq(reimbursementBatches.processedBy, usersProcessor.id))
+      .leftJoin(usersRequester, eq(reimbursementBatches.requestedBy, usersRequester.id))
+      .leftJoin(usersRequestedFor, eq(reimbursementBatches.requestedForUserId, usersRequestedFor.id))
       .where(eq(reimbursementBatches.id, id));
 
     if (!batch) return undefined;
 
-    // Get expenses in this batch
     const batchExpenses = await db.select()
       .from(expenses)
       .innerJoin(users, eq(expenses.personId, users.id))
@@ -4396,10 +4423,21 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(clients, eq(projects.clientId, clients.id))
       .where(eq(expenses.reimbursementBatchId, id));
 
+    const lineItemResults = await db.select()
+      .from(reimbursementLineItems)
+      .innerJoin(expenses, eq(reimbursementLineItems.expenseId, expenses.id))
+      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(projects, eq(expenses.projectId, projects.id))
+      .innerJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(usersReviewer, eq(reimbursementLineItems.reviewedBy, usersReviewer.id))
+      .where(eq(reimbursementLineItems.batchId, id));
+
     return {
       ...batch.reimbursement_batches,
       approver: batch.users_approver || undefined,
       processor: batch.users_processor || undefined,
+      requester: batch.users_requester || undefined,
+      requestedForUser: batch.users_requested_for || undefined,
       expenses: batchExpenses.map(row => ({
         ...row.expenses,
         person: row.users,
@@ -4408,12 +4446,23 @@ export class DatabaseStorage implements IStorage {
           client: row.clients,
         },
       })),
+      lineItems: lineItemResults.map(row => ({
+        ...row.reimbursement_line_items,
+        expense: {
+          ...row.expenses,
+          person: row.users,
+          project: {
+            ...row.projects,
+            client: row.clients,
+          },
+        },
+        reviewer: row.users_reviewer || undefined,
+      })),
     };
   }
 
   async createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch> {
     return await db.transaction(async (tx) => {
-      // Generate unique batch number
       const year = new Date().getFullYear();
       const month = String(new Date().getMonth() + 1).padStart(2, '0');
       
@@ -4427,25 +4476,32 @@ export class DatabaseStorage implements IStorage {
         : 1;
       const batchNumber = `REIMB-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
 
-      // Calculate total amount from expenses
       const expenseList = expenseIds.length > 0
         ? await tx.select().from(expenses).where(inArray(expenses.id, expenseIds))
         : [];
       
       const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
 
-      // Create the reimbursement batch
       const [created] = await tx.insert(reimbursementBatches).values({
         ...batch,
         batchNumber,
+        status: 'pending',
         totalAmount: totalAmount.toFixed(2),
       }).returning();
 
-      // Link expenses to this batch
       if (expenseIds.length > 0) {
         await tx.update(expenses)
           .set({ reimbursementBatchId: created.id })
           .where(inArray(expenses.id, expenseIds));
+
+        for (const expenseId of expenseIds) {
+          await tx.insert(reimbursementLineItems).values({
+            tenantId: batch.tenantId,
+            batchId: created.id,
+            expenseId,
+            status: 'pending',
+          });
+        }
       }
 
       return created;
@@ -4469,88 +4525,138 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Reimbursement batch not found');
     }
 
-    if (batch.status !== 'draft') {
-      throw new Error('Only draft batches can be deleted');
+    if (batch.status === 'processed') {
+      throw new Error('Processed batches cannot be deleted');
     }
 
-    // Unlink expenses from this batch
+    await db.delete(reimbursementLineItems).where(eq(reimbursementLineItems.batchId, id));
+
     await db.update(expenses)
       .set({ reimbursementBatchId: null })
       .where(eq(expenses.reimbursementBatchId, id));
 
-    // Delete the batch
     await db.delete(reimbursementBatches).where(eq(reimbursementBatches.id, id));
   }
 
-  async approveReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
-    const [batch] = await db.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
-    if (!batch) {
-      throw new Error('Reimbursement batch not found');
+  async reviewReimbursementLineItem(lineItemId: string, status: string, reviewerId: string, reviewNote?: string): Promise<ReimbursementLineItem> {
+    const [lineItem] = await db.select().from(reimbursementLineItems).where(eq(reimbursementLineItems.id, lineItemId));
+    if (!lineItem) {
+      throw new Error('Reimbursement line item not found');
     }
 
-    if (batch.status !== 'draft') {
-      throw new Error('Only draft batches can be approved');
-    }
-
-    const [updated] = await db.update(reimbursementBatches)
+    const [updated] = await db.update(reimbursementLineItems)
       .set({
-        status: 'approved',
-        approvedAt: new Date(),
-        approvedBy: userId,
-        updatedAt: new Date(),
+        status,
+        reviewedBy: reviewerId,
+        reviewedAt: new Date(),
+        reviewNote: reviewNote || null,
       })
-      .where(eq(reimbursementBatches.id, id))
+      .where(eq(reimbursementLineItems.id, lineItemId))
       .returning();
+
+    const allLineItems = await db.select().from(reimbursementLineItems)
+      .where(eq(reimbursementLineItems.batchId, lineItem.batchId));
+    
+    const allReviewed = allLineItems.every(li => li.status === 'approved' || li.status === 'declined');
+    if (allReviewed) {
+      const approvedItems = allLineItems.filter(li => li.status === 'approved');
+      const approvedExpenseIds = approvedItems.map(li => li.expenseId);
+      
+      let approvedTotal = 0;
+      if (approvedExpenseIds.length > 0) {
+        const approvedExpenses = await db.select().from(expenses).where(inArray(expenses.id, approvedExpenseIds));
+        approvedTotal = approvedExpenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      }
+
+      await db.update(reimbursementBatches)
+        .set({
+          status: 'under_review',
+          totalAmount: approvedTotal.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(reimbursementBatches.id, lineItem.batchId));
+    }
 
     return updated;
   }
 
-  async processReimbursementBatch(id: string, userId: string): Promise<ReimbursementBatch> {
+  async processReimbursementBatch(id: string, userId: string, paymentReferenceNumber: string): Promise<ReimbursementBatch> {
     return await db.transaction(async (tx) => {
       const [batch] = await tx.select().from(reimbursementBatches).where(eq(reimbursementBatches.id, id));
       if (!batch) {
         throw new Error('Reimbursement batch not found');
       }
 
-      if (batch.status !== 'approved') {
-        throw new Error('Only approved batches can be processed');
+      if (batch.status !== 'under_review') {
+        throw new Error('Only fully reviewed batches can be processed');
       }
 
-      // Update batch status
-      const [updated] = await tx.update(reimbursementBatches)
-        .set({
-          status: 'processed',
-          processedAt: new Date(),
-          processedBy: userId,
-          updatedAt: new Date(),
-        })
-        .where(eq(reimbursementBatches.id, id))
-        .returning();
+      const approvedLineItems = await tx.select()
+        .from(reimbursementLineItems)
+        .where(and(
+          eq(reimbursementLineItems.batchId, id),
+          eq(reimbursementLineItems.status, 'approved')
+        ));
 
-      // Update all expenses in this batch to 'reimbursed'
+      if (approvedLineItems.length === 0) {
+        throw new Error('No approved line items to process');
+      }
+
+      const approvedExpenseIds = approvedLineItems.map(li => li.expenseId);
+
       await tx.update(expenses)
         .set({
           approvalStatus: 'reimbursed',
           reimbursedAt: new Date(),
         })
-        .where(eq(expenses.reimbursementBatchId, id));
+        .where(inArray(expenses.id, approvedExpenseIds));
+
+      const declinedLineItems = await tx.select()
+        .from(reimbursementLineItems)
+        .where(and(
+          eq(reimbursementLineItems.batchId, id),
+          eq(reimbursementLineItems.status, 'declined')
+        ));
+      
+      const declinedExpenseIds = declinedLineItems.map(li => li.expenseId);
+      if (declinedExpenseIds.length > 0) {
+        await tx.update(expenses)
+          .set({ reimbursementBatchId: null })
+          .where(inArray(expenses.id, declinedExpenseIds));
+      }
+
+      const [updated] = await tx.update(reimbursementBatches)
+        .set({
+          status: 'processed',
+          processedAt: new Date(),
+          processedBy: userId,
+          paymentReferenceNumber,
+          updatedAt: new Date(),
+        })
+        .where(eq(reimbursementBatches.id, id))
+        .returning();
 
       return updated;
     });
   }
 
-  async getAvailableReimbursableExpenses(): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
-    // Get approved, reimbursable expenses that aren't already in a reimbursement batch
+  async getAvailableReimbursableExpenses(userId?: string): Promise<(Expense & { person: User; project: Project & { client: Client } })[]> {
+    const conditions = [
+      eq(expenses.reimbursable, true),
+      eq(expenses.approvalStatus, 'approved'),
+      isNull(expenses.reimbursementBatchId),
+    ];
+
+    if (userId) {
+      conditions.push(eq(expenses.personId, userId));
+    }
+
     const results = await db.select()
       .from(expenses)
       .innerJoin(users, eq(expenses.personId, users.id))
       .innerJoin(projects, eq(expenses.projectId, projects.id))
       .innerJoin(clients, eq(projects.clientId, clients.id))
-      .where(and(
-        eq(expenses.reimbursable, true),
-        eq(expenses.approvalStatus, 'approved'),
-        isNull(expenses.reimbursementBatchId)
-      ))
+      .where(and(...conditions))
       .orderBy(desc(expenses.date));
 
     return results.map(row => ({
@@ -4561,6 +4667,13 @@ export class DatabaseStorage implements IStorage {
         client: row.clients,
       },
     }));
+  }
+
+  async setExpensesClientPaid(expenseIds: string[]): Promise<void> {
+    if (expenseIds.length === 0) return;
+    await db.update(expenses)
+      .set({ clientPaidAt: new Date() })
+      .where(inArray(expenses.id, expenseIds));
   }
 
   // Change Orders

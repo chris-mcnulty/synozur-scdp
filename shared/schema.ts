@@ -848,6 +848,7 @@ export const expenses = pgTable("expenses", {
   rejectionNote: text("rejection_note"),
   reimbursedAt: timestamp("reimbursed_at"),
   reimbursementBatchId: varchar("reimbursement_batch_id"), // Will reference reimbursementBatches
+  clientPaidAt: timestamp("client_paid_at"), // When client paid for this expense via invoice batch
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_expenses_tenant").on(table.tenantId),
@@ -945,10 +946,13 @@ export const reimbursementBatches = pgTable("reimbursement_batches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").references(() => tenants.id), // Multi-tenancy: nullable during migration
   batchNumber: text("batch_number").notNull().unique(), // Auto-generated batch number (e.g., REIMB-2025-10-001)
-  status: text("status").notNull().default("draft"), // draft, approved, processed
+  status: text("status").notNull().default("pending"), // pending, under_review, processed
   totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("USD"),
   description: text("description"),
+  requestedBy: varchar("requested_by").references(() => users.id), // Employee who requested (or admin who created on behalf)
+  requestedForUserId: varchar("requested_for_user_id").references(() => users.id), // The employee being reimbursed
+  paymentReferenceNumber: text("payment_reference_number"), // Reference number when processed
   // Approval tracking
   approvedAt: timestamp("approved_at"),
   approvedBy: varchar("approved_by").references(() => users.id),
@@ -959,6 +963,21 @@ export const reimbursementBatches = pgTable("reimbursement_batches", {
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
 }, (table) => ({
   statusIdx: index("reimbursement_batches_status_idx").on(table.status),
+}));
+
+export const reimbursementLineItems = pgTable("reimbursement_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
+  batchId: varchar("batch_id").notNull().references(() => reimbursementBatches.id),
+  expenseId: varchar("expense_id").notNull().references(() => expenses.id),
+  status: text("status").notNull().default("pending"), // pending, approved, declined
+  reviewNote: text("review_note"), // Finance reviewer's note
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  batchIdx: index("reimbursement_line_items_batch_idx").on(table.batchId),
+  expenseIdx: index("reimbursement_line_items_expense_idx").on(table.expenseId),
 }));
 
 // Add unique constraint for project rate overrides
@@ -1368,7 +1387,7 @@ export const expenseReportItemsRelations = relations(expenseReportItems, ({ one 
   }),
 }));
 
-export const reimbursementBatchesRelations = relations(reimbursementBatches, ({ one }) => ({
+export const reimbursementBatchesRelations = relations(reimbursementBatches, ({ one, many }) => ({
   approver: one(users, {
     fields: [reimbursementBatches.approvedBy],
     references: [users.id],
@@ -1378,6 +1397,32 @@ export const reimbursementBatchesRelations = relations(reimbursementBatches, ({ 
     fields: [reimbursementBatches.processedBy],
     references: [users.id],
     relationName: "reimbursementBatchProcessors",
+  }),
+  requester: one(users, {
+    fields: [reimbursementBatches.requestedBy],
+    references: [users.id],
+    relationName: "reimbursementBatchRequesters",
+  }),
+  requestedForUser: one(users, {
+    fields: [reimbursementBatches.requestedForUserId],
+    references: [users.id],
+    relationName: "reimbursementBatchRecipients",
+  }),
+  lineItems: many(reimbursementLineItems),
+}));
+
+export const reimbursementLineItemsRelations = relations(reimbursementLineItems, ({ one }) => ({
+  batch: one(reimbursementBatches, {
+    fields: [reimbursementLineItems.batchId],
+    references: [reimbursementBatches.id],
+  }),
+  expense: one(expenses, {
+    fields: [reimbursementLineItems.expenseId],
+    references: [expenses.id],
+  }),
+  reviewer: one(users, {
+    fields: [reimbursementLineItems.reviewedBy],
+    references: [users.id],
   }),
 }));
 
@@ -1675,6 +1720,7 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({
   rejectedBy: true,
   reimbursedAt: true,
   reimbursementBatchId: true,
+  clientPaidAt: true,
 });
 
 export const insertExpenseAttachmentSchema = createInsertSchema(expenseAttachments).omit({
@@ -1714,6 +1760,13 @@ export const insertReimbursementBatchSchema = createInsertSchema(reimbursementBa
   approvedBy: true,
   processedAt: true,
   processedBy: true,
+});
+
+export const insertReimbursementLineItemSchema = createInsertSchema(reimbursementLineItems).omit({
+  id: true,
+  createdAt: true,
+  reviewedAt: true,
+  reviewedBy: true,
 });
 
 export const insertSowSchema = createInsertSchema(sows).omit({
@@ -1867,6 +1920,9 @@ export type InsertExpenseReportItem = z.infer<typeof insertExpenseReportItemSche
 
 export type ReimbursementBatch = typeof reimbursementBatches.$inferSelect;
 export type InsertReimbursementBatch = z.infer<typeof insertReimbursementBatchSchema>;
+
+export type ReimbursementLineItem = typeof reimbursementLineItems.$inferSelect;
+export type InsertReimbursementLineItem = z.infer<typeof insertReimbursementLineItemSchema>;
 
 export type ChangeOrder = typeof changeOrders.$inferSelect;
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
