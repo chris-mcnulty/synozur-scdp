@@ -81,7 +81,7 @@ const expenseFilterSchema = z.object({
 });
 
 // Quick filter presets
-type QuickFilter = 'all' | 'uninvoiced' | 'unsubmitted' | 'missing-receipt-over-50' | 'by-person';
+type QuickFilter = 'all' | 'uninvoiced' | 'unsubmitted' | 'missing-receipt-over-50' | 'by-person' | 'pending-reimbursement';
 
 const APPROVAL_STATUS_OPTIONS = [
   { value: "draft", label: "Draft (Not Submitted)" },
@@ -293,6 +293,9 @@ export default function ExpenseManagement() {
         break;
       case 'missing-receipt-over-50':
         newFilters = { hasReceipt: 'false', minAmount: '50' };
+        break;
+      case 'pending-reimbursement':
+        newFilters = { reimbursable: 'true', approvalStatus: 'approved', billedFlag: 'false' };
         break;
       case 'by-person':
         newFilters = { notInExpenseReport: 'true' };
@@ -783,6 +786,15 @@ export default function ExpenseManagement() {
           >
             <Receipt className="w-4 h-4 mr-1" />
             Missing Receipt ($50+)
+          </Button>
+          <Button
+            variant={activeQuickFilter === 'pending-reimbursement' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => applyQuickFilter('pending-reimbursement')}
+            data-testid="quick-filter-pending-reimbursement"
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            Pending Reimbursement
           </Button>
           <Button
             variant={activeQuickFilter === 'by-person' ? 'default' : 'outline'}
