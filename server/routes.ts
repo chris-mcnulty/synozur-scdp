@@ -7059,7 +7059,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -7133,7 +7133,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -7164,7 +7164,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -7253,7 +7253,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -7351,7 +7351,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -7425,7 +7425,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -8191,7 +8191,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:id/planning", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       const { potentialStartDate } = req.body;
       if (potentialStartDate !== null && potentialStartDate !== undefined && typeof potentialStartDate !== 'string') {
         return res.status(400).json({ message: "potentialStartDate must be a date string or null" });
@@ -8203,7 +8203,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      if (estimate.tenantId !== tenantId) {
+      if (tenantId && estimate.tenantId && estimate.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
       const updated = await storage.updateEstimate(req.params.id, { potentialStartDate: potentialStartDate || null });
@@ -8215,7 +8215,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get("/api/portfolio/timeline", requireAuth, async (req, res) => {
     try {
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       const filter = (req.query.filter as string) || "active"; // active, pending, both
 
       const allEstimates = await storage.getEstimates(false, tenantId);
@@ -9256,7 +9256,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const tenantId = (req as any).tenantId;
+      const tenantId = req.user?.tenantId;
       if (tenantId && project.tenantId && project.tenantId !== tenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
