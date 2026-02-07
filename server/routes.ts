@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -3246,7 +3246,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const expenseData = await db.select({
         projectId: expenses.projectId,
         amount: expenses.amount,
-        status: expenses.status,
+        approvalStatus: expenses.approvalStatus,
         date: expenses.date
       })
       .from(expenses);
@@ -3290,7 +3290,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         // Calculate expense cost (approved expenses only)
         const projectExpenses = expenseData.filter(e => 
           e.projectId === project.id && 
-          e.status === 'approved'
+          e.approvalStatus === 'approved'
         );
         const expenseCost = projectExpenses.reduce((sum, exp) => 
           sum + Number(exp.amount || 0), 0
