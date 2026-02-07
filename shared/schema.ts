@@ -399,7 +399,7 @@ export const projects = pgTable("projects", {
   sowValue: decimal("sow_value", { precision: 10, scale: 2 }), // SOW total value
   sowDate: date("sow_date"), // Date SOW was signed
   hasSow: boolean("has_sow").notNull().default(false), // Track if SOW exists
-  status: text("status").notNull().default("active"), // active, on-hold, completed
+  status: text("status").notNull().default("active"), // active, on-hold, completed, archived
   // Financial tracking fields
   estimatedTotal: decimal("estimated_total", { precision: 12, scale: 2 }), // From original estimate
   sowTotal: decimal("sow_total", { precision: 12, scale: 2 }), // From signed contract  

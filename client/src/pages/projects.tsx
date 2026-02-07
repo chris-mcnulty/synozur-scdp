@@ -290,10 +290,12 @@ export default function Projects() {
   };
 
   const handleArchiveProject = (project: ProjectWithBillableInfo) => {
-    editProject.mutate({
-      id: project.id,
-      data: { status: "completed" }
-    });
+    if (window.confirm('Are you sure you want to archive this project? It will be moved to the Archived filter.')) {
+      editProject.mutate({
+        id: project.id,
+        data: { status: "archived" }
+      });
+    }
   };
 
   return (
@@ -343,6 +345,7 @@ export default function Projects() {
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="on-hold">On Hold</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
@@ -564,7 +567,7 @@ export default function Projects() {
                                           </Link>
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
-                                        {project.status !== 'completed' && (
+                                        {project.status !== 'completed' && project.status !== 'archived' && (
                                           <DropdownMenuItem 
                                             onClick={() => handleArchiveProject(project)}
                                             className="cursor-pointer"
@@ -674,7 +677,7 @@ export default function Projects() {
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            {project.status !== 'completed' && (
+                            {project.status !== 'completed' && project.status !== 'archived' && (
                               <DropdownMenuItem 
                                 onClick={() => handleArchiveProject(project)}
                                 className="cursor-pointer"
@@ -815,7 +818,7 @@ export default function Projects() {
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          {project.status !== 'completed' && (
+                          {project.status !== 'completed' && project.status !== 'archived' && (
                             <DropdownMenuItem 
                               onClick={() => handleArchiveProject(project)}
                               className="cursor-pointer"
@@ -1210,6 +1213,7 @@ export default function Projects() {
                         <SelectItem value="delayed">Delayed</SelectItem>
                         <SelectItem value="completed">Completed</SelectItem>
                         <SelectItem value="on hold">On Hold</SelectItem>
+                        <SelectItem value="archived">Archived</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
