@@ -1398,7 +1398,7 @@ export default function Projects() {
             <div className="space-y-4">
               <p>Are you sure you want to delete the project "{projectToDelete?.name}"?</p>
               <p className="text-sm text-muted-foreground">
-                This action cannot be undone. All related data including time entries, expenses, and estimates will be permanently deleted.
+                This action cannot be undone. All related time entries, expenses, and project structure will be permanently deleted. Linked estimates will be preserved but unlinked from this project.
               </p>
             </div>
             <DialogFooter>
