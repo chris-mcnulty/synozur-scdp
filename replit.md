@@ -51,7 +51,8 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation (GSA federal rates).
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
-- **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks.
+- **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks. Currently uses client credentials flow with per-tenant app registrations. System-level env vars (`PLANNER_CLIENT_ID`, `PLANNER_CLIENT_SECRET`, `PLANNER_TENANT_ID`) serve as fallback for the primary tenant.
+  - **Backlog (Mid Priority)**: Convert Planner app registration to a multitenant app so other tenants can consent to Constellation's Planner app in their own Entra ID, rather than each tenant needing to create their own app registration.
 - **Scheduled Jobs**: Background job system for expense reminders, time reminders, and Planner sync, with admin monitoring and multi-tenant scoping.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring.
 - **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement, downloadable as PDF or QuickBooks-compatible CSV.
