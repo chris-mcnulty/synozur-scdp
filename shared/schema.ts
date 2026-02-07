@@ -608,6 +608,7 @@ export const projectStages = pgTable("project_stages", {
   retainerMonthIndex: integer("retainer_month_index"),
   retainerMonthLabel: text("retainer_month_label"),
   retainerMaxHours: decimal("retainer_max_hours", { precision: 10, scale: 2 }),
+  retainerRateTiers: jsonb("retainer_rate_tiers"), // Optional: [{name, rate, maxHours}] for multi-rate months
   retainerStartDate: date("retainer_start_date"),
   retainerEndDate: date("retainer_end_date"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),

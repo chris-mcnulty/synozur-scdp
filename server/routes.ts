@@ -286,23 +286,20 @@ async function recalculateReferralFees(estimateId: string): Promise<void> {
 
 async function generateRetainerPaymentMilestones(
   projectId: string,
-  stages: Array<{ id: string; retainerMonthLabel: string | null; retainerEndDate: string | null; retainerMaxHours: string | null; retainerMonthIndex: number | null; order: number }>
+  stages: Array<{ id: string; retainerMonthLabel: string | null; retainerEndDate: string | null; retainerMaxHours: string | null; retainerMonthIndex: number | null; order: number; retainerRateTiers?: any }>
 ): Promise<void> {
+  let estimateFallbackAmount: number | null = null;
   const linkedEstimates = await db.select().from(estimates)
     .where(eq(estimates.projectId, projectId));
   const retainerEstimate = linkedEstimates.find(e => e.estimateType === 'retainer' && e.retainerConfig);
-  
-  let monthlyAmount: number | null = null;
   if (retainerEstimate?.retainerConfig) {
     const rc = retainerEstimate.retainerConfig as any;
     if (Array.isArray(rc.rateTiers) && rc.rateTiers.length > 0) {
-      monthlyAmount = rc.rateTiers.reduce((sum: number, tier: any) => {
-        const rate = Number(tier.rate) || 0;
-        const hours = Number(tier.maxHours) || 0;
-        return sum + (rate * hours);
+      estimateFallbackAmount = rc.rateTiers.reduce((sum: number, tier: any) => {
+        return sum + ((Number(tier.rate) || 0) * (Number(tier.maxHours) || 0));
       }, 0);
-      if (isNaN(monthlyAmount) || monthlyAmount <= 0) {
-        monthlyAmount = null;
+      if (isNaN(estimateFallbackAmount) || estimateFallbackAmount <= 0) {
+        estimateFallbackAmount = null;
       }
     }
   }
@@ -329,16 +326,32 @@ async function generateRetainerPaymentMilestones(
     const milestoneName = `Retainer Payment – ${monthLabel}`;
     const targetDate = stage.retainerEndDate || null;
 
-    const description = monthlyAmount
-      ? `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours at $${monthlyAmount.toLocaleString()}`
-      : `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours`;
+    let milestoneAmount: number | null = null;
+    let descriptionParts: string[] = [];
+    const stageTiers = stage.retainerRateTiers as Array<{name: string; rate: number; maxHours: number}> | null;
+    if (Array.isArray(stageTiers) && stageTiers.length > 0) {
+      milestoneAmount = stageTiers.reduce((sum, t) => sum + ((Number(t.rate) || 0) * (Number(t.maxHours) || 0)), 0);
+      descriptionParts = stageTiers.map(t => `${t.name}: ${t.maxHours}hrs @ $${Number(t.rate).toLocaleString()}/hr`);
+    } else {
+      milestoneAmount = estimateFallbackAmount;
+    }
+
+    if (milestoneAmount && (isNaN(milestoneAmount) || milestoneAmount <= 0)) {
+      milestoneAmount = null;
+    }
+
+    const description = descriptionParts.length > 0
+      ? `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} total hours (${descriptionParts.join(', ')})`
+      : milestoneAmount
+        ? `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours at $${milestoneAmount.toLocaleString()}`
+        : `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours`;
 
     await db.insert(projectMilestones).values({
       projectId,
       name: milestoneName,
       description,
       isPaymentMilestone: true,
-      amount: monthlyAmount ? String(monthlyAmount) : null,
+      amount: milestoneAmount ? String(milestoneAmount) : null,
       targetDate,
       invoiceStatus: 'planned',
       status: 'not-started',
@@ -6983,9 +6996,27 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { monthLabel, maxHours, startDate, endDate } = req.body;
-      if (!monthLabel || !maxHours || !startDate || !endDate) {
-        return res.status(400).json({ message: "monthLabel, maxHours, startDate, and endDate are required" });
+      const { monthLabel, maxHours, startDate, endDate, rateTiers } = req.body;
+      if (!monthLabel || !startDate || !endDate) {
+        return res.status(400).json({ message: "monthLabel, startDate, and endDate are required" });
+      }
+
+      let effectiveMaxHours = maxHours;
+      let validatedRateTiers = null;
+      if (Array.isArray(rateTiers) && rateTiers.length > 0) {
+        validatedRateTiers = rateTiers.map((t: any) => ({
+          name: String(t.name || ''),
+          rate: Number(t.rate) || 0,
+          maxHours: Number(t.maxHours) || 0,
+        })).filter((t: any) => t.rate > 0 && t.maxHours > 0);
+        if (validatedRateTiers.length > 0) {
+          effectiveMaxHours = validatedRateTiers.reduce((sum: number, t: any) => sum + t.maxHours, 0);
+        } else {
+          validatedRateTiers = null;
+        }
+      }
+      if (!effectiveMaxHours) {
+        return res.status(400).json({ message: "maxHours or rateTiers with hours are required" });
       }
 
       // Find or create a "Retainer" epic for this project
@@ -7018,12 +7049,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         order: nextOrder,
         retainerMonthIndex: nextIndex,
         retainerMonthLabel: monthLabel,
-        retainerMaxHours: String(maxHours),
+        retainerMaxHours: String(effectiveMaxHours),
+        retainerRateTiers: validatedRateTiers,
         retainerStartDate: startDate,
         retainerEndDate: endDate,
       }).returning();
 
-      // Ensure project commercial scheme is retainer
       if (project.commercialScheme !== 'retainer') {
         await db.update(projects).set({ commercialScheme: 'retainer' }).where(eq(projects.id, req.params.id));
       }
@@ -7054,9 +7085,25 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { monthCount, startMonth, hoursPerMonth } = req.body;
-      if (!monthCount || !startMonth || !hoursPerMonth) {
-        return res.status(400).json({ message: "monthCount, startMonth, and hoursPerMonth are required" });
+      const { monthCount, startMonth, hoursPerMonth, rateTiers } = req.body;
+      
+      let validatedRateTiers = null;
+      let effectiveHoursPerMonth = hoursPerMonth;
+      if (Array.isArray(rateTiers) && rateTiers.length > 0) {
+        validatedRateTiers = rateTiers.map((t: any) => ({
+          name: String(t.name || ''),
+          rate: Number(t.rate) || 0,
+          maxHours: Number(t.maxHours) || 0,
+        })).filter((t: any) => t.rate > 0 && t.maxHours > 0);
+        if (validatedRateTiers.length > 0) {
+          effectiveHoursPerMonth = validatedRateTiers.reduce((sum: number, t: any) => sum + t.maxHours, 0);
+        } else {
+          validatedRateTiers = null;
+        }
+      }
+      
+      if (!monthCount || !startMonth || !effectiveHoursPerMonth) {
+        return res.status(400).json({ message: "monthCount, startMonth, and hoursPerMonth (or rateTiers) are required" });
       }
 
       // Find or create a "Retainer" epic
@@ -7097,7 +7144,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           order: nextOrder + m,
           retainerMonthIndex: nextIndex + m,
           retainerMonthLabel: label,
-          retainerMaxHours: String(hoursPerMonth),
+          retainerMaxHours: String(effectiveHoursPerMonth),
+          retainerRateTiers: validatedRateTiers,
           retainerStartDate: monthDate.toISOString().split('T')[0],
           retainerEndDate: monthEnd.toISOString().split('T')[0],
         }).returning();
@@ -7146,20 +7194,38 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Stage does not belong to this project" });
       }
 
-      const { monthLabel, maxHours, startDate, endDate } = req.body;
+      const { monthLabel, maxHours, startDate, endDate, rateTiers } = req.body;
       const updates: any = {};
       if (monthLabel !== undefined) {
         updates.retainerMonthLabel = monthLabel;
         updates.name = monthLabel;
-      }
-      if (maxHours !== undefined) {
-        updates.retainerMaxHours = String(maxHours);
       }
       if (startDate !== undefined) {
         updates.retainerStartDate = startDate;
       }
       if (endDate !== undefined) {
         updates.retainerEndDate = endDate;
+      }
+      if (rateTiers !== undefined) {
+        if (Array.isArray(rateTiers) && rateTiers.length > 0) {
+          const validated = rateTiers.map((t: any) => ({
+            name: String(t.name || ''),
+            rate: Number(t.rate) || 0,
+            maxHours: Number(t.maxHours) || 0,
+          })).filter((t: any) => t.rate > 0 && t.maxHours > 0);
+          if (validated.length > 0) {
+            updates.retainerRateTiers = validated;
+            updates.retainerMaxHours = String(validated.reduce((sum: number, t: any) => sum + t.maxHours, 0));
+          } else {
+            updates.retainerRateTiers = null;
+            if (maxHours !== undefined) updates.retainerMaxHours = String(maxHours);
+          }
+        } else {
+          updates.retainerRateTiers = null;
+          if (maxHours !== undefined) updates.retainerMaxHours = String(maxHours);
+        }
+      } else if (maxHours !== undefined) {
+        updates.retainerMaxHours = String(maxHours);
       }
 
       if (Object.keys(updates).length === 0) {
