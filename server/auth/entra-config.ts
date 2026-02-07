@@ -29,7 +29,7 @@ if (hasCertificateAuth) {
   msalConfig = {
     auth: {
       clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
-      authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
+      authority: `https://login.microsoftonline.com/common`,
       clientCertificate: {
         thumbprint: process.env.AZURE_CERTIFICATE_THUMBPRINT!.replace(/:/g, ''), // Remove colons
         privateKey: privateKey,
@@ -54,7 +54,7 @@ if (hasCertificateAuth) {
   msalConfig = {
     auth: {
       clientId: process.env.AZURE_CLIENT_ID || defaultClientId,
-      authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || defaultTenantId}`,
+      authority: `https://login.microsoftonline.com/common`,
       clientSecret: process.env.AZURE_CLIENT_SECRET || 'placeholder',
     },
     system: {
