@@ -17,6 +17,56 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.02.07 (February 7, 2026)
+
+**Release Date:** February 7, 2026  
+**Status:** Production Release  
+**Codename:** Communication & Transparency
+
+This release introduces AI-powered help chat, a "What's New" update notification system, in-app documentation, and improvements to expense management and per diem calculations.
+
+#### ✨ New Features
+
+**AI-Powered Help Chat**
+- Added a floating help chat widget accessible from every page
+- AI assistant answers questions about Constellation features and navigation
+- Provides contextual navigation suggestions with direct links
+- Understands platform capabilities including time tracking, expenses, invoicing, and reporting
+- Conversation history maintained within each session
+
+**"What's New" Update Notifications**
+- Users are automatically notified about platform updates on login
+- AI-generated summaries of release notes presented in a friendly, non-technical format
+- Grouped highlights with emoji icons for quick scanning
+- Mobile-responsive bottom-sheet design on smaller screens
+- Tenant-level admin toggle to enable or disable notifications
+- Per-user tracking so dismissed updates don't reappear
+
+**In-App Documentation System**
+- Added User Guide, Changelog, and Roadmap pages accessible from the sidebar
+- Markdown-based content rendered with full formatting, tables, and code blocks
+- Dark mode support for all documentation pages
+- Navigation links from the sidebar and About page
+
+**Contractor Expense Invoice Improvements**
+- Improved expense filtering and receipt download capabilities
+- Enhanced per diem rate calculations with better error handling
+- More accurate GSA and OCONUS rate lookups
+
+#### 🐛 Bug Fixes
+- Fixed expense report filtering for receipt bundles
+- Improved per diem calculation accuracy for edge cases
+- Fixed error handling in automated client payment tracking
+
+#### 📚 Documentation
+- Created comprehensive User Guide with feature walkthroughs
+- Added platform Roadmap with current priorities and future plans
+- Established documentation maintenance process with versioning
+
+---
+
+## Recent Releases
+
 ### Version 1.2026.01.31 (January 31, 2026)
 
 **Release Date:** January 31, 2026  
@@ -68,8 +118,6 @@ This release focuses on scheduled job monitoring, automated Microsoft Planner sy
 - Enhanced QBO export format documentation
 
 ---
-
-## Recent Releases
 
 ### Version 1.2025.10.11 (October 11, 2025)
 

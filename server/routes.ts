@@ -2862,15 +2862,30 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.json({ showModal: true, version: currentVersion, summary: "New updates are available!", highlights: [] });
         }
 
-        const versionPattern = new RegExp(`###\\s+Version\\s+${currentVersion.replace(/\./g, "\\.")}[\\s\\S]*?(?=###\\s+Version|## Recent Releases|$)`, "i");
-        const match = changelogContent.match(versionPattern);
-        const relevantSection = match ? match[0].substring(0, 3000) : changelogContent.substring(0, 1500);
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+        const versionBlocks = changelogContent.split(/(?=###\s+Version\s+)/);
+        const recentSections: string[] = [];
+        for (const block of versionBlocks) {
+          const dateMatch = block.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/);
+          if (dateMatch) {
+            const blockDate = new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]}`);
+            if (blockDate >= twoWeeksAgo) {
+              recentSections.push(block.trim());
+            }
+          }
+        }
+
+        const relevantSection = recentSections.length > 0
+          ? recentSections.join("\n\n").substring(0, 4000)
+          : changelogContent.substring(0, 2000);
 
         const { aiService } = await import("./services/ai-service.js");
         if (aiService.isConfigured()) {
           const result = await aiService.customPrompt(
             "You summarize software release notes into friendly, non-technical overviews for business users. Return valid JSON only.",
-            `Summarize these release notes into a friendly, non-technical overview. Group into 3-5 highlights with emoji icons. Format as JSON: { "summary": "brief overview sentence", "highlights": [{ "icon": "emoji", "title": "short title", "description": "1-2 sentence description" }] }\n\nRelease notes:\n${relevantSection}`,
+            `Summarize these release notes from the last two weeks into a friendly, non-technical overview. Combine all versions into a single cohesive summary. Group into 3-5 highlights with emoji icons. Format as JSON: { "summary": "brief overview sentence", "highlights": [{ "icon": "emoji", "title": "short title", "description": "1-2 sentence description" }] }\n\nRelease notes:\n${relevantSection}`,
             { temperature: 0.5, maxTokens: 1024, responseFormat: "json" }
           );
 
