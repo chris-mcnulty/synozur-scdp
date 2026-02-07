@@ -17,6 +17,24 @@ import { registerPlatformRoutes } from "./routes/platform.js";
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
 
+// Auto-detect changelog version from CHANGELOG.md at startup
+let _cachedChangelogVersion: string | null = null;
+function getChangelogVersionFromFile(): string {
+  if (_cachedChangelogVersion !== null) return _cachedChangelogVersion;
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+    const content = fs.readFileSync(changelogPath, "utf-8");
+    const match = content.match(/###\s+Version\s+([\d.]+)/);
+    _cachedChangelogVersion = match ? match[1] : "";
+  } catch {
+    _cachedChangelogVersion = "";
+  }
+  return _cachedChangelogVersion;
+}
+getChangelogVersionFromFile();
+
 // SharePoint functionality restored - using real GraphClient implementation
 
 // Zod schemas for SharePoint operations security validation
@@ -2837,22 +2855,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user as any;
       const tenantId = user?.primaryTenantId;
 
-      const fs = await import("fs");
-      const path = await import("path");
-      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
-      let changelogContent = "";
-      try {
-        changelogContent = fs.readFileSync(changelogPath, "utf-8");
-      } catch {
-        changelogContent = "";
-      }
-
       let currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
-      if (!currentVersion && changelogContent) {
-        const versionMatch = changelogContent.match(/###\s+Version\s+([\d.]+)/);
-        if (versionMatch) {
-          currentVersion = versionMatch[1];
-        }
+      if (!currentVersion) {
+        currentVersion = getChangelogVersionFromFile();
       }
       if (!currentVersion) {
         return res.json({ showModal: false });
@@ -2880,6 +2885,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         } catch {
           return res.json({ showModal: true, version: currentVersion, summary: cachedSummary, highlights: [] });
         }
+      }
+
+      const fs = await import("fs");
+      const path = await import("path");
+      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+      let changelogContent = "";
+      try {
+        changelogContent = fs.readFileSync(changelogPath, "utf-8");
+      } catch {
+        changelogContent = "";
       }
 
       if (!changelogContent) {
