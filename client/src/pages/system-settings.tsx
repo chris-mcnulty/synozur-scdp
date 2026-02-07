@@ -65,6 +65,7 @@ interface TenantSettings {
   color: string | null;
   faviconUrl: string | null;
   showConstellationFooter: boolean;
+  showChangelogOnLogin: boolean;
   emailHeaderUrl: string | null;
 }
 
@@ -132,6 +133,7 @@ const companySettingsSchema = z.object({
   companyWebsite: z.string().url("Invalid website URL").optional().or(z.literal("")),
   paymentTerms: z.string().optional(),
   showConstellationFooter: z.boolean().default(true),
+  showChangelogOnLogin: z.boolean().default(true),
   emailHeaderUrl: z.string().url().optional().or(z.literal("")),
 });
 
@@ -373,6 +375,7 @@ export default function SystemSettings() {
       companyWebsite: "",
       paymentTerms: "",
       showConstellationFooter: true,
+      showChangelogOnLogin: true,
       emailHeaderUrl: "",
     },
     values: {
@@ -384,6 +387,7 @@ export default function SystemSettings() {
       companyWebsite: tenantSettings?.companyWebsite || "",
       paymentTerms: tenantSettings?.paymentTerms || "Payment due within 30 days",
       showConstellationFooter: tenantSettings?.showConstellationFooter ?? true,
+      showChangelogOnLogin: tenantSettings?.showChangelogOnLogin ?? true,
       emailHeaderUrl: tenantSettings?.emailHeaderUrl || "",
     },
   });
@@ -519,6 +523,7 @@ export default function SystemSettings() {
           companyWebsite: data.companyWebsite || null,
           paymentTerms: data.paymentTerms || "Payment due within 30 days",
           showConstellationFooter: data.showConstellationFooter,
+          showChangelogOnLogin: data.showChangelogOnLogin,
           emailHeaderUrl: data.emailHeaderUrl || null,
         }),
       });
@@ -932,6 +937,30 @@ export default function SystemSettings() {
                               checked={field.value}
                               onCheckedChange={field.onChange}
                               data-testid="switch-constellation-footer"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={companyForm.control}
+                      name="showChangelogOnLogin"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              What's New Modal
+                            </FormLabel>
+                            <FormDescription>
+                              Show a "What's New" popup to users when they log in after a platform update. Users can dismiss individually.
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-changelog-on-login"
                             />
                           </FormControl>
                         </FormItem>

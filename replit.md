@@ -53,6 +53,7 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 - **Retainer Estimates**: New estimate type for monthly hour-block engagements, including creation wizard, auto-generated structure, and utilization tracking. Supports optional multi-rate tiers per month (e.g., Senior at $250/hr for 35hrs + Junior at $150/hr for 20hrs) stored in `retainerRateTiers` JSONB on `projectStages`.
 - **Project Retainer Management**: Live retainer month management at project level (independent of locked estimates). CRUD via `/api/projects/:id/retainer-stages` with tenant-isolated ownership validation. UI in Contracts > Retainer tab with add/edit/delete/extend capabilities and month status indicators. Auto-generates end-of-month payment milestones when retainer stages are created (single or bulk extend), calculating amounts from the linked retainer estimate's rate tiers.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides in Contracts > Rate Overrides tab.
+- **What's New Changelog Modal**: AI-generated summary of platform updates shown to users on login when a new version is released. Cached in `system_settings` (key `CHANGELOG_SUMMARY_{version}`). Tenant-level toggle `showChangelogOnLogin` and per-user tracking via `lastDismissedChangelogVersion`. Mobile-responsive bottom-sheet design. API: GET `/api/changelog/whats-new`, POST `/api/changelog/dismiss`.
 
 ### Multi-Tenancy (Active)
 - **Architecture**: UUID-based tenant IDs, tenant-scoped data isolation, service plans, and subdomain routing.

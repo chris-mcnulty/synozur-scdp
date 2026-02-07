@@ -132,6 +132,9 @@ export const tenants = pgTable("tenants", {
   // Email branding
   emailHeaderUrl: text("email_header_url"), // Optional email header image for outgoing emails
   
+  // Feature Settings
+  showChangelogOnLogin: boolean("show_changelog_on_login").default(true), // Show "What's New" modal to users on login
+
   // Notification Settings
   expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false), // Enable weekly expense submission reminders
   expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"), // Time to send reminders (HH:MM)
@@ -184,6 +187,7 @@ export const users = pgTable("users", {
   // Multi-tenancy fields
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
   platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin
+  lastDismissedChangelogVersion: varchar("last_dismissed_changelog_version", { length: 50 }),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 

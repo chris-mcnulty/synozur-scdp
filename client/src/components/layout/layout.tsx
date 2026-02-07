@@ -1,6 +1,7 @@
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
 import { HelpChat } from "@/components/HelpChat";
+import { WhatsNewModal } from "@/components/WhatsNewModal";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,6 +18,7 @@ export function Layout({ children }: LayoutProps) {
         </main>
       </div>
       <HelpChat />
+      <WhatsNewModal />
     </div>
   );
 }

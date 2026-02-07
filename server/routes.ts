@@ -2471,6 +2471,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderTime: tenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: tenant.expenseReminderDay ?? 1,
         defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
+        showChangelogOnLogin: tenant.showChangelogOnLogin ?? true,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -2494,6 +2495,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     expenseReminderTime: z.string().regex(/^\d{2}:\d{2}$/, "Time must be in HH:MM format").optional(),
     expenseReminderDay: z.number().int().min(0).max(6).optional(),
     defaultTimezone: z.string().max(50).optional(),
+    showChangelogOnLogin: z.boolean().optional(),
   });
 
   app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
@@ -2514,7 +2516,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin } = validationResult.data;
 
       const updatedTenant = await storage.updateTenant(tenantId, {
         name,
@@ -2531,6 +2533,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderTime,
         expenseReminderDay,
         defaultTimezone,
+        showChangelogOnLogin,
       });
 
       // Update the expense reminder scheduler if settings changed
@@ -2555,6 +2558,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderTime: updatedTenant.expenseReminderTime ?? "08:00",
         expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
         defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",
+        showChangelogOnLogin: updatedTenant.showChangelogOnLogin ?? true,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
@@ -2802,6 +2806,121 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(400).json({ 
         message: error instanceof Error ? error.message : "Failed to delete system setting" 
       });
+    }
+  });
+
+  // ============================================================================
+  // "What's New" Changelog Modal API
+  // ============================================================================
+
+  app.get("/api/changelog/whats-new", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId;
+
+      const currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
+      if (!currentVersion) {
+        return res.json({ showModal: false });
+      }
+
+      if (tenantId) {
+        const tenant = await storage.getTenant(tenantId);
+        if (tenant && tenant.showChangelogOnLogin === false) {
+          return res.json({ showModal: false });
+        }
+      }
+
+      const userRecord = await storage.getUser(user.id);
+      if (userRecord?.lastDismissedChangelogVersion === currentVersion) {
+        return res.json({ showModal: false });
+      }
+
+      const cacheKey = `CHANGELOG_SUMMARY_${currentVersion}`;
+      let cachedSummary = await storage.getSystemSettingValue(cacheKey, "");
+
+      if (cachedSummary) {
+        try {
+          const parsed = JSON.parse(cachedSummary);
+          return res.json({ showModal: true, version: currentVersion, ...parsed });
+        } catch {
+          return res.json({ showModal: true, version: currentVersion, summary: cachedSummary, highlights: [] });
+        }
+      }
+
+      try {
+        const fs = await import("fs");
+        const path = await import("path");
+        const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+        let changelogContent = "";
+        try {
+          changelogContent = fs.readFileSync(changelogPath, "utf-8");
+        } catch {
+          changelogContent = "";
+        }
+
+        if (!changelogContent) {
+          return res.json({ showModal: true, version: currentVersion, summary: "New updates are available!", highlights: [] });
+        }
+
+        const versionPattern = new RegExp(`###\\s+Version\\s+${currentVersion.replace(/\./g, "\\.")}[\\s\\S]*?(?=###\\s+Version|## Recent Releases|$)`, "i");
+        const match = changelogContent.match(versionPattern);
+        const relevantSection = match ? match[0].substring(0, 3000) : changelogContent.substring(0, 1500);
+
+        const { aiService } = await import("./services/ai-service.js");
+        if (aiService.isConfigured()) {
+          const result = await aiService.customPrompt(
+            "You summarize software release notes into friendly, non-technical overviews for business users. Return valid JSON only.",
+            `Summarize these release notes into a friendly, non-technical overview. Group into 3-5 highlights with emoji icons. Format as JSON: { "summary": "brief overview sentence", "highlights": [{ "icon": "emoji", "title": "short title", "description": "1-2 sentence description" }] }\n\nRelease notes:\n${relevantSection}`,
+            { temperature: 0.5, maxTokens: 1024, responseFormat: "json" }
+          );
+
+          try {
+            const parsed = JSON.parse(result.content);
+            await storage.setSystemSetting({
+              settingKey: cacheKey,
+              settingValue: result.content,
+              description: `Cached AI summary for changelog version ${currentVersion}`,
+              settingType: "json",
+            });
+            return res.json({ showModal: true, version: currentVersion, ...parsed });
+          } catch {
+            const fallbackJson = JSON.stringify({ summary: result.content.substring(0, 500), highlights: [] });
+            await storage.setSystemSetting({
+              settingKey: cacheKey,
+              settingValue: fallbackJson,
+              description: `Cached AI summary (fallback) for changelog version ${currentVersion}`,
+              settingType: "json",
+            });
+            return res.json({ showModal: true, version: currentVersion, summary: result.content.substring(0, 500), highlights: [] });
+          }
+        }
+
+        const fallbackSummary = relevantSection.substring(0, 500).replace(/[#*`]/g, "").trim();
+        return res.json({ showModal: true, version: currentVersion, summary: fallbackSummary || "New updates are available!", highlights: [] });
+      } catch (aiError: any) {
+        console.error("[CHANGELOG] AI summary generation failed:", aiError.message);
+        return res.json({ showModal: true, version: currentVersion, summary: "New updates are available! Check the changelog for details.", highlights: [] });
+      }
+    } catch (error: any) {
+      console.error("[CHANGELOG] Failed to check changelog status:", error);
+      res.status(500).json({ message: "Failed to check changelog status" });
+    }
+  });
+
+  app.post("/api/changelog/dismiss", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { version } = req.body;
+
+      if (!version || typeof version !== "string") {
+        return res.status(400).json({ message: "Version is required" });
+      }
+
+      await storage.updateUser(user.id, { lastDismissedChangelogVersion: version });
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[CHANGELOG] Failed to dismiss changelog:", error);
+      res.status(500).json({ message: "Failed to dismiss changelog" });
     }
   });
 
