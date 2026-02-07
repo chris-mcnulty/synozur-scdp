@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, Calendar, DollarSign, User } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Plus, Trash2, Calendar, DollarSign, User, RefreshCw, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -25,6 +26,14 @@ interface ProjectRateOverride {
   createdAt: string;
 }
 
+interface RecalcPreview {
+  dryRun: boolean;
+  totalEntries: number;
+  lockedEntries: number;
+  wouldChange: number;
+  unchanged: number;
+}
+
 interface ProjectRateOverridesSectionProps {
   projectId: string;
   isEditable: boolean;
@@ -33,6 +42,9 @@ interface ProjectRateOverridesSectionProps {
 export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRateOverridesSectionProps) {
   const { toast } = useToast();
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showRecalcDialog, setShowRecalcDialog] = useState(false);
+  const [recalcPreview, setRecalcPreview] = useState<RecalcPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [newOverride, setNewOverride] = useState({
     userId: '',
     billingRate: '',
@@ -115,6 +127,56 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
     },
   });
 
+  const recalculateMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/projects/${projectId}/recalculate-rates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: false }),
+      });
+    },
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/time-entries'] });
+      toast({
+        title: "Rates recalculated",
+        description: `Updated ${result.updated} time entries. ${result.skipped > 0 ? `${result.skipped} locked entries were skipped.` : ''}`,
+      });
+      setShowRecalcDialog(false);
+      setRecalcPreview(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error recalculating rates",
+        description: error.message || "Failed to recalculate rates",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleOpenRecalcDialog = async () => {
+    setShowRecalcDialog(true);
+    setPreviewLoading(true);
+    setRecalcPreview(null);
+    try {
+      const preview = await apiRequest(`/api/projects/${projectId}/recalculate-rates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      setRecalcPreview(preview as RecalcPreview);
+    } catch (error: any) {
+      toast({
+        title: "Error loading preview",
+        description: error.message || "Could not preview rate changes",
+        variant: "destructive",
+      });
+      setShowRecalcDialog(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleCreateOverride = () => {
     const data: any = {
       userId: newOverride.userId,
@@ -154,14 +216,25 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
               </CardDescription>
             </div>
             {isEditable && (
-              <Button
-                onClick={() => setShowAddDialog(true)}
-                size="sm"
-                data-testid="button-add-project-rate-override"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Override
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleOpenRecalcDialog}
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-recalculate-rates"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Recalculate Rates
+                </Button>
+                <Button
+                  onClick={() => setShowAddDialog(true)}
+                  size="sm"
+                  data-testid="button-add-project-rate-override"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Override
+                </Button>
+              </div>
             )}
           </div>
         </CardHeader>
@@ -207,14 +280,14 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
                         {override.billingRate ? (
                           <span className="font-medium">${Number(override.billingRate).toFixed(0)}/hr</span>
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">{'\u2014'}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
                         {override.costRate ? (
                           <span className="font-medium">${Number(override.costRate).toFixed(0)}/hr</span>
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">{'\u2014'}</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -236,7 +309,7 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
                         {override.notes ? (
                           <span className="text-sm text-muted-foreground truncate max-w-[200px] block">{override.notes}</span>
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-muted-foreground">{'\u2014'}</span>
                         )}
                       </TableCell>
                       {isEditable && (
@@ -261,12 +334,13 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
           {overrides.length > 0 && (
             <div className="mt-4 text-sm text-muted-foreground">
               <p className="font-medium mb-1">Rate Precedence:</p>
-              <p className="text-xs">Project overrides → User rate schedule → Role defaults → System defaults</p>
+              <p className="text-xs">Project overrides {'\u2192'} User rate schedule {'\u2192'} Role defaults {'\u2192'} System defaults</p>
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Add Override Dialog */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -386,6 +460,77 @@ export function ProjectRateOverridesSection({ projectId, isEditable }: ProjectRa
               data-testid="button-save-project-rate-override"
             >
               {createOverrideMutation.isPending ? "Saving..." : "Save Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Recalculate Rates Confirmation Dialog */}
+      <Dialog open={showRecalcDialog} onOpenChange={(open) => { setShowRecalcDialog(open); if (!open) setRecalcPreview(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Recalculate Time Entry Rates
+            </DialogTitle>
+            <DialogDescription>
+              Re-apply the current rate precedence to all time entries on this project. This will update billing and cost rates based on the latest overrides, schedules, and defaults.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {previewLoading ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <RefreshCw className="h-6 w-6 mx-auto mb-2 animate-spin" />
+                <p>Analyzing time entries...</p>
+              </div>
+            ) : recalcPreview ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-muted/50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold">{recalcPreview.totalEntries}</p>
+                    <p className="text-xs text-muted-foreground">Total entries</p>
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{recalcPreview.wouldChange}</p>
+                    <p className="text-xs text-muted-foreground">Would be updated</p>
+                  </div>
+                </div>
+
+                {recalcPreview.lockedEntries > 0 && (
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      {recalcPreview.lockedEntries} locked {recalcPreview.lockedEntries === 1 ? 'entry' : 'entries'} will be skipped (already invoiced or approved).
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {recalcPreview.wouldChange === 0 && (
+                  <div className="text-center py-2 text-muted-foreground text-sm">
+                    All time entries already have the correct rates. No changes needed.
+                  </div>
+                )}
+
+                <div className="text-xs text-muted-foreground">
+                  <p className="font-medium mb-1">Rate precedence applied:</p>
+                  <p>Project overrides {'\u2192'} User rate schedules {'\u2192'} Role defaults {'\u2192'} System defaults</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowRecalcDialog(false); setRecalcPreview(null); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => recalculateMutation.mutate()}
+              disabled={recalculateMutation.isPending || previewLoading || (recalcPreview?.wouldChange === 0)}
+              variant={recalcPreview && recalcPreview.wouldChange > 0 ? "default" : "secondary"}
+              data-testid="button-confirm-recalculate"
+            >
+              {recalculateMutation.isPending ? "Recalculating..." : `Recalculate ${recalcPreview?.wouldChange || 0} Entries`}
             </Button>
           </DialogFooter>
         </DialogContent>

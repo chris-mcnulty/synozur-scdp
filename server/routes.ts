@@ -9076,6 +9076,100 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  app.post("/api/projects/:projectId/recalculate-rates", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const tenantId = (req as any).tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { dryRun = false } = req.body;
+
+      const allEntries = await db.select({
+        id: timeEntries.id,
+        personId: timeEntries.personId,
+        projectId: timeEntries.projectId,
+        date: timeEntries.date,
+        billingRate: timeEntries.billingRate,
+        costRate: timeEntries.costRate,
+        hours: timeEntries.hours,
+        isLocked: timeEntries.isLocked,
+      }).from(timeEntries).where(eq(timeEntries.projectId, req.params.projectId));
+
+      if (dryRun) {
+        const wouldChange: { entryId: string; personId: string; date: string; oldBillingRate: string | null; oldCostRate: string | null; newBillingRate: number | null; newCostRate: number | null }[] = [];
+        for (const entry of allEntries) {
+          if (entry.isLocked) continue;
+          const override = await storage.getProjectRateOverride(entry.projectId, entry.personId, entry.date);
+          let newBillingRate: number | null = null;
+          let newCostRate: number | null = null;
+
+          if (override) {
+            if (override.billingRate && Number(override.billingRate) > 0) newBillingRate = Number(override.billingRate);
+            if (override.costRate && Number(override.costRate) > 0) newCostRate = Number(override.costRate);
+          }
+
+          if (newBillingRate === null || newCostRate === null) {
+            const userSchedule = await storage.getUserRateSchedule(entry.personId, entry.date);
+            if (userSchedule) {
+              if (newBillingRate === null && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) newBillingRate = Number(userSchedule.billingRate);
+              if (newCostRate === null && userSchedule.costRate && Number(userSchedule.costRate) > 0) newCostRate = Number(userSchedule.costRate);
+            }
+          }
+
+          if (newBillingRate === null || newCostRate === null) {
+            const userRates = await storage.getUserRates(entry.personId);
+            if (newBillingRate === null) newBillingRate = userRates.billingRate ?? null;
+            if (newCostRate === null) newCostRate = userRates.costRate ?? null;
+          }
+
+          const oldBR = entry.billingRate ? Number(entry.billingRate) : null;
+          const oldCR = entry.costRate ? Number(entry.costRate) : null;
+          if (oldBR !== newBillingRate || oldCR !== newCostRate) {
+            wouldChange.push({
+              entryId: entry.id,
+              personId: entry.personId,
+              date: entry.date,
+              oldBillingRate: entry.billingRate,
+              oldCostRate: entry.costRate,
+              newBillingRate,
+              newCostRate,
+            });
+          }
+        }
+
+        const lockedCount = allEntries.filter(e => e.isLocked).length;
+        return res.json({
+          dryRun: true,
+          totalEntries: allEntries.length,
+          lockedEntries: lockedCount,
+          wouldChange: wouldChange.length,
+          unchanged: allEntries.length - lockedCount - wouldChange.length,
+        });
+      }
+
+      const result = await storage.bulkUpdateTimeEntryRates(
+        { projectId: req.params.projectId },
+        { mode: 'recalculate' },
+        true
+      );
+
+      res.json({
+        success: true,
+        message: `Recalculated rates for ${result.updated} time entries`,
+        ...result,
+      });
+    } catch (error) {
+      console.error("Error recalculating project rates:", error);
+      res.status(500).json({ message: "Failed to recalculate rates" });
+    }
+  });
+
   // Estimate epics
   app.get("/api/estimates/:id/epics", requireAuth, async (req, res) => {
     try {
