@@ -8,6 +8,11 @@ Preferred communication style: Simple, everyday language.
 User management should be consolidated into a single, unified view (like Vega) rather than separate admin pages.
 Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pages.
 
+### E2E Testing Rules
+- **ALWAYS use standard email/password login for agent-based E2E tests in dev. NEVER use SSO.**
+- Test account: `agent.admin@synozur.com` with password from `AGENT_TEST_PASSWORD` secret.
+- Type the password directly in test plans (do not rely on env var access from the test runner).
+
 ## System Architecture
 
 ### Frontend
