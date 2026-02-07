@@ -1432,21 +1432,6 @@ function EstimateDetailContent() {
             </div>
           )}
           
-          {/* Potential Start Date - always editable */}
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Potential Start:</span>
-            <Input
-              type="date"
-              className="w-[160px] h-8 text-sm"
-              value={estimate?.potentialStartDate || ''}
-              onChange={(e) => {
-                updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
-              }}
-              data-testid="input-potential-start-date-header"
-            />
-          </div>
-          
           {/* Status Management Buttons */}
           {(user?.role === 'admin' || user?.role === 'pm' || user?.role === 'billing-admin') && (
             <>
@@ -1766,8 +1751,8 @@ function EstimateDetailContent() {
               </div>
             </div>
 
-            {/* Second row - Project Selection */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Second row - Project Selection and Potential Start Date */}
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Linked Project</Label>
                 <Select 
@@ -1812,6 +1797,21 @@ function EstimateDetailContent() {
                   </Button>
                 </div>
               )}
+              <div>
+                <Label>Potential Start Date</Label>
+                <Input
+                  type="date"
+                  className="mt-1"
+                  value={estimate?.potentialStartDate || ''}
+                  onChange={(e) => {
+                    updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+                  }}
+                  data-testid="input-potential-start-date"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Expected project start date for portfolio timeline.
+                </p>
+              </div>
             </div>
           </div>
 
