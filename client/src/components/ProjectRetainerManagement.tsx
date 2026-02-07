@@ -8,9 +8,16 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Calendar, Clock, Edit, ChevronRight } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Plus, Trash2, Clock, Edit, ChevronRight, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+
+interface RateTier {
+  name: string;
+  rate: number;
+  maxHours: number;
+}
 
 interface RetainerStage {
   id: string;
@@ -20,6 +27,7 @@ interface RetainerStage {
   retainerMonthIndex: number | null;
   retainerMonthLabel: string | null;
   retainerMaxHours: string | null;
+  retainerRateTiers: RateTier[] | null;
   retainerStartDate: string | null;
   retainerEndDate: string | null;
 }
@@ -28,6 +36,74 @@ interface ProjectRetainerManagementProps {
   projectId: string;
   isEditable: boolean;
   commercialScheme?: string;
+}
+
+const EMPTY_TIER: RateTier = { name: '', rate: 0, maxHours: 0 };
+
+function RateTierEditor({ tiers, onChange }: { tiers: RateTier[]; onChange: (tiers: RateTier[]) => void }) {
+  const addTier = () => onChange([...tiers, { ...EMPTY_TIER }]);
+  const removeTier = (index: number) => onChange(tiers.filter((_, i) => i !== index));
+  const updateTier = (index: number, field: keyof RateTier, value: string) => {
+    const updated = [...tiers];
+    if (field === 'name') {
+      updated[index] = { ...updated[index], name: value };
+    } else {
+      updated[index] = { ...updated[index], [field]: parseFloat(value) || 0 };
+    }
+    onChange(updated);
+  };
+
+  const totalHours = tiers.reduce((sum, t) => sum + (t.maxHours || 0), 0);
+  const totalAmount = tiers.reduce((sum, t) => sum + (t.rate || 0) * (t.maxHours || 0), 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">Rate Tiers</Label>
+        <Button type="button" variant="outline" size="sm" onClick={addTier}>
+          <Plus className="h-3 w-3 mr-1" /> Add Tier
+        </Button>
+      </div>
+      {tiers.map((tier, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            placeholder="Role name"
+            value={tier.name}
+            onChange={(e) => updateTier(i, 'name', e.target.value)}
+            className="flex-1"
+          />
+          <div className="relative w-24">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+            <Input
+              type="number"
+              step="0.01"
+              placeholder="Rate"
+              value={tier.rate || ''}
+              onChange={(e) => updateTier(i, 'rate', e.target.value)}
+              className="pl-6"
+            />
+          </div>
+          <div className="relative w-20">
+            <Input
+              type="number"
+              step="0.5"
+              placeholder="Hours"
+              value={tier.maxHours || ''}
+              onChange={(e) => updateTier(i, 'maxHours', e.target.value)}
+            />
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => removeTier(i)} className="px-2">
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </Button>
+        </div>
+      ))}
+      {tiers.length > 0 && (
+        <div className="bg-muted/50 rounded-lg p-2 text-sm text-muted-foreground">
+          {totalHours} total hours · ${totalAmount.toLocaleString()} total value
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ProjectRetainerManagement({ projectId, isEditable, commercialScheme }: ProjectRetainerManagementProps) {
@@ -43,12 +119,16 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
     startDate: '',
     endDate: '',
   });
+  const [addMultiRate, setAddMultiRate] = useState(false);
+  const [addRateTiers, setAddRateTiers] = useState<RateTier[]>([{ ...EMPTY_TIER }]);
 
   const [extendConfig, setExtendConfig] = useState({
     monthCount: '3',
     startMonth: new Date().toISOString().slice(0, 7),
     hoursPerMonth: '',
   });
+  const [extendMultiRate, setExtendMultiRate] = useState(false);
+  const [extendRateTiers, setExtendRateTiers] = useState<RateTier[]>([{ ...EMPTY_TIER }]);
 
   const [editMonth, setEditMonth] = useState({
     monthLabel: '',
@@ -56,11 +136,20 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
     startDate: '',
     endDate: '',
   });
+  const [editMultiRate, setEditMultiRate] = useState(false);
+  const [editRateTiers, setEditRateTiers] = useState<RateTier[]>([]);
 
   const { data: stages = [], isLoading } = useQuery<RetainerStage[]>({
     queryKey: ['/api/projects', projectId, 'retainer-stages'],
     enabled: !!projectId,
   });
+
+  const invalidateRetainerQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
+    queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'milestones'] });
+    queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/payment-milestones`] });
+  };
 
   const createStageMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -71,13 +160,12 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'milestones'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/payment-milestones`] });
+      invalidateRetainerQueries();
       toast({ title: "Retainer month added", description: "A payment milestone has been auto-generated for end-of-month billing." });
       setShowAddDialog(false);
       setNewMonth({ monthLabel: '', maxHours: '', startDate: '', endDate: '' });
+      setAddMultiRate(false);
+      setAddRateTiers([{ ...EMPTY_TIER }]);
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to add retainer month", variant: "destructive" });
@@ -93,13 +181,12 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'milestones'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/payment-milestones`] });
+      invalidateRetainerQueries();
       toast({ title: "Retainer extended", description: "Payment milestones have been auto-generated for each new month." });
       setShowExtendDialog(false);
       setExtendConfig({ monthCount: '3', startMonth: new Date().toISOString().slice(0, 7), hoursPerMonth: '' });
+      setExtendMultiRate(false);
+      setExtendRateTiers([{ ...EMPTY_TIER }]);
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to extend retainer", variant: "destructive" });
@@ -115,8 +202,7 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
+      invalidateRetainerQueries();
       toast({ title: "Retainer month updated", description: "The retainer month has been updated." });
       setShowEditDialog(false);
       setEditingStage(null);
@@ -133,8 +219,7 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
+      invalidateRetainerQueries();
       toast({ title: "Retainer month removed", description: "The retainer month has been deleted." });
     },
     onError: (error: any) => {
@@ -143,20 +228,30 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
   });
 
   const handleAddMonth = () => {
-    createStageMutation.mutate({
+    const payload: any = {
       monthLabel: newMonth.monthLabel,
-      maxHours: parseFloat(newMonth.maxHours),
       startDate: newMonth.startDate,
       endDate: newMonth.endDate,
-    });
+    };
+    if (addMultiRate && addRateTiers.some(t => t.rate > 0 && t.maxHours > 0)) {
+      payload.rateTiers = addRateTiers.filter(t => t.rate > 0 && t.maxHours > 0);
+    } else {
+      payload.maxHours = parseFloat(newMonth.maxHours);
+    }
+    createStageMutation.mutate(payload);
   };
 
   const handleExtend = () => {
-    extendMutation.mutate({
+    const payload: any = {
       monthCount: parseInt(extendConfig.monthCount),
       startMonth: extendConfig.startMonth,
-      hoursPerMonth: parseFloat(extendConfig.hoursPerMonth),
-    });
+    };
+    if (extendMultiRate && extendRateTiers.some(t => t.rate > 0 && t.maxHours > 0)) {
+      payload.rateTiers = extendRateTiers.filter(t => t.rate > 0 && t.maxHours > 0);
+    } else {
+      payload.hoursPerMonth = parseFloat(extendConfig.hoursPerMonth);
+    }
+    extendMutation.mutate(payload);
   };
 
   const handleEditClick = (stage: RetainerStage) => {
@@ -167,20 +262,26 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
       startDate: stage.retainerStartDate || '',
       endDate: stage.retainerEndDate || '',
     });
+    const hasTiers = Array.isArray(stage.retainerRateTiers) && stage.retainerRateTiers.length > 0;
+    setEditMultiRate(hasTiers);
+    setEditRateTiers(hasTiers ? [...stage.retainerRateTiers!] : [{ ...EMPTY_TIER }]);
     setShowEditDialog(true);
   };
 
   const handleUpdateMonth = () => {
     if (!editingStage) return;
-    updateStageMutation.mutate({
-      stageId: editingStage.id,
-      data: {
-        monthLabel: editMonth.monthLabel,
-        maxHours: parseFloat(editMonth.maxHours),
-        startDate: editMonth.startDate,
-        endDate: editMonth.endDate,
-      },
-    });
+    const payload: any = {
+      monthLabel: editMonth.monthLabel,
+      startDate: editMonth.startDate,
+      endDate: editMonth.endDate,
+    };
+    if (editMultiRate && editRateTiers.some(t => t.rate > 0 && t.maxHours > 0)) {
+      payload.rateTiers = editRateTiers.filter(t => t.rate > 0 && t.maxHours > 0);
+    } else {
+      payload.maxHours = parseFloat(editMonth.maxHours);
+      payload.rateTiers = null;
+    }
+    updateStageMutation.mutate({ stageId: editingStage.id, data: payload });
   };
 
   const handleAutoFillDates = () => {
@@ -196,10 +297,22 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
   };
 
   const totalHours = stages.reduce((sum, s) => sum + parseFloat(s.retainerMaxHours || '0'), 0);
-  const isAddValid = newMonth.monthLabel && newMonth.maxHours && newMonth.startDate && newMonth.endDate;
-  const isExtendValid = extendConfig.monthCount && extendConfig.startMonth && extendConfig.hoursPerMonth;
-  const isEditValid = editMonth.monthLabel && editMonth.maxHours && editMonth.startDate && editMonth.endDate;
+
+  const isAddValid = newMonth.monthLabel && newMonth.startDate && newMonth.endDate && 
+    (addMultiRate ? addRateTiers.some(t => t.rate > 0 && t.maxHours > 0) : !!newMonth.maxHours);
+  const isExtendValid = extendConfig.monthCount && extendConfig.startMonth && 
+    (extendMultiRate ? extendRateTiers.some(t => t.rate > 0 && t.maxHours > 0) : !!extendConfig.hoursPerMonth);
+  const isEditValid = editMonth.monthLabel && editMonth.startDate && editMonth.endDate &&
+    (editMultiRate ? editRateTiers.some(t => t.rate > 0 && t.maxHours > 0) : !!editMonth.maxHours);
   const isRetainer = commercialScheme === 'retainer' || stages.length > 0;
+
+  const formatRateTierSummary = (tiers: RateTier[]) => {
+    return tiers.map(t => `${t.name}: ${t.maxHours}hrs @ $${t.rate}/hr`).join(', ');
+  };
+
+  const extendTotalHours = extendMultiRate 
+    ? extendRateTiers.reduce((sum, t) => sum + (t.maxHours || 0), 0)
+    : parseFloat(extendConfig.hoursPerMonth) || 0;
 
   return (
     <>
@@ -274,6 +387,7 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
                     const isCurrent = stage.retainerStartDate && stage.retainerEndDate && 
                       now >= stage.retainerStartDate && now <= stage.retainerEndDate;
                     const isFuture = stage.retainerStartDate && now < stage.retainerStartDate;
+                    const hasTiers = Array.isArray(stage.retainerRateTiers) && stage.retainerRateTiers.length > 0;
 
                     return (
                       <TableRow key={stage.id} data-testid={`row-retainer-stage-${stage.id}`}
@@ -288,6 +402,30 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
                             {isCurrent && (
                               <Badge variant="default" className="text-xs">Current</Badge>
                             )}
+                            {hasTiers && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="outline" className="text-xs gap-1 cursor-help">
+                                      <Layers className="h-3 w-3" />
+                                      {stage.retainerRateTiers!.length} rates
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right" className="max-w-xs">
+                                    <div className="space-y-1">
+                                      {stage.retainerRateTiers!.map((tier, i) => (
+                                        <div key={i} className="text-xs">
+                                          <span className="font-medium">{tier.name}:</span> {tier.maxHours} hrs @ ${tier.rate}/hr
+                                        </div>
+                                      ))}
+                                      <div className="text-xs font-medium border-t pt-1 mt-1">
+                                        Total: ${stage.retainerRateTiers!.reduce((s, t) => s + t.rate * t.maxHours, 0).toLocaleString()}
+                                      </div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-right font-medium">
@@ -296,12 +434,12 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
                         <TableCell className="text-sm">
                           {stage.retainerStartDate 
                             ? format(new Date(stage.retainerStartDate + 'T00:00:00'), 'MMM d, yyyy') 
-                            : '—'}
+                            : '\u2014'}
                         </TableCell>
                         <TableCell className="text-sm">
                           {stage.retainerEndDate 
                             ? format(new Date(stage.retainerEndDate + 'T00:00:00'), 'MMM d, yyyy') 
-                            : '—'}
+                            : '\u2014'}
                         </TableCell>
                         <TableCell>
                           {isPast && <Badge variant="secondary" className="text-xs">Completed</Badge>}
@@ -387,17 +525,47 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Hour Cap *</Label>
-              <Input
-                type="number"
-                step="0.5"
-                placeholder="e.g., 100"
-                value={newMonth.maxHours}
-                onChange={(e) => setNewMonth({ ...newMonth, maxHours: e.target.value })}
-                className="col-span-3"
-                data-testid="input-retainer-max-hours"
-              />
+              <Label className="text-right">Rate Mode</Label>
+              <div className="col-span-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant={addMultiRate ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => setAddMultiRate(false)}
+                >
+                  Single Rate
+                </Button>
+                <Button
+                  type="button"
+                  variant={addMultiRate ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAddMultiRate(true)}
+                  data-testid="button-add-multi-rate"
+                >
+                  <Layers className="h-3 w-3 mr-1" />
+                  Multi-Rate
+                </Button>
+              </div>
             </div>
+
+            {!addMultiRate ? (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Hour Cap *</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  placeholder="e.g., 100"
+                  value={newMonth.maxHours}
+                  onChange={(e) => setNewMonth({ ...newMonth, maxHours: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-retainer-max-hours"
+                />
+              </div>
+            ) : (
+              <div className="col-span-4">
+                <RateTierEditor tiers={addRateTiers} onChange={setAddRateTiers} />
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -451,23 +619,59 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Hours/Month *</Label>
-              <Input
-                type="number"
-                step="0.5"
-                placeholder="e.g., 100"
-                value={extendConfig.hoursPerMonth}
-                onChange={(e) => setExtendConfig({ ...extendConfig, hoursPerMonth: e.target.value })}
-                className="col-span-3"
-                data-testid="input-extend-hours-per-month"
-              />
+              <Label className="text-right">Rate Mode</Label>
+              <div className="col-span-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant={extendMultiRate ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => setExtendMultiRate(false)}
+                >
+                  Single Rate
+                </Button>
+                <Button
+                  type="button"
+                  variant={extendMultiRate ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setExtendMultiRate(true)}
+                  data-testid="button-extend-multi-rate"
+                >
+                  <Layers className="h-3 w-3 mr-1" />
+                  Multi-Rate
+                </Button>
+              </div>
             </div>
 
-            {extendConfig.startMonth && extendConfig.monthCount && extendConfig.hoursPerMonth && (
+            {!extendMultiRate ? (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Hours/Month *</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  placeholder="e.g., 100"
+                  value={extendConfig.hoursPerMonth}
+                  onChange={(e) => setExtendConfig({ ...extendConfig, hoursPerMonth: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-extend-hours-per-month"
+                />
+              </div>
+            ) : (
+              <div className="col-span-4">
+                <RateTierEditor tiers={extendRateTiers} onChange={setExtendRateTiers} />
+                <p className="text-xs text-muted-foreground mt-2">
+                  These rate tiers will be applied to each new month. Actual hour mix may vary month to month.
+                </p>
+              </div>
+            )}
+
+            {extendConfig.startMonth && extendConfig.monthCount && extendTotalHours > 0 && (
               <div className="col-span-4 bg-muted/50 rounded-lg p-3 text-sm">
                 <p className="font-medium mb-1">Preview:</p>
                 <p className="text-muted-foreground">
-                  {extendConfig.monthCount} months starting {extendConfig.startMonth} · {extendConfig.hoursPerMonth} hrs/month · {parseInt(extendConfig.monthCount) * parseFloat(extendConfig.hoursPerMonth)} total hours
+                  {extendConfig.monthCount} months starting {extendConfig.startMonth} · {extendTotalHours} hrs/month · {parseInt(extendConfig.monthCount) * extendTotalHours} total hours
+                  {extendMultiRate && extendRateTiers.filter(t => t.rate > 0 && t.maxHours > 0).length > 0 && (
+                    <> · ${(parseInt(extendConfig.monthCount) * extendRateTiers.reduce((s, t) => s + t.rate * t.maxHours, 0)).toLocaleString()} total value</>
+                  )}
                 </p>
               </div>
             )}
@@ -492,7 +696,7 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
           <DialogHeader>
             <DialogTitle>Edit Retainer Month</DialogTitle>
             <DialogDescription>
-              Update the hour cap or date range for this retainer month
+              Update the hour cap, rate tiers, or date range for this retainer month
             </DialogDescription>
           </DialogHeader>
 
@@ -508,16 +712,46 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
             </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Hour Cap *</Label>
-              <Input
-                type="number"
-                step="0.5"
-                value={editMonth.maxHours}
-                onChange={(e) => setEditMonth({ ...editMonth, maxHours: e.target.value })}
-                className="col-span-3"
-                data-testid="input-edit-retainer-hours"
-              />
+              <Label className="text-right">Rate Mode</Label>
+              <div className="col-span-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant={editMultiRate ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => setEditMultiRate(false)}
+                >
+                  Single Rate
+                </Button>
+                <Button
+                  type="button"
+                  variant={editMultiRate ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setEditMultiRate(true)}
+                  data-testid="button-edit-multi-rate"
+                >
+                  <Layers className="h-3 w-3 mr-1" />
+                  Multi-Rate
+                </Button>
+              </div>
             </div>
+
+            {!editMultiRate ? (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">Hour Cap *</Label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  value={editMonth.maxHours}
+                  onChange={(e) => setEditMonth({ ...editMonth, maxHours: e.target.value })}
+                  className="col-span-3"
+                  data-testid="input-edit-retainer-hours"
+                />
+              </div>
+            ) : (
+              <div className="col-span-4">
+                <RateTierEditor tiers={editRateTiers} onChange={setEditRateTiers} />
+              </div>
+            )}
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Start Date *</Label>
@@ -547,7 +781,7 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
             <Button
               onClick={handleUpdateMonth}
               disabled={!isEditValid || updateStageMutation.isPending}
-              data-testid="button-update-retainer-month"
+              data-testid="button-save-edit-retainer"
             >
               {updateStageMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
