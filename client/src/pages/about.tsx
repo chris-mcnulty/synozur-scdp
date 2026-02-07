@@ -13,7 +13,10 @@ import {
   ExternalLink,
   Building,
   Users,
-  FileText
+  FileText,
+  BookOpen,
+  Map,
+  History
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -176,15 +179,43 @@ export default function About() {
 
               <Separator />
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-sm font-medium">Documentation</p>
                 <p className="text-sm text-muted-foreground">
-                  Comprehensive help documentation will be available soon to guide you through 
-                  all platform features and workflows.
+                  Access comprehensive guides, product updates, and roadmap information.
                 </p>
-                <Badge variant="outline" className="text-xs">
-                  Coming Soon
-                </Badge>
+                
+                <div className="space-y-2">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => window.open('/docs/USER_GUIDE.md', '_blank')}
+                  >
+                    <BookOpen className="h-4 w-4 mr-2" />
+                    User Guide
+                  </Button>
+                  
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => window.open('/docs/ROADMAP.md', '_blank')}
+                  >
+                    <Map className="h-4 w-4 mr-2" />
+                    Product Roadmap
+                  </Button>
+                  
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => window.open('/docs/CHANGELOG.md', '_blank')}
+                  >
+                    <History className="h-4 w-4 mr-2" />
+                    Changelog
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
