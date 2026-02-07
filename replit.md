@@ -80,3 +80,63 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
+
+## Documentation Maintenance
+
+**IMPORTANT**: Keep the following documentation files updated as new features are developed and released:
+
+### Files to Maintain
+
+1. **USER_GUIDE.md** (`/docs/USER_GUIDE.md` and `/client/public/docs/USER_GUIDE.md`)
+   - Update when adding new features or changing existing functionality
+   - Add new sections for major features
+   - Update troubleshooting section with common issues
+   - Refresh screenshots if UI changes significantly
+   - Update the "Last Updated" date
+
+2. **ROADMAP.md** (`/docs/ROADMAP.md` and `/client/public/docs/ROADMAP.md`)
+   - Update quarterly or when priorities shift
+   - Move completed items from "Current Focus" to CHANGELOG
+   - Add new priorities and features as they are planned
+   - Update timelines and status indicators
+   - Review and adjust the "Recent Roadmap Updates" section
+
+3. **CHANGELOG.md** (`/docs/CHANGELOG.md` and `/client/public/docs/CHANGELOG.md`)
+   - **REQUIRED**: Update with every production release
+   - Add new version section with format: `### Version Major.YYYY.MM.DD (Month Day, YEAR)`
+   - Include all new features, improvements, and bug fixes
+   - Document any breaking changes or upgrade requirements
+   - Update the "Current Version" section
+   - Move previous "Current Version" to "Recent Releases"
+
+### Update Process
+
+**For each production release:**
+
+1. Review all completed features from backlog.md or project tracking
+2. Update CHANGELOG.md with new version section
+3. Add significant features to USER_GUIDE.md if needed
+4. Update ROADMAP.md to reflect completed items and new priorities
+5. **Remember**: Update BOTH copies of each file:
+   - Source in `/docs/` (version controlled)
+   - Public in `/client/public/docs/` (web accessible)
+6. Test documentation links from About page after updates
+
+**Quick commands:**
+```bash
+# Copy docs from source to public after updates
+cp docs/USER_GUIDE.md docs/ROADMAP.md docs/CHANGELOG.md client/public/docs/
+
+# View differences before committing
+git diff docs/ client/public/docs/
+```
+
+### Version Numbering
+
+Follow the format: **Major.YYYY.MM.DD**
+- **Major**: Increments for significant platform changes (currently 1)
+- **YYYY**: Four-digit year
+- **MM**: Two-digit month (01-12)
+- **DD**: Two-digit day (01-31)
+
+Example: `1.2026.02.07` for a release on February 7, 2026
