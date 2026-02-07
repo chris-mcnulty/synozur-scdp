@@ -19772,6 +19772,138 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // POST /api/ai/help-chat - Help Chat assistant using User Guide
+  app.post("/api/ai/help-chat", requireAuth, aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        message: z.string().min(1).max(2000),
+        history: z.array(z.object({
+          role: z.enum(['user', 'assistant']),
+          content: z.string()
+        })).max(10).optional()
+      });
+
+      const validated = schema.parse(req.body);
+      const userRole = req.user!.role;
+      const platformRole = (req.user as any).platformRole || 'user';
+
+      const navRoutes: Array<{ route: string; label: string; roles: string[]; platformRoles?: string[] }> = [
+        { route: "/my-dashboard", label: "My Dashboard", roles: [] },
+        { route: "/my-assignments", label: "My Assignments", roles: [] },
+        { route: "/time", label: "My Time", roles: [] },
+        { route: "/expenses", label: "My Expenses", roles: [] },
+        { route: "/expense-reports", label: "My Expense Reports", roles: [] },
+        { route: "/my-projects", label: "My Projects", roles: [] },
+        { route: "/", label: "Portfolio Dashboard", roles: ["admin", "pm", "executive"] },
+        { route: "/projects", label: "All Projects", roles: ["admin", "pm", "executive"] },
+        { route: "/clients", label: "Clients", roles: ["admin", "pm", "executive"] },
+        { route: "/estimates", label: "Estimates", roles: ["admin", "pm", "executive"] },
+        { route: "/resource-management", label: "Resource Management", roles: ["admin", "pm", "executive"] },
+        { route: "/reports", label: "Reports", roles: ["admin", "pm", "executive"] },
+        { route: "/billing", label: "Billing & Invoicing", roles: ["admin", "billing-admin"] },
+        { route: "/expense-management", label: "Expense Management", roles: ["admin", "billing-admin"] },
+        { route: "/expense-approval", label: "Expense Approval", roles: ["admin", "billing-admin"] },
+        { route: "/rates", label: "Rate Management", roles: ["admin", "billing-admin"] },
+        { route: "/users", label: "User Management", roles: ["admin"] },
+        { route: "/system-settings", label: "System Settings", roles: ["admin"] },
+        { route: "/admin/scheduled-jobs", label: "Scheduled Jobs", roles: ["admin"] },
+        { route: "/vocabulary", label: "Vocabulary", roles: ["admin"] },
+        { route: "/file-repository", label: "File Repository", roles: ["admin"] },
+        { route: "/platform/tenants", label: "Tenants", roles: [], platformRoles: ["global_admin", "constellation_admin"] },
+        { route: "/platform/service-plans", label: "Service Plans", roles: [], platformRoles: ["global_admin", "constellation_admin"] },
+        { route: "/platform/users", label: "Platform Users", roles: [], platformRoles: ["global_admin", "constellation_admin"] },
+        { route: "/user-guide", label: "User Guide", roles: [] },
+        { route: "/changelog", label: "Changelog", roles: [] },
+        { route: "/roadmap", label: "Roadmap", roles: [] },
+        { route: "/about", label: "About", roles: [] },
+      ];
+
+      const accessibleRoutes = navRoutes.filter(r => {
+        if (r.platformRoles) {
+          return r.platformRoles.includes(platformRole);
+        }
+        return r.roles.length === 0 || r.roles.includes(userRole);
+      });
+
+      const routeList = accessibleRoutes.map(r => `- "${r.label}" → ${r.route}`).join('\n');
+
+      const fs = await import('fs');
+      const path = await import('path');
+      let userGuideContent = '';
+      try {
+        const guidePath = path.join(process.cwd(), 'client', 'public', 'docs', 'USER_GUIDE.md');
+        userGuideContent = fs.readFileSync(guidePath, 'utf-8');
+      } catch (e) {
+        console.warn('[HELP-CHAT] Could not read User Guide, proceeding without it');
+      }
+
+      const systemPrompt = `You are Constellation's built-in help assistant. Your job is to answer "how to" questions about using the Constellation consulting delivery platform.
+
+KNOWLEDGE BASE (User Guide):
+${userGuideContent}
+
+AVAILABLE NAVIGATION (pages this user can access based on their role):
+${routeList}
+
+INSTRUCTIONS:
+1. Answer the user's question concisely and helpfully based on the User Guide content above.
+2. If the answer involves navigating to a specific part of the app, suggest relevant navigation links from the AVAILABLE NAVIGATION list above. Only suggest routes that appear in that list.
+3. Format your response as JSON with this exact structure:
+{
+  "answer": "Your helpful answer text here (use markdown formatting for clarity)",
+  "suggestions": [
+    { "label": "Page Name", "route": "/route-path" }
+  ]
+}
+4. The "suggestions" array should contain 0-3 relevant navigation suggestions. Only include them when they genuinely help the user get to the right place.
+5. Do NOT suggest routes that are not in the AVAILABLE NAVIGATION list.
+6. If you don't know the answer, say so honestly and suggest checking the User Guide page.
+7. Keep answers focused and practical - users want quick guidance, not essays.
+
+IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.`;
+
+      const result = await aiService.customPrompt(
+        systemPrompt,
+        validated.message,
+        { temperature: 0.3, maxTokens: 1500, responseFormat: 'json' }
+      );
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(result.content);
+      } catch {
+        parsed = { answer: result.content, suggestions: [] };
+      }
+
+      if (!parsed.answer) {
+        parsed.answer = result.content;
+      }
+      if (!Array.isArray(parsed.suggestions)) {
+        parsed.suggestions = [];
+      }
+
+      const validRouteSet = new Set(accessibleRoutes.map(r => r.route));
+      parsed.suggestions = parsed.suggestions.filter((s: any) =>
+        s && s.route && s.label && validRouteSet.has(s.route)
+      );
+
+      console.log(`[HELP-CHAT] Query from user ${req.user!.id} (${userRole}): "${validated.message.substring(0, 50)}..." → ${parsed.suggestions.length} nav suggestions`);
+
+      res.json({
+        answer: parsed.answer,
+        suggestions: parsed.suggestions,
+        usage: {
+          promptTokens: result.promptTokens,
+          completionTokens: result.completionTokens,
+          totalTokens: result.totalTokens
+        }
+      });
+    } catch (error: any) {
+      console.error("[HELP-CHAT] Failed:", error);
+      res.status(500).json({ message: error.message || "Help chat request failed" });
+    }
+  });
+
   // POST /api/ai/generate-estimate - Generate estimate line items from description
   app.post("/api/ai/generate-estimate", requireAuth, requireRole(["admin", "pm", "executive"]), aiRateLimiter, async (req, res) => {
     try {

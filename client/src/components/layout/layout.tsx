@@ -1,5 +1,6 @@
 import { Header } from "./header";
 import { Sidebar } from "./sidebar";
+import { HelpChat } from "@/components/HelpChat";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ export function Layout({ children }: LayoutProps) {
           {children}
         </main>
       </div>
+      <HelpChat />
     </div>
   );
 }

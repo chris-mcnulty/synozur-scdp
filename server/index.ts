@@ -166,14 +166,13 @@ process.on('uncaughtException', (error) => {
     try {
       const { registerRoutes } = await import('./routes');
       await registerRoutes(app);
-      log('Routes registered successfully');
+      log('Main routes registered successfully');
     } catch (routeError: any) {
-      log(`⚠️ Route registration failed: ${routeError.message}`);
+      log(`⚠️ Main route registration failed: ${routeError.message}`);
       if (routeError.stack) {
         log(`Route error stack: ${routeError.stack.split('\n').slice(0, 5).join('\n')}`);
       }
       log('Server will continue with health endpoints only');
-      // Don't crash the server - health endpoints will still work
     }
 
     // Update version release date automatically on startup
