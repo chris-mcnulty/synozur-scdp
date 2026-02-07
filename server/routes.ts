@@ -2813,6 +2813,25 @@ export async function registerRoutes(app: Express): Promise<void> {
   // "What's New" Changelog Modal API
   // ============================================================================
 
+  function extractFallbackHighlights(markdown: string): Array<{ icon: string; title: string; description: string }> {
+    const highlights: Array<{ icon: string; title: string; description: string }> = [];
+    const featurePattern = /\*\*([^*]+)\*\*\n((?:- [^\n]+\n?)+)/g;
+    let match;
+    const icons = ["🚀", "💬", "📊", "📋", "🔧", "📚", "⚡", "🎯"];
+    let iconIdx = 0;
+    while ((match = featurePattern.exec(markdown)) !== null && highlights.length < 5) {
+      const title = match[1].trim();
+      if (title === "Release Date:" || title === "Status:" || title === "Codename:") continue;
+      const bullets = match[2].split("\n").filter(l => l.trim().startsWith("- ")).map(l => l.replace(/^- /, "").trim());
+      const description = bullets.slice(0, 2).join(". ");
+      if (description) {
+        highlights.push({ icon: icons[iconIdx % icons.length], title, description });
+        iconIdx++;
+      }
+    }
+    return highlights;
+  }
+
   app.get("/api/changelog/whats-new", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -2847,40 +2866,40 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
+      const fs = await import("fs");
+      const path = await import("path");
+      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+      let changelogContent = "";
       try {
-        const fs = await import("fs");
-        const path = await import("path");
-        const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
-        let changelogContent = "";
-        try {
-          changelogContent = fs.readFileSync(changelogPath, "utf-8");
-        } catch {
-          changelogContent = "";
-        }
+        changelogContent = fs.readFileSync(changelogPath, "utf-8");
+      } catch {
+        changelogContent = "";
+      }
 
-        if (!changelogContent) {
-          return res.json({ showModal: true, version: currentVersion, summary: "New updates are available!", highlights: [] });
-        }
+      if (!changelogContent) {
+        return res.json({ showModal: true, version: currentVersion, summary: "New updates are available!", highlights: [] });
+      }
 
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
 
-        const versionBlocks = changelogContent.split(/(?=###\s+Version\s+)/);
-        const recentSections: string[] = [];
-        for (const block of versionBlocks) {
-          const dateMatch = block.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/);
-          if (dateMatch) {
-            const blockDate = new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]}`);
-            if (blockDate >= twoWeeksAgo) {
-              recentSections.push(block.trim());
-            }
+      const versionBlocks = changelogContent.split(/(?=###\s+Version\s+)/);
+      const recentSections: string[] = [];
+      for (const block of versionBlocks) {
+        const dateMatch = block.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})\b/);
+        if (dateMatch) {
+          const blockDate = new Date(`${dateMatch[1]} ${dateMatch[2]}, ${dateMatch[3]}`);
+          if (blockDate >= twoWeeksAgo) {
+            recentSections.push(block.trim());
           }
         }
+      }
 
-        const relevantSection = recentSections.length > 0
-          ? recentSections.join("\n\n").substring(0, 4000)
-          : changelogContent.substring(0, 2000);
+      const relevantSection = recentSections.length > 0
+        ? recentSections.join("\n\n").substring(0, 4000)
+        : changelogContent.substring(0, 2000);
 
+      try {
         const { aiService } = await import("./services/ai-service.js");
         if (aiService.isConfigured()) {
           const result = await aiService.customPrompt(
@@ -2889,33 +2908,28 @@ export async function registerRoutes(app: Express): Promise<void> {
             { temperature: 0.5, maxTokens: 1024, responseFormat: "json" }
           );
 
-          try {
-            const parsed = JSON.parse(result.content);
-            await storage.setSystemSetting({
-              settingKey: cacheKey,
-              settingValue: result.content,
-              description: `Cached AI summary for changelog version ${currentVersion}`,
-              settingType: "json",
-            });
-            return res.json({ showModal: true, version: currentVersion, ...parsed });
-          } catch {
-            const fallbackJson = JSON.stringify({ summary: result.content.substring(0, 500), highlights: [] });
-            await storage.setSystemSetting({
-              settingKey: cacheKey,
-              settingValue: fallbackJson,
-              description: `Cached AI summary (fallback) for changelog version ${currentVersion}`,
-              settingType: "json",
-            });
-            return res.json({ showModal: true, version: currentVersion, summary: result.content.substring(0, 500), highlights: [] });
+          if (result.content && result.content.trim()) {
+            try {
+              const parsed = JSON.parse(result.content);
+              if (parsed.highlights && parsed.highlights.length > 0) {
+                await storage.setSystemSetting(cacheKey, result.content, `Cached AI summary for changelog version ${currentVersion}`, "json");
+                return res.json({ showModal: true, version: currentVersion, ...parsed });
+              }
+            } catch {
+              console.log("[CHANGELOG] AI returned non-JSON, falling through to structured fallback");
+            }
           }
         }
-
-        const fallbackSummary = relevantSection.substring(0, 500).replace(/[#*`]/g, "").trim();
-        return res.json({ showModal: true, version: currentVersion, summary: fallbackSummary || "New updates are available!", highlights: [] });
       } catch (aiError: any) {
         console.error("[CHANGELOG] AI summary generation failed:", aiError.message);
-        return res.json({ showModal: true, version: currentVersion, summary: "New updates are available! Check the changelog for details.", highlights: [] });
       }
+
+      const highlights = extractFallbackHighlights(relevantSection);
+      const fallbackResult = { summary: "Here's what's new in the latest updates.", highlights };
+      if (highlights.length > 0) {
+        await storage.setSystemSetting(cacheKey, JSON.stringify(fallbackResult), `Structured changelog summary for ${currentVersion}`, "json");
+      }
+      return res.json({ showModal: true, version: currentVersion, ...fallbackResult });
     } catch (error: any) {
       console.error("[CHANGELOG] Failed to check changelog status:", error);
       res.status(500).json({ message: "Failed to check changelog status" });
