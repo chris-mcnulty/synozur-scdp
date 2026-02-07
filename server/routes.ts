@@ -2837,7 +2837,23 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user as any;
       const tenantId = user?.primaryTenantId;
 
-      const currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
+      const fs = await import("fs");
+      const path = await import("path");
+      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+      let changelogContent = "";
+      try {
+        changelogContent = fs.readFileSync(changelogPath, "utf-8");
+      } catch {
+        changelogContent = "";
+      }
+
+      let currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
+      if (!currentVersion && changelogContent) {
+        const versionMatch = changelogContent.match(/###\s+Version\s+([\d.]+)/);
+        if (versionMatch) {
+          currentVersion = versionMatch[1];
+        }
+      }
       if (!currentVersion) {
         return res.json({ showModal: false });
       }
@@ -2864,16 +2880,6 @@ export async function registerRoutes(app: Express): Promise<void> {
         } catch {
           return res.json({ showModal: true, version: currentVersion, summary: cachedSummary, highlights: [] });
         }
-      }
-
-      const fs = await import("fs");
-      const path = await import("path");
-      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
-      let changelogContent = "";
-      try {
-        changelogContent = fs.readFileSync(changelogPath, "utf-8");
-      } catch {
-        changelogContent = "";
       }
 
       if (!changelogContent) {
