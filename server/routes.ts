@@ -17,23 +17,30 @@ import { registerPlatformRoutes } from "./routes/platform.js";
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
 
-// Auto-detect changelog version from CHANGELOG.md at startup
-let _cachedChangelogVersion: string | null = null;
-function getChangelogVersionFromFile(): string {
-  if (_cachedChangelogVersion !== null) return _cachedChangelogVersion;
+// Auto-detect and persist changelog version from CHANGELOG.md at startup
+async function seedChangelogVersion() {
   try {
+    const existing = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
     const fs = require("fs");
     const path = require("path");
     const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
     const content = fs.readFileSync(changelogPath, "utf-8");
     const match = content.match(/###\s+Version\s+([\d.]+)/);
-    _cachedChangelogVersion = match ? match[1] : "";
-  } catch {
-    _cachedChangelogVersion = "";
+    const fileVersion = match ? match[1] : "";
+    if (fileVersion && fileVersion !== existing) {
+      await storage.setSystemSetting(
+        "CURRENT_CHANGELOG_VERSION",
+        fileVersion,
+        `Auto-detected from CHANGELOG.md at startup`,
+        "string"
+      );
+      console.log(`[CHANGELOG] Seeded CURRENT_CHANGELOG_VERSION: ${fileVersion}`);
+    }
+  } catch (err: any) {
+    console.error("[CHANGELOG] Failed to seed changelog version:", err.message);
   }
-  return _cachedChangelogVersion;
 }
-getChangelogVersionFromFile();
+seedChangelogVersion();
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -2855,10 +2862,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user as any;
       const tenantId = user?.primaryTenantId;
 
-      let currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
-      if (!currentVersion) {
-        currentVersion = getChangelogVersionFromFile();
-      }
+      const currentVersion = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
       if (!currentVersion) {
         return res.json({ showModal: false });
       }
