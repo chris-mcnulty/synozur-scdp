@@ -400,11 +400,11 @@ export default function Billing() {
                   New Invoice Batch
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl" data-testid="new-batch-modal">
+              <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col" data-testid="new-batch-modal">
                 <DialogHeader>
                   <DialogTitle>Create Invoice Batch</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-6">
+                <div className="space-y-6 overflow-y-auto flex-1 pr-2">
                   {/* Date Range */}
                   <div className="space-y-4">
                     <div className="flex items-center space-x-2">
@@ -650,14 +650,14 @@ export default function Billing() {
                     </p>
                   </div>
 
-                  <div className="flex justify-end space-x-3">
-                    <Button variant="outline" onClick={() => setNewBatchOpen(false)} data-testid="button-cancel-batch">
-                      Cancel
-                    </Button>
-                    <Button onClick={handleCreateBatch} data-testid="button-create-batch">
-                      Create Batch
-                    </Button>
-                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t shrink-0">
+                  <Button variant="outline" onClick={() => setNewBatchOpen(false)} data-testid="button-cancel-batch">
+                    Cancel
+                  </Button>
+                  <Button onClick={handleCreateBatch} data-testid="button-create-batch">
+                    Create Batch
+                  </Button>
                 </div>
               </DialogContent>
             </Dialog>

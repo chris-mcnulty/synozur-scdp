@@ -215,7 +215,7 @@ export function InvoiceLineEditDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit3 className="h-5 w-5" />
@@ -227,7 +227,7 @@ export function InvoiceLineEditDialog({
           </DialogHeader>
 
           <Form {...form}>
-            <form name="invoice-line-edit-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <form name="invoice-line-edit-form" onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 overflow-y-auto flex-1 pr-1">
               {/* Project and Client Info */}
               <div className="rounded-lg bg-muted/50 p-4">
                 <div className="grid grid-cols-2 gap-4 text-sm">
