@@ -15664,19 +15664,21 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      // Check if estimate is editable
-      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status'];
+      const isNonDraftSafe = Object.keys(req.body).every(key => nonDraftSafeFields.includes(key));
+      
+      if (!isNonDraftSafe) {
+        if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      }
       
       let updateData = { ...req.body };
       
-      // If referral fee settings or totals are being updated, recalculate the fee amount and net revenue
       const referralFieldsChanged = 'referralFeeType' in req.body || 'referralFeePercent' in req.body || 'referralFeeFlat' in req.body;
-      const totalsChanged = 'totalFees' in req.body || 'presentedTotal' in req.body;
+      const userSetPresentedTotal = 'presentedTotal' in req.body;
       
-      if (referralFieldsChanged || totalsChanged) {
+      if (referralFieldsChanged) {
         const existingEstimate = await storage.getEstimate(req.params.id);
         if (existingEstimate) {
-          // Get line items to calculate margin-based fee
           const lineItems = await storage.getEstimateLineItems(req.params.id);
           const baseTotalFees = lineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
           const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
@@ -15686,7 +15688,6 @@ export async function registerRoutes(app: Express): Promise<void> {
           const feePercent = req.body.referralFeePercent ?? existingEstimate.referralFeePercent;
           const feeFlat = req.body.referralFeeFlat ?? existingEstimate.referralFeeFlat;
           
-          // Referral fee is calculated on PROFIT (margin), not on total revenue
           let referralFeeAmount = 0;
           if (feeType === 'percentage' && feePercent) {
             referralFeeAmount = profit * (Number(feePercent) / 100);
@@ -15694,13 +15695,12 @@ export async function registerRoutes(app: Express): Promise<void> {
             referralFeeAmount = Number(feeFlat);
           }
           
-          // Distribute referral markup proportionally across line items
           const totalPositiveMargin = lineItems.reduce((sum, item) => {
             const margin = Number(item.margin || 0);
             return sum + (margin > 0 ? margin : 0);
           }, 0);
 
-          let presentedTotal = baseTotalFees;
+          let calculatedPresentedTotal = baseTotalFees;
           
           for (const item of lineItems) {
             const itemMargin = Number(item.margin || 0);
@@ -15721,18 +15721,16 @@ export async function registerRoutes(app: Express): Promise<void> {
               totalAmountWithReferral: String(totalAmountWithReferral)
             });
             
-            presentedTotal += referralMarkup;
+            calculatedPresentedTotal += referralMarkup;
           }
 
-          // Net revenue stays the same as base profit because:
-          // - The referral fee is ADDED to the client quote (presentedTotal)
-          // - The referral fee is PAID to the referrer (a pass-through expense)
-          // - These cancel out, so profit remains unchanged
-          const netRevenue = profit; // Profit stays the same - referral is a pass-through
+          const netRevenue = profit;
           
           updateData.referralFeeAmount = String(referralFeeAmount);
           updateData.netRevenue = String(netRevenue);
-          updateData.presentedTotal = String(presentedTotal);
+          if (!userSetPresentedTotal) {
+            updateData.presentedTotal = String(calculatedPresentedTotal);
+          }
           updateData.totalFees = String(baseTotalFees);
         }
       }
