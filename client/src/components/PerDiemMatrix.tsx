@@ -188,7 +188,7 @@ export function PerDiemMatrix({
           const rate = await apiRequest(`/api/oconus/rate?country=${encodeURIComponent(oconusCountry)}&location=${encodeURIComponent(oconusLocation)}&date=${startDate}`);
           if (rate && rate.mie) {
             setGsaRate(rate.mie);
-            const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.mie}`);
+            const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.mie}?type=oconus`);
             setBreakdown(mieBreakdown);
           } else {
             setRateError("Could not find OCONUS rates for this location.");
@@ -216,25 +216,35 @@ export function PerDiemMatrix({
       setIsLoading(true);
       setRateError(null);
       try {
-        let url = '';
+        let rate = null;
+
         if (isValidZip) {
-          url = `/api/perdiem/rates/zip/${zip}`;
-        } else if (city && state) {
-          url = `/api/perdiem/rates/city/${encodeURIComponent(city)}/state/${state}`;
-        }
-        
-        if (url) {
+          const url = `/api/perdiem/rates/zip/${zip}`;
           console.log('[PerDiemMatrix] Fetching GSA rates from:', url);
-          const rate = await apiRequest(url);
-          console.log('[PerDiemMatrix] Response:', JSON.stringify(rate));
-          if (rate && rate.meals) {
-            setGsaRate(rate.meals);
-            const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.meals}`);
-            setBreakdown(mieBreakdown);
+          rate = await apiRequest(url);
+        } else if (city && state) {
+          const url = `/api/perdiem/rates/city/${encodeURIComponent(city)}/state/${state}`;
+          console.log('[PerDiemMatrix] Fetching GSA rates from:', url);
+          try {
+            rate = await apiRequest(url);
+          } catch (cityError: any) {
+            console.log('[PerDiemMatrix] City lookup failed, city may not be a GSA primary destination');
+            rate = null;
+          }
+        }
+
+        console.log('[PerDiemMatrix] Response:', rate ? JSON.stringify(rate) : 'null');
+        if (rate && rate.meals) {
+          setGsaRate(rate.meals);
+          const mieBreakdown = await apiRequest(`/api/perdiem/mie-breakdown/${rate.meals}`);
+          setBreakdown(mieBreakdown);
+        } else {
+          if (city && state && !isValidZip) {
+            setRateError(`"${city}" is not a GSA primary destination. Try entering the ZIP code instead.`);
           } else {
             setRateError("Could not find GSA rates for this location. Using default rates.");
-            setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
           }
+          setBreakdown({ mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 });
         }
       } catch (error: any) {
         console.error('Error fetching GSA rates:', error);

@@ -37,65 +37,141 @@ export interface PerDiemDay {
   isPartialDay: boolean; // First or last day (75% rule)
 }
 
-// GSA M&IE breakdown table (FY2025)
+// GSA CONUS M&IE breakdown table (FY2025/FY2026)
 // Source: https://www.gsa.gov/travel/plan-a-trip/per-diem-rates/mie-breakdowns
-const MIE_BREAKDOWN_TABLE: MIEBreakdown[] = [
-  { mieTotal: 59, breakfast: 13, lunch: 15, dinner: 26, incidentals: 5 }, // Standard CONUS
-  { mieTotal: 64, breakfast: 14, lunch: 17, dinner: 28, incidentals: 5 },
+// CONUS only has 5 tiers - incidentals are always $5
+const CONUS_MIE_BREAKDOWN_TABLE: MIEBreakdown[] = [
   { mieTotal: 68, breakfast: 16, lunch: 19, dinner: 28, incidentals: 5 },
-  { mieTotal: 74, breakfast: 17, lunch: 21, dinner: 31, incidentals: 5 },
-  { mieTotal: 79, breakfast: 18, lunch: 22, dinner: 34, incidentals: 5 },
-  { mieTotal: 84, breakfast: 19, lunch: 23, dinner: 37, incidentals: 5 },
-  { mieTotal: 89, breakfast: 20, lunch: 25, dinner: 39, incidentals: 5 },
-  { mieTotal: 92, breakfast: 21, lunch: 26, dinner: 40, incidentals: 5 },
+  { mieTotal: 74, breakfast: 18, lunch: 20, dinner: 31, incidentals: 5 },
+  { mieTotal: 80, breakfast: 20, lunch: 22, dinner: 33, incidentals: 5 },
+  { mieTotal: 86, breakfast: 22, lunch: 23, dinner: 36, incidentals: 5 },
+  { mieTotal: 92, breakfast: 23, lunch: 26, dinner: 38, incidentals: 5 },
 ];
 
+// GSA OCONUS M&IE breakdown table (FY2025/FY2026)
+// Source: https://www.gsa.gov/travel/plan-a-trip/per-diem-rates/mie-breakdowns
+// Complete dollar-by-dollar lookup for OCONUS locations ($1-$265)
+// For rates > $265: 15% breakfast, 25% lunch, 40% dinner, remainder incidentals
+const OCONUS_MIE_BREAKDOWN_MAP: Record<number, MIEBreakdown> = {};
+function buildOconusMieTable() {
+  const data: [number, number, number, number, number][] = [
+    [1,0,0,0,1],[2,0,0,1,1],[3,0,1,1,1],[4,1,1,1,1],[5,1,1,2,1],
+    [6,1,2,2,1],[7,1,2,3,1],[8,1,2,3,2],[9,1,2,4,2],[10,2,2,4,2],
+    [11,2,3,4,2],[12,2,3,5,2],[13,2,3,5,3],[14,2,4,5,3],[15,2,4,6,3],
+    [16,2,4,7,3],[17,3,4,7,3],[18,3,5,7,3],[19,3,5,8,3],[20,3,5,8,4],
+    [21,3,5,9,4],[22,3,6,9,4],[23,3,6,9,5],[24,4,6,9,5],[25,4,6,10,5],
+    [26,4,7,10,5],[27,4,7,11,5],[28,4,7,11,6],[29,4,7,12,6],[30,5,7,12,6],
+    [31,5,8,12,6],[32,5,8,13,6],[33,5,8,13,7],[34,5,9,13,7],[35,5,9,14,7],
+    [36,5,9,15,7],[37,6,9,15,7],[38,6,10,15,7],[39,6,10,16,7],[40,6,10,16,8],
+    [41,6,10,17,8],[42,6,11,17,8],[43,6,11,17,9],[44,7,11,17,9],[45,7,11,18,9],
+    [46,7,12,18,9],[47,7,12,19,9],[48,7,12,19,10],[49,7,12,20,10],[50,8,12,20,10],
+    [51,8,13,20,10],[52,8,13,21,10],[53,8,13,21,11],[54,8,14,21,11],[55,8,14,22,11],
+    [56,8,14,23,11],[57,9,14,23,11],[58,9,15,23,11],[59,9,15,24,11],[60,9,15,24,12],
+    [61,9,15,25,12],[62,9,16,25,12],[63,9,16,25,13],[64,10,16,25,13],[65,10,16,26,13],
+    [66,10,17,26,13],[67,10,17,27,13],[68,10,17,27,14],[69,10,17,28,14],[70,11,17,28,14],
+    [71,11,18,28,14],[72,11,18,29,14],[73,11,18,29,15],[74,11,19,29,15],[75,11,19,30,15],
+    [76,11,19,31,15],[77,12,19,31,15],[78,12,20,31,15],[79,12,20,32,15],[80,12,20,32,16],
+    [81,12,20,33,16],[82,12,21,33,16],[83,12,21,33,17],[84,13,21,33,17],[85,13,21,34,17],
+    [86,13,22,34,17],[87,13,22,35,17],[88,13,22,35,18],[89,13,22,36,18],[90,14,22,36,18],
+    [91,14,23,36,18],[92,14,23,37,18],[93,14,23,37,19],[94,14,24,37,19],[95,14,24,38,19],
+    [96,14,24,39,19],[97,15,24,39,19],[98,15,25,39,19],[99,15,25,40,19],[100,15,25,40,20],
+    [101,15,25,41,20],[102,15,26,41,20],[103,15,26,41,21],[104,16,26,41,21],[105,16,26,42,21],
+    [106,16,27,42,21],[107,16,27,43,21],[108,16,27,43,22],[109,16,27,44,22],[110,17,27,44,22],
+    [111,17,28,44,22],[112,17,28,45,22],[113,17,28,45,23],[114,17,29,45,23],[115,17,29,46,23],
+    [116,17,29,47,23],[117,18,29,47,23],[118,18,30,47,23],[119,18,30,48,23],[120,18,30,48,24],
+    [121,18,30,49,24],[122,18,31,49,24],[123,18,31,49,25],[124,19,31,49,25],[125,19,31,50,25],
+    [126,19,32,50,25],[127,19,32,51,25],[128,19,32,51,26],[129,19,32,52,26],[130,20,32,52,26],
+    [131,20,33,52,26],[132,20,33,53,26],[133,20,33,53,27],[134,20,34,53,27],[135,20,34,54,27],
+    [136,20,34,55,27],[137,21,34,55,27],[138,21,35,55,27],[139,21,35,56,27],[140,21,35,56,28],
+    [141,21,35,57,28],[142,21,36,57,28],[143,21,36,57,29],[144,22,36,57,29],[145,22,36,58,29],
+    [146,22,37,58,29],[147,22,37,59,29],[148,22,37,59,30],[149,22,37,60,30],[150,23,37,60,30],
+    [151,23,38,60,30],[152,23,38,61,30],[153,23,38,61,31],[154,23,39,61,31],[155,23,39,62,31],
+    [156,23,39,63,31],[157,24,39,63,31],[158,24,40,63,31],[159,24,40,64,31],[160,24,40,64,32],
+    [161,24,40,65,32],[162,24,41,65,32],[163,24,41,65,33],[164,25,41,65,33],[165,25,41,66,33],
+    [166,25,42,66,33],[167,25,42,67,33],[168,25,42,67,34],[169,25,42,68,34],[170,26,42,68,34],
+    [171,26,43,68,34],[172,26,43,69,34],[173,26,43,69,35],[174,26,44,69,35],[175,26,44,70,35],
+    [176,26,44,71,35],[177,27,44,71,35],[178,27,45,71,35],[179,27,45,72,35],[180,27,45,72,36],
+    [181,27,45,73,36],[182,27,46,73,36],[183,27,46,73,37],[184,28,46,73,37],[185,28,46,74,37],
+    [186,28,47,74,37],[187,28,47,75,37],[188,28,47,75,38],[189,28,47,76,38],[190,29,47,76,38],
+    [191,29,48,76,38],[192,29,48,77,38],[193,29,48,77,39],[194,29,49,77,39],[195,29,49,78,39],
+    [196,29,49,79,39],[197,30,49,79,39],[198,30,50,79,39],[199,30,50,80,39],[200,30,50,80,40],
+    [201,30,50,81,40],[202,30,51,81,40],[203,30,51,81,41],[204,31,51,81,41],[205,31,51,82,41],
+    [206,31,52,82,41],[207,31,52,83,41],[208,31,52,83,42],[209,31,52,84,42],[210,32,52,84,42],
+    [211,32,53,84,42],[212,32,53,85,42],[213,32,53,85,43],[214,32,54,85,43],[215,32,54,86,43],
+    [216,32,54,87,43],[217,33,54,87,43],[218,33,55,87,43],[219,33,55,88,43],[220,33,55,88,44],
+    [221,33,55,89,44],[222,33,56,89,44],[223,33,56,89,45],[224,34,56,89,45],[225,34,56,90,45],
+    [226,34,57,90,45],[227,34,57,91,45],[228,34,57,91,46],[229,34,57,92,46],[230,35,57,92,46],
+    [231,35,58,92,46],[232,35,58,93,46],[233,35,58,93,47],[234,35,59,93,47],[235,35,59,94,47],
+    [236,35,59,95,47],[237,36,59,95,47],[238,36,60,95,47],[239,36,60,96,47],[240,36,60,96,48],
+    [241,36,60,97,48],[242,36,61,97,48],[243,36,61,97,49],[244,37,61,97,49],[245,37,61,98,49],
+    [246,37,62,98,49],[247,37,62,99,49],[248,37,62,99,50],[249,37,62,100,50],[250,38,62,100,50],
+    [251,38,63,100,50],[252,38,63,101,50],[253,38,63,101,51],[254,38,64,101,51],[255,38,64,102,51],
+    [256,38,64,103,51],[257,39,64,103,51],[258,39,65,103,51],[259,39,65,104,51],[260,39,65,104,52],
+    [261,39,65,105,52],[262,39,66,105,52],[263,39,66,105,53],[264,40,66,105,53],[265,40,66,106,53],
+  ];
+  for (const [total, b, l, d, i] of data) {
+    OCONUS_MIE_BREAKDOWN_MAP[total] = { mieTotal: total, breakfast: b, lunch: l, dinner: d, incidentals: i };
+  }
+}
+buildOconusMieTable();
+
 /**
- * Get M&IE breakdown by total M&IE rate
- * Finds the closest matching tier from the GSA breakdown table
+ * Get CONUS M&IE breakdown by total M&IE rate
+ * CONUS locations only have 5 specific M&IE tiers ($68, $74, $80, $86, $92)
+ * Uses exact match or closest tier for edge cases
  */
 export function getMIEBreakdown(mieTotal: number): MIEBreakdown {
-  // Handle invalid input
   if (isNaN(mieTotal) || mieTotal <= 0) {
     return { mieTotal: 0, breakfast: 0, lunch: 0, dinner: 0, incidentals: 0 };
   }
-  
-  // Find exact match first
-  const exactMatch = MIE_BREAKDOWN_TABLE.find(b => b.mieTotal === mieTotal);
+
+  const exactMatch = CONUS_MIE_BREAKDOWN_TABLE.find(b => b.mieTotal === mieTotal);
   if (exactMatch) return exactMatch;
-  
-  // For low values (less than lowest tier), calculate proportionally
-  if (mieTotal < 59) {
-    const breakfast = Math.round(mieTotal * 0.22); // ~22% for breakfast
-    const lunch = Math.round(mieTotal * 0.25);     // ~25% for lunch
-    const dinner = Math.round(mieTotal * 0.44);    // ~44% for dinner
-    const incidentals = Math.max(0, mieTotal - breakfast - lunch - dinner); // remainder for incidentals
-    return { mieTotal, breakfast, lunch, dinner, incidentals };
-  }
-  
-  // Find closest match for values between tiers
-  let closest = MIE_BREAKDOWN_TABLE[0];
+
+  let closest = CONUS_MIE_BREAKDOWN_TABLE[0];
   let minDiff = Math.abs(mieTotal - closest.mieTotal);
-  
-  for (const breakdown of MIE_BREAKDOWN_TABLE) {
+  for (const breakdown of CONUS_MIE_BREAKDOWN_TABLE) {
     const diff = Math.abs(mieTotal - breakdown.mieTotal);
     if (diff < minDiff) {
       minDiff = diff;
       closest = breakdown;
     }
   }
-  
-  // If M&IE is higher than all tiers, calculate proportionally
-  if (mieTotal > 92) {
-    // Use percentages: 15% breakfast, 25% lunch, 40% dinner, rest incidentals
-    const breakfast = Math.round(mieTotal * 0.15);
-    const lunch = Math.round(mieTotal * 0.25);
-    const dinner = Math.round(mieTotal * 0.40);
-    const incidentals = mieTotal - breakfast - lunch - dinner;
-    return { mieTotal, breakfast, lunch, dinner, incidentals };
+  return { ...closest, mieTotal };
+}
+
+/**
+ * Get OCONUS M&IE breakdown by total M&IE rate
+ * Uses the official GSA dollar-by-dollar breakdown table ($1-$265)
+ * For rates > $265: 15% breakfast, 25% lunch, 40% dinner, remainder incidentals
+ */
+export function getOconusMIEBreakdown(mieTotal: number): MIEBreakdown {
+  if (isNaN(mieTotal) || mieTotal <= 0) {
+    return { mieTotal: 0, breakfast: 0, lunch: 0, dinner: 0, incidentals: 0 };
   }
-  
-  return closest;
+
+  const rounded = Math.round(mieTotal);
+  const exactMatch = OCONUS_MIE_BREAKDOWN_MAP[rounded];
+  if (exactMatch) return { ...exactMatch, mieTotal: rounded };
+
+  if (rounded > 265) {
+    const breakfast = Math.round(rounded * 0.15);
+    const lunch = Math.round(rounded * 0.25);
+    const dinner = Math.round(rounded * 0.40);
+    const incidentals = rounded - breakfast - lunch - dinner;
+    return { mieTotal: rounded, breakfast, lunch, dinner, incidentals };
+  }
+
+  let closest = OCONUS_MIE_BREAKDOWN_MAP[1];
+  let minDiff = Math.abs(rounded - 1);
+  for (const key in OCONUS_MIE_BREAKDOWN_MAP) {
+    const diff = Math.abs(rounded - parseInt(key));
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = OCONUS_MIE_BREAKDOWN_MAP[parseInt(key)];
+    }
+  }
+  return { ...closest, mieTotal: rounded };
 }
 
 /**
@@ -536,8 +612,7 @@ export function calculateOconusPerDiemWithComponents(
   breakdown: MIEBreakdown;
   dailyBreakdown: { date: string; amount: number; components: string[] }[];
 } {
-  // Use same calculation as CONUS with the OCONUS M&IE rate
-  const breakdown = getMIEBreakdown(rate.meals);
+  const breakdown = getOconusMIEBreakdown(rate.meals);
   const dailyBreakdown: { date: string; amount: number; components: string[] }[] = [];
   let totalAmount = 0;
   

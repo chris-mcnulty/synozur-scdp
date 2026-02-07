@@ -13347,8 +13347,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "Invalid M&IE total" });
       }
       
-      const { getMIEBreakdown } = await import("./gsa-service.js");
-      const breakdown = getMIEBreakdown(mieTotal);
+      const locationType = req.query.type as string;
+      const { getMIEBreakdown, getOconusMIEBreakdown } = await import("./gsa-service.js");
+      const breakdown = locationType === 'oconus' 
+        ? getOconusMIEBreakdown(mieTotal) 
+        : getMIEBreakdown(mieTotal);
       res.json(breakdown);
     } catch (error) {
       console.error("Error getting M&IE breakdown:", error);
