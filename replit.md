@@ -51,7 +51,7 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring.
 - **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement, downloadable as PDF or QuickBooks-compatible CSV.
 - **Retainer Estimates**: New estimate type for monthly hour-block engagements, including creation wizard, auto-generated structure, and utilization tracking.
-- **Project Retainer Management**: Live retainer month management at project level (independent of locked estimates). CRUD via `/api/projects/:id/retainer-stages` with tenant-isolated ownership validation. UI in Contracts > Retainer tab with add/edit/delete/extend capabilities and month status indicators.
+- **Project Retainer Management**: Live retainer month management at project level (independent of locked estimates). CRUD via `/api/projects/:id/retainer-stages` with tenant-isolated ownership validation. UI in Contracts > Retainer tab with add/edit/delete/extend capabilities and month status indicators. Auto-generates end-of-month payment milestones when retainer stages are created (single or bulk extend), calculating amounts from the linked retainer estimate's rate tiers.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides in Contracts > Rate Overrides tab.
 
 ### Multi-Tenancy (Active)

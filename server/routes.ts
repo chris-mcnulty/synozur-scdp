@@ -284,6 +284,72 @@ async function recalculateReferralFees(estimateId: string): Promise<void> {
   });
 }
 
+async function generateRetainerPaymentMilestones(
+  projectId: string,
+  stages: Array<{ id: string; retainerMonthLabel: string | null; retainerEndDate: string | null; retainerMaxHours: string | null; retainerMonthIndex: number | null; order: number }>
+): Promise<void> {
+  const linkedEstimates = await db.select().from(estimates)
+    .where(eq(estimates.projectId, projectId));
+  const retainerEstimate = linkedEstimates.find(e => e.estimateType === 'retainer' && e.retainerConfig);
+  
+  let monthlyAmount: number | null = null;
+  if (retainerEstimate?.retainerConfig) {
+    const rc = retainerEstimate.retainerConfig as any;
+    if (Array.isArray(rc.rateTiers) && rc.rateTiers.length > 0) {
+      monthlyAmount = rc.rateTiers.reduce((sum: number, tier: any) => {
+        const rate = Number(tier.rate) || 0;
+        const hours = Number(tier.maxHours) || 0;
+        return sum + (rate * hours);
+      }, 0);
+      if (isNaN(monthlyAmount) || monthlyAmount <= 0) {
+        monthlyAmount = null;
+      }
+    }
+  }
+
+  const existingMilestones = await db.select().from(projectMilestones)
+    .where(eq(projectMilestones.projectId, projectId));
+  const existingRetainerStageIds = new Set(
+    existingMilestones
+      .filter(m => m.isPaymentMilestone && m.retainerStageId)
+      .map(m => m.retainerStageId)
+  );
+
+  const maxSortOrder = existingMilestones.length > 0
+    ? Math.max(...existingMilestones.map(m => m.sortOrder))
+    : -1;
+
+  let sortOffset = 0;
+  for (const stage of stages) {
+    if (existingRetainerStageIds.has(stage.id)) {
+      continue;
+    }
+
+    const monthLabel = stage.retainerMonthLabel || `Month ${(stage.retainerMonthIndex || 0) + 1}`;
+    const milestoneName = `Retainer Payment – ${monthLabel}`;
+    const targetDate = stage.retainerEndDate || null;
+
+    const description = monthlyAmount
+      ? `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours at $${monthlyAmount.toLocaleString()}`
+      : `Retainer billing for ${monthLabel} – ${stage.retainerMaxHours || '0'} hours`;
+
+    await db.insert(projectMilestones).values({
+      projectId,
+      name: milestoneName,
+      description,
+      isPaymentMilestone: true,
+      amount: monthlyAmount ? String(monthlyAmount) : null,
+      targetDate,
+      invoiceStatus: 'planned',
+      status: 'not-started',
+      budgetHours: stage.retainerMaxHours || null,
+      retainerStageId: stage.id,
+      sortOrder: maxSortOrder + 1 + sortOffset,
+    });
+    sortOffset++;
+  }
+}
+
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
 import { requireAuth, requireRole, getAllSessions } from "./session-store";
@@ -6962,6 +7028,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         await db.update(projects).set({ commercialScheme: 'retainer' }).where(eq(projects.id, req.params.id));
       }
 
+      try {
+        await generateRetainerPaymentMilestones(req.params.id, [stage]);
+      } catch (milestoneError) {
+        console.error("Error auto-generating payment milestone (non-fatal):", milestoneError);
+      }
+
       res.status(201).json(stage);
     } catch (error) {
       console.error("Error creating retainer stage:", error);
@@ -7035,6 +7107,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Ensure project commercial scheme is retainer
       if (project.commercialScheme !== 'retainer') {
         await db.update(projects).set({ commercialScheme: 'retainer' }).where(eq(projects.id, req.params.id));
+      }
+
+      try {
+        await generateRetainerPaymentMilestones(req.params.id, newStages);
+      } catch (milestoneError) {
+        console.error("Error auto-generating payment milestones (non-fatal):", milestoneError);
       }
 
       res.status(201).json(newStages);

@@ -663,6 +663,7 @@ export const projectMilestones = pgTable("project_milestones", {
   
   // References
   sowId: varchar("sow_id").references(() => sows.id), // Reference to SOW/change order if edited
+  retainerStageId: varchar("retainer_stage_id").references(() => projectStages.id, { onDelete: 'set null' }), // Link to retainer stage for auto-generated payment milestones
   sortOrder: integer("sort_order").notNull().default(0),
   
   createdAt: timestamp("created_at").notNull().default(sql`now()`),

@@ -73,7 +73,9 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
-      toast({ title: "Retainer month added", description: "The new retainer month has been created." });
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'milestones'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/payment-milestones`] });
+      toast({ title: "Retainer month added", description: "A payment milestone has been auto-generated for end-of-month billing." });
       setShowAddDialog(false);
       setNewMonth({ monthLabel: '', maxHours: '', startDate: '', endDate: '' });
     },
@@ -93,7 +95,9 @@ export function ProjectRetainerManagement({ projectId, isEditable, commercialSch
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'retainer-stages'] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/retainer-utilization`] });
-      toast({ title: "Retainer extended", description: "New months have been added to the retainer." });
+      queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'milestones'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/payment-milestones`] });
+      toast({ title: "Retainer extended", description: "Payment milestones have been auto-generated for each new month." });
       setShowExtendDialog(false);
       setExtendConfig({ monthCount: '3', startMonth: new Date().toISOString().slice(0, 7), hoursPerMonth: '' });
     },
