@@ -423,6 +423,14 @@ Present users with a formatted summary of new features/changes on their next log
   - Triggered on app load via `useQuery` to `GET /api/changelog/whats-new`
   - On dismiss: calls `POST /api/changelog/dismiss`, invalidates query cache
   - Only renders when `show: true` in response
+  - **Mobile responsive design:**
+    - On desktop: centered modal with `max-w-lg` width, comfortable padding
+    - On mobile (<640px): full-width bottom sheet style using `sm:max-w-lg w-[calc(100vw-2rem)]` with reduced padding (`p-4` vs `p-6`)
+    - Scrollable body with `max-h-[60vh]` so long summaries don't push the dismiss button off-screen
+    - Footer buttons stack vertically on mobile (`flex-col sm:flex-row`) with full-width "Got it" button for easy thumb reach
+    - Text sizes scale down on mobile: header `text-lg sm:text-xl`, body `text-sm sm:text-base`
+    - Highlight bullets use compact spacing on mobile (`gap-2 sm:gap-3`)
+    - Touch-friendly dismiss button with minimum 44px tap target height
 
 - [ ] **Layout Integration** (`client/src/components/layout/layout.tsx`):
   - Add `<WhatsNewModal />` component alongside existing `<HelpChat />`
@@ -456,7 +464,7 @@ Present users with a formatted summary of new features/changes on their next log
 - [ ] Tenant admin disables feature: No modal for any users in that tenant, regardless of version mismatch
 - [ ] AI service unavailable: Fall back to raw changelog excerpt (first 500 chars of current version section)
 - [ ] Multiple rapid releases: Only the latest version matters; users who skip versions see only the current summary
-- [ ] Mobile responsiveness: Modal should work well on small screens
+- [ ] Mobile responsiveness: Full-width bottom-sheet layout on small screens, scrollable body, stacked buttons, touch-friendly tap targets (44px+), tested on 375px and 390px widths (iPhone SE / iPhone 14 equivalents)
 
 **Estimated Effort:** 2-3 days  
 **Dependencies:** AI service (already integrated), existing Dialog component, tenant settings infrastructure
