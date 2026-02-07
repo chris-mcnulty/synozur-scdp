@@ -76,6 +76,7 @@ function EstimateDetailContent() {
   const [filterResource, setFilterResource] = useState("all");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showResourceSummary, setShowResourceSummary] = useState(false);
+  const [localPotentialStartDate, setLocalPotentialStartDate] = useState('');
   
   // Toggle expanded row state
   const toggleExpandRow = (itemId: string) => {
@@ -588,6 +589,10 @@ function EstimateDetailContent() {
       setBlockDescriptionInput(estimate.blockDescription || "");
     }
   }, [estimate?.fixedPrice, estimate?.blockHours, estimate?.blockDollars, estimate?.blockDescription]);
+
+  useEffect(() => {
+    setLocalPotentialStartDate(estimate?.potentialStartDate || '');
+  }, [estimate?.potentialStartDate]);
 
   const approveEstimateMutation = useMutation({
     mutationFn: async ({ createProject, copyAssignments, blockHourDescription, kickoffDate }: { createProject: boolean; copyAssignments?: boolean; blockHourDescription?: string; kickoffDate?: string }) => {
@@ -1802,9 +1807,13 @@ function EstimateDetailContent() {
                 <Input
                   type="date"
                   className="mt-1"
-                  value={estimate?.potentialStartDate || ''}
-                  onChange={(e) => {
-                    updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+                  value={localPotentialStartDate}
+                  onChange={(e) => setLocalPotentialStartDate(e.target.value)}
+                  onBlur={() => {
+                    const val = localPotentialStartDate || null;
+                    if (val !== (estimate?.potentialStartDate || null)) {
+                      updatePlanningMutation.mutate({ potentialStartDate: val });
+                    }
                   }}
                   data-testid="input-potential-start-date"
                 />
@@ -2071,9 +2080,13 @@ function EstimateDetailContent() {
                   <Input
                     type="date"
                     className="w-[160px] h-7 text-sm"
-                    value={estimate?.potentialStartDate || ''}
-                    onChange={(e) => {
-                      updatePlanningMutation.mutate({ potentialStartDate: e.target.value || null });
+                    value={localPotentialStartDate}
+                    onChange={(e) => setLocalPotentialStartDate(e.target.value)}
+                    onBlur={() => {
+                      const val = localPotentialStartDate || null;
+                      if (val !== (estimate?.potentialStartDate || null)) {
+                        updatePlanningMutation.mutate({ potentialStartDate: val });
+                      }
                     }}
                     data-testid="input-potential-start-date-detail"
                   />
