@@ -9088,7 +9088,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const { dryRun = false } = req.body;
+      const dryRun = !!(req.body && req.body.dryRun);
 
       const allEntries = await db.select({
         id: timeEntries.id,
@@ -9098,58 +9098,67 @@ export async function registerRoutes(app: Express): Promise<void> {
         billingRate: timeEntries.billingRate,
         costRate: timeEntries.costRate,
         hours: timeEntries.hours,
-        isLocked: timeEntries.isLocked,
+        locked: timeEntries.locked,
       }).from(timeEntries).where(eq(timeEntries.projectId, req.params.projectId));
 
       if (dryRun) {
-        const wouldChange: { entryId: string; personId: string; date: string; oldBillingRate: string | null; oldCostRate: string | null; newBillingRate: number | null; newCostRate: number | null }[] = [];
-        for (const entry of allEntries) {
-          if (entry.isLocked) continue;
-          const override = await storage.getProjectRateOverride(entry.projectId, entry.personId, entry.date);
-          let newBillingRate: number | null = null;
-          let newCostRate: number | null = null;
+        let wouldChangeCount = 0;
+        let errorCount = 0;
+        const lockedCount = allEntries.filter(e => e.locked).length;
+        const unlocked = allEntries.filter(e => !e.locked);
 
-          if (override) {
-            if (override.billingRate && Number(override.billingRate) > 0) newBillingRate = Number(override.billingRate);
-            if (override.costRate && Number(override.costRate) > 0) newCostRate = Number(override.costRate);
-          }
-
-          if (newBillingRate === null || newCostRate === null) {
-            const userSchedule = await storage.getUserRateSchedule(entry.personId, entry.date);
-            if (userSchedule) {
-              if (newBillingRate === null && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) newBillingRate = Number(userSchedule.billingRate);
-              if (newCostRate === null && userSchedule.costRate && Number(userSchedule.costRate) > 0) newCostRate = Number(userSchedule.costRate);
+        for (const entry of unlocked) {
+          try {
+            if (!entry.personId) {
+              errorCount++;
+              continue;
             }
-          }
+            const entryDate = typeof entry.date === 'string' ? entry.date : String(entry.date);
+            let newBillingRate: number | null = null;
+            let newCostRate: number | null = null;
 
-          if (newBillingRate === null || newCostRate === null) {
-            const userRates = await storage.getUserRates(entry.personId);
-            if (newBillingRate === null) newBillingRate = userRates.billingRate ?? null;
-            if (newCostRate === null) newCostRate = userRates.costRate ?? null;
-          }
+            try {
+              const override = await storage.getProjectRateOverride(entry.projectId, entry.personId, entryDate);
+              if (override) {
+                if (override.billingRate && Number(override.billingRate) > 0) newBillingRate = Number(override.billingRate);
+                if (override.costRate && Number(override.costRate) > 0) newCostRate = Number(override.costRate);
+              }
+            } catch (_e) { /* no override */ }
 
-          const oldBR = entry.billingRate ? Number(entry.billingRate) : null;
-          const oldCR = entry.costRate ? Number(entry.costRate) : null;
-          if (oldBR !== newBillingRate || oldCR !== newCostRate) {
-            wouldChange.push({
-              entryId: entry.id,
-              personId: entry.personId,
-              date: entry.date,
-              oldBillingRate: entry.billingRate,
-              oldCostRate: entry.costRate,
-              newBillingRate,
-              newCostRate,
-            });
+            if (newBillingRate === null || newCostRate === null) {
+              try {
+                const userSchedule = await storage.getUserRateSchedule(entry.personId, entryDate);
+                if (userSchedule) {
+                  if (newBillingRate === null && userSchedule.billingRate && Number(userSchedule.billingRate) > 0) newBillingRate = Number(userSchedule.billingRate);
+                  if (newCostRate === null && userSchedule.costRate && Number(userSchedule.costRate) > 0) newCostRate = Number(userSchedule.costRate);
+                }
+              } catch (_e) { /* no schedule */ }
+            }
+
+            if (newBillingRate === null || newCostRate === null) {
+              try {
+                const userRates = await storage.getUserRates(entry.personId);
+                if (newBillingRate === null) newBillingRate = userRates.billingRate ?? null;
+                if (newCostRate === null) newCostRate = userRates.costRate ?? null;
+              } catch (_e) { /* no user rates */ }
+            }
+
+            const oldBR = entry.billingRate ? Number(entry.billingRate) : null;
+            const oldCR = entry.costRate ? Number(entry.costRate) : null;
+            if (oldBR !== newBillingRate || oldCR !== newCostRate) {
+              wouldChangeCount++;
+            }
+          } catch (entryError) {
+            errorCount++;
           }
         }
 
-        const lockedCount = allEntries.filter(e => e.isLocked).length;
         return res.json({
           dryRun: true,
           totalEntries: allEntries.length,
           lockedEntries: lockedCount,
-          wouldChange: wouldChange.length,
-          unchanged: allEntries.length - lockedCount - wouldChange.length,
+          wouldChange: wouldChangeCount,
+          unchanged: allEntries.length - lockedCount - wouldChangeCount - errorCount,
         });
       }
 
@@ -9164,7 +9173,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         message: `Recalculated rates for ${result.updated} time entries`,
         ...result,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error recalculating project rates:", error);
       res.status(500).json({ message: "Failed to recalculate rates" });
     }
