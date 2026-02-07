@@ -26,7 +26,9 @@ import {
   Package,
   Plane,
   Globe,
-  CalendarClock
+  CalendarClock,
+  History,
+  Map
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -290,6 +292,16 @@ export function Sidebar() {
               href="/user-guide"
               icon={<BookOpen />}
               label="User Guide"
+            />
+            <SidebarItem
+              href="/changelog"
+              icon={<History />}
+              label="Changelog"
+            />
+            <SidebarItem
+              href="/roadmap"
+              icon={<Map />}
+              label="Roadmap"
             />
             <SidebarItem
               href="/about"

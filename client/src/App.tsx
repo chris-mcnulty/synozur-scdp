@@ -36,6 +36,8 @@ import PlatformAirports from "@/pages/platform-airports";
 import PlatformOconus from "@/pages/platform-oconus";
 import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
+import Changelog from "@/pages/changelog";
+import Roadmap from "@/pages/roadmap";
 import Login from "@/pages/login";
 import FileRepository from "@/pages/file-repository";
 import NotFound from "@/pages/not-found";
@@ -283,6 +285,12 @@ function Router() {
       </Route>
       <Route path="/user-guide">
         {user ? <UserGuide /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/changelog">
+        {user ? <Changelog /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/roadmap">
+        {user ? <Roadmap /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />

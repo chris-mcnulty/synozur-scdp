@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
-import { BookOpen } from "lucide-react";
+import { Map } from "lucide-react";
 
-export default function UserGuide() {
+export default function Roadmap() {
   const { data: content, isLoading } = useQuery<string>({
-    queryKey: ["/docs/USER_GUIDE.md"],
+    queryKey: ["/docs/ROADMAP.md"],
     queryFn: async () => {
-      const response = await fetch("/docs/USER_GUIDE.md");
-      if (!response.ok) throw new Error("Failed to load user guide");
+      const response = await fetch("/docs/ROADMAP.md");
+      if (!response.ok) throw new Error("Failed to load roadmap");
       return response.text();
     },
   });
@@ -18,12 +18,12 @@ export default function UserGuide() {
       <div className="p-6 space-y-6 max-w-5xl mx-auto">
         <div className="text-center space-y-4">
           <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-            <BookOpen className="h-8 w-8 text-primary" />
+            <Map className="h-8 w-8 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">User Guide</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Product Roadmap</h1>
             <p className="text-xl text-muted-foreground">
-              Constellation - Synozur Consulting Delivery Platform
+              Upcoming features and development priorities
             </p>
           </div>
         </div>

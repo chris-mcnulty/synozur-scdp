@@ -19,6 +19,7 @@ import {
   History
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Link } from "wouter";
 
 type EnvironmentInfo = {
   environment: string;
@@ -186,35 +187,38 @@ export default function About() {
                 </p>
                 
                 <div className="space-y-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => window.open('/docs/USER_GUIDE.md', '_blank')}
-                  >
-                    <BookOpen className="h-4 w-4 mr-2" />
-                    User Guide
-                  </Button>
+                  <Link href="/user-guide">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="w-full justify-start"
+                    >
+                      <BookOpen className="h-4 w-4 mr-2" />
+                      User Guide
+                    </Button>
+                  </Link>
                   
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => window.open('/docs/ROADMAP.md', '_blank')}
-                  >
-                    <Map className="h-4 w-4 mr-2" />
-                    Product Roadmap
-                  </Button>
+                  <Link href="/roadmap">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="w-full justify-start"
+                    >
+                      <Map className="h-4 w-4 mr-2" />
+                      Product Roadmap
+                    </Button>
+                  </Link>
                   
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => window.open('/docs/CHANGELOG.md', '_blank')}
-                  >
-                    <History className="h-4 w-4 mr-2" />
-                    Changelog
-                  </Button>
+                  <Link href="/changelog">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="w-full justify-start"
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      Changelog
+                    </Button>
+                  </Link>
                 </div>
               </div>
             </CardContent>

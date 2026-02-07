@@ -87,7 +87,10 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 
 ### Files to Maintain
 
+These markdown files are rendered as formatted in-app documentation pages using the `MarkdownViewer` component. Each file exists in two locations that must be kept in sync.
+
 1. **USER_GUIDE.md** (`/docs/USER_GUIDE.md` and `/client/public/docs/USER_GUIDE.md`)
+   - Rendered at in-app route: `/user-guide`
    - Update when adding new features or changing existing functionality
    - Add new sections for major features
    - Update troubleshooting section with common issues
@@ -95,6 +98,7 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
    - Update the "Last Updated" date
 
 2. **ROADMAP.md** (`/docs/ROADMAP.md` and `/client/public/docs/ROADMAP.md`)
+   - Rendered at in-app route: `/roadmap`
    - Update quarterly or when priorities shift
    - Move completed items from "Current Focus" to CHANGELOG
    - Add new priorities and features as they are planned
@@ -102,12 +106,20 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
    - Review and adjust the "Recent Roadmap Updates" section
 
 3. **CHANGELOG.md** (`/docs/CHANGELOG.md` and `/client/public/docs/CHANGELOG.md`)
+   - Rendered at in-app route: `/changelog`
    - **REQUIRED**: Update with every production release
    - Add new version section with format: `### Version Major.YYYY.MM.DD (Month Day, YEAR)`
    - Include all new features, improvements, and bug fixes
    - Document any breaking changes or upgrade requirements
    - Update the "Current Version" section
    - Move previous "Current Version" to "Recent Releases"
+
+### In-App Documentation Architecture
+
+- **Component**: `client/src/components/MarkdownViewer.tsx` — Reusable markdown renderer using `react-markdown` + `remark-gfm` with Tailwind prose styling, dark mode support, and proper table/code formatting.
+- **Pages**: `client/src/pages/user-guide.tsx`, `client/src/pages/changelog.tsx`, `client/src/pages/roadmap.tsx` — Fetch from `/docs/*.md` and render via MarkdownViewer.
+- **Navigation**: All three pages are linked from the sidebar, mobile nav, and About page.
+- **Source files**: `/client/public/docs/` serves the markdown files statically. The `/docs/` directory is the version-controlled source of truth.
 
 ### Update Process
 
@@ -119,8 +131,8 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 4. Update ROADMAP.md to reflect completed items and new priorities
 5. **Remember**: Update BOTH copies of each file:
    - Source in `/docs/` (version controlled)
-   - Public in `/client/public/docs/` (web accessible)
-6. Test documentation links from About page after updates
+   - Public in `/client/public/docs/` (web accessible, served to in-app pages)
+6. Test documentation links from sidebar nav and About page after updates
 
 **Quick commands:**
 ```bash
