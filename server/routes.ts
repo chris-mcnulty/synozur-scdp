@@ -1,3 +1,5 @@
+import * as fsNode from "fs";
+import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments } from "@shared/schema";
@@ -18,42 +20,29 @@ import { registerPlatformRoutes } from "./routes/platform.js";
 initSharePointStorage(storage);
 
 function resolveChangelogPath(): string {
-  const fs = require("fs");
-  const path = require("path");
-  const candidates = [
-    path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md"),
-    path.join(process.cwd(), "dist", "public", "docs", "CHANGELOG.md"),
-    path.join(process.cwd(), "docs", "CHANGELOG.md"),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+  try {
+    const candidates = [
+      pathNode.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md"),
+      pathNode.join(process.cwd(), "dist", "public", "docs", "CHANGELOG.md"),
+      pathNode.join(process.cwd(), "docs", "CHANGELOG.md"),
+    ];
+    for (const p of candidates) {
+      if (fsNode.existsSync(p)) return p;
+    }
+    return candidates[0];
+  } catch {
+    return "client/public/docs/CHANGELOG.md";
   }
-  return candidates[0];
 }
 
-// Auto-detect and persist changelog version from CHANGELOG.md at startup
-async function seedChangelogVersion() {
+function readChangelogContent(): string {
   try {
-    const existing = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
-    const fs = require("fs");
     const changelogPath = resolveChangelogPath();
-    const content = fs.readFileSync(changelogPath, "utf-8");
-    const match = content.match(/###\s+Version\s+([\d.]+)/);
-    const fileVersion = match ? match[1] : "";
-    if (fileVersion && fileVersion !== existing) {
-      await storage.setSystemSetting(
-        "CURRENT_CHANGELOG_VERSION",
-        fileVersion,
-        `Auto-detected from CHANGELOG.md at startup`,
-        "string"
-      );
-      console.log(`[CHANGELOG] Seeded CURRENT_CHANGELOG_VERSION: ${fileVersion}`);
-    }
-  } catch (err: any) {
-    console.error("[CHANGELOG] Failed to seed changelog version:", err.message);
+    return fsNode.readFileSync(changelogPath, "utf-8");
+  } catch {
+    return "";
   }
 }
-seedChangelogVersion();
 
 // SharePoint functionality restored - using real GraphClient implementation
 
@@ -407,6 +396,28 @@ import { requireAuth, requireRole, getAllSessions } from "./session-store";
 import { checkAndRefreshToken, handleTokenRefresh, startTokenRefreshScheduler } from "./auth/sso-token-refresh";
 
 export async function registerRoutes(app: Express): Promise<void> {
+  // Seed changelog version from CHANGELOG.md (non-blocking, non-critical)
+  (async () => {
+    try {
+      const existing = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
+      const content = readChangelogContent();
+      if (!content) return;
+      const match = content.match(/###\s+Version\s+([\d.]+)/);
+      const fileVersion = match ? match[1] : "";
+      if (fileVersion && fileVersion !== existing) {
+        await storage.setSystemSetting(
+          "CURRENT_CHANGELOG_VERSION",
+          fileVersion,
+          `Auto-detected from CHANGELOG.md at startup`,
+          "string"
+        );
+        console.log(`[CHANGELOG] Seeded CURRENT_CHANGELOG_VERSION: ${fileVersion}`);
+      }
+    } catch (err: any) {
+      console.error("[CHANGELOG] Failed to seed changelog version:", err.message);
+    }
+  })();
+
   // Register authentication routes first
   registerAuthRoutes(app);
   
@@ -2904,14 +2915,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
 
-      const fs = await import("fs");
-      const changelogPath = resolveChangelogPath();
-      let changelogContent = "";
-      try {
-        changelogContent = fs.readFileSync(changelogPath, "utf-8");
-      } catch {
-        changelogContent = "";
-      }
+      const changelogContent = readChangelogContent();
 
       if (!changelogContent) {
         return res.json({ showModal: true, version: currentVersion, summary: "New updates are available!", highlights: [] });

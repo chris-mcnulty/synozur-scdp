@@ -85,11 +85,10 @@ function validateEnvironment() {
   return true;
 }
 
-// Add global error handlers - properly exit in production to trigger restart
+// Add global error handlers
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Exit cleanly to allow deployment system to restart
-  process.exit(1);
+  // Log but don't exit - non-critical async failures should not crash the server
 });
 
 process.on('uncaughtException', (error) => {
