@@ -17,13 +17,26 @@ import { registerPlatformRoutes } from "./routes/platform.js";
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
 
+function resolveChangelogPath(): string {
+  const fs = require("fs");
+  const path = require("path");
+  const candidates = [
+    path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md"),
+    path.join(process.cwd(), "dist", "public", "docs", "CHANGELOG.md"),
+    path.join(process.cwd(), "docs", "CHANGELOG.md"),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
 // Auto-detect and persist changelog version from CHANGELOG.md at startup
 async function seedChangelogVersion() {
   try {
     const existing = await storage.getSystemSettingValue("CURRENT_CHANGELOG_VERSION", "");
     const fs = require("fs");
-    const path = require("path");
-    const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+    const changelogPath = resolveChangelogPath();
     const content = fs.readFileSync(changelogPath, "utf-8");
     const match = content.match(/###\s+Version\s+([\d.]+)/);
     const fileVersion = match ? match[1] : "";
@@ -2892,8 +2905,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const fs = await import("fs");
-      const path = await import("path");
-      const changelogPath = path.join(process.cwd(), "client", "public", "docs", "CHANGELOG.md");
+      const changelogPath = resolveChangelogPath();
       let changelogContent = "";
       try {
         changelogContent = fs.readFileSync(changelogPath, "utf-8");

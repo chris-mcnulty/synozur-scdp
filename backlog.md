@@ -1,5 +1,14 @@
 # Constellation Product Backlog
 
+## 🐛 Active Bugs
+
+### What's New Feature Dialog Not Showing in Production (February 8, 2026) — FIXED
+- **Root cause**: Server reads `CHANGELOG.md` from `client/public/docs/` which only exists in the dev source tree. In production, the Vite build outputs to `dist/public/` and the `docs/` subdirectory was missing from the build.
+- **Fix**: Added `resolveChangelogPath()` helper that checks multiple candidate paths (`client/public/docs/`, `dist/public/docs/`, `docs/`) so the server finds the file in both dev and production environments.
+- **Impact**: `seedChangelogVersion()` was silently failing at startup, so `CURRENT_CHANGELOG_VERSION` was never set, causing the modal to return `showModal: false` for all users.
+
+---
+
 ## ✅ Recently Completed (January 31, 2026)
 
 ### Scheduled Jobs Monitoring System ✅ COMPLETE
