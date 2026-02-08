@@ -17,6 +17,36 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.02.08 (February 8, 2026)
+
+**Release Date:** February 8, 2026  
+**Status:** Production Release  
+**Codename:** Portfolio & Documentation Refresh
+
+This release adds a dedicated Portfolio Timeline page, fixes a potential start date input bug, and brings the public roadmap and changelog up to date with all completed features.
+
+#### ✨ New Features
+
+**Portfolio Timeline Page**
+- Dedicated `/portfolio/timeline` page under Portfolio Management in the sidebar
+- Cross-project Gantt-style timeline for visualizing project schedules
+- Accessible from both desktop sidebar and mobile navigation
+
+#### 🐛 Bug Fixes
+- Fixed potential start date input on projects — typing no longer wipes out the field mid-edit
+- Fixed multiple API routes that could fail tenant isolation checks under certain conditions
+- Improved deployment reliability for changelog version detection and error handling
+- Fixed "What's New" modal not appearing in certain deployment configurations
+
+#### 📚 Documentation
+- Updated Roadmap to reflect all completed features (multi-tenancy, retainers, resource management, per diem, reporting, mobile optimization, AI features, Planner integration)
+- Cleaned up outdated planning sections that showed completed work as "Planned" or "Future"
+- Updated Changelog with comprehensive release history
+
+---
+
+## Recent Releases
+
 ### Version 1.2026.02.07 (February 7, 2026)
 
 **Release Date:** February 7, 2026  
@@ -64,8 +94,6 @@ This release introduces AI-powered help chat, a "What's New" update notification
 - Established documentation maintenance process with versioning
 
 ---
-
-## Recent Releases
 
 ### Version 1.2026.01.31 (January 31, 2026)
 
@@ -116,6 +144,125 @@ This release focuses on scheduled job monitoring, automated Microsoft Planner sy
 - Updated admin documentation for scheduled jobs monitoring
 - Added Microsoft Planner sync troubleshooting guide
 - Enhanced QBO export format documentation
+
+---
+
+### Version 1.2026.01.15 (January 15, 2026)
+
+**Release Date:** January 15, 2026  
+**Status:** Production Release  
+**Codename:** Multi-Tenant SaaS Platform
+
+This major release transforms Constellation from a single-tenant application into a full multi-tenant SaaS platform, enabling multiple organizations to operate independently on shared infrastructure.
+
+#### ✨ New Features
+
+**Multi-Tenancy Architecture**
+- UUID-based tenant IDs with complete data isolation across all tables
+- Service plans: Trial, Team, Enterprise, and Unlimited tiers
+- Subdomain routing for tenant-specific access
+- Automatic tenant assignment on login via Azure AD tenant ID mapping, email domain matching, or default fallback
+- Platform roles (`global_admin`, `constellation_admin`) for cross-tenant management
+- Regular `admin` role scoped to own tenant
+
+**Platform Administration**
+- Platform admin UI at `/platform/tenants` for managing all tenants
+- Service plan management at `/platform/service-plans`
+- Platform-wide user management at `/platform/users`
+- Airport code reference data management at `/platform/airports`
+- OCONUS per diem rate management at `/platform/oconus`
+
+**Tenant Settings & Branding**
+- Tenant-specific company info and branding configuration
+- Configurable invoice footer and email notification branding
+- Tenant-scoped vocabulary customization
+- Separate platform-wide settings (default rates, estimation factors)
+
+**Retainer Estimate & Management**
+- New retainer estimate type for monthly hour-block engagements
+- Creation wizard with auto-generated monthly structure
+- Optional multi-rate tiers per month (e.g., Senior at $250/hr for 35hrs + Junior at $150/hr for 20hrs)
+- Rate tiers stored in `retainerRateTiers` JSONB on project stages
+- Live retainer month management at project level (independent of locked estimates)
+- CRUD for retainer stages via `/api/projects/:id/retainer-stages`
+- UI in Contracts > Retainer tab with add/edit/delete/extend capabilities
+- Month status indicators and auto-generated end-of-month payment milestones
+- Utilization tracking for retainer engagements
+
+**Project Rate Overrides**
+- Project-level billing and cost rate overrides
+- Accessible from Contracts > Rate Overrides tab
+- Hierarchical rate precedence: project → client → role
+
+**Resource Management & Capacity Planning**
+- Dual List and Timeline views for resource allocation
+- Capacity planning dashboard with utilization metrics
+- Conflict detection for over-allocated resources
+- Portfolio timeline for cross-project schedule visibility
+
+#### 🔧 Improvements
+- Enhanced project detail page with consolidated Contracts tab (retainers, rate overrides)
+- Improved data isolation with tenant-scoped queries across all API endpoints
+- Better role-based access control with five-tier hierarchy (admin, billing-admin, pm, employee, executive)
+
+#### 📚 Documentation
+- Multi-tenancy architecture documentation
+- Retainer management user guide
+- Platform administration guide
+
+---
+
+### Version 1.2025.12.15 (December 15, 2025)
+
+**Release Date:** December 15, 2025  
+**Status:** Production Release  
+**Codename:** Travel & Expense Automation
+
+This release delivers comprehensive per diem automation, advanced expense management, and mobile-optimized interfaces for field consultants.
+
+#### ✨ New Features
+
+**GSA Per Diem Integration (CONUS)**
+- Real-time GSA API integration for per diem rates by city, state, and zip code
+- Automatic rate determination across all CONUS tiers
+- FY 2025/2026 rate support with automatic updates
+- Travel day calculation (75% rate for partial days)
+- Automatic M&IE (Meals & Incidental Expenses) calculation
+
+**OCONUS Per Diem Support**
+- Department of Defense OCONUS rate database
+- Admin management interface for OCONUS locations and rates
+- Integration with expense calculations for international travel
+
+**Airport Code Reference Data**
+- Database of 5,163 IATA airport codes for global airports
+- Used in expense forms for travel location selection
+- Managed by platform admins
+
+**Expense Approval Workflow Enhancements**
+- Comprehensive finite state machine for expense status transitions
+- Role-based approval access (PM, executive, admin levels)
+- Automated per diem calculation in expense entry
+- Contractor expense invoices with PDF and QuickBooks-compatible CSV export
+- Receipt bundle download for expense reports
+
+**Mobile Web Optimization**
+- Responsive navigation with mobile sidebar and bottom navigation
+- Touch-friendly interfaces across all modules
+- Mobile-responsive modals using bottom-sheet design pattern
+- Optimized table views and data displays for smaller screens
+
+**Financial Reporting**
+- Revenue, cost, profit, and margin reports by client and project
+- KPI summary dashboard with project health scoring
+- Budget utilization metrics and variance tracking
+- Role-based visibility controls for financial data
+- Dynamic vocabulary labels in all report outputs
+
+#### 🔧 Improvements
+- Enhanced expense forms with location autocomplete
+- Improved mobile layout for time entry and expense submission
+- Better responsive design for data-heavy pages (estimates, invoices)
 
 ---
 
@@ -372,5 +519,5 @@ Have ideas for improving Constellation? Contact your administrator or reach out 
 
 ---
 
-*Last Updated: January 31, 2026*  
+*Last Updated: February 8, 2026*  
 *Maintained by: Synozur IT Team*
