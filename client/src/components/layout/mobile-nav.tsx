@@ -26,7 +26,8 @@ import {
   BookOpen,
   CalendarClock,
   History,
-  Map
+  Map,
+  GanttChart
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -182,6 +183,13 @@ export function MobileNav() {
                     href="/"
                     icon={<ChartLine />}
                     label="Portfolio Dashboard"
+                    onClick={handleNavClick}
+                  />
+                  
+                  <MobileNavItem
+                    href="/portfolio/timeline"
+                    icon={<GanttChart />}
+                    label="Portfolio Timeline"
                     onClick={handleNavClick}
                   />
                   

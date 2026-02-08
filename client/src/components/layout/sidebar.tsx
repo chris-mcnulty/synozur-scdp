@@ -28,7 +28,8 @@ import {
   Globe,
   CalendarClock,
   History,
-  Map
+  Map,
+  GanttChart
 } from "lucide-react";
 
 interface SidebarItemProps {
@@ -141,6 +142,12 @@ export function Sidebar() {
                 href="/"
                 icon={<ChartLine />}
                 label="Portfolio Dashboard"
+              />
+              
+              <SidebarItem
+                href="/portfolio/timeline"
+                icon={<GanttChart />}
+                label="Portfolio Timeline"
               />
               
               <SidebarItem

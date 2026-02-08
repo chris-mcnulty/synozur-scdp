@@ -10,14 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive, GanttChart } from "lucide-react";
-import { PortfolioTimeline } from "@/components/portfolio-timeline";
+import { Plus, Search, Filter, FolderOpen, Trash2, Edit, FileText, DollarSign, Eye, ChevronDown, ChevronRight, LayoutGrid, List, Layers, MoreVertical, Users, Clock, Receipt, Download, Archive } from "lucide-react";
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProjectWithClient } from "@/lib/types";
 
-type ViewMode = "grouped" | "list" | "cards" | "timeline";
+type ViewMode = "grouped" | "list" | "cards";
 type SortBy = "client" | "name" | "date" | "status";
 
 interface ProjectWithBillableInfo extends ProjectWithClient {
@@ -383,23 +383,14 @@ export default function Projects() {
                   <Button
                     variant={viewMode === "cards" ? "secondary" : "ghost"}
                     size="sm"
-                    className="rounded-none border-r px-3"
+                    className="rounded-l-none px-3"
                     onClick={() => setViewMode("cards")}
                     title="Card View"
                     data-testid="button-view-cards"
                   >
                     <LayoutGrid className="w-4 h-4" />
                   </Button>
-                  <Button
-                    variant={viewMode === "timeline" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="rounded-l-none px-3"
-                    onClick={() => setViewMode("timeline")}
-                    title="Portfolio Timeline"
-                    data-testid="button-view-timeline"
-                  >
-                    <GanttChart className="w-4 h-4" />
-                  </Button>
+                  
                 </div>
                 <Button variant="outline" data-testid="button-advanced-filter">
                   <Filter className="w-4 h-4 mr-2" />
@@ -701,8 +692,6 @@ export default function Projects() {
                 </div>
               </CardContent>
             </Card>
-          ) : viewMode === "timeline" ? (
-            <PortfolioTimeline />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredProjects.map((project) => (

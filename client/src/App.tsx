@@ -40,6 +40,7 @@ import Changelog from "@/pages/changelog";
 import Roadmap from "@/pages/roadmap";
 import Login from "@/pages/login";
 import FileRepository from "@/pages/file-repository";
+import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -157,6 +158,9 @@ function Router() {
       </Route>
       <Route path="/my-projects">
         {user ? <MyProjectsDashboard /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/portfolio/timeline">
+        {user ? <PortfolioTimelinePage /> : <Redirect to="/login" />}
       </Route>
       <Route path="/projects">
         {user ? <Projects /> : <Redirect to="/login" />}
