@@ -22,6 +22,7 @@ import {
   Home,
   Calculator,
   CreditCard,
+  Banknote,
   ChevronRight,
   BookOpen,
   CalendarClock,
@@ -254,6 +255,13 @@ export function MobileNav() {
                     href="/expense-approval"
                     icon={<Receipt />}
                     label="Expense Approval"
+                    onClick={handleNavClick}
+                  />
+                  
+                  <MobileNavItem
+                    href="/reimbursement-batches"
+                    icon={<Banknote />}
+                    label="Reimbursements"
                     onClick={handleNavClick}
                   />
                   

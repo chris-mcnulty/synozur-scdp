@@ -19,6 +19,7 @@ import {
   Home,
   Calculator,
   CreditCard,
+  Banknote,
   Database,
   BookOpen,
   Shield,
@@ -203,6 +204,12 @@ export function Sidebar() {
                 href="/expense-approval"
                 icon={<Receipt />}
                 label="Expense Approval"
+              />
+              
+              <SidebarItem
+                href="/reimbursement-batches"
+                icon={<Banknote />}
+                label="Reimbursements"
               />
               
               <SidebarItem
