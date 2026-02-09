@@ -101,11 +101,7 @@ export default function Login() {
             The Complete Platform for Consulting Business Operations
           </h2>
           
-          <p className="text-muted-foreground mb-8 leading-relaxed">
-            Constellation streamlines your entire consulting practice — from project estimation 
-            and resource planning to time tracking, expense management, and automated invoicing. 
-            Built for consulting firms that need clarity on profitability and efficiency.
-          </p>
+          <p className="text-muted-foreground mb-8 leading-relaxed">Constellation ("SCDP") streamlines your entire consulting practice — from project estimation and resource planning to time tracking, expense management, and automated invoicing. Built for consulting firms that need clarity on profitability and efficiency.</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             {features.map((feature, index) => (
@@ -135,7 +131,6 @@ export default function Login() {
           </div>
         </div>
       </div>
-
       {/* Right side - Login form */}
       <div className="lg:w-1/2 flex flex-col items-center justify-center p-8 bg-background min-h-screen lg:min-h-0">
         {/* Mobile header with logo */}
