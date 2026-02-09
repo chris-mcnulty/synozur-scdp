@@ -508,12 +508,12 @@ export default function ReimbursementBatches() {
 
           <div className="flex justify-between items-center">
             <div>
-              {selectedBatch.status === 'pending' && (
+              {selectedBatch.status !== 'processed' && (
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={() => {
-                    if (confirm("Are you sure you want to delete this reimbursement request?")) {
+                    if (confirm("Are you sure you want to delete this reimbursement request? The expenses will be released and available for a new request.")) {
                       deleteBatchMutation.mutate(selectedBatch.id);
                     }
                   }}
