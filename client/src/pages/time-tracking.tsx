@@ -26,8 +26,9 @@ import { z } from "zod";
 import { formatProjectLabel } from "@/lib/project-utils";
 
 const timeEntryFormSchema = insertTimeEntrySchema.omit({
-  personId: true, // personId is added server-side from authenticated user
+  personId: true,
 }).extend({
+  personId: z.string().optional(),
   date: z.string(),
   hours: z.string()
     .min(1, "Hours is required")
@@ -136,6 +137,20 @@ export default function TimeTracking() {
   const { data: currentUser } = useQuery<User>({
     queryKey: ["/api/auth/user"],
   });
+
+  const isManagerRole = currentUser && ['admin', 'billing-admin', 'pm', 'executive'].includes(currentUser.role);
+
+  const { data: allUsers } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled: !!isManagerRole,
+  });
+
+  const sortedUsers = useMemo(() => {
+    if (!allUsers) return [];
+    return [...allUsers]
+      .filter(u => u.isActive)
+      .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+  }, [allUsers]);
 
   // Filter and format projects: only active, with CLIENTSHORTNAME | Project name format
   const activeProjects = useMemo(() => {
@@ -380,6 +395,7 @@ export default function TimeTracking() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] });
       // Preserve the project selection and only reset the variable fields
+      const currentPersonId = form.getValues("personId");
       const currentProjectId = form.getValues("projectId");
       const currentMilestoneId = form.getValues("milestoneId");
       const currentWorkstreamId = form.getValues("workstreamId");
@@ -391,7 +407,7 @@ export default function TimeTracking() {
         hours: "",
         billable: true,
         description: "",
-        // Preserve project context - all dropdowns keep their values
+        personId: currentPersonId,
         projectId: currentProjectId,
         milestoneId: currentMilestoneId,
         workstreamId: currentWorkstreamId,
@@ -494,11 +510,11 @@ export default function TimeTracking() {
     // Transform empty strings to undefined for optional foreign key fields only
     const cleanedData = {
       ...data,
+      personId: data.personId || undefined,
       milestoneId: data.milestoneId === "" ? undefined : data.milestoneId || undefined,
       workstreamId: data.workstreamId === "" ? undefined : data.workstreamId || undefined,
       projectStageId: data.projectStageId === "" ? undefined : data.projectStageId || undefined,
       allocationId: data.allocationId === "" ? undefined : data.allocationId || undefined,
-      // description is a text field, doesn't need special handling
     };
     console.log('Sending cleaned data:', cleanedData);
     createTimeEntryMutation.mutate(cleanedData);
@@ -877,6 +893,36 @@ export default function TimeTracking() {
                   className="space-y-4" 
                   noValidate
                 >
+                  {isManagerRole && (
+                    <FormField
+                      control={form.control}
+                      name="personId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Person</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value || undefined}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-person">
+                                <SelectValue placeholder="Myself" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {sortedUsers?.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.name || user.email}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
                   <FormField
                     control={form.control}
                     name="date"
