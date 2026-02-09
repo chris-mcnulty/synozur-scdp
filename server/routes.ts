@@ -15283,13 +15283,29 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user!;
       const isPrivileged = ['admin', 'billing-admin'].includes(user.role || '');
 
-      const targetUserId = requestedForUserId || user.id;
-      if (targetUserId !== user.id && !isPrivileged) {
-        return res.status(403).json({ message: "Only admin or billing-admin can create reimbursement requests for other users" });
-      }
-
       if (!Array.isArray(expenseIds) || expenseIds.length === 0) {
         return res.status(400).json({ message: "At least one expense is required" });
+      }
+
+      const selectedExpenses = await db.select().from(expenses).where(inArray(expenses.id, expenseIds));
+      if (selectedExpenses.length === 0) {
+        return res.status(400).json({ message: "No valid expenses found for the given IDs" });
+      }
+
+      const expenseOwnerIds = [...new Set(selectedExpenses.map(e => e.personId))];
+      if (expenseOwnerIds.length > 1) {
+        return res.status(400).json({ message: "All selected expenses must belong to the same person" });
+      }
+
+      const expenseOwnerId = expenseOwnerIds[0];
+      const targetUserId = requestedForUserId || expenseOwnerId || user.id;
+
+      if (targetUserId !== expenseOwnerId) {
+        return res.status(400).json({ message: "The reimbursement recipient must match the expense owner" });
+      }
+
+      if (targetUserId !== user.id && !isPrivileged) {
+        return res.status(403).json({ message: "Only admin or billing-admin can create reimbursement requests for other users" });
       }
 
       const batch = await storage.createReimbursementBatch({

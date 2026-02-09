@@ -206,6 +206,9 @@ function Router() {
           </PermissionGuard>
         ) : <Redirect to="/login" />}
       </Route>
+      <Route path="/my-reimbursements">
+        {user ? <ReimbursementBatches /> : <Redirect to="/login" />}
+      </Route>
       <Route path="/billing">
         {user ? <Billing /> : <Redirect to="/login" />}
       </Route>

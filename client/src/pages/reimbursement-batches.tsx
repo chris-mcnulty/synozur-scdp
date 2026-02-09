@@ -203,9 +203,17 @@ export default function ReimbursementBatches() {
       toast({ title: "Error", description: "Please select at least one expense", variant: "destructive" });
       return;
     }
+    const selectedExpensesList = availableExpenses.filter(e => selectedExpenseIds.has(e.id));
+    const ownerIds = Array.from(new Set(selectedExpensesList.map(e => e.personId)));
+    if (ownerIds.length > 1) {
+      toast({ title: "Error", description: "All selected expenses must belong to the same person. Please select expenses for one employee at a time.", variant: "destructive" });
+      return;
+    }
+    const expenseOwnerId = ownerIds[0];
+    const effectiveForUserId = expenseOwnerId || (isPrivileged && selectedUserId ? selectedUserId : undefined);
     createBatchMutation.mutate({
       expenseIds: Array.from(selectedExpenseIds),
-      requestedForUserId: isPrivileged && selectedUserId ? selectedUserId : undefined,
+      requestedForUserId: effectiveForUserId,
     });
   };
 

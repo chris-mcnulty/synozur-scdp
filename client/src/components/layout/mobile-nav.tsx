@@ -117,7 +117,7 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-projects"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint"] },
@@ -230,6 +230,7 @@ export function MobileNav() {
                 <MobileNavItem href="/time" icon={<Clock />} label="Time" onClick={handleNavClick} />
                 <MobileNavItem href="/expenses" icon={<Receipt />} label="Expenses" onClick={handleNavClick} />
                 <MobileNavItem href="/expense-reports" icon={<FileText />} label="Expense Reports" onClick={handleNavClick} />
+                <MobileNavItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" onClick={handleNavClick} />
                 <MobileNavItem href="/my-projects" icon={<FolderOpen />} label="My Projects" onClick={handleNavClick} />
               </MobileCollapsibleSection>
               
