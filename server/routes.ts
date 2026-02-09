@@ -14960,6 +14960,32 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // POST /api/expense-reports/:id/withdraw - Withdraw a submitted report back to draft
+  app.post("/api/expense-reports/:id/withdraw", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getExpenseReport(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Expense report not found" });
+      }
+
+      const userRole = (req.user as any)?.role;
+      const platformRoles = (req.user as any)?.platformRoles || [];
+      const isAdmin = ['admin', 'billing-admin'].includes(userRole) || 
+                      platformRoles.includes('global_admin') || 
+                      platformRoles.includes('constellation_admin');
+
+      if (report.submitterId !== req.user!.id && !isAdmin) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const withdrawn = await storage.withdrawExpenseReport(req.params.id);
+      res.json(withdrawn);
+    } catch (error: any) {
+      console.error("[EXPENSE_REPORTS] Failed to withdraw expense report:", error);
+      res.status(400).json({ message: error.message || "Failed to withdraw expense report" });
+    }
+  });
+
   // POST /api/expense-reports/:id/expenses - Add expenses to report
   app.post("/api/expense-reports/:id/expenses", requireAuth, async (req, res) => {
     try {

@@ -13,7 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseReportSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
-import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt, RotateCcw, AlertTriangle } from "lucide-react";
+import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt, RotateCcw, AlertTriangle, Undo2 } from "lucide-react";
 import { ContractorExpenseInvoiceDialog } from "@/components/contractor-expense-invoice-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -235,6 +235,31 @@ export default function ExpenseReports() {
       toast({
         title: "Error",
         description: error.message || "Failed to reopen expense report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const withdrawReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return await apiRequest(`/api/expense-reports/${reportId}/withdraw`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      setShowDetailDialog(false);
+      setSelectedReportId(null);
+      toast({
+        title: "Report withdrawn",
+        description: "The report has been moved back to draft. You can now add or edit expenses and resubmit.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to withdraw expense report",
         variant: "destructive",
       });
     },
@@ -579,6 +604,17 @@ export default function ExpenseReports() {
                 </div>
 
                 <DialogFooter className="gap-2">
+                  {selectedReport.status?.toLowerCase() === 'submitted' && (selectedReport.submitter?.id === user?.id || isAdmin) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => withdrawReportMutation.mutate(selectedReport.id)}
+                      disabled={withdrawReportMutation.isPending}
+                      data-testid="button-withdraw-report"
+                    >
+                      <Undo2 className="mr-2 h-4 w-4" />
+                      {withdrawReportMutation.isPending ? "Withdrawing..." : "Withdraw"}
+                    </Button>
+                  )}
                   {selectedReport.status?.toLowerCase() === 'rejected' && (selectedReport.submitter?.id === user?.id || isAdmin) && (
                     <Button
                       variant="outline"
