@@ -231,7 +231,7 @@ export function MobileNav() {
                 <MobileNavItem href="/expenses" icon={<Receipt />} label="Expenses" onClick={handleNavClick} />
                 <MobileNavItem href="/expense-reports" icon={<FileText />} label="Expense Reports" onClick={handleNavClick} />
                 <MobileNavItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" onClick={handleNavClick} />
-                <MobileNavItem href="/my-projects" icon={<FolderOpen />} label="My Projects" onClick={handleNavClick} />
+                <MobileNavItem href="/my-projects" icon={<FolderOpen />} label="Projects" onClick={handleNavClick} />
               </MobileCollapsibleSection>
               
               {isManager && (

@@ -198,7 +198,7 @@ export function Sidebar() {
               <SidebarItem href="/expenses" icon={<Receipt />} label="Expenses" />
               <SidebarItem href="/expense-reports" icon={<FileText />} label="Expense Reports" />
               <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" />
-              <SidebarItem href="/my-projects" icon={<FolderOpen />} label="My Projects" />
+              <SidebarItem href="/my-projects" icon={<FolderOpen />} label="Projects" />
             </CollapsibleSection>
             
             {isManager && (
