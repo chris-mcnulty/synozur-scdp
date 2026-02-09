@@ -74,25 +74,17 @@ export default function ReimbursementBatches() {
     queryKey: [batchesUrl],
   });
 
+  const availableExpensesUrl = (() => {
+    const params = new URLSearchParams();
+    if (isPrivileged && selectedUserId) {
+      params.set("userId", selectedUserId);
+    }
+    const qs = params.toString();
+    return `/api/expenses/available-for-reimbursement${qs ? `?${qs}` : ''}`;
+  })();
+
   const { data: availableExpenses = [] } = useQuery<(Expense & { person: UserType; project: Project & { client: Client } })[]>({
-    queryKey: ["/api/expenses/available-for-reimbursement", selectedUserId || (isPrivileged ? '' : user?.id)],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (isPrivileged && selectedUserId) {
-        params.set("userId", selectedUserId);
-      }
-      const headers: Record<string, string> = {};
-      const storedSessionId = localStorage.getItem('sessionId');
-      if (storedSessionId) {
-        headers['x-session-id'] = storedSessionId;
-      }
-      const res = await fetch(`/api/expenses/available-for-reimbursement?${params}`, {
-        credentials: "include",
-        headers,
-      });
-      if (!res.ok) throw new Error("Failed to fetch expenses");
-      return res.json();
-    },
+    queryKey: [availableExpensesUrl],
     enabled: showCreateDialog,
   });
 
@@ -215,13 +207,13 @@ export default function ReimbursementBatches() {
       return;
     }
     const selectedExpensesList = availableExpenses.filter(e => selectedExpenseIds.has(e.id));
-    const ownerIds = Array.from(new Set(selectedExpensesList.map(e => e.personId)));
-    if (ownerIds.length > 1) {
+    const incurrerIds = Array.from(new Set(selectedExpensesList.map(e => e.projectResourceId || e.personId)));
+    if (incurrerIds.length > 1) {
       toast({ title: "Error", description: "All selected expenses must belong to the same person. Please select expenses for one employee at a time.", variant: "destructive" });
       return;
     }
-    const expenseOwnerId = ownerIds[0];
-    const effectiveForUserId = expenseOwnerId || (isPrivileged && selectedUserId ? selectedUserId : undefined);
+    const expenseIncurrerId = incurrerIds[0];
+    const effectiveForUserId = expenseIncurrerId || (isPrivileged && selectedUserId ? selectedUserId : undefined);
     createBatchMutation.mutate({
       expenseIds: Array.from(selectedExpenseIds),
       requestedForUserId: effectiveForUserId,

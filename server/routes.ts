@@ -15389,16 +15389,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "No valid expenses found for the given IDs" });
       }
 
-      const expenseOwnerIds = [...new Set(selectedExpenses.map(e => e.personId))];
-      if (expenseOwnerIds.length > 1) {
+      const expenseIncurrerIds = [...new Set(selectedExpenses.map(e => e.projectResourceId || e.personId))];
+      if (expenseIncurrerIds.length > 1) {
         return res.status(400).json({ message: "All selected expenses must belong to the same person" });
       }
 
-      const expenseOwnerId = expenseOwnerIds[0];
-      const targetUserId = requestedForUserId || expenseOwnerId || user.id;
+      const expenseIncurrerId = expenseIncurrerIds[0];
+      const targetUserId = requestedForUserId || expenseIncurrerId || user.id;
 
-      if (targetUserId !== expenseOwnerId) {
-        return res.status(400).json({ message: "The reimbursement recipient must match the expense owner" });
+      if (targetUserId !== expenseIncurrerId) {
+        return res.status(400).json({ message: "The reimbursement recipient must match the expense incurrer" });
       }
 
       if (targetUserId !== user.id && !isPrivileged) {

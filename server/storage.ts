@@ -4514,17 +4514,19 @@ export class DatabaseStorage implements IStorage {
 
     if (!batch) return undefined;
 
+    const batchIncurrerAlias = alias(users, 'batch_incurrer');
     const batchExpenses = await db.select()
       .from(expenses)
-      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(batchIncurrerAlias, sql`${batchIncurrerAlias.id} = COALESCE(${expenses.projectResourceId}, ${expenses.personId})`)
       .innerJoin(projects, eq(expenses.projectId, projects.id))
       .innerJoin(clients, eq(projects.clientId, clients.id))
       .where(eq(expenses.reimbursementBatchId, id));
 
+    const lineIncurrerAlias = alias(users, 'line_incurrer');
     const lineItemResults = await db.select()
       .from(reimbursementLineItems)
       .innerJoin(expenses, eq(reimbursementLineItems.expenseId, expenses.id))
-      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(lineIncurrerAlias, sql`${lineIncurrerAlias.id} = COALESCE(${expenses.projectResourceId}, ${expenses.personId})`)
       .innerJoin(projects, eq(expenses.projectId, projects.id))
       .innerJoin(clients, eq(projects.clientId, clients.id))
       .leftJoin(usersReviewer, eq(reimbursementLineItems.reviewedBy, usersReviewer.id))
@@ -4548,7 +4550,7 @@ export class DatabaseStorage implements IStorage {
       requestedForUser: batch.users_requested_for || undefined,
       expenses: batchExpenses.map(row => ({
         ...row.expenses,
-        person: row.users,
+        person: row.batch_incurrer,
         project: {
           ...row.projects,
           client: row.clients,
@@ -4558,7 +4560,7 @@ export class DatabaseStorage implements IStorage {
         ...row.reimbursement_line_items,
         expense: {
           ...row.expenses,
-          person: row.users,
+          person: row.line_incurrer,
           project: {
             ...row.projects,
             client: row.clients,
@@ -4757,12 +4759,15 @@ export class DatabaseStorage implements IStorage {
     ];
 
     if (userId) {
-      conditions.push(eq(expenses.personId, userId));
+      conditions.push(
+        sql`COALESCE(${expenses.projectResourceId}, ${expenses.personId}) = ${userId}`
+      );
     }
 
+    const incurrerAlias = alias(users, 'expense_incurrer');
     const results = await db.select()
       .from(expenses)
-      .innerJoin(users, eq(expenses.personId, users.id))
+      .innerJoin(incurrerAlias, sql`${incurrerAlias.id} = COALESCE(${expenses.projectResourceId}, ${expenses.personId})`)
       .innerJoin(projects, eq(expenses.projectId, projects.id))
       .innerJoin(clients, eq(projects.clientId, clients.id))
       .where(and(...conditions))
@@ -4770,7 +4775,7 @@ export class DatabaseStorage implements IStorage {
 
     return results.map(row => ({
       ...row.expenses,
-      person: row.users,
+      person: row.expense_incurrer,
       project: {
         ...row.projects,
         client: row.clients,
