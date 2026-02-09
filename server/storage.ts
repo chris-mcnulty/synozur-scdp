@@ -10528,8 +10528,19 @@ export async function resolveRatesForTimeEntry(
 }
 
 // Helper function to calculate due date based on payment terms
-function calculateDueDate(paymentTerms?: string): string {
-  const today = new Date();
+function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null): string {
+  let startDate: Date;
+  if (baseDate) {
+    if (typeof baseDate === 'string') {
+      const [year, month, day] = baseDate.split('-').map(Number);
+      startDate = new Date(year, month - 1, day);
+    } else {
+      startDate = new Date(baseDate);
+    }
+  } else {
+    startDate = new Date();
+  }
+  
   let daysToAdd = 30; // Default to Net 30
   
   if (paymentTerms) {
@@ -10561,7 +10572,7 @@ function calculateDueDate(paymentTerms?: string): string {
     }
   }
   
-  const dueDate = new Date(today);
+  const dueDate = new Date(startDate);
   dueDate.setDate(dueDate.getDate() + daysToAdd);
   return dueDate.toLocaleDateString();
 }
@@ -10957,9 +10968,11 @@ export async function generateInvoicePDF(params: {
     totalProjects: batch.projectCount,
     totalLines: batch.totalLinesCount,
     
-    // Invoice header details (legacy format)
-    invoiceDate: new Date().toLocaleDateString(),
-    dueDate: calculateDueDate(batch.paymentTerms || companySettings.paymentTerms),
+    // Invoice header details (legacy format) - use asOfDate for invoice date and due date calculation
+    invoiceDate: batch.asOfDate 
+      ? new Date(batch.asOfDate + 'T00:00:00').toLocaleDateString()
+      : new Date().toLocaleDateString(),
+    dueDate: calculateDueDate(batch.paymentTerms || companySettings.paymentTerms, batch.asOfDate),
     paymentMethod: uniqueClients[0]?.paymentMethod || 'ACH Transfer',
     
     // Client info
