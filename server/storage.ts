@@ -426,6 +426,7 @@ export interface IStorage {
   submitExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   approveExpenseReport(id: string, userId: string): Promise<ExpenseReport>;
   rejectExpenseReport(id: string, userId: string, rejectionNote: string): Promise<ExpenseReport>;
+  reopenExpenseReport(id: string): Promise<ExpenseReport>;
   addExpensesToReport(reportId: string, expenseIds: string[]): Promise<void>;
   removeExpenseFromReport(reportId: string, expenseId: string): Promise<void>;
   
@@ -4277,6 +4278,44 @@ export class DatabaseStorage implements IStorage {
           rejectionNote,
         })
         .where(inArray(expenses.id, expenseIds));
+
+      return updated;
+    });
+  }
+
+  async reopenExpenseReport(id: string): Promise<ExpenseReport> {
+    return await db.transaction(async (tx) => {
+      const report = await this.getExpenseReport(id);
+      if (!report) {
+        throw new Error('Expense report not found');
+      }
+
+      if (report.status !== 'rejected') {
+        throw new Error('Only rejected reports can be reopened');
+      }
+
+      const [updated] = await tx.update(expenseReports)
+        .set({
+          status: 'draft',
+          rejectedAt: null,
+          rejectedBy: null,
+          rejectionNote: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(expenseReports.id, id))
+        .returning();
+
+      const expenseIds = report.items.map(item => item.expenseId);
+      if (expenseIds.length > 0) {
+        await tx.update(expenses)
+          .set({
+            approvalStatus: 'draft',
+            rejectedAt: null,
+            rejectedBy: null,
+            rejectionNote: null,
+          })
+          .where(inArray(expenses.id, expenseIds));
+      }
 
       return updated;
     });

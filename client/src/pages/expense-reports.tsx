@@ -13,7 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseReportSchema, type Expense, type Project, type Client } from "@shared/schema";
 import { format } from "date-fns";
-import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt } from "lucide-react";
+import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt, RotateCcw, AlertTriangle } from "lucide-react";
 import { ContractorExpenseInvoiceDialog } from "@/components/contractor-expense-invoice-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -212,6 +212,29 @@ export default function ExpenseReports() {
       toast({
         title: "Error",
         description: error.message || "Failed to delete expense report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const reopenReportMutation = useMutation({
+    mutationFn: async (reportId: string) => {
+      return await apiRequest(`/api/expense-reports/${reportId}/reopen`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      toast({
+        title: "Report reopened",
+        description: "The report has been moved back to draft. You can now edit expenses and resubmit.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reopen expense report",
         variant: "destructive",
       });
     },
@@ -491,6 +514,27 @@ export default function ExpenseReports() {
 
             {selectedReport && !isLoadingReport && (
               <div className="space-y-4">
+                {selectedReport.status === 'rejected' && selectedReport.rejectionNote && (
+                  <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-medium text-destructive">Report Rejected</h3>
+                        <p className="text-sm mt-1">{selectedReport.rejectionNote}</p>
+                        {selectedReport.rejectedAt && (
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Rejected on {format(new Date(selectedReport.rejectedAt), 'MMM d, yyyy')}
+                            {selectedReport.rejecter && ` by ${selectedReport.rejecter.name}`}
+                          </p>
+                        )}
+                        <p className="text-sm mt-3 font-medium">
+                          To resubmit: Click "Reopen" below, then go to your Expenses page to edit any items that need changes, and come back to submit again.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {selectedReport.description && (
                   <div>
                     <h3 className="font-medium">Description</h3>
@@ -535,6 +579,17 @@ export default function ExpenseReports() {
                 </div>
 
                 <DialogFooter className="gap-2">
+                  {selectedReport.status?.toLowerCase() === 'rejected' && (selectedReport.submitter?.id === user?.id || isAdmin) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => reopenReportMutation.mutate(selectedReport.id)}
+                      disabled={reopenReportMutation.isPending}
+                      data-testid="button-reopen-report"
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      {reopenReportMutation.isPending ? "Reopening..." : "Reopen for Editing"}
+                    </Button>
+                  )}
                   {selectedReport.status?.toLowerCase() === 'draft' && (
                     <>
                       {(selectedReport.submitter?.id === user?.id || isAdmin) && (

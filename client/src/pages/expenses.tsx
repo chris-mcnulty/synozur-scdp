@@ -16,7 +16,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseSchema, type Expense, type Project, type Client, type User } from "@shared/schema";
 import { format, addDays, differenceInDays } from "date-fns";
 import { getTodayBusinessDate, formatBusinessDate, parseBusinessDate, parseBusinessDateOrToday } from "@/lib/date-utils";
-import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText } from "lucide-react";
+import { CalendarIcon, Plus, Receipt, Upload, DollarSign, Edit, Save, X, Car, FileText, Trash2, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -499,6 +499,31 @@ export default function Expenses() {
       });
     },
   });
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest(`/api/expenses/${id}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      toast({
+        title: "Expense deleted",
+        description: "The expense has been removed.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Cannot delete expense",
+        description: error.message || "Failed to delete expense. It may be part of a submitted report or already billed.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const onSubmit = async (data: ExpenseFormData) => {
     // Prevent concurrent submissions
@@ -2191,6 +2216,16 @@ export default function Expenses() {
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfirmDeleteId(expense.id)}
+                          disabled={deleteExpenseMutation.isPending}
+                          className="text-destructive hover:text-destructive"
+                          data-testid={`button-delete-expense-${expense.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -2309,6 +2344,38 @@ export default function Expenses() {
                 />
               )}
 
+              {/* Per Diem info panel for editing */}
+              {editWatchedCategory === "perdiem" && editingExpenseId && (() => {
+                const editingExp = expenses?.find(e => e.id === editingExpenseId);
+                if (!editingExp) return null;
+                return (
+                  <div className="space-y-2 p-3 border rounded-md bg-blue-50 dark:bg-blue-950/30">
+                    <div className="text-sm font-medium flex items-center gap-1">
+                      <DollarSign className="w-4 h-4" />
+                      Per Diem Details
+                    </div>
+                    {editingExp.perDiemLocation && (
+                      <div className="text-sm text-muted-foreground">
+                        <strong>Location:</strong> {editingExp.perDiemLocation}
+                      </div>
+                    )}
+                    {editingExp.perDiemMealsRate && (
+                      <div className="text-sm text-muted-foreground">
+                        <strong>M&IE Rate:</strong> ${parseFloat(editingExp.perDiemMealsRate).toFixed(2)}/day
+                      </div>
+                    )}
+                    {editingExp.perDiemLodgingRate && (
+                      <div className="text-sm text-muted-foreground">
+                        <strong>Lodging Rate:</strong> ${parseFloat(editingExp.perDiemLodgingRate).toFixed(2)}/night
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground italic">
+                      You can adjust the amount, description, and other fields below. To fully recalculate per diem rates, delete this expense and create a new per diem entry.
+                    </p>
+                  </div>
+                );
+              })()}
+
               {/* Airfare fields for editing */}
               {editWatchedCategory === "airfare" && (
                 <div className="space-y-4 p-4 border rounded-md bg-muted/50">
@@ -2392,6 +2459,11 @@ export default function Expenses() {
                         Auto-calculated from miles
                       </FormDescription>
                     )}
+                    {editWatchedCategory === "perdiem" && (
+                      <FormDescription>
+                        Originally calculated from GSA rates. You can manually adjust if needed.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -2428,7 +2500,7 @@ export default function Expenses() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value} disabled={editWatchedCategory === "perdiem"}>
                       <FormControl>
                         <SelectTrigger data-testid="edit-select-category">
                           <SelectValue placeholder="Select category" />
@@ -2442,6 +2514,11 @@ export default function Expenses() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {editWatchedCategory === "perdiem" && (
+                      <FormDescription>
+                        Per diem category cannot be changed. Delete and recreate if needed.
+                      </FormDescription>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -2719,6 +2796,40 @@ export default function Expenses() {
                 {importProgress ? "Processing..." : "Import Expenses"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Delete Expense
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this expense? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteExpenseMutation.isPending}
+              onClick={() => {
+                if (confirmDeleteId) {
+                  deleteExpenseMutation.mutate(confirmDeleteId, {
+                    onSettled: () => setConfirmDeleteId(null),
+                  });
+                }
+              }}
+              data-testid="button-confirm-delete-expense"
+            >
+              {deleteExpenseMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
