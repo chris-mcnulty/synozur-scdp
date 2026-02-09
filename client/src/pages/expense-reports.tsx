@@ -40,6 +40,7 @@ interface ExpenseReport {
   title: string;
   description?: string;
   status: string;
+  submitterId: string;
   totalAmount: string;
   currency: string;
   createdAt: Date;
@@ -66,13 +67,9 @@ export default function ExpenseReports() {
   const [activeTab, setActiveTab] = useState<string>("draft");
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, hasAnyRole, isPlatformAdmin } = useAuth();
   
-  const isAdmin = user && (
-    ['admin', 'billing-admin'].includes(user.role || '') ||
-    user.platformRole === 'global_admin' ||
-    user.platformRole === 'constellation_admin'
-  );
+  const isAdmin = hasAnyRole(['admin', 'billing-admin']) || isPlatformAdmin;
 
   const form = useForm<ReportFormData>({
     resolver: zodResolver(reportFormSchema),
@@ -537,7 +534,10 @@ export default function ExpenseReports() {
               </div>
             )}
 
-            {selectedReport && !isLoadingReport && (
+            {selectedReport && !isLoadingReport && (() => {
+              const isOwner = selectedReport.submitter?.id === user?.id || selectedReport.submitterId === user?.id;
+              const isOwnerOrAdmin = isOwner || isAdmin;
+              return (
               <div className="space-y-4">
                 {selectedReport.status === 'rejected' && selectedReport.rejectionNote && (
                   <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg">
@@ -603,8 +603,8 @@ export default function ExpenseReports() {
                   </Table>
                 </div>
 
-                <DialogFooter className="gap-2">
-                  {selectedReport.status?.toLowerCase() === 'submitted' && (selectedReport.submitter?.id === user?.id || isAdmin) && (
+                <DialogFooter className="gap-2 flex-wrap">
+                  {selectedReport.status === 'submitted' && (isOwnerOrAdmin) && (
                     <Button
                       variant="outline"
                       onClick={() => withdrawReportMutation.mutate(selectedReport.id)}
@@ -615,7 +615,7 @@ export default function ExpenseReports() {
                       {withdrawReportMutation.isPending ? "Withdrawing..." : "Withdraw"}
                     </Button>
                   )}
-                  {selectedReport.status?.toLowerCase() === 'rejected' && (selectedReport.submitter?.id === user?.id || isAdmin) && (
+                  {selectedReport.status === 'rejected' && (isOwnerOrAdmin) && (
                     <Button
                       variant="outline"
                       onClick={() => reopenReportMutation.mutate(selectedReport.id)}
@@ -626,9 +626,9 @@ export default function ExpenseReports() {
                       {reopenReportMutation.isPending ? "Reopening..." : "Reopen for Editing"}
                     </Button>
                   )}
-                  {selectedReport.status?.toLowerCase() === 'draft' && (
+                  {selectedReport.status === 'draft' && (
                     <>
-                      {(selectedReport.submitter?.id === user?.id || isAdmin) && (
+                      {isOwnerOrAdmin && (
                         <Button
                           variant="destructive"
                           onClick={() => deleteReportMutation.mutate(selectedReport.id)}
@@ -639,7 +639,7 @@ export default function ExpenseReports() {
                           Delete
                         </Button>
                       )}
-                      {(selectedReport.submitter?.id === user?.id || isAdmin) && (
+                      {isOwnerOrAdmin && (
                         <Button
                           onClick={() => submitReportMutation.mutate(selectedReport.id)}
                           disabled={submitReportMutation.isPending || (selectedReport.items || []).length === 0}
@@ -651,7 +651,7 @@ export default function ExpenseReports() {
                       )}
                     </>
                   )}
-                  {selectedReport.submitter?.id === user?.id && (selectedReport.items || []).length > 0 && (
+                  {isOwner && (selectedReport.items || []).length > 0 && (
                     <Button
                       variant="secondary"
                       onClick={() => setShowInvoiceDialog(true)}
@@ -666,7 +666,8 @@ export default function ExpenseReports() {
                   </Button>
                 </DialogFooter>
               </div>
-            )}
+              );
+            })()}
           </DialogContent>
         </Dialog>
 
