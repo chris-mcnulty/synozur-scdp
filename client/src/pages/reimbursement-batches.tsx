@@ -75,8 +75,14 @@ export default function ReimbursementBatches() {
       if (isPrivileged && selectedUserId) {
         params.set("userId", selectedUserId);
       }
+      const headers: Record<string, string> = {};
+      const storedSessionId = localStorage.getItem('sessionId');
+      if (storedSessionId) {
+        headers['x-session-id'] = storedSessionId;
+      }
       const res = await fetch(`/api/expenses/available-for-reimbursement?${params}`, {
         credentials: "include",
+        headers,
       });
       if (!res.ok) throw new Error("Failed to fetch expenses");
       return res.json();
@@ -174,7 +180,15 @@ export default function ReimbursementBatches() {
 
   const refreshBatchDetail = async (batchId: string) => {
     try {
-      const res = await fetch(`/api/reimbursement-batches/${batchId}`, { credentials: "include" });
+      const headers: Record<string, string> = {};
+      const storedSessionId = localStorage.getItem('sessionId');
+      if (storedSessionId) {
+        headers['x-session-id'] = storedSessionId;
+      }
+      const res = await fetch(`/api/reimbursement-batches/${batchId}`, {
+        credentials: "include",
+        headers,
+      });
       if (res.ok) {
         const batch = await res.json();
         setSelectedBatch(batch);
