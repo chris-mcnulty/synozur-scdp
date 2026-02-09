@@ -12254,6 +12254,75 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Bulk update time entries (admin/billing-admin only)
+  app.post("/api/time-entries/bulk-update", requireAuth, async (req, res) => {
+    try {
+      const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
+      if (!isAdmin) {
+        return res.status(403).json({ message: "Only admins can bulk update time entries" });
+      }
+
+      const bulkUpdateSchema = z.object({
+        ids: z.array(z.string()).min(1, "Must provide at least one time entry ID"),
+        updates: z.object({
+          billedFlag: z.boolean().optional(),
+          billable: z.boolean().optional(),
+          milestoneId: z.string().nullable().optional(),
+          projectStageId: z.string().nullable().optional(),
+        }).refine(obj => Object.keys(obj).length > 0, "Must provide at least one field to update"),
+      });
+
+      const parsed = bulkUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0]?.message || "Invalid request data" });
+      }
+
+      const { ids, updates } = parsed.data;
+
+      const allowedBulkFields = ['billedFlag', 'billable', 'milestoneId', 'projectStageId'];
+      const sanitizedUpdates: any = {};
+      for (const field of allowedBulkFields) {
+        if (field in updates) {
+          sanitizedUpdates[field] = (updates as any)[field];
+        }
+      }
+
+      if (Object.keys(sanitizedUpdates).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update. Allowed: " + allowedBulkFields.join(', ') });
+      }
+
+      let updatedCount = 0;
+      const errors: string[] = [];
+
+      for (const id of ids) {
+        try {
+          const entry = await storage.getTimeEntry(id);
+          if (!entry) {
+            errors.push(`Entry ${id} not found`);
+            continue;
+          }
+          if (entry.locked) {
+            errors.push(`Entry ${id} is locked in an invoice batch`);
+            continue;
+          }
+          await storage.updateTimeEntry(id, sanitizedUpdates);
+          updatedCount++;
+        } catch (err: any) {
+          errors.push(`Entry ${id}: ${err.message}`);
+        }
+      }
+
+      res.json({
+        updated: updatedCount,
+        total: ids.length,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error: any) {
+      console.error("[TIME_ENTRY] Bulk update error:", error);
+      res.status(500).json({ message: "Failed to bulk update time entries" });
+    }
+  });
+
   app.delete("/api/time-entries/:id", requireAuth, async (req, res) => {
     try {
       // Get the specific time entry

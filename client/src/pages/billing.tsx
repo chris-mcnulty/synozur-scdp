@@ -16,6 +16,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
 import { DetailedUnbilledItems } from "@/components/billing/detailed-unbilled-items";
 import { PaymentStatusDialog } from "@/components/billing/payment-status-dialog";
+import { TimeEntryManagement } from "@/components/billing/time-entry-management";
 import { 
   Plus, 
   FileText, 
@@ -730,9 +731,10 @@ export default function Billing() {
 
         {/* Billing Management Tabs */}
         <Tabs defaultValue="batches" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="batches" data-testid="tab-invoice-batches">Invoice Batches</TabsTrigger>
             <TabsTrigger value="unbilled" data-testid="tab-unbilled-items">Unbilled Items</TabsTrigger>
+            <TabsTrigger value="manage" data-testid="tab-time-management">Time Management</TabsTrigger>
             <TabsTrigger value="history" data-testid="tab-billing-history">Billing History</TabsTrigger>
           </TabsList>
 
@@ -918,6 +920,10 @@ export default function Billing() {
 
           <TabsContent value="unbilled" className="space-y-4">
             <DetailedUnbilledItems />
+          </TabsContent>
+
+          <TabsContent value="manage" className="space-y-4">
+            <TimeEntryManagement />
           </TabsContent>
 
           <TabsContent value="history" className="space-y-4">
