@@ -14039,6 +14039,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         minAmount,
         maxAmount,
         notInExpenseReport, // Filter for expenses not yet added to an expense report
+        reimbursementStatus,
       } = req.query as Record<string, string>;
 
       const filters: any = {};
@@ -14046,7 +14047,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (clientId) filters.clientId = clientId;
       if (projectId) filters.projectId = projectId;
       if (personId) filters.personId = personId;
-      if (assignedPersonId) filters.projectResourceId = assignedPersonId; // Map assignedPersonId to projectResourceId
+      if (assignedPersonId) filters.assignedPersonId = assignedPersonId;
       if (category) filters.category = category;
       if (vendor) filters.vendor = vendor;
       if (startDate) filters.startDate = startDate;
@@ -14059,6 +14060,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (minAmount) filters.minAmount = parseFloat(minAmount);
       if (maxAmount) filters.maxAmount = parseFloat(maxAmount);
       if (notInExpenseReport !== undefined) filters.notInExpenseReport = notInExpenseReport === 'true';
+      if (reimbursementStatus) filters.reimbursementStatus = reimbursementStatus;
 
       const expenses = await storage.getExpensesAdmin(filters);
       res.json(expenses);

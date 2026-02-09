@@ -3372,6 +3372,30 @@ export class DatabaseStorage implements IStorage {
         conditions.push(isNull(expenses.receiptUrl));
       }
     }
+    if (filters.reimbursementStatus) {
+      if (filters.reimbursementStatus === 'not_submitted') {
+        conditions.push(isNull(expenses.reimbursementBatchId));
+        conditions.push(eq(expenses.reimbursable, true));
+      } else if (filters.reimbursementStatus === 'pending') {
+        conditions.push(isNotNull(expenses.reimbursementBatchId));
+        conditions.push(
+          inArray(
+            expenses.reimbursementBatchId,
+            db.select({ id: reimbursementBatches.id }).from(reimbursementBatches)
+              .where(inArray(reimbursementBatches.status, ['pending', 'under_review']))
+          )
+        );
+      } else if (filters.reimbursementStatus === 'processed') {
+        conditions.push(isNotNull(expenses.reimbursementBatchId));
+        conditions.push(
+          inArray(
+            expenses.reimbursementBatchId,
+            db.select({ id: reimbursementBatches.id }).from(reimbursementBatches)
+              .where(eq(reimbursementBatches.status, 'processed'))
+          )
+        );
+      }
+    }
     if (filters.minAmount) {
       conditions.push(gte(expenses.amount, filters.minAmount.toString()));
     }

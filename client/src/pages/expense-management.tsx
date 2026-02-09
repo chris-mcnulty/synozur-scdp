@@ -62,7 +62,7 @@ const EXPENSE_CATEGORIES = [
 
 // Filter form schema
 const expenseFilterSchema = z.object({
-  personId: z.string().optional(),
+  assignedPersonId: z.string().optional(),
   projectId: z.string().optional(),
   clientId: z.string().optional(),
   projectResourceId: z.string().optional(),
@@ -74,6 +74,7 @@ const expenseFilterSchema = z.object({
   billedFlag: z.string().optional(),
   approvalStatus: z.string().optional(),
   hasReceipt: z.string().optional(),
+  reimbursementStatus: z.string().optional(),
   minAmount: z.string().optional(),
   maxAmount: z.string().optional(),
   vendor: z.string().optional(),
@@ -295,7 +296,7 @@ export default function ExpenseManagement() {
         newFilters = { hasReceipt: 'false', minAmount: '50' };
         break;
       case 'pending-reimbursement':
-        newFilters = { reimbursable: 'true', approvalStatus: 'approved', billedFlag: 'false' };
+        newFilters = { reimbursementStatus: 'pending' };
         break;
       case 'by-person':
         newFilters = { notInExpenseReport: 'true' };
@@ -879,10 +880,10 @@ export default function ExpenseManagement() {
                     )}
                   />
 
-                  {/* Person Filter */}
+                  {/* Person Filter (filters by Assigned To / project resource) */}
                   <FormField
                     control={filterForm.control}
-                    name="personId"
+                    name="assignedPersonId"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Person</FormLabel>
@@ -1077,6 +1078,30 @@ export default function ExpenseManagement() {
                             <SelectItem value="all-receipts">All receipts</SelectItem>
                             <SelectItem value="true">Has receipt</SelectItem>
                             <SelectItem value="false">No receipt</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Reimbursement Status */}
+                  <FormField
+                    control={filterForm.control}
+                    name="reimbursementStatus"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Reimbursement Status</FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-reimbursement-status">
+                              <SelectValue placeholder="All statuses" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="all-reimbursement">All statuses</SelectItem>
+                            <SelectItem value="not_submitted">Not Submitted</SelectItem>
+                            <SelectItem value="pending">Pending Reimbursement</SelectItem>
+                            <SelectItem value="processed">Reimbursed</SelectItem>
                           </SelectContent>
                         </Select>
                       </FormItem>
