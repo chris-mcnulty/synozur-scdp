@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
-import { Plus, CheckCircle, FileText, User, ThumbsUp, ThumbsDown, ArrowLeft, Send } from "lucide-react";
+import { Plus, CheckCircle, FileText, User, ThumbsUp, ThumbsDown, ArrowLeft, Send, ChevronDown, ChevronRight, Paperclip, DollarSign, ExternalLink } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -19,10 +19,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import type { Expense, Project, Client, User as UserType, ReimbursementLineItem } from "@shared/schema";
+import type { Expense, Project, Client, User as UserType, ReimbursementLineItem, ExpenseAttachment } from "@shared/schema";
 
 interface BatchLineItem extends ReimbursementLineItem {
-  expense: Expense & { person: UserType; project: Project & { client: Client } };
+  expense: Expense & { person: UserType; project: Project & { client: Client }; attachments?: ExpenseAttachment[] };
   reviewer?: UserType;
 }
 
@@ -57,6 +57,7 @@ export default function ReimbursementBatches() {
   const [paymentRef, setPaymentRef] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [lineItemNotes, setLineItemNotes] = useState<Record<string, string>>({});
+  const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, hasAnyRole } = useAuth();
@@ -273,6 +274,7 @@ export default function ReimbursementBatches() {
     setSelectedBatch(batch);
     setShowDetailView(true);
     setLineItemNotes({});
+    setExpandedLineItems(new Set());
     refreshBatchDetail(batch.id);
   };
 
@@ -411,6 +413,7 @@ export default function ReimbursementBatches() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8"></TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead>Category</TableHead>
@@ -422,8 +425,25 @@ export default function ReimbursementBatches() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(selectedBatch.lineItems || []).map((lineItem) => (
-                    <TableRow key={lineItem.id}>
+                  {(selectedBatch.lineItems || []).map((lineItem) => {
+                    const isExpanded = expandedLineItems.has(lineItem.id);
+                    const attachments = lineItem.expense.attachments || [];
+                    const hasReceipt = !!lineItem.expense.receiptUrl || attachments.length > 0;
+                    const isBilled = lineItem.expense.billedFlag;
+                    const clientPaid = !!lineItem.expense.clientPaidAt;
+                    return (
+                    <Fragment key={lineItem.id}>
+                    <TableRow className="cursor-pointer" onClick={() => {
+                      setExpandedLineItems(prev => {
+                        const next = new Set(prev);
+                        if (next.has(lineItem.id)) next.delete(lineItem.id);
+                        else next.add(lineItem.id);
+                        return next;
+                      });
+                    }}>
+                      <TableCell className="px-2">
+                        {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">{format(new Date(lineItem.expense.date), 'MMM d, yyyy')}</TableCell>
                       <TableCell>
                         <span className="text-xs">{lineItem.expense.project.client.name}</span>
@@ -437,7 +457,7 @@ export default function ReimbursementBatches() {
                       </TableCell>
                       <TableCell>{getLineItemStatusBadge(lineItem.status)}</TableCell>
                       {isFinance && selectedBatch.status === 'pending' && (
-                        <TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1">
                             <TooltipProvider>
                               <Tooltip>
@@ -484,7 +504,7 @@ export default function ReimbursementBatches() {
                           </div>
                         </TableCell>
                       )}
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         {isFinance && selectedBatch.status === 'pending' ? (
                           <Input
                             placeholder="Note..."
@@ -499,10 +519,86 @@ export default function ReimbursementBatches() {
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    {isExpanded && (
+                      <TableRow key={`${lineItem.id}-detail`} className="bg-muted/30 hover:bg-muted/30">
+                        <TableCell></TableCell>
+                        <TableCell colSpan={isFinance && selectedBatch.status === 'pending' ? 8 : 7}>
+                          <div className="py-2 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                  <Paperclip className="h-3 w-3" /> Receipts
+                                </p>
+                                {hasReceipt ? (
+                                  <div className="space-y-1">
+                                    {lineItem.expense.receiptUrl && (
+                                      <a href={lineItem.expense.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                        <ExternalLink className="h-3 w-3" /> Receipt
+                                      </a>
+                                    )}
+                                    {attachments.map((att) => (
+                                      <a key={att.id} href={att.webUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                                        <ExternalLink className="h-3 w-3" /> {att.fileName}
+                                      </a>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No receipts attached</p>
+                                )}
+                              </div>
+
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                  <FileText className="h-3 w-3" /> Invoice Status
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  {isBilled ? (
+                                    <Badge variant="default" className="text-xs">Billed to Client</Badge>
+                                  ) : (
+                                    <Badge variant="secondary" className="text-xs">Not Yet Billed</Badge>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                                  <DollarSign className="h-3 w-3" /> Client Payment
+                                </p>
+                                {clientPaid ? (
+                                  <Badge variant="default" className="text-xs">
+                                    Paid {lineItem.expense.clientPaidAt && format(new Date(lineItem.expense.clientPaidAt), 'MMM d, yyyy')}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary" className="text-xs">Not Paid</Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {lineItem.expense.vendor && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">Vendor</p>
+                                <p className="text-sm">{lineItem.expense.vendor}</p>
+                              </div>
+                            )}
+
+                            {lineItem.status === 'declined' && (
+                              <div className="p-2 bg-destructive/10 rounded text-sm">
+                                <p className="font-medium text-destructive">Declined</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  This expense will be released and can be included in a future reimbursement request once this batch is processed.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </Fragment>
+                    );
+                  })}
                   {selectedBatch.lineItems && selectedBatch.lineItems.length > 0 && (
                     <TableRow className="font-semibold bg-muted/50">
-                      <TableCell colSpan={4} className="text-right">
+                      <TableCell colSpan={5} className="text-right">
                         {selectedBatch.status === 'pending' ? 'Total (pending review):' : 'Approved Total:'}
                       </TableCell>
                       <TableCell className="text-right">

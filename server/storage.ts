@@ -445,7 +445,7 @@ export interface IStorage {
     requester?: User;
     requestedForUser?: User;
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];
-    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client } }; reviewer?: User })[];
+    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client }; attachments: ExpenseAttachment[] }; reviewer?: User })[];
   }) | undefined>;
   createReimbursementBatch(batch: InsertReimbursementBatch, expenseIds: string[]): Promise<ReimbursementBatch>;
   updateReimbursementBatch(id: string, batch: Partial<InsertReimbursementBatch>): Promise<ReimbursementBatch>;
@@ -4478,7 +4478,7 @@ export class DatabaseStorage implements IStorage {
     requester?: User;
     requestedForUser?: User;
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];
-    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client } }; reviewer?: User })[];
+    lineItems: (ReimbursementLineItem & { expense: Expense & { person: User; project: Project & { client: Client }; attachments: ExpenseAttachment[] }; reviewer?: User })[];
   }) | undefined> {
     const [batch] = await db.select()
       .from(reimbursementBatches)
@@ -4506,6 +4506,16 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(usersReviewer, eq(reimbursementLineItems.reviewedBy, usersReviewer.id))
       .where(eq(reimbursementLineItems.batchId, id));
 
+    const lineExpenseIds = lineItemResults.map(row => row.expenses.id);
+    const lineAttachments = lineExpenseIds.length > 0
+      ? await db.select().from(expenseAttachments).where(inArray(expenseAttachments.expenseId, lineExpenseIds))
+      : [];
+    const attachmentsByExpense = lineAttachments.reduce((acc, att) => {
+      if (!acc[att.expenseId]) acc[att.expenseId] = [];
+      acc[att.expenseId].push(att);
+      return acc;
+    }, {} as Record<string, ExpenseAttachment[]>);
+
     return {
       ...batch.reimbursement_batches,
       approver: batch.users_approver || undefined,
@@ -4529,6 +4539,7 @@ export class DatabaseStorage implements IStorage {
             ...row.projects,
             client: row.clients,
           },
+          attachments: attachmentsByExpense[row.expenses.id] || [],
         },
         reviewer: row.users_reviewer || undefined,
       })),
