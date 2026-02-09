@@ -197,7 +197,7 @@ export function Sidebar() {
               <SidebarItem href="/time" icon={<Clock />} label="Time" />
               <SidebarItem href="/expenses" icon={<Receipt />} label="Expenses" />
               <SidebarItem href="/expense-reports" icon={<FileText />} label="Expense Reports" />
-              <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="My Reimbursements" />
+              <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" />
               <SidebarItem href="/my-projects" icon={<FolderOpen />} label="My Projects" />
             </CollapsibleSection>
             
