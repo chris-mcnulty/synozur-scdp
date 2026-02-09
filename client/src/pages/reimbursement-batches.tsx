@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -60,12 +61,16 @@ export default function ReimbursementBatches() {
   const queryClient = useQueryClient();
   const { user, hasAnyRole } = useAuth();
 
+  const [location] = useLocation();
+  const isPersonalView = location.startsWith('/my-reimbursements');
+
   const isPrivileged = hasAnyRole(["admin", "billing-admin"]);
   const isFinance = hasAnyRole(["admin", "billing-admin"]);
   const canViewAll = hasAnyRole(["admin", "billing-admin", "executive"]);
 
+  const batchesUrl = isPersonalView ? "/api/reimbursement-batches?mine=true" : "/api/reimbursement-batches";
   const { data: batches = [], isLoading } = useQuery<ReimbursementBatch[]>({
-    queryKey: ["/api/reimbursement-batches"],
+    queryKey: [batchesUrl],
   });
 
   const { data: availableExpenses = [] } = useQuery<(Expense & { person: UserType; project: Project & { client: Client } })[]>({
@@ -95,6 +100,11 @@ export default function ReimbursementBatches() {
     enabled: isPrivileged && showCreateDialog,
   });
 
+  const invalidateBatches = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches?mine=true"] });
+  };
+
   const pendingBatches = batches.filter(b => b.status === 'pending');
   const underReviewBatches = batches.filter(b => b.status === 'under_review');
   const processedBatches = batches.filter(b => b.status === 'processed');
@@ -111,7 +121,7 @@ export default function ReimbursementBatches() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
+      invalidateBatches();
       queryClient.invalidateQueries({ queryKey: ["/api/expenses/available-for-reimbursement"] });
       setShowCreateDialog(false);
       setSelectedExpenseIds(new Set());
@@ -131,7 +141,7 @@ export default function ReimbursementBatches() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
+      invalidateBatches();
       if (selectedBatch) {
         refreshBatchDetail(selectedBatch.id);
       }
@@ -150,7 +160,7 @@ export default function ReimbursementBatches() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
+      invalidateBatches();
       setShowProcessDialog(false);
       setShowDetailView(false);
       setPaymentRef("");
@@ -168,7 +178,7 @@ export default function ReimbursementBatches() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
+      invalidateBatches();
       queryClient.invalidateQueries({ queryKey: ["/api/expenses/available-for-reimbursement"] });
       setShowDetailView(false);
       toast({ title: "Success", description: "Reimbursement request deleted" });

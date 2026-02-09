@@ -15331,7 +15331,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // GET /api/reimbursement-batches - List reimbursement batches
   app.get("/api/reimbursement-batches", requireAuth, async (req, res) => {
     try {
-      const { status, startDate, endDate } = req.query as Record<string, string>;
+      const { status, startDate, endDate, mine } = req.query as Record<string, string>;
       const user = req.user!;
       const isPrivileged = ['admin', 'billing-admin', 'executive'].includes(user.role || '');
 
@@ -15340,7 +15340,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
       if (user.primaryTenantId) filters.tenantId = user.primaryTenantId;
-      if (!isPrivileged) {
+      if (!isPrivileged || mine === 'true') {
         filters.requestedForUserId = user.id;
       }
 
