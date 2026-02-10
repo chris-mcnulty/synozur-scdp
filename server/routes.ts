@@ -12482,10 +12482,11 @@ export async function registerRoutes(app: Express): Promise<void> {
           allStages = Array.from(stagesSet);
           allWorkstreams = Array.from(workstreamsSet);
 
-          const projectResources = await storage.getProjectResources(projectId);
-          for (const pr of projectResources) {
-            const user = await storage.getUser(pr.userId);
-            if (user?.name) allResources.push(user.name);
+          const projectEngagementsList = await storage.getProjectEngagements(projectId);
+          for (const pe of projectEngagementsList) {
+            if ((pe as any).user?.name) {
+              allResources.push((pe as any).user.name);
+            }
           }
         }
       }
