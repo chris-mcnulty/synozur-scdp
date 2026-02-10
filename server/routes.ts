@@ -12432,33 +12432,47 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/time-entries/template", requireAuth, async (req, res) => {
     try {
       const xlsx = await import("xlsx");
-      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
+      const projectId = req.query.projectId ? String(req.query.projectId) : null;
       const tenantId = req.user?.tenantId;
 
-      // Get organization vocabulary for column headers
       const orgVocabulary = await storage.getOrganizationVocabulary();
-      const vocabularyForTemplate = {
-        stage: orgVocabulary?.stage || 'Stage',
-        workstream: orgVocabulary?.workstream || 'Workstream'
-      };
+      const stageLabel = orgVocabulary?.stage || 'Stage';
+      const workstreamLabel = orgVocabulary?.workstream || 'Workstream';
 
-      // Default example data
       let projectName = "Example Project";
-      let exampleStages: string[] = ["Development", "QA"];
-      let exampleWorkstreams: string[] = ["Frontend", "Testing"];
-      let exampleResources: string[] = ["John Smith", "Jane Doe"];
+      let allStages: string[] = [];
+      let allWorkstreams: string[] = [];
+      let allResources: string[] = [];
+      let allEpics: string[] = [];
+      let isProjectSpecific = false;
 
-      // If a project ID is provided, get actual project data
       if (projectId) {
         const project = await storage.getProject(projectId);
         if (project) {
-          projectName = project.name;
-          
-          // Get estimate lines for this project to find unique stages and workstreams
-          const estimates = await storage.getEstimates(projectId);
+          isProjectSpecific = true;
+          projectName = project.name.trim();
+
           const stagesSet = new Set<string>();
           const workstreamsSet = new Set<string>();
-          
+
+          const epics = await storage.getProjectEpics(projectId);
+          for (const epic of epics) {
+            allEpics.push(epic.name);
+            const stages = await storage.getProjectStages(epic.id);
+            for (const stage of stages) {
+              stagesSet.add(stage.name);
+            }
+          }
+
+          const projectWorkstreamsList = await db.select()
+            .from(projectWorkstreams)
+            .where(eq(projectWorkstreams.projectId, projectId))
+            .orderBy(projectWorkstreams.order);
+          for (const ws of projectWorkstreamsList) {
+            workstreamsSet.add(ws.name);
+          }
+
+          const estimates = await storage.getEstimates(projectId);
           for (const estimate of estimates) {
             const lines = await storage.getEstimateLines(estimate.id);
             for (const line of lines) {
@@ -12466,76 +12480,99 @@ export async function registerRoutes(app: Express): Promise<void> {
               if (line.workstream) workstreamsSet.add(line.workstream);
             }
           }
-          
-          if (stagesSet.size > 0) exampleStages = Array.from(stagesSet).slice(0, 5);
-          if (workstreamsSet.size > 0) exampleWorkstreams = Array.from(workstreamsSet).slice(0, 5);
-          
-          // Get project resources for name suggestions
+
+          allStages = Array.from(stagesSet);
+          allWorkstreams = Array.from(workstreamsSet);
+
           const projectResources = await storage.getProjectResources(projectId);
-          if (projectResources.length > 0) {
-            const resourceNames: string[] = [];
-            for (const pr of projectResources) {
-              const user = await storage.getUser(pr.userId);
-              if (user?.name) resourceNames.push(user.name);
-            }
-            if (resourceNames.length > 0) exampleResources = resourceNames.slice(0, 5);
+          for (const pr of projectResources) {
+            const user = await storage.getUser(pr.userId);
+            if (user?.name) allResources.push(user.name);
           }
         }
       }
 
-      // Build example rows using the stages and workstreams
+      if (allStages.length === 0) allStages = ["Development", "QA"];
+      if (allWorkstreams.length === 0) allWorkstreams = ["Frontend", "Testing"];
+      if (allResources.length === 0) allResources = ["John Smith", "Jane Doe"];
+
       const exampleRows: string[][] = [];
       const today = new Date();
-      for (let i = 0; i < Math.max(2, Math.min(5, exampleStages.length)); i++) {
+      const rowCount = Math.max(2, Math.min(5, allStages.length));
+      for (let i = 0; i < rowCount; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
         const dateStr = date.toISOString().split('T')[0];
         exampleRows.push([
           dateStr,
           projectName,
-          exampleResources[i % exampleResources.length] || "Resource Name",
-          `Example: Work related to ${exampleStages[i % exampleStages.length] || 'development'}`,
+          allResources[i % allResources.length] || "Resource Name",
+          `Example: Work related to ${allStages[i % allStages.length] || 'development'}`,
           "8",
           "TRUE",
-          exampleStages[i % exampleStages.length] || "",
-          exampleWorkstreams[i % exampleWorkstreams.length] || "",
+          allStages[i % allStages.length] || "",
+          allWorkstreams[i % allWorkstreams.length] || "",
           ""
         ]);
       }
 
       const worksheetData = [
-        ["Time Entries Import Template"],
-        ["Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact."],
-        ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", vocabularyForTemplate.stage, vocabularyForTemplate.workstream, "Milestone"],
+        [isProjectSpecific ? `Time Entries Import Template — ${projectName}` : "Time Entries Import Template"],
+        [`Instructions: Fill in the rows below with time entry details. Date format: YYYY-MM-DD. Resource Name should match existing users or will be flagged as Unknown. Keep the header row intact.${isProjectSpecific ? ` See the "Reference Data" sheet for valid ${stageLabel}s, ${workstreamLabel}s, and resources.` : ''}`],
+        ["Date", "Project Name", "Resource Name", "Description", "Hours", "Billable", stageLabel, workstreamLabel, "Milestone"],
         ...exampleRows,
-        ["", "", "", "", "", "TRUE", "", "", ""],
       ];
 
-      // Add more empty rows for user input
       for (let i = 0; i < 50; i++) {
-        worksheetData.push(["", "", "", "", "", "TRUE", "", "", ""]);
+        worksheetData.push(["", projectName, "", "", "", "TRUE", "", "", ""]);
       }
 
       const ws = xlsx.utils.aoa_to_sheet(worksheetData);
       ws['!cols'] = [
-        { wch: 12 }, // Date
-        { wch: 25 }, // Project Name
-        { wch: 25 }, // Resource Name
-        { wch: 40 }, // Description
-        { wch: 8 },  // Hours
-        { wch: 10 }, // Billable
-        { wch: 15 }, // Stage
-        { wch: 15 }, // Workstream
-        { wch: 20 }, // Milestone
+        { wch: 12 },
+        { wch: 30 },
+        { wch: 25 },
+        { wch: 40 },
+        { wch: 8 },
+        { wch: 10 },
+        { wch: 20 },
+        { wch: 25 },
+        { wch: 20 },
       ];
 
       const wb = xlsx.utils.book_new();
       xlsx.utils.book_append_sheet(wb, ws, "Time Entry Template");
 
+      if (isProjectSpecific) {
+        const maxRows = Math.max(allEpics.length, allStages.length, allWorkstreams.length, allResources.length, 1);
+        const refData: string[][] = [
+          ["Epics / Phases", `${stageLabel}s`, `${workstreamLabel}s`, "Resources"],
+        ];
+        for (let i = 0; i < maxRows; i++) {
+          refData.push([
+            allEpics[i] || "",
+            allStages[i] || "",
+            allWorkstreams[i] || "",
+            allResources[i] || "",
+          ]);
+        }
+        const refWs = xlsx.utils.aoa_to_sheet(refData);
+        refWs['!cols'] = [
+          { wch: 25 },
+          { wch: 25 },
+          { wch: 25 },
+          { wch: 25 },
+        ];
+        xlsx.utils.book_append_sheet(wb, refWs, "Reference Data");
+      }
+
       const buffer = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 
+      const filename = isProjectSpecific
+        ? `time-entry-template-${projectName.replace(/[^a-z0-9]/gi, '_').substring(0, 40)}.xlsx`
+        : "time-entry-template.xlsx";
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", "attachment; filename=\"time-entry-template.xlsx\"");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(buffer);
     } catch (error) {
       console.error("Error generating template:", error);
