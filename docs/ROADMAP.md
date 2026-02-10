@@ -185,6 +185,81 @@ The following major features have been delivered and are live in production. See
 
 ---
 
+### 📋 Priority: Enhanced Status Reporting
+
+**Status:** 📋 Planned  
+**Target Completion:** Q1 2026  
+**Value Proposition:** Transform existing project activity data into polished, AI-generated status reports that can be viewed, shared, and delivered on a recurring schedule — reducing the manual effort of writing weekly and monthly project updates.
+
+#### Phase 1: Interactive Status Report Generation (Initial Release)
+
+**On-Screen Report Viewer**
+- New dialog/modal accessible from the project detail page
+- Displays the generated text summary of project activity for a selected time period
+- Supports weekly and monthly period selection
+- Copy-to-clipboard button for easy pasting into emails or documents
+- Download as plain text or formatted document
+
+**AI-Powered Report Processing**
+- Option to send the raw activity data through AI to produce a standardized narrative summary
+- Configurable summary style (executive brief, detailed update, client-facing)
+- Editable output — PMs can review and tweak the AI-generated text before sharing
+- Consistent formatting across all projects for uniform reporting
+
+**Export & Sharing**
+- Download generated report as PDF or Word document
+- Email report directly from the dialog (leveraging existing email infrastructure)
+
+#### Phase 2: Automated Scheduling (Future Enhancement)
+
+**Scheduled Report Delivery**
+- Project-level setting to enable automatic weekly or monthly reports
+- Configurable delivery day and recipients (PM, stakeholders, client contacts)
+- Reports auto-generated and emailed on schedule
+- Report history archive accessible from project detail page
+- Admin dashboard for monitoring scheduled report delivery across all projects
+
+---
+
+### 📒 Priority: RAIDD Log
+
+**Status:** 📋 Planned  
+**Target Completion:** Q1 2026  
+**Value Proposition:** Provide project managers with a structured, trackable register for Risks, Assumptions, Issues, Dependencies, and Decisions (RAIDD) — improving project governance, accountability, and visibility into items that can impact delivery.
+
+#### Core Features
+
+**RAIDD Register**
+- Dedicated RAIDD tab within the project detail page
+- Entry types: Risk, Assumption, Issue, Dependency, Decision
+- Fields per entry: title, description, type, status, priority/severity, owner (assigned user), due date, resolution notes, date raised, date resolved
+- Filterable and sortable table view by type, status, priority, owner, or due date
+- Status workflow: Open → In Progress → Mitigated/Resolved/Closed
+- Color-coded severity indicators (Critical, High, Medium, Low)
+
+**Assignment & Tracking**
+- Assign each item to a project team member
+- Due date tracking with overdue highlighting
+- Activity history showing status changes and updates
+- Bulk status update support
+
+**Export & Reporting**
+- Export full RAIDD log as Excel or CSV
+- Filtered export (e.g., only open risks, only decisions)
+- Summary view showing counts by type and status
+
+**AI Integration**
+- AI-generated summary of open risks and issues for inclusion in status reports
+- Option to pull RAIDD highlights into the Enhanced Status Report (above)
+
+#### Future Enhancements
+- Link RAIDD items to specific project milestones or stages
+- Notification triggers when items approach or pass due dates (integrates with Notifications System)
+- Cross-project RAIDD dashboard for portfolio-level risk visibility
+- RAIDD templates with pre-populated common risks by project type
+
+---
+
 ## Near-Term Priorities (Q2 2026)
 
 ### 🤝 Priority: Microsoft 365 Teams Integration
@@ -579,6 +654,8 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 ## Recent Roadmap Updates
 
 **February 10, 2026**
+- Added Enhanced Status Reporting to Current Focus (Q1 2026) — AI-powered project status report generation with on-screen viewer, copy/download/email, and future automated scheduling
+- Added RAIDD Log to Current Focus (Q1 2026) — structured Risk, Assumption, Issue, Dependency, Decision tracking with assignments, due dates, export, and AI integration into status reports
 - Added Codebase Modularization plan to Medium-Term Goals (Q3-Q4 2026)
 - Three-phase plan: Route extraction → Storage layer extraction → Middleware/utilities
 - 13 domain modules identified for routes, 8 for storage
