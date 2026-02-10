@@ -320,6 +320,81 @@ The following major features have been delivered and are live in production. See
 
 ---
 
+### 🏗️ Codebase Modularization (Routes & Storage)
+
+**Status:** 🔮 Future  
+**Target Timeframe:** Q3-Q4 2026  
+**Motivation:** The core backend files `routes.ts` (20,500+ lines, ~396 endpoints) and `storage.ts` (11,600+ lines) have grown to a size that increases maintenance risk, slows developer tooling, and makes isolated testing difficult. Splitting them into domain-focused modules will improve maintainability, reduce merge conflicts, and enable faster development.
+
+#### Current State
+- `server/routes.ts` — 20,500+ lines containing all API endpoints
+- `server/storage.ts` — 11,600+ lines containing all database operations
+- `server/routes/platform.ts` — Already extracted (proof of pattern)
+
+#### Proposed Module Structure
+
+**Phase 1: Route Extraction (Lower Risk)**
+
+Split `server/routes.ts` into domain-focused route files under `server/routes/`:
+
+| Module | Endpoints | Description |
+|--------|-----------|-------------|
+| `projects.ts` | ~64 | Projects, allocations, assignments, SOWs, change orders, portfolio, capacity, dashboard |
+| `estimates.ts` | ~47 | Estimates, epics, stages, line items, milestones |
+| `invoicing.ts` | ~50 | Invoice batches, invoice lines, adjustments, billing, payment milestones, reimbursement batches |
+| `expenses.ts` | ~60 | Expenses, expense reports, pending receipts, per diem, OCONUS, airports |
+| `documents.ts` | ~40 | SharePoint, file management, SharePoint Embedded containers |
+| `users.ts` | ~26 | Users, roles, rates, authentication |
+| `admin.ts` | ~40 | Scheduled jobs, system settings, vocabulary, changelog |
+| `planner.ts` | ~16 | Microsoft Planner integration |
+| `time-entries.ts` | ~9 | Time entry CRUD and export |
+| `tenant.ts` | ~10 | Tenant settings, email branding |
+| `ai.ts` | ~7 | AI chat and narrative generation |
+| `reports.ts` | ~6 | Financial reporting |
+| `platform.ts` | Existing | Platform admin (already extracted) |
+
+Each module exports a function `registerXxxRoutes(app, storage)` that the main `routes.ts` calls, keeping the entry point as a thin orchestrator.
+
+**Phase 2: Storage Layer Extraction (Higher Risk)**
+
+Split `server/storage.ts` into domain-focused storage modules under `server/storage/`:
+
+| Module | Description |
+|--------|-------------|
+| `projects.ts` | Project, allocation, and assignment queries |
+| `estimates.ts` | Estimate structure and line item queries |
+| `invoicing.ts` | Invoice, batch, and payment milestone queries |
+| `expenses.ts` | Expense, per diem, and receipt queries |
+| `documents.ts` | File and container queries |
+| `users.ts` | User, role, and rate queries |
+| `admin.ts` | Settings, vocabulary, and job queries |
+| `time-entries.ts` | Time entry queries |
+| `index.ts` | Re-exports all modules, maintains `IStorage` interface |
+
+The `IStorage` interface remains unified but its implementation is composed from domain modules.
+
+**Phase 3: Shared Middleware & Utilities**
+
+- Extract common middleware (auth, role checks, tenant scoping) into `server/middleware/`
+- Consolidate shared utilities (pagination, error handling, validation) into `server/utils/`
+
+#### Implementation Principles
+- **Zero functionality changes** — Pure refactor, no new features or API changes
+- **Incremental extraction** — One domain at a time, fully tested before moving to the next
+- **Backward compatible** — All existing API contracts and response shapes remain identical
+- **Route-first** — Extract routes before storage, since routes are the higher-risk surface
+- **Test after each domain** — Verify all endpoints for the extracted domain work correctly before proceeding
+
+#### Risks & Mitigations
+| Risk | Mitigation |
+|------|------------|
+| Breaking existing endpoints | Extract one domain at a time with full API testing |
+| Circular dependencies | Clear dependency direction: routes → storage → schema |
+| Shared state (middleware, auth) | Extract middleware first as shared utilities |
+| Large merge conflicts during transition | Complete each domain extraction in a single focused session |
+
+---
+
 ### 🎯 Advanced Resource Management Enhancements
 
 **Status:** 🔮 Future  
@@ -503,6 +578,12 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**February 10, 2026**
+- Added Codebase Modularization plan to Medium-Term Goals (Q3-Q4 2026)
+- Three-phase plan: Route extraction → Storage layer extraction → Middleware/utilities
+- 13 domain modules identified for routes, 8 for storage
+- Follows existing `platform.ts` extraction pattern
+
 **February 8, 2026**
 - Moved completed features to new "Recently Completed" section
 - Multi-Tenancy, Retainers, Resource Management, Per Diem, Financial Reporting, Mobile Optimization, AI Features, and Planner Integration all marked as complete
@@ -527,6 +608,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: February 8, 2026*  
+*Last Updated: February 10, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
