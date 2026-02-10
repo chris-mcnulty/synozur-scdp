@@ -24,6 +24,7 @@ const tenantSchema = z.object({
   servicePlanId: z.string().optional().nullable(),
   enforceSso: z.boolean().optional(),
   allowLocalAuth: z.boolean().optional(),
+  defaultTimezone: z.string().optional().nullable(),
 });
 
 // Tenant settings schema (for tenant admins to update their own org settings)
@@ -128,6 +129,7 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         servicePlanId: data.servicePlanId,
         enforceSso: data.enforceSso,
         allowLocalAuth: data.allowLocalAuth ?? true,
+        defaultTimezone: data.defaultTimezone || 'America/New_York',
       }).returning();
       res.status(201).json(tenant);
     } catch (error) {

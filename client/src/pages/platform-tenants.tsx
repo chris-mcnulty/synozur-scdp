@@ -16,8 +16,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Edit2, Crown, Users, Calendar, Building2 } from "lucide-react";
+import { Plus, Edit2, Crown, Users, Calendar, Building2, Globe } from "lucide-react";
 import type { Tenant, ServicePlan } from "@shared/schema";
+
+const US_TIMEZONES = [
+  { value: "America/New_York", label: "Eastern (ET)" },
+  { value: "America/Chicago", label: "Central (CT)" },
+  { value: "America/Denver", label: "Mountain (MT)" },
+  { value: "America/Los_Angeles", label: "Pacific (PT)" },
+  { value: "America/Anchorage", label: "Alaska (AKT)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (HT)" },
+  { value: "America/Phoenix", label: "Arizona (no DST)" },
+  { value: "America/Toronto", label: "Eastern Canada" },
+  { value: "America/Vancouver", label: "Pacific Canada" },
+  { value: "Europe/London", label: "UK (GMT/BST)" },
+  { value: "Europe/Berlin", label: "Central Europe (CET)" },
+  { value: "UTC", label: "UTC" },
+];
 
 const tenantFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -27,6 +42,7 @@ const tenantFormSchema = z.object({
   servicePlanId: z.string().optional(),
   enforceSso: z.boolean().default(false),
   allowLocalAuth: z.boolean().default(true),
+  defaultTimezone: z.string().default("America/New_York"),
 });
 
 type TenantFormData = z.infer<typeof tenantFormSchema>;
@@ -55,6 +71,7 @@ export default function PlatformTenants() {
       servicePlanId: "",
       enforceSso: false,
       allowLocalAuth: true,
+      defaultTimezone: "America/New_York",
     },
   });
 
@@ -119,6 +136,7 @@ export default function PlatformTenants() {
       servicePlanId: tenant.servicePlanId || "",
       enforceSso: tenant.enforceSso || false,
       allowLocalAuth: tenant.allowLocalAuth ?? true,
+      defaultTimezone: tenant.defaultTimezone || "America/New_York",
     });
   };
 
@@ -246,6 +264,31 @@ export default function PlatformTenants() {
                             ))}
                           </SelectContent>
                         </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="defaultTimezone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Timezone</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || "America/New_York"}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select timezone" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {US_TIMEZONES.map(tz => (
+                              <SelectItem key={tz.value} value={tz.value}>
+                                {tz.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>Used for invoice dates and reports</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -450,6 +493,30 @@ export default function PlatformTenants() {
                                           {servicePlans?.map(plan => (
                                             <SelectItem key={plan.id} value={plan.id}>
                                               {plan.displayName || plan.internalName}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                                <FormField
+                                  control={form.control}
+                                  name="defaultTimezone"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>Timezone</FormLabel>
+                                      <Select onValueChange={field.onChange} value={field.value || "America/New_York"}>
+                                        <FormControl>
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Select timezone" />
+                                          </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                          {US_TIMEZONES.map(tz => (
+                                            <SelectItem key={tz.value} value={tz.value}>
+                                              {tz.label}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
