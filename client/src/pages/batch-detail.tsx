@@ -953,11 +953,12 @@ export default function BatchDetail() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
       toast({ 
         title: "Batch deleted",
         description: "The invoice batch has been successfully deleted"
       });
-      // Navigate back to billing page
       navigate('/billing');
     },
     onError: (error: any) => {
