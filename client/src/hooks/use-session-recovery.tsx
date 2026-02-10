@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { queryClient, setSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -7,36 +7,34 @@ export function useSessionRecovery() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [isRecovering, setIsRecovering] = useState(false);
+  const isRecoveringRef = useRef(false);
   
   useEffect(() => {
-    // Listen for 401 errors globally
     const handleUnauthorized = (event: CustomEvent) => {
-      if (!isRecovering) {
+      if (!isRecoveringRef.current) {
+        isRecoveringRef.current = true;
         setIsRecovering(true);
         handleSessionLoss();
       }
     };
     
     const handleSessionLoss = async () => {
-      // Clear cached data
+      const savedSessionId = localStorage.getItem('sessionId');
+
       queryClient.clear();
-      setSessionId(null);
-      
-      // Check if we have a stored session that might be recoverable
-      const storedSessionId = localStorage.getItem('sessionId');
-      if (storedSessionId) {
+
+      if (savedSessionId) {
         try {
-          // Try to validate the stored session
-          const response = await fetch('/api/auth/user', {
+          const fetchFn = (window as any)._originalFetch || window.fetch;
+          const response = await fetchFn('/api/auth/user', {
             headers: {
-              'x-session-id': storedSessionId
+              'x-session-id': savedSessionId
             }
           });
           
           if (response.ok) {
-            // Session is still valid, restore it
             const userData = await response.json();
-            setSessionId(storedSessionId);
+            setSessionId(savedSessionId);
             queryClient.setQueryData(["/api/auth/user"], userData);
             
             toast({
@@ -44,7 +42,8 @@ export function useSessionRecovery() {
               description: "Your session has been recovered successfully.",
             });
             
-            // Reload to refresh the app state
+            isRecoveringRef.current = false;
+            setIsRecovering(false);
             window.location.reload();
             return;
           }
@@ -52,34 +51,38 @@ export function useSessionRecovery() {
           console.error("Failed to recover session:", error);
         }
       }
-      
-      // Session is not recoverable, redirect to login
+
+      setSessionId(null);
+
       toast({
         title: "Session Expired",
         description: "Please log in again to continue.",
         variant: "default",
       });
       
-      // Save the current location for redirect after login
       const currentPath = window.location.pathname;
       if (currentPath !== '/' && currentPath !== '/login') {
         sessionStorage.setItem('redirectAfterLogin', currentPath);
       }
       
       setLocation('/login');
+      isRecoveringRef.current = false;
       setIsRecovering(false);
     };
     
-    // Custom event for 401 errors
     window.addEventListener('unauthorized' as any, handleUnauthorized);
     
-    // Intercept fetch to detect 401s
     const originalFetch = window.fetch;
+    (window as any)._originalFetch = originalFetch;
+
     window.fetch = async (...args) => {
       const response = await originalFetch(...args);
       
       if (response.status === 401 && !window.location.pathname.includes('/login')) {
-        window.dispatchEvent(new CustomEvent('unauthorized'));
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url || '';
+        if (!url.includes('/api/auth/user')) {
+          window.dispatchEvent(new CustomEvent('unauthorized'));
+        }
       }
       
       return response;
@@ -88,16 +91,17 @@ export function useSessionRecovery() {
     return () => {
       window.removeEventListener('unauthorized' as any, handleUnauthorized);
       window.fetch = originalFetch;
+      delete (window as any)._originalFetch;
     };
-  }, [isRecovering, setLocation, toast]);
+  }, [setLocation, toast]);
   
-  // Periodic session validation (every 5 minutes)
   useEffect(() => {
     const validateSession = async () => {
       const sessionId = localStorage.getItem('sessionId');
       if (sessionId && !window.location.pathname.includes('/login')) {
         try {
-          const response = await fetch('/api/auth/user', {
+          const fetchFn = (window as any)._originalFetch || window.fetch;
+          const response = await fetchFn('/api/auth/user', {
             headers: {
               'x-session-id': sessionId
             }
@@ -112,10 +116,8 @@ export function useSessionRecovery() {
       }
     };
     
-    // Validate session every 5 minutes
     const interval = setInterval(validateSession, 5 * 60 * 1000);
     
-    // Also validate on visibility change (when tab becomes active)
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         validateSession();

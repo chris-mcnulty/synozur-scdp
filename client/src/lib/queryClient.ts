@@ -14,11 +14,6 @@ export const setSessionId = (id: string | null) => {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    if (res.status === 401) {
-      setSessionId(null);
-    }
-    
-    // Try to parse as JSON first, fall back to text
     let errorMessage: string;
     const contentType = res.headers.get("content-type");
     
@@ -27,7 +22,6 @@ async function throwIfResNotOk(res: Response) {
         const errorData = await res.json();
         errorMessage = errorData.message || errorData.error || JSON.stringify(errorData);
       } catch {
-        // If JSON parsing fails, fall back to text
         errorMessage = await res.text() || res.statusText;
       }
     } else {

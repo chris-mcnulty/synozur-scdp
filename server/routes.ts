@@ -12360,12 +12360,19 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Export time entries to Excel
-  app.get("/api/time-entries/export", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.get("/api/time-entries/export", requireAuth, async (req, res) => {
     try {
       const { personId, projectId, startDate, endDate } = req.query as Record<string, string>;
+      const userRole = req.user?.role;
+      const isManagerRole = ['admin', 'billing-admin', 'pm', 'executive'].includes(userRole || '');
+      const isPlatformAdmin = req.user?.platformRole === 'global_admin' || req.user?.platformRole === 'constellation_admin';
 
       const filters: any = {};
-      if (personId) filters.personId = personId;
+      if (isManagerRole || isPlatformAdmin) {
+        if (personId) filters.personId = personId;
+      } else {
+        filters.personId = req.user?.id;
+      }
       if (projectId) filters.projectId = projectId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
