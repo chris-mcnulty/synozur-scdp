@@ -16961,6 +16961,23 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Resync billed flags - admin-only endpoint to fix discrepancies between invoice lines and expense/time entry billed flags
+  app.post("/api/billing/resync-billed-flags", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const result = await storage.resyncBilledFlags();
+      res.json({
+        message: "Billed flags resync completed",
+        ...result
+      });
+    } catch (error: any) {
+      console.error("Error resyncing billed flags:", error);
+      res.status(500).json({ 
+        message: "Failed to resync billed flags", 
+        error: error.message 
+      });
+    }
+  });
+
   // Project billing summaries endpoint
   app.get("/api/billing/project-summaries", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
     try {

@@ -299,6 +299,30 @@ export default function Billing() {
     }
   });
 
+  const resyncBilledFlagsMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('/api/billing/resync-billed-flags', {
+        method: 'POST'
+      });
+    },
+    onSuccess: async (response: any) => {
+      const data = typeof response === 'object' ? response : await response;
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/unbilled-items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/billing/project-summaries'] });
+      toast({
+        title: "Billed flags resynced",
+        description: `${data.expensesSynced || 0} expenses and ${data.timeEntriesSynced || 0} time entries were corrected.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to resync billed flags",
+        description: error.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
+  });
+
   const handleDeleteBatch = (batch: InvoiceBatchData) => {
     if (batch.status === 'finalized') {
       toast({
@@ -919,6 +943,19 @@ export default function Billing() {
           </TabsContent>
 
           <TabsContent value="unbilled" className="space-y-4">
+            {user?.role === 'admin' && (
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => resyncBilledFlagsMutation.mutate()}
+                  disabled={resyncBilledFlagsMutation.isPending}
+                >
+                  <CheckCircle className="w-4 h-4 mr-1" />
+                  {resyncBilledFlagsMutation.isPending ? 'Resyncing...' : 'Resync Billed Flags'}
+                </Button>
+              </div>
+            )}
             <DetailedUnbilledItems />
           </TabsContent>
 

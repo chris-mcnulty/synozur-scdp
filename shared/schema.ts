@@ -1126,6 +1126,8 @@ export const invoiceLines = pgTable("invoice_lines", {
   originalCurrency: text("original_currency"), // Original currency of expense (USD, CAD, EUR, GBP)
   originalCurrencyAmount: decimal("original_currency_amount", { precision: 12, scale: 2 }), // Amount in original currency
   exchangeRate: decimal("exchange_rate", { precision: 12, scale: 6 }), // Exchange rate used for conversion
+  sourceExpenseId: varchar("source_expense_id").references(() => expenses.id), // Link back to source expense for traceability
+  sourceTimeEntryId: varchar("source_time_entry_id").references(() => timeEntries.id), // Link back to source time entry for traceability
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
@@ -1501,6 +1503,14 @@ export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
   sow: one(sows, {
     fields: [invoiceLines.sowId],
     references: [sows.id],
+  }),
+  sourceExpense: one(expenses, {
+    fields: [invoiceLines.sourceExpenseId],
+    references: [expenses.id],
+  }),
+  sourceTimeEntry: one(timeEntries, {
+    fields: [invoiceLines.sourceTimeEntryId],
+    references: [timeEntries.id],
   }),
 }));
 

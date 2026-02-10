@@ -528,6 +528,14 @@ export interface IStorage {
   }>;
   updateBatchAsOfDate(batchId: string, asOfDate: string, userId: string): Promise<InvoiceBatch>;
 
+  // Resync billed flags for expenses/time entries that are in finalized invoice batches
+  resyncBilledFlags(): Promise<{
+    expensesSynced: number;
+    timeEntriesSynced: number;
+    expensesAlreadyCorrect: number;
+    timeEntriesAlreadyCorrect: number;
+  }>;
+
   // Unbilled Items Detail
   getUnbilledItemsDetail(filters?: {
     personId?: string;
@@ -6568,7 +6576,8 @@ export class DatabaseStorage implements IStorage {
           quantity: timeEntry.hours,
           rate: rate.toString(),
           amount: amount.toString(),
-          description: `${user.name} - ${timeEntry.description || 'Time entry'} (${timeEntry.date})`
+          description: `${user.name} - ${timeEntry.description || 'Time entry'} (${timeEntry.date})`,
+          sourceTimeEntryId: timeEntry.id
         });
       }
       timeEntriesBilled = timeEntryIds.length;
@@ -6642,7 +6651,8 @@ export class DatabaseStorage implements IStorage {
           expenseCategory: expense.category || null, // Store expense category for reporting
           originalCurrency: expenseCurrency !== targetCurrency ? expenseCurrency : null,
           originalCurrencyAmount: expenseCurrency !== targetCurrency ? originalAmount.toString() : null,
-          exchangeRate: expenseCurrency !== targetCurrency ? exchangeRate.toString() : null
+          exchangeRate: expenseCurrency !== targetCurrency ? exchangeRate.toString() : null,
+          sourceExpenseId: expense.id
         });
       }
       expensesBilled = expenseIds.length;
@@ -6726,6 +6736,177 @@ export class DatabaseStorage implements IStorage {
                 (user.defaultBillingRate ? Number(user.defaultBillingRate) : null));
     
     return rate;
+  }
+
+  async resyncBilledFlags(): Promise<{
+    expensesSynced: number;
+    timeEntriesSynced: number;
+    expensesAlreadyCorrect: number;
+    timeEntriesAlreadyCorrect: number;
+  }> {
+    let expensesSynced = 0;
+    let timeEntriesSynced = 0;
+    let expensesAlreadyCorrect = 0;
+    let timeEntriesAlreadyCorrect = 0;
+
+    // Step 1: Fix expenses/time entries that have sourceExpenseId/sourceTimeEntryId in invoice lines of finalized batches
+    const finalizedLines = await db.select({
+      sourceExpenseId: invoiceLines.sourceExpenseId,
+      sourceTimeEntryId: invoiceLines.sourceTimeEntryId,
+      batchId: invoiceLines.batchId,
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(eq(invoiceBatches.status, 'finalized'));
+
+    const expenseIdsToMark = new Set<string>();
+    const timeEntryIdsToMark = new Set<string>();
+
+    for (const line of finalizedLines) {
+      if (line.sourceExpenseId) expenseIdsToMark.add(line.sourceExpenseId);
+      if (line.sourceTimeEntryId) timeEntryIdsToMark.add(line.sourceTimeEntryId);
+    }
+
+    // Step 2: For batches without source IDs, try to match by description pattern
+    // Get all expense invoice lines from finalized batches that don't have sourceExpenseId
+    const unmatchedExpenseLines = await db.select({
+      lineId: invoiceLines.id,
+      batchId: invoiceLines.batchId,
+      projectId: invoiceLines.projectId,
+      description: invoiceLines.description,
+      amount: invoiceLines.amount,
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(and(
+      eq(invoiceBatches.status, 'finalized'),
+      eq(invoiceLines.type, 'expense'),
+      isNull(invoiceLines.sourceExpenseId)
+    ));
+
+    // For each unmatched line, try to find the matching expense by amount + project + date in description
+    for (const line of unmatchedExpenseLines) {
+      if (!line.description || !line.projectId) continue;
+      
+      // Extract date from description (format: "(YYYY-MM-DD)" at end)
+      const dateMatch = line.description.match(/\((\d{4}-\d{2}-\d{2})\)\s*$/);
+      if (!dateMatch) continue;
+      const lineDate = dateMatch[1];
+      const lineAmount = Number(line.amount);
+
+      // Find matching expenses
+      const matchingExpenses = await db.select({ id: expenses.id, billedFlag: expenses.billedFlag })
+        .from(expenses)
+        .where(and(
+          eq(expenses.projectId, line.projectId),
+          eq(expenses.date, lineDate),
+          eq(expenses.billable, true),
+          eq(expenses.approvalStatus, 'approved'),
+          sql`ABS(CAST(${expenses.amount} AS NUMERIC) - ${lineAmount}) < 0.02`
+        ));
+
+      if (matchingExpenses.length === 1) {
+        expenseIdsToMark.add(matchingExpenses[0].id);
+        // Also backfill the sourceExpenseId on the invoice line
+        await db.update(invoiceLines)
+          .set({ sourceExpenseId: matchingExpenses[0].id })
+          .where(eq(invoiceLines.id, line.lineId));
+      }
+    }
+
+    // Similarly for time entries without sourceTimeEntryId
+    const unmatchedTimeLines = await db.select({
+      lineId: invoiceLines.id,
+      batchId: invoiceLines.batchId,
+      projectId: invoiceLines.projectId,
+      description: invoiceLines.description,
+      quantity: invoiceLines.quantity,
+      rate: invoiceLines.rate,
+    })
+    .from(invoiceLines)
+    .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+    .where(and(
+      eq(invoiceBatches.status, 'finalized'),
+      eq(invoiceLines.type, 'time'),
+      isNull(invoiceLines.sourceTimeEntryId)
+    ));
+
+    for (const line of unmatchedTimeLines) {
+      if (!line.description || !line.projectId) continue;
+      
+      const dateMatch = line.description.match(/\((\d{4}-\d{2}-\d{2})\)\s*$/);
+      if (!dateMatch) continue;
+      const lineDate = dateMatch[1];
+      const lineHours = Number(line.quantity);
+
+      const matchingEntries = await db.select({ id: timeEntries.id, billedFlag: timeEntries.billedFlag })
+        .from(timeEntries)
+        .where(and(
+          eq(timeEntries.projectId, line.projectId),
+          eq(timeEntries.date, lineDate),
+          eq(timeEntries.billable, true),
+          sql`ABS(CAST(${timeEntries.hours} AS NUMERIC) - ${lineHours}) < 0.01`
+        ));
+
+      if (matchingEntries.length === 1) {
+        timeEntryIdsToMark.add(matchingEntries[0].id);
+        await db.update(invoiceLines)
+          .set({ sourceTimeEntryId: matchingEntries[0].id })
+          .where(eq(invoiceLines.id, line.lineId));
+      }
+    }
+
+    // Step 3: Bulk update billedFlag for matched items
+    if (expenseIdsToMark.size > 0) {
+      const idsArray = Array.from(expenseIdsToMark);
+      // Check which ones already have correct billedFlag
+      const currentState = await db.select({ id: expenses.id, billedFlag: expenses.billedFlag })
+        .from(expenses)
+        .where(inArray(expenses.id, idsArray));
+      
+      for (const exp of currentState) {
+        if (exp.billedFlag) {
+          expensesAlreadyCorrect++;
+        }
+      }
+
+      const result = await db.update(expenses)
+        .set({ billedFlag: true })
+        .where(and(
+          inArray(expenses.id, idsArray),
+          eq(expenses.billedFlag, false)
+        ))
+        .returning({ id: expenses.id });
+      
+      expensesSynced = result.length;
+    }
+
+    if (timeEntryIdsToMark.size > 0) {
+      const idsArray = Array.from(timeEntryIdsToMark);
+      const currentState = await db.select({ id: timeEntries.id, billedFlag: timeEntries.billedFlag })
+        .from(timeEntries)
+        .where(inArray(timeEntries.id, idsArray));
+      
+      for (const te of currentState) {
+        if (te.billedFlag) {
+          timeEntriesAlreadyCorrect++;
+        }
+      }
+
+      const result = await db.update(timeEntries)
+        .set({ billedFlag: true, locked: true, lockedAt: sql`now()` })
+        .where(and(
+          inArray(timeEntries.id, idsArray),
+          eq(timeEntries.billedFlag, false)
+        ))
+        .returning({ id: timeEntries.id });
+      
+      timeEntriesSynced = result.length;
+    }
+
+    console.log(`[STORAGE] Resync billed flags: ${expensesSynced} expenses synced, ${timeEntriesSynced} time entries synced, ${expensesAlreadyCorrect} expenses already correct, ${timeEntriesAlreadyCorrect} time entries already correct`);
+
+    return { expensesSynced, timeEntriesSynced, expensesAlreadyCorrect, timeEntriesAlreadyCorrect };
   }
 
   async getProjectMonthlyMetrics(projectId: string): Promise<{
@@ -9098,15 +9279,45 @@ export class DatabaseStorage implements IStorage {
       issues: string[];
     };
   }> {
+    // Get IDs of expenses and time entries already referenced in invoice lines of active batches
+    // This serves as a safety net beyond just billedFlag - catches cases where billedFlag wasn't properly set
+    const invoicedExpenseIds = new Set<string>();
+    const invoicedTimeEntryIds = new Set<string>();
+    try {
+      const invoicedExpenseRows = await db.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
+        .from(invoiceLines)
+        .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+        .where(and(
+          isNotNull(invoiceLines.sourceExpenseId),
+          ne(invoiceBatches.status, 'deleted')
+        ));
+      for (const row of invoicedExpenseRows) {
+        if (row.sourceExpenseId) invoicedExpenseIds.add(row.sourceExpenseId);
+      }
+
+      const invoicedTimeEntryRows = await db.select({ sourceTimeEntryId: invoiceLines.sourceTimeEntryId })
+        .from(invoiceLines)
+        .innerJoin(invoiceBatches, eq(invoiceLines.batchId, invoiceBatches.batchId))
+        .where(and(
+          isNotNull(invoiceLines.sourceTimeEntryId),
+          ne(invoiceBatches.status, 'deleted')
+        ));
+      for (const row of invoicedTimeEntryRows) {
+        if (row.sourceTimeEntryId) invoicedTimeEntryIds.add(row.sourceTimeEntryId);
+      }
+    } catch (error) {
+      console.warn('[STORAGE] Failed to fetch invoiced source IDs for safety check, relying on billedFlag only:', error);
+    }
+
     // Get unbilled time entries
     const timeEntryFilters = { ...filters };
     const unbilledTimeEntries = (await this.getTimeEntries(timeEntryFilters))
-      .filter(entry => entry.billable && !entry.billedFlag && !entry.locked);
+      .filter(entry => entry.billable && !entry.billedFlag && !entry.locked && !invoicedTimeEntryIds.has(entry.id));
 
     // Get unbilled expenses (only approved expenses)
     const expenseFilters = { ...filters };
     const unbilledExpenses = (await this.getExpenses(expenseFilters))
-      .filter(expense => expense.billable && !expense.billedFlag && expense.approvalStatus === 'approved');
+      .filter(expense => expense.billable && !expense.billedFlag && expense.approvalStatus === 'approved' && !invoicedExpenseIds.has(expense.id));
 
     // Calculate amounts and identify rate issues
     let totalTimeHours = 0;
