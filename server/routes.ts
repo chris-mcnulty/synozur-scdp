@@ -12479,15 +12479,6 @@ export async function registerRoutes(app: Express): Promise<void> {
             workstreamsSet.add(ws.name);
           }
 
-          const estimates = await storage.getEstimates(projectId);
-          for (const estimate of estimates) {
-            const lines = await storage.getEstimateLines(estimate.id);
-            for (const line of lines) {
-              if (line.stage) stagesSet.add(line.stage);
-              if (line.workstream) workstreamsSet.add(line.workstream);
-            }
-          }
-
           allStages = Array.from(stagesSet);
           allWorkstreams = Array.from(workstreamsSet);
 
