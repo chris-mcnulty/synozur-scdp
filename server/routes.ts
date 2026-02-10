@@ -4843,6 +4843,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Get buckets for the plan
       const buckets = await plannerService.listBuckets(connection.planId);
       
+      // Pre-create Planner buckets for all project stages so they appear even if no allocations reference them yet
+      const projectEpicsList = await storage.getProjectEpics(projectId);
+      for (const epic of projectEpicsList) {
+        const stages = await storage.getProjectStages(epic.id);
+        for (const stage of stages) {
+          try {
+            await plannerService.getOrCreateBucket(connection.planId, stage.name);
+          } catch (bucketErr: any) {
+            console.warn('[PLANNER] Failed to pre-create bucket for stage:', stage.name, bucketErr.message);
+          }
+        }
+      }
+      
       let created = 0;
       let updated = 0;
       let errors: string[] = [];
@@ -15032,9 +15045,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Only owner can add expenses to draft reports
-      if (report.submitterId !== req.user!.id) {
+      // Only owner or admin can add expenses to draft reports
+      const isReportOwner = report.submitterId === req.user!.id;
+      const isAdminUser = ['admin', 'billing-admin'].includes(req.user!.role);
+      if (!isReportOwner && !isAdminUser) {
         return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      if (report.status !== 'draft') {
+        return res.status(400).json({ message: "Can only add expenses to draft reports" });
       }
 
       const { expenseIds } = req.body;
@@ -15058,9 +15077,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Expense report not found" });
       }
 
-      // Only owner can remove expenses from draft reports
-      if (report.submitterId !== req.user!.id) {
+      // Only owner or admin can remove expenses from draft reports
+      const isReportOwnerDel = report.submitterId === req.user!.id;
+      const isAdminUserDel = ['admin', 'billing-admin'].includes(req.user!.role);
+      if (!isReportOwnerDel && !isAdminUserDel) {
         return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      if (report.status !== 'draft') {
+        return res.status(400).json({ message: "Can only remove expenses from draft reports" });
       }
 
       await storage.removeExpenseFromReport(req.params.id, req.params.expenseId);

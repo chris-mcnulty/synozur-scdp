@@ -610,7 +610,7 @@ export default function ExpenseApproval() {
                     <Textarea
                       value={rejectionNote}
                       onChange={(e) => setRejectionNote(e.target.value)}
-                      placeholder="Explain what needs to be corrected (e.g., missing receipt for hotel, incorrect per diem location, wrong project assignment)..."
+                      placeholder="Reference specific expenses by date, category, or amount (e.g., 'Feb 3 hotel receipt missing', '$45.00 meal on Feb 5 exceeds per diem', 'Wrong project on Feb 7 airfare')..."
                       rows={4}
                       className="mb-3"
                       autoFocus

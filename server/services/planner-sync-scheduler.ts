@@ -42,6 +42,19 @@ async function syncProjectToPlanner(
     const existingSyncs = await storage.getPlannerTaskSyncsByConnection(connection.id);
     const buckets = await plannerService.listBuckets(connection.planId);
 
+    // Pre-create Planner buckets for all project stages
+    const projectEpicsList = await storage.getProjectEpics(projectId);
+    for (const epic of projectEpicsList) {
+      const stages = await storage.getProjectStages(epic.id);
+      for (const stage of stages) {
+        try {
+          await plannerService.getOrCreateBucket(connection.planId, stage.name);
+        } catch (bucketErr: any) {
+          console.warn('[PLANNER-SYNC] Failed to pre-create bucket for stage:', stage.name, bucketErr.message);
+        }
+      }
+    }
+
     for (const allocation of allocations) {
       try {
         const syncRecord = existingSyncs.find(s => s.allocationId === allocation.id);

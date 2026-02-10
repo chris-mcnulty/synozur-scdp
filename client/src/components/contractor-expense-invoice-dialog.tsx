@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { FileText, Download, Loader2, Save } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getSessionId } from "@/lib/queryClient";
 
 interface ContractorExpenseInvoiceDialogProps {
   open: boolean;
@@ -119,10 +119,12 @@ export function ContractorExpenseInvoiceDialog({
 
     setIsGeneratingPdf(true);
     try {
+      const sid = getSessionId();
       const response = await fetch(`/api/expense-reports/${reportId}/contractor-invoice/pdf`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(sid ? { "x-session-id": sid } : {}),
         },
         credentials: "include",
         body: JSON.stringify({
@@ -181,10 +183,12 @@ export function ContractorExpenseInvoiceDialog({
 
     setIsGeneratingCsv(true);
     try {
+      const csvSid = getSessionId();
       const response = await fetch(`/api/expense-reports/${reportId}/contractor-invoice/csv`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(csvSid ? { "x-session-id": csvSid } : {}),
         },
         credentials: "include",
         body: JSON.stringify({

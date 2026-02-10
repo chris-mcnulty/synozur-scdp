@@ -627,11 +627,13 @@ class PlannerService {
   async createBucket(planId: string, name: string): Promise<PlannerBucket> {
     try {
       const client = await this.getClient();
-      return await client.api('/planner/buckets').post({
-        planId: planId,
-        name: name,
-        orderHint: ' !' // Put at the end
-      });
+      return await client.api('/planner/buckets')
+        .header('Prefer', 'ExchangeNotifications.Suppress')
+        .post({
+          planId: planId,
+          name: name,
+          orderHint: ' !'
+        });
     } catch (error: any) {
       console.error('[PLANNER] Error creating bucket:', error.message);
       throw new Error(`Failed to create bucket: ${error.message}`);
@@ -735,7 +737,9 @@ class PlannerService {
         }
       }
 
-      return await client.api('/planner/tasks').post(taskBody);
+      return await client.api('/planner/tasks')
+        .header('Prefer', 'ExchangeNotifications.Suppress')
+        .post(taskBody);
     } catch (error: any) {
       console.error('[PLANNER] Error creating task:', error.message);
       throw new Error(`Failed to create task: ${error.message}`);
@@ -780,6 +784,7 @@ class PlannerService {
 
       return await client.api(`/planner/tasks/${taskId}`)
         .header('If-Match', etag)
+        .header('Prefer', 'ExchangeNotifications.Suppress')
         .patch(updateBody);
     } catch (error: any) {
       console.error('[PLANNER] Error updating task:', error.message);
@@ -792,6 +797,7 @@ class PlannerService {
       const client = await this.getClient();
       return await client.api(`/planner/tasks/${taskId}/details`)
         .header('If-Match', etag)
+        .header('Prefer', 'ExchangeNotifications.Suppress')
         .patch({ description });
     } catch (error: any) {
       console.error('[PLANNER] Error updating task details:', error.message);
@@ -804,6 +810,7 @@ class PlannerService {
       const client = await this.getClient();
       await client.api(`/planner/tasks/${taskId}`)
         .header('If-Match', etag)
+        .header('Prefer', 'ExchangeNotifications.Suppress')
         .delete();
     } catch (error: any) {
       console.error('[PLANNER] Error deleting task:', error.message);

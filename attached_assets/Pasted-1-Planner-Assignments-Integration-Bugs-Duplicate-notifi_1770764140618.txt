@@ -1,0 +1,59 @@
+1. Planner / Assignments Integration Bugs
+
+
+Duplicate notifications for task assignments
+Users receive two notifications for the same task: one from Constellation and one from Microsoft Planner. This causes inbox noise and confusion. Chris noted Constellation-side emails should be suppressible when Planner is enabled. [Constellat...Recording | Video]
+
+
+Planner buckets not created from project stages
+Project stages/phases defined in Constellation are not correctly mapping to Planner buckets, even though this is the intended behavior. Michelle Boyd explicitly called this out as making large projects hard to manage. Chris confirmed this is likely a bug, not expected behavior. [Constellat...Recording | Video]
+
+
+
+2. Time Entry & Import Bugs
+
+Time-entry import templates were broken (recently fixed)
+Chris noted that the downloadable/importable time-entry templates were not functioning correctly until he fixed them earlier that morning. This was a recently resolved bug, but still discussed in-meeting. [Constellat...Recording | Video]
+
+
+3. Expense Entry Bugs
+
+
+Per diem edit screen is not scrollable
+When editing long per diem entries, the Save button can appear off-screen, making it impossible to save changes without canceling. Chris explicitly labeled this as a bug. [Constellat...Recording | Video]
+
+
+Per diem edits do not fully recompute totals
+Editing per diem amounts (after auto-composition) can result in mismatched totals between line items and the displayed total. Joshua reported that edited values did not update summary totals correctly. [Constellat...Recording | Video]
+
+
+Expense edit limitations (cannot remove individual line items)
+Users cannot remove individual components (e.g., meals) from an existing expense entry—only change the total amount and leave a note. This limitation was discussed as problematic, especially for per diem corrections. [Constellat...Recording | Video]
+
+
+
+4. Expense Report Bugs
+
+
+Expense reports cannot be edited in draft (add/remove expenses)
+Once an expense report is created, users cannot add or remove expenses, even while it is still in draft. Multiple users reported needing to delete and recreate entire reports due to this limitation. [Constellat...Recording | Video]
+
+
+Recall does not fully restore editability
+Although expense reports can be withdrawn/recalled, doing so does not allow full editing (such as adding missing expenses). This was acknowledged as a gap and future enhancement. [Constellat...Recording | Video]
+
+
+Rejected expense reports lack clear inline issue indicators
+When an expense report is rejected, users must manually hunt for the problematic line item; there is no visual flagging of which expense caused the rejection. [Constellat...Recording | Video]
+
+
+
+5. Invoice & Export Bugs
+
+
+Expense report PDF export does not work
+Attempting to download expense reports as PDF fails; users are redirected to a login screen or nothing downloads. Multiple participants confirmed this behavior. [Constellat...Recording | Video]
+
+
+Expense report CSV export does not work
+CSV export for expense reports also fails, blocking QuickBooks import workflows. This was confirmed by multiple users and acknowledged by Chris as a bug to fix.

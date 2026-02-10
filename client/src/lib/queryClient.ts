@@ -12,6 +12,8 @@ export const setSessionId = (id: string | null) => {
   }
 };
 
+export const getSessionId = () => sessionId;
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage: string;

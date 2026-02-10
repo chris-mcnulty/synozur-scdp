@@ -2238,7 +2238,7 @@ export default function Expenses() {
 
       {/* Edit Expense Dialog */}
       <Dialog open={!!editingExpenseId} onOpenChange={(open) => !open && handleCancelEdit()}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Expense</DialogTitle>
             <DialogDescription>

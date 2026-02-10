@@ -65,6 +65,8 @@ export default function ExpenseReports() {
   const [availableExpenses, setAvailableExpenses] = useState<(Expense & { project: Project & { client: Client } })[]>([]);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<string>("draft");
+  const [addingExpenses, setAddingExpenses] = useState(false);
+  const [expensesToAdd, setExpensesToAdd] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, hasAnyRole, isPlatformAdmin } = useAuth();
@@ -232,6 +234,55 @@ export default function ExpenseReports() {
       toast({
         title: "Error",
         description: error.message || "Failed to reopen expense report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addExpensesToReportMutation = useMutation({
+    mutationFn: async ({ reportId, expenseIds }: { reportId: string; expenseIds: string[] }) => {
+      return await apiRequest(`/api/expense-reports/${reportId}/expenses`, {
+        method: "POST",
+        body: JSON.stringify({ expenseIds }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      setAddingExpenses(false);
+      setExpensesToAdd(new Set());
+      toast({
+        title: "Expenses added",
+        description: "Selected expenses have been added to the report.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add expenses to report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeExpenseFromReportMutation = useMutation({
+    mutationFn: async ({ reportId, expenseId }: { reportId: string; expenseId: string }) => {
+      return await apiRequest(`/api/expense-reports/${reportId}/expenses/${expenseId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expense-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/expenses"] });
+      toast({
+        title: "Expense removed",
+        description: "Expense has been removed from the report.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove expense from report",
         variant: "destructive",
       });
     },
@@ -568,7 +619,20 @@ export default function ExpenseReports() {
                 )}
 
                 <div>
-                  <h3 className="font-medium mb-2">Expenses ({(selectedReport.items || []).length})</h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium">Expenses ({(selectedReport.items || []).length})</h3>
+                    {selectedReport.status === 'draft' && isOwnerOrAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setAddingExpenses(true); setExpensesToAdd(new Set()); }}
+                        data-testid="button-add-expenses"
+                      >
+                        <Plus className="mr-1 h-3 w-3" />
+                        Add Expenses
+                      </Button>
+                    )}
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -577,6 +641,9 @@ export default function ExpenseReports() {
                         <TableHead>Category</TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
+                        {selectedReport.status === 'draft' && isOwnerOrAdmin && (
+                          <TableHead className="w-12"></TableHead>
+                        )}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -591,16 +658,92 @@ export default function ExpenseReports() {
                           <TableCell className="text-right">
                             {item.expense.currency} {parseFloat(item.expense.amount).toFixed(2)}
                           </TableCell>
+                          {selectedReport.status === 'draft' && isOwnerOrAdmin && (
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                                onClick={() => removeExpenseFromReportMutation.mutate({ reportId: selectedReport.id, expenseId: item.expense.id })}
+                                disabled={removeExpenseFromReportMutation.isPending}
+                                data-testid={`button-remove-expense-${item.expense.id}`}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                       <TableRow className="font-semibold">
-                        <TableCell colSpan={4} className="text-right">Total:</TableCell>
+                        <TableCell colSpan={selectedReport.status === 'draft' && isOwnerOrAdmin ? 4 : 4} className="text-right">Total:</TableCell>
                         <TableCell className="text-right">
                           {selectedReport.currency} {parseFloat(selectedReport.totalAmount).toFixed(2)}
                         </TableCell>
+                        {selectedReport.status === 'draft' && isOwnerOrAdmin && <TableCell />}
                       </TableRow>
                     </TableBody>
                   </Table>
+
+                  {addingExpenses && selectedReport.status === 'draft' && (
+                    <div className="mt-4 border rounded-lg p-4 bg-muted/30">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-medium text-sm">Select expenses to add</h4>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setAddingExpenses(false); setExpensesToAdd(new Set()); }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            disabled={expensesToAdd.size === 0 || addExpensesToReportMutation.isPending}
+                            onClick={() => addExpensesToReportMutation.mutate({ reportId: selectedReport.id, expenseIds: Array.from(expensesToAdd) })}
+                            data-testid="button-confirm-add-expenses"
+                          >
+                            {addExpensesToReportMutation.isPending ? "Adding..." : `Add ${expensesToAdd.size} Expense${expensesToAdd.size !== 1 ? 's' : ''}`}
+                          </Button>
+                        </div>
+                      </div>
+                      {unassignedExpenses.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">No available expenses to add. All your expenses are already in reports.</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-12"></TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Project</TableHead>
+                              <TableHead>Category</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {unassignedExpenses.map((expense) => (
+                              <TableRow key={expense.id}>
+                                <TableCell>
+                                  <Checkbox
+                                    checked={expensesToAdd.has(expense.id)}
+                                    onCheckedChange={() => {
+                                      const newSet = new Set(expensesToAdd);
+                                      if (newSet.has(expense.id)) newSet.delete(expense.id);
+                                      else newSet.add(expense.id);
+                                      setExpensesToAdd(newSet);
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell>{format(new Date(expense.date), 'MMM d, yyyy')}</TableCell>
+                                <TableCell>{expense.project.client.name} - {expense.project.name}</TableCell>
+                                <TableCell className="capitalize">{expense.category}</TableCell>
+                                <TableCell className="text-right">{expense.currency} {parseFloat(expense.amount).toFixed(2)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter className="gap-2 flex-wrap">
