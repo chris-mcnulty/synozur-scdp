@@ -955,6 +955,7 @@ export interface IStorage {
       companyWebsite?: string | undefined;
       paymentTerms?: string | undefined;
     };
+    timezone?: string;
   }): Promise<Buffer>;
   getDefaultBillingRate(): Promise<number>;
   getDefaultCostRate(): Promise<number>;
@@ -9193,6 +9194,7 @@ export class DatabaseStorage implements IStorage {
       companyWebsite?: string | undefined;
       paymentTerms?: string | undefined;
     };
+    timezone?: string;
   }): Promise<Buffer> {
     return generateInvoicePDF(params);
   }
@@ -10813,8 +10815,21 @@ export async function resolveRatesForTimeEntry(
   return { billingRate, costRate };
 }
 
+function formatDateInTimezone(date: Date, timezone: string): string {
+  try {
+    return date.toLocaleDateString('en-US', { timeZone: timezone });
+  } catch {
+    return date.toLocaleDateString('en-US');
+  }
+}
+
+function getNowInTimezone(timezone: string): Date {
+  const nowStr = new Date().toLocaleString('en-US', { timeZone: timezone });
+  return new Date(nowStr);
+}
+
 // Helper function to calculate due date based on payment terms
-function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null): string {
+function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null, timezone: string = 'America/New_York'): string {
   let startDate: Date;
   if (baseDate) {
     if (typeof baseDate === 'string') {
@@ -10824,7 +10839,7 @@ function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null
       startDate = new Date(baseDate);
     }
   } else {
-    startDate = new Date();
+    startDate = getNowInTimezone(timezone);
   }
   
   let daysToAdd = 30; // Default to Net 30
@@ -10860,7 +10875,7 @@ function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null
   
   const dueDate = new Date(startDate);
   dueDate.setDate(dueDate.getDate() + daysToAdd);
-  return dueDate.toLocaleDateString();
+  return formatDateInTimezone(dueDate, timezone);
 }
 
 // Expense category code to friendly label mapping
@@ -10893,8 +10908,10 @@ export async function generateInvoicePDF(params: {
     paymentTerms?: string | undefined;
     showConstellationFooter?: boolean;
   };
+  timezone?: string;
 }): Promise<Buffer> {
-  const { batch, lines, adjustments, companySettings } = params;
+  const { batch, lines, adjustments, companySettings, timezone = 'America/New_York' } = params;
+  const tz = timezone;
 
   // Group lines by client and project
   const groupedLines: { client: Client; project: Project; lines: any[] }[] = [];
@@ -11250,15 +11267,15 @@ export async function generateInvoicePDF(params: {
     startDate: batch.startDate,
     endDate: batch.endDate,
     status: batch.status,
-    generatedDate: new Date().toLocaleDateString(),
+    generatedDate: formatDateInTimezone(getNowInTimezone(tz), tz),
     totalProjects: batch.projectCount,
     totalLines: batch.totalLinesCount,
     
     // Invoice header details (legacy format) - use asOfDate for invoice date and due date calculation
     invoiceDate: batch.asOfDate 
-      ? new Date(batch.asOfDate + 'T00:00:00').toLocaleDateString()
-      : new Date().toLocaleDateString(),
-    dueDate: calculateDueDate(batch.paymentTerms || companySettings.paymentTerms, batch.asOfDate),
+      ? formatDateInTimezone(new Date(batch.asOfDate + 'T00:00:00'), tz)
+      : formatDateInTimezone(getNowInTimezone(tz), tz),
+    dueDate: calculateDueDate(batch.paymentTerms || companySettings.paymentTerms, batch.asOfDate, tz),
     paymentMethod: uniqueClients[0]?.paymentMethod || 'ACH Transfer',
     
     // Client info

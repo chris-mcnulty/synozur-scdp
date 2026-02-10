@@ -17315,6 +17315,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms = defaultPaymentTerms;
       }
 
+      // Get tenant timezone for date formatting
+      let invoiceTimezone = 'America/New_York';
+      if (tenantId) {
+        const tenantObj = await storage.getTenant(tenantId);
+        if (tenantObj?.defaultTimezone) {
+          invoiceTimezone = tenantObj.defaultTimezone;
+        }
+      }
+
       // Generate PDF
       const pdfBuffer = await storage.generateInvoicePDF({
         batch,
@@ -17329,7 +17338,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           companyWebsite,
           paymentTerms,
           showConstellationFooter
-        }
+        },
+        timezone: invoiceTimezone
       });
 
       // Delete any existing invoice PDF for this batch (if editing/regenerating)
