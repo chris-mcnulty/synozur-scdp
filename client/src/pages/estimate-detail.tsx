@@ -135,6 +135,7 @@ function EstimateDetailContent() {
     confidence: "high",
     comments: "",
     userId: "",
+    roleId: "",
     resourceName: ""
   });
 
@@ -866,7 +867,8 @@ function EstimateDetailContent() {
       complexity: newItem.complexity,
       confidence: newItem.confidence,
       comments: newItem.comments || null,
-      assignedUserId: newItem.userId || null,  // Changed from userId to assignedUserId
+      assignedUserId: newItem.userId || null,
+      roleId: newItem.roleId || null,
       resourceName: newItem.resourceName || null,
       adjustedHours: String(adjustedHours),
       totalAmount: String(totalAmount),
@@ -2761,19 +2763,35 @@ function EstimateDetailContent() {
                 <div>
                   <Label className="text-sm font-medium mb-1.5 block">Resource</Label>
                   <Select
-                    value={newItem.userId || "unassigned"}
+                    value={newItem.userId || (newItem.roleId ? `role-${newItem.roleId}` : "unassigned")}
                     onValueChange={(value) => {
-                      const selectedUser = users.find((s: any) => s.id === value);
                       if (value === "unassigned") {
-                        setNewItem({ ...newItem, userId: "", resourceName: "", rate: "0", costRate: "0" });
-                      } else if (selectedUser) {
-                        setNewItem({ 
-                          ...newItem, 
-                          userId: selectedUser.id, 
-                          resourceName: selectedUser.name,
-                          rate: selectedUser.defaultBillingRate?.toString() || "0",
-                          costRate: selectedUser.defaultCostRate?.toString() || "0"
-                        });
+                        setNewItem({ ...newItem, userId: "", roleId: "", resourceName: "", rate: "0", costRate: "0" });
+                      } else if (value.startsWith("role-")) {
+                        const roleId = value.replace("role-", "");
+                        const role = roles.find((r: any) => r.id === roleId);
+                        if (role) {
+                          setNewItem({
+                            ...newItem,
+                            userId: "",
+                            roleId: role.id,
+                            resourceName: role.name,
+                            rate: role.defaultRackRate?.toString() || "0",
+                            costRate: role.defaultCostRate?.toString() || "0"
+                          });
+                        }
+                      } else {
+                        const selectedUser = users.find((s: any) => s.id === value);
+                        if (selectedUser) {
+                          setNewItem({ 
+                            ...newItem, 
+                            userId: selectedUser.id, 
+                            roleId: "",
+                            resourceName: selectedUser.name,
+                            rate: selectedUser.defaultBillingRate?.toString() || "0",
+                            costRate: selectedUser.defaultCostRate?.toString() || "0"
+                          });
+                        }
                       }
                     }}
                   >
@@ -2782,6 +2800,13 @@ function EstimateDetailContent() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="unassigned">Unassigned</SelectItem>
+                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
+                      {roles.map((role: any) => (
+                        <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
+                          {role.name} (${role.defaultRackRate}/hr)
+                        </SelectItem>
+                      ))}
+                      <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
                       {users.filter((user: any) => user.isAssignable).map((member: any) => (
                         <SelectItem key={member.id} value={member.id}>
                           {member.name} - ${member.defaultBillingRate}/hr
