@@ -5895,15 +5895,20 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Invoice batch ${batchId} not found`);
     }
 
-    // Define fields that can be updated even on finalized batches (metadata/administrative fields)
     const allowedFinalizedFields = [
-      'pdfFileId',           // PDF storage location
-      'paymentStatus',       // Payment tracking
+      'pdfFileId',
+      'paymentStatus',
       'paymentDate',
       'paymentAmount',
       'paymentNotes',
       'paymentUpdatedBy',
-      'paymentUpdatedAt'
+      'paymentUpdatedAt',
+      'taxAmountOverride',
+      'taxRate',
+      'discountAmount',
+      'discountPercent',
+      'glInvoiceNumber',
+      'notes'
     ];
 
     // Check if batch is finalized
