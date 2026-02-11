@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -79,6 +79,17 @@ export function PaymentStatusDialog({
   });
 
   const paymentStatus = form.watch("paymentStatus");
+  const prevStatusRef = useRef(batch.paymentStatus);
+
+  useEffect(() => {
+    if (paymentStatus === 'paid' && prevStatusRef.current !== 'paid') {
+      form.setValue("paymentAmount", batch.totalAmount.toFixed(2));
+      if (!form.getValues("paymentDate")) {
+        form.setValue("paymentDate", new Date().toISOString().split('T')[0]);
+      }
+    }
+    prevStatusRef.current = paymentStatus;
+  }, [paymentStatus, batch.totalAmount, form]);
 
   const updatePaymentMutation = useMutation({
     mutationFn: async (data: PaymentUpdateFormData) => {
@@ -273,7 +284,7 @@ export function PaymentStatusDialog({
                     )}
                   />
 
-                  {paymentStatus === 'partial' && (
+                  {(paymentStatus === 'partial' || paymentStatus === 'paid') && (
                     <FormField
                       control={form.control}
                       name="paymentAmount"
@@ -293,7 +304,7 @@ export function PaymentStatusDialog({
                             />
                           </FormControl>
                           <FormDescription>
-                            Amount received for partial payment
+                            {paymentStatus === 'paid' ? 'Full invoice amount (pre-filled)' : 'Amount received for partial payment'}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

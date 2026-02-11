@@ -3629,14 +3629,27 @@ export async function registerRoutes(app: Express): Promise<void> {
       const tenantId = req.user?.tenantId;
       const { startDate, endDate, batchTypeFilter = 'services' } = req.query;
 
+      let tenantTimezone = 'America/New_York';
+      if (tenantId) {
+        const tenantSettings = await db.select({ defaultTimezone: tenants.defaultTimezone })
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (tenantSettings.length > 0 && tenantSettings[0].defaultTimezone) {
+          tenantTimezone = tenantSettings[0].defaultTimezone;
+        }
+      }
+
       const currentYear = new Date().getFullYear();
       const filterStartDate = (startDate as string) || `${currentYear}-01-01`;
       const filterEndDate = (endDate as string) || new Date().toISOString().split('T')[0];
 
+      const effectiveDateExpr = sql`COALESCE(${invoiceBatches.asOfDate}, (${invoiceBatches.finalizedAt} AT TIME ZONE ${tenantTimezone})::date, (${invoiceBatches.createdAt} AT TIME ZONE ${tenantTimezone})::date)`;
+
       const conditions: any[] = [
         eq(invoiceBatches.status, 'finalized'),
-        sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) >= ${filterStartDate}::date`,
-        sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) <= ${filterEndDate}::date`,
+        sql`${effectiveDateExpr} >= ${filterStartDate}::date`,
+        sql`${effectiveDateExpr} <= ${filterEndDate}::date`,
       ];
 
       if (tenantId) {
@@ -3656,6 +3669,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         endDate: invoiceBatches.endDate,
         finalizedAt: invoiceBatches.finalizedAt,
         asOfDate: invoiceBatches.asOfDate,
+        effectiveDate: sql<string>`${effectiveDateExpr}::text`.as('effective_date'),
         totalAmount: invoiceBatches.totalAmount,
         aggregateAdjustmentTotal: invoiceBatches.aggregateAdjustmentTotal,
         discountAmount: invoiceBatches.discountAmount,
@@ -3670,7 +3684,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       })
       .from(invoiceBatches)
       .where(and(...conditions))
-      .orderBy(sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) ASC`);
+      .orderBy(sql`${effectiveDateExpr} ASC`);
 
       const batchIds = rows.map(r => r.batchId);
 
@@ -3704,12 +3718,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         const paid = row.paymentStatus === 'paid' ? invoiceTotal : Number(row.paymentAmount || 0);
         const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
 
-        const asOfDateStr = row.asOfDate ? new Date(row.asOfDate).toISOString().split('T')[0] : null;
-        const finalizedDateStr = row.finalizedAt ? new Date(row.finalizedAt).toISOString().split('T')[0] : null;
-
         return {
           batchId: row.batchId,
-          invoiceDate: asOfDateStr || finalizedDateStr || row.startDate,
+          invoiceDate: row.effectiveDate || row.startDate,
           periodStart: row.startDate,
           periodEnd: row.endDate,
           clientName: clientMap[row.batchId] || 'Unknown',
