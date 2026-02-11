@@ -30,6 +30,7 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 
 ### Database
 - **Type**: PostgreSQL.
+- **Environments**: Production and development use **separate databases**. Schema changes must be pushed to both independently. The dev database is managed via Replit's built-in PostgreSQL; the production database is a separate Neon instance. Always remember that `npm run db:push` only affects the dev database — production requires a separate deploy/publish cycle to pick up schema changes.
 - **Schema Management**: Drizzle Kit.
 - **Key Entities**: Users (role-based), Clients, Projects, Estimates, Time entries, Expenses (with approval workflow), Invoices, Payment Milestones, Rate overrides, and Project Engagements.
 
