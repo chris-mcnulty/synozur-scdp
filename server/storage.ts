@@ -7541,15 +7541,17 @@ export class DatabaseStorage implements IStorage {
     
     // Get affected lines and revert them
     if (adjustment.metadata) {
-      const lineIds = Object.keys(adjustment.metadata as Record<string, number>);
+      const meta = adjustment.metadata as any;
+      const allocation = meta.allocation as Record<string, number> | undefined;
+      const lineIds = allocation ? Object.keys(allocation) : Object.keys(meta);
       for (const lineId of lineIds) {
         const [line] = await db.select().from(invoiceLines).where(eq(invoiceLines.id, lineId));
         if (line) {
-          // Revert to original amount
           await db.update(invoiceLines).set({
             billedAmount: line.originalAmount,
             varianceAmount: '0',
             adjustmentType: null,
+            adjustmentReason: null,
             editedBy: null,
             editedAt: null
           }).where(eq(invoiceLines.id, lineId));
