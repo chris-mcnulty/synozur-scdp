@@ -2,6 +2,11 @@
 
 ## 🐛 Active Bugs
 
+### Export PDF Bug for Expense Reports (February 2026) — FIXED
+- **User Feedback:** Identified in February 2026 feedback session as the top quick win (high impact, low effort in 2×2 priority matrix).
+- **Fix:** Resolved expense report PDF export formatting issues.
+- **Status:** Complete.
+
 ### What's New Feature Dialog Not Showing in Production (February 8, 2026) — FIXED
 - **Root cause**: Server reads `CHANGELOG.md` from `client/public/docs/` which only exists in the dev source tree. In production, the Vite build outputs to `dist/public/` and the `docs/` subdirectory was missing from the build.
 - **Fix**: Added `resolveChangelogPath()` helper that checks multiple candidate paths (`client/public/docs/`, `dist/public/docs/`, `docs/`) so the server finds the file in both dev and production environments.
@@ -105,10 +110,33 @@
 
 ## 🔔 P1 - HIGH PRIORITY (Weeks 3-4)
 
-### Comprehensive Notifications System
-**Status:** MISSING - Moved from P0 to make room for critical assignment management
+### QuickBooks Online Integration for Consultants
+**Status:** ELEVATED — Ranked #1 in February 2026 user feedback session  
+**Priority:** P1 — Elevated from P2 based on stack ranking (#1 Borda score, 94 marketplace coins)
 
-**Why P1:** Important for user engagement and operational efficiency, but not blocking core operations.
+**Why P1:** Strongest user consensus of any proposed feature. Two QuickBooks-related ideas (Accounting Integration and Tool Integrations) collectively dominated the feedback session. The 2×2 priority matrix rated it as high impact but high effort — detailed scoping and resource allocation plan recommended before implementation.
+
+**Scope:**
+- [ ] OAuth2 authentication setup with QuickBooks
+- [ ] Client → QBO Customer mapping interface
+- [ ] Role/Service → QBO Items (Service) mapping
+- [ ] Expense categories → QBO Account mappings
+- [ ] Invoice Batch → QBO Invoice (Draft) creation with:
+  - Service lines with qty/hours × rate
+  - Discount lines and zero-charge lines
+  - Billable expenses as invoice lines
+- [ ] Batch ID deduplication to prevent duplicate exports
+- [ ] Retry mechanism and validation error handling
+- [ ] Webhook integration for bi-directional sync status
+- [ ] QBO sync status dashboard
+
+---
+
+### Comprehensive Notifications System (Deprioritized)
+**Status:** DEPRIORITIZED — Ranked lower in February 2026 user feedback session  
+**Priority:** Moved from P1 to P2 per user feedback. Will be revisited in future sessions.
+
+**Why Deprioritized:** User feedback session ranked Notifications and Alerts lower than accounting integration and AI-driven status reporting, reflecting lower perceived urgency relative to current organizational goals.
 
 **Summary:**
 - In-app notification center with bell icon, dropdown, and full page view
@@ -480,25 +508,6 @@ Present users with a formatted summary of new features/changes on their next log
 
 ---
 
-### QuickBooks Online Integration
-**Status:** COMPLETELY MISSING - Downgraded from P0
-
-**Why Deferred:** Focus on core UX improvements first. QBO integration valuable but not blocking core operations.
-
-**Scope:**
-- [ ] OAuth2 authentication setup with QuickBooks
-- [ ] Client → QBO Customer mapping interface
-- [ ] Role/Service → QBO Items (Service) mapping
-- [ ] Expense categories → QBO Account mappings
-- [ ] Invoice Batch → QBO Invoice (Draft) creation with:
-  - Service lines with qty/hours × rate
-  - Discount lines and zero-charge lines
-  - Billable expenses as invoice lines
-- [ ] Batch ID deduplication to prevent duplicate exports
-- [ ] Retry mechanism and validation error handling
-- [ ] Webhook integration for bi-directional sync status
-- [ ] QBO sync status dashboard
-
 ### Mobile Web Interface Optimization
 **Status:** Deferred - Downgraded from P0
 
@@ -563,9 +572,9 @@ Present users with a formatted summary of new features/changes on their next log
 
 ### Advanced Financial Reporting
 
-#### Annual Invoice Reporting - MISSING
-- [ ] Year-over-year revenue analysis
-- [ ] Monthly/quarterly/annual comparisons
+#### Annual Invoice Reporting - PARTIALLY COMPLETE
+- [x] Year-over-year revenue analysis ✅ (February 2026)
+- [x] Monthly/quarterly/annual comparisons ✅ (February 2026)
 - [ ] Client contribution analysis
 - [ ] Service line revenue breakdown
 - [ ] Growth rate calculations
@@ -1135,8 +1144,8 @@ Present users with a formatted summary of new features/changes on their next log
 
 ---
 
-**Last Updated**: January 2025
-**Version**: 2.1 - Added Per Diem and Accounts Payable modules
+**Last Updated**: February 2026
+**Version**: 3.0 - Reprioritized based on February 2026 user feedback session (stack ranking, marketplace coins, 2×2 priority matrix). QuickBooks elevated to P1, Notifications deprioritized, expense PDF bug fixed.
 
 ## Notes on Already Implemented Features (NOT in backlog)
 - ✅ Expense bulk upload with CSV/Excel

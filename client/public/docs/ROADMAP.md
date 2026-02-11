@@ -142,46 +142,14 @@ The following major features have been delivered and are live in production. See
 
 ## Current Focus (Q1 2026)
 
-### 🔔 Priority: Comprehensive Notifications System
+> **Priorities informed by February 2026 user feedback session** — Stack ranking (Borda scores), marketplace coin allocation, and 2×2 priority matrix exercises identified clear consensus around accounting integration, AI-driven status reporting, and a high-impact quick-win bug fix.
 
-**Status:** 📋 Planned  
-**Target Completion:** March 2026  
-**Value Proposition:** Keep users informed and engaged with timely, relevant notifications that drive action and improve operational efficiency.
+### ✅ Quick Win: Fix Export PDF Bug for Expense Reports
 
-#### Deliverables
-- **In-App Notification Center**
-  - Bell icon with unread count in top navigation
-  - Dropdown preview of recent notifications
-  - Full-page notification history with filtering
-  - Mark as read/unread functionality
-  - Notification archiving
-
-- **Email Notifications (SendGrid)**
-  - Time entry reminders (requires project staffing)
-  - Expense approval requests ($500+ threshold)
-  - Expense status updates (approved/rejected)
-  - Invoice batch status notices
-  - Budget threshold alerts (75%, 90%, 100%)
-  - Project deadline reminders
-
-- **User Preferences**
-  - Granular controls per notification type
-  - Email vs. in-app preference selection
-  - Notification frequency settings
-  - Do not disturb scheduling
-
-- **Admin Controls**
-  - System-wide notification type toggles
-  - Default preference templates
-  - Notification template customization
-  - Delivery rate monitoring
-
-**Implementation Phases:**
-1. **Phase 1 (Weeks 1-2):** Core notification infrastructure, in-app notification center
-2. **Phase 2 (Weeks 3-4):** Email integration with SendGrid, preference management
-3. **Phase 3 (Weeks 5-6):** Admin controls, template customization, testing
-
-**Detailed Plan:** See `notifications-plan.md` for comprehensive implementation details
+**Status:** ✅ Complete  
+**Completed:** February 2026  
+**Priority Matrix:** High Impact / Low Effort  
+**User Feedback:** Identified unanimously as the top quick win — a high-impact fix that delivered immediate value with minimal effort.
 
 ---
 
@@ -189,6 +157,7 @@ The following major features have been delivered and are live in production. See
 
 **Status:** 📋 Planned  
 **Target Completion:** Q1 2026  
+**User Feedback:** Ranked #2 overall in stack ranking with strong marketplace coin support. The cohort expressed high interest in AI-driven efficiency enhancements for project communication.  
 **Value Proposition:** Transform existing project activity data into polished, AI-generated status reports that can be viewed, shared, and delivered on a recurring schedule — reducing the manual effort of writing weekly and monthly project updates.
 
 #### Phase 1: Interactive Status Report Generation (Initial Release)
@@ -262,10 +231,33 @@ The following major features have been delivered and are live in production. See
 
 ## Near-Term Priorities (Q2 2026)
 
+### 💹 Priority: QuickBooks Online Integration for Consultants
+
+**Status:** 📋 Planned  
+**Target Completion:** Q2 2026  
+**User Feedback:** Ranked #1 overall in stack ranking with the highest marketplace coin allocation (94 coins), indicating strong consensus on its importance. Two QuickBooks-related ideas (Accounting Integration and Tool Integrations) collectively dominated the feedback session. The 2×2 priority matrix scored it as high impact but also high effort, so detailed scoping and resource planning is recommended before implementation begins.  
+**Value Proposition:** Bidirectional sync with QuickBooks Online eliminates manual data entry and ensures financial accuracy for consultants managing their own books.
+
+#### Deliverables
+- OAuth2 authentication with QuickBooks Online
+- Client → QBO Customer mapping interface
+- Role/Service → QBO Items mapping
+- Expense categories → QBO Account mappings
+- Automated invoice creation in QBO (draft status)
+- Batch ID deduplication to prevent duplicates
+- Webhook integration for sync status updates
+- QBO sync dashboard with error reporting
+- Retry mechanism for failed syncs
+- Real-time validation and error handling
+
+**Implementation Note:** Given the high effort rating from user feedback, a detailed scoping and resource allocation plan should be completed before development begins.
+
+---
+
 ### 🤝 Priority: Microsoft 365 Teams Integration
 
 **Status:** 📋 Planned  
-**Target Completion:** April 2026  
+**Target Completion:** Q2 2026  
 **Value Proposition:** Seamless Microsoft 365 integration enhances team collaboration and centralizes project communications.
 
 #### Deliverables
@@ -329,27 +321,24 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-## Medium-Term Goals (H2 2026)
+### 🔔 Notifications System (Deprioritized)
 
-### 💹 QuickBooks Online Integration
+**Status:** 📋 Planned  
+**Target Completion:** Q2–Q3 2026  
+**User Feedback:** Ranked lower in user feedback session. Deprioritized to make room for QuickBooks integration and Status Reporting, which received significantly stronger support. Will be revisited in future feedback sessions to assess evolving organizational needs.  
+**Value Proposition:** Keep users informed with timely, relevant notifications that drive action and improve operational efficiency.
 
-**Status:** 🔮 Future  
-**Target Timeframe:** Q3 2026  
-**Value Proposition:** Bidirectional sync with QuickBooks Online eliminates manual data entry and ensures financial accuracy.
+#### Deliverables
+- In-app notification center (bell icon, dropdown, full page view)
+- Email notifications via SendGrid (time reminders, expense approvals, budget alerts)
+- User preferences with granular per-type controls
+- Admin controls for system-wide notification management
 
-#### Planned Features
-- OAuth2 authentication with QuickBooks Online
-- Client → QBO Customer mapping interface
-- Role/Service → QBO Items mapping
-- Expense categories → QBO Account mappings
-- Automated invoice creation in QBO (draft status)
-- Batch ID deduplication to prevent duplicates
-- Webhook integration for sync status updates
-- QBO sync dashboard with error reporting
-- Retry mechanism for failed syncs
-- Real-time validation and error handling
+**Detailed Plan:** See `notifications-plan.md` for comprehensive implementation details
 
 ---
+
+## Medium-Term Goals (H2 2026)
 
 ### 📊 Advanced Financial Reporting
 
@@ -663,6 +652,14 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**February 11, 2026 — User Feedback Session Reprioritization**
+- Reprioritized roadmap based on February 2026 user feedback session (stack ranking, marketplace coins, 2×2 priority matrix)
+- Elevated QuickBooks Online Integration from H2 2026 to Near-Term Q2 2026 (#1 ranked idea, 94 coins)
+- Added user feedback validation to Enhanced Status Reporting (#2 ranked, strong AI-driven efficiency interest)
+- Marked expense report PDF export bug fix as completed (quick win from 2×2 high impact / low effort quadrant)
+- Deprioritized Notifications System from Q1 Current Focus to Q2–Q3 2026 (lower user ranking)
+- Role Definitions noted as lower priority per feedback — revisit in future sessions
+
 **February 10, 2026**
 - Added Enhanced Status Reporting to Current Focus (Q1 2026) — AI-powered project status report generation with on-screen viewer, copy/download/email, and future automated scheduling
 - Added RAIDD Log to Current Focus (Q1 2026) — structured Risk, Assumption, Issue, Dependency, Decision tracking with assignments, due dates, export, and AI integration into status reports
@@ -695,6 +692,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: February 10, 2026*  
+*Last Updated: February 11, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
