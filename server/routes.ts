@@ -18944,6 +18944,129 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Repair expense-only invoice batch - reconstruct lines from expenses
+  app.post("/api/invoice-batches/:batchId/repair-expenses", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const { batchId } = req.params;
+      const dryRun = req.query.dryRun === 'true';
+
+      const [batch] = await db.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+      if (!batch) return res.status(404).json({ message: "Batch not found" });
+      if (batch.batchType !== 'expenses') return res.status(400).json({ message: "This repair is only for expense-type batches" });
+
+      const existingLines = await storage.getInvoiceLinesForBatch(batchId);
+      if (existingLines.length > 0 && !req.query.force) {
+        return res.status(400).json({ message: `Batch already has ${existingLines.length} lines. Use ?force=true to replace.` });
+      }
+
+      const { projectIds, clientId } = req.body;
+      if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
+        return res.status(400).json({ message: "projectIds array is required" });
+      }
+
+      const startDate = batch.startDate;
+      const endDate = batch.endDate;
+
+      const expenseRows = await db.select({
+        id: expenses.id,
+        amount: expenses.amount,
+        date: expenses.date,
+        projectId: expenses.projectId,
+        category: expenses.category,
+        description: expenses.description,
+        personId: expenses.personId,
+        billable: expenses.billable,
+        quantity: expenses.quantity,
+        unit: expenses.unit,
+      })
+      .from(expenses)
+      .where(and(
+        inArray(expenses.projectId, projectIds),
+        gte(expenses.date, startDate),
+        lte(expenses.date, endDate),
+        eq(expenses.billable, true)
+      ))
+      .orderBy(expenses.date);
+
+      if (expenseRows.length === 0) {
+        return res.status(404).json({ message: "No billable expenses found for the given projects and date range" });
+      }
+
+      const userIds = [...new Set(expenseRows.map(e => e.personId).filter(Boolean))];
+      const userMap = new Map<string, { firstName: string; lastName: string }>();
+      for (const uid of userIds) {
+        if (!uid) continue;
+        const [u] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, uid));
+        if (u) userMap.set(uid, u);
+      }
+
+      const projectClientMap = new Map<string, string>();
+      for (const pid of projectIds) {
+        const [proj] = await db.select({ clientId: projects.clientId }).from(projects).where(eq(projects.id, pid));
+        if (proj) projectClientMap.set(pid, proj.clientId);
+      }
+
+      const linesToCreate = expenseRows.map(exp => {
+        const person = exp.personId ? userMap.get(exp.personId) : null;
+        const personName = person ? `${person.firstName} ${person.lastName}` : 'Unknown';
+        const dateStr = typeof exp.date === 'string' ? exp.date : new Date(exp.date!).toISOString().split('T')[0];
+        const desc = `${personName} - ${exp.description || exp.category} (${dateStr})`;
+        const resolvedClientId = clientId || projectClientMap.get(exp.projectId!) || '';
+
+        const isMileage = exp.category === 'mileage';
+        const qty = isMileage && exp.quantity ? parseFloat(exp.quantity.toString()) : undefined;
+        const rate = isMileage && qty && exp.amount ? parseFloat(exp.amount.toString()) / qty : undefined;
+
+        return {
+          batchId,
+          projectId: exp.projectId!,
+          clientId: resolvedClientId,
+          type: 'expense' as const,
+          amount: exp.amount!.toString(),
+          description: desc,
+          taxable: false,
+          expenseCategory: exp.category,
+          sourceExpenseId: exp.id,
+          quantity: qty?.toString(),
+          rate: rate?.toString(),
+        };
+      });
+
+      if (dryRun) {
+        const totalAmount = linesToCreate.reduce((sum, l) => sum + parseFloat(l.amount), 0);
+        return res.json({
+          dryRun: true,
+          batchId,
+          expensesFound: expenseRows.length,
+          linesToCreate: linesToCreate.length,
+          totalAmount: totalAmount.toFixed(2),
+          storedBatchAmount: batch.totalAmount,
+          sampleLines: linesToCreate.slice(0, 5)
+        });
+      }
+
+      if (existingLines.length > 0 && req.query.force) {
+        await storage.deleteInvoiceLinesForBatch(batchId);
+      }
+
+      const createdLines = await storage.bulkCreateInvoiceLines(linesToCreate);
+      await storage.recalculateBatchTax(batchId);
+
+      const totalAmount = linesToCreate.reduce((sum, l) => sum + parseFloat(l.amount), 0);
+      res.json({
+        success: true,
+        batchId,
+        expensesProcessed: expenseRows.length,
+        linesCreated: createdLines.length,
+        totalAmount: totalAmount.toFixed(2),
+        storedBatchAmount: batch.totalAmount
+      });
+    } catch (error: any) {
+      console.error("[REPAIR-EXPENSES] Failed:", error);
+      res.status(500).json({ message: error.message || "Failed to repair expense batch" });
+    }
+  });
+
   // Milestone mapping
   app.post("/api/invoice-lines/:lineId/milestone", requireAuth, requireRole(["admin", "billing-billing-admin", "executive"]), async (req, res) => {
     try {
