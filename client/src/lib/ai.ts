@@ -112,6 +112,7 @@ export function useReportQuery() {
 
 export interface EstimateNarrativeResponse {
   narrative: string;
+  generatedAt?: string;
 }
 
 export function useGenerateEstimateNarrative() {

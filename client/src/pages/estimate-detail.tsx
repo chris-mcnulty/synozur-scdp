@@ -119,6 +119,7 @@ function EstimateDetailContent() {
   const [showNarrativeDialog, setShowNarrativeDialog] = useState(false);
   const [generatedNarrative, setGeneratedNarrative] = useState<string>("");
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const [narrativeGeneratedAt, setNarrativeGeneratedAt] = useState<string | null>(null);
   const [newItem, setNewItem] = useState({
     description: "",
     epicId: "none",
@@ -235,16 +236,32 @@ function EstimateDetailContent() {
   const { data: aiStatus } = useAIStatus();
   const generateNarrativeMutation = useGenerateEstimateNarrative();
 
-  const handleGenerateNarrative = async () => {
+  const handleOpenNarrative = () => {
+    if (!id || estimateLoading) return;
+    setShowNarrativeDialog(true);
+    setNarrativeError(null);
+    if (estimate?.proposalNarrative) {
+      setGeneratedNarrative(estimate.proposalNarrative);
+      setNarrativeGeneratedAt(estimate.proposalNarrativeGeneratedAt ? String(estimate.proposalNarrativeGeneratedAt) : null);
+    } else {
+      setGeneratedNarrative("");
+      setNarrativeGeneratedAt(null);
+      handleRegenerateNarrative();
+    }
+  };
+
+  const handleRegenerateNarrative = async () => {
     if (!id) return;
     
-    setShowNarrativeDialog(true);
     setGeneratedNarrative("");
     setNarrativeError(null);
+    setNarrativeGeneratedAt(null);
     
     try {
       const result = await generateNarrativeMutation.mutateAsync(id);
       setGeneratedNarrative(result.narrative);
+      setNarrativeGeneratedAt(result.generatedAt);
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
     } catch (error: any) {
       const errorMsg = error.message || "Failed to generate narrative. Please try again.";
       setNarrativeError(errorMsg);
@@ -1641,8 +1658,8 @@ function EstimateDetailContent() {
             </Button>
             {aiStatus?.configured && (
               <Button 
-                onClick={handleGenerateNarrative}
-                variant="default"
+                onClick={handleOpenNarrative}
+                variant={estimate?.proposalNarrative ? "outline" : "default"}
                 size="sm"
                 disabled={generateNarrativeMutation.isPending}
                 data-testid="button-generate-narrative"
@@ -1652,7 +1669,7 @@ function EstimateDetailContent() {
                 ) : (
                   <Sparkles className="h-4 w-4 mr-2" />
                 )}
-                Generate Proposal Narrative
+                {estimate?.proposalNarrative ? "View Proposal Narrative" : "Generate Proposal Narrative"}
               </Button>
             )}
           </div>
@@ -5175,6 +5192,11 @@ function EstimateDetailContent() {
           </DialogTitle>
           <DialogDescription>
             AI-generated proposal narrative addressing scope, deliverables, staffing, KPIs, and client dependencies for each Epic.
+            {narrativeGeneratedAt && generatedNarrative && !generateNarrativeMutation.isPending && (
+              <span className="block mt-1 text-xs">
+                Generated on {new Date(narrativeGeneratedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
@@ -5190,7 +5212,7 @@ function EstimateDetailContent() {
               <p className="text-destructive font-medium">Generation Failed</p>
               <p className="text-sm text-muted-foreground text-center max-w-md">{narrativeError}</p>
               <Button 
-                onClick={handleGenerateNarrative}
+                onClick={handleRegenerateNarrative}
                 variant="outline"
                 className="mt-4"
               >
@@ -5241,13 +5263,14 @@ function EstimateDetailContent() {
           </Button>
           {generatedNarrative && (
             <Button
-              onClick={handleGenerateNarrative}
+              onClick={handleRegenerateNarrative}
               disabled={generateNarrativeMutation.isPending}
+              variant="secondary"
             >
               {generateNarrativeMutation.isPending ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
+                <RefreshCw className="h-4 w-4 mr-2" />
               )}
               Regenerate
             </Button>

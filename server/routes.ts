@@ -20560,7 +20560,14 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       
       console.log(`[AI] Narrative generated in ${duration}s (${narrative.length} chars)`);
 
-      res.json({ narrative });
+      const generatedAt = new Date();
+      await storage.updateEstimate(estimateId, {
+        proposalNarrative: narrative,
+        proposalNarrativeGeneratedAt: generatedAt,
+      });
+      console.log(`[AI] Narrative saved to estimate ${estimateId}`);
+
+      res.json({ narrative, generatedAt: generatedAt.toISOString() });
     } catch (error: any) {
       console.error("[AI] Estimate narrative generation failed:", error);
       res.status(500).json({ message: error.message || "Failed to generate estimate narrative" });
