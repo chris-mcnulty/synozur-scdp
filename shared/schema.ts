@@ -468,6 +468,8 @@ export const estimates = pgTable("estimates", {
   referralFeeAmount: decimal("referral_fee_amount", { precision: 10, scale: 2 }), // Calculated fee amount
   referralFeePaidTo: text("referral_fee_paid_to"), // Name of seller/referrer
   netRevenue: decimal("net_revenue", { precision: 12, scale: 2 }), // Total fees minus referral fee
+  proposalNarrative: text("proposal_narrative"),
+  proposalNarrativeGeneratedAt: timestamp("proposal_narrative_generated_at"),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
   tenantIdx: index("idx_estimates_tenant").on(table.tenantId),
