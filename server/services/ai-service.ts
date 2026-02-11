@@ -405,7 +405,7 @@ ${assumptionsSummary}
 
 Please generate a professional proposal narrative that addresses all six key client questions for each Epic (scope, deliverables, duration, staffing, KPIs, and client dependencies). Make it suitable for a formal proposal document.${assumptions.length > 0 ? ' IMPORTANT: End the narrative with a dedicated "Assumptions and Dependencies" section that consolidates all identified assumptions for client acknowledgment.' : ''}`;
 
-    const MAX_PROMPT_CHARS = 24000;
+    const MAX_PROMPT_CHARS = 100000;
     if (userMessage.length > MAX_PROMPT_CHARS) {
       console.log(`[AI] Prompt too large (${userMessage.length} chars), truncating to ${MAX_PROMPT_CHARS} chars`);
       userMessage = userMessage.substring(0, MAX_PROMPT_CHARS) + '\n\n[Note: Some line item details were trimmed for length. Generate the narrative based on the information provided above.]';
