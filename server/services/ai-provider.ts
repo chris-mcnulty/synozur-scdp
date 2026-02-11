@@ -36,6 +36,7 @@ export class ReplitAIProvider implements IAIProvider {
       this.client = new OpenAI({
         baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
         apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        timeout: 120000,
       });
     }
   }
@@ -54,14 +55,15 @@ export class ReplitAIProvider implements IAIProvider {
       throw new Error('Replit AI Integrations is not configured. Please ensure the AI integration is properly set up.');
     }
 
+    const maxTokens = params.maxTokens ?? 4096;
     const requestParams: OpenAI.ChatCompletionCreateParams = {
-      // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
       model: "gpt-5",
       messages: params.messages.map(m => ({
         role: m.role,
         content: m.content,
       })),
-      max_completion_tokens: params.maxTokens ?? 8192,
+      temperature: params.temperature ?? 0.7,
+      max_completion_tokens: maxTokens,
     };
 
     if (params.responseFormat === 'json') {
@@ -69,16 +71,23 @@ export class ReplitAIProvider implements IAIProvider {
     }
 
     const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
-    console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${params.maxTokens ?? 8192}`);
+    console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}, temp=${params.temperature ?? 0.7}`);
     const startTime = Date.now();
 
     try {
       const response = await this.client.chat.completions.create(requestParams);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`[AI_PROVIDER] Request completed in ${duration}s, tokens: ${response.usage?.total_tokens || 0}`);
+      const content = response.choices?.[0]?.message?.content || '';
+      const finishReason = response.choices?.[0]?.finish_reason || 'unknown';
+      console.log(`[AI_PROVIDER] Request completed in ${duration}s, tokens: ${response.usage?.total_tokens || 0}, finish_reason: ${finishReason}, output_chars: ${content.length}`);
+
+      if (!content) {
+        console.error(`[AI_PROVIDER] Empty response from AI. finish_reason: ${finishReason}, choices: ${JSON.stringify(response.choices)}`);
+        throw new Error(`AI returned an empty response (finish_reason: ${finishReason}). The request may have been too large. Try a smaller estimate or try again.`);
+      }
 
       return {
-        content: response.choices?.[0]?.message?.content || '',
+        content,
         totalTokens: response.usage?.total_tokens || 0,
         promptTokens: response.usage?.prompt_tokens || 0,
         completionTokens: response.usage?.completion_tokens || 0,
@@ -86,8 +95,10 @@ export class ReplitAIProvider implements IAIProvider {
     } catch (error: any) {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       console.error(`[AI_PROVIDER] Replit AI error after ${duration}s:`, error.message);
-      console.error('[AI_PROVIDER] Full error:', JSON.stringify(error, null, 2));
-      throw new Error(`AI request failed: ${error.message}`);
+      if (error.message?.includes('AI returned an empty response')) {
+        throw error;
+      }
+      throw new Error(`AI request failed after ${duration}s: ${error.message}`);
     }
   }
 }

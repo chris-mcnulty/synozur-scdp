@@ -386,7 +386,7 @@ ${roleBreakdown}
         ).join('\n\n')}\n\nIMPORTANT: Please include a dedicated "Assumptions and Dependencies" section at the END of the proposal narrative that clearly lists these assumptions for client review and acknowledgment.`
       : '';
 
-    const userMessage = `Generate a comprehensive proposal narrative for the following estimate:
+    let userMessage = `Generate a comprehensive proposal narrative for the following estimate:
 
 ESTIMATE OVERVIEW
 ================
@@ -405,6 +405,12 @@ ${assumptionsSummary}
 
 Please generate a professional proposal narrative that addresses all six key client questions for each Epic (scope, deliverables, duration, staffing, KPIs, and client dependencies). Make it suitable for a formal proposal document.${assumptions.length > 0 ? ' IMPORTANT: End the narrative with a dedicated "Assumptions and Dependencies" section that consolidates all identified assumptions for client acknowledgment.' : ''}`;
 
+    const MAX_PROMPT_CHARS = 24000;
+    if (userMessage.length > MAX_PROMPT_CHARS) {
+      console.log(`[AI] Prompt too large (${userMessage.length} chars), truncating to ${MAX_PROMPT_CHARS} chars`);
+      userMessage = userMessage.substring(0, MAX_PROMPT_CHARS) + '\n\n[Note: Some line item details were trimmed for length. Generate the narrative based on the information provided above.]';
+    }
+
     const messages: ChatMessage[] = [
       { role: 'system', content: this.systemPrompts.estimateNarrative },
       { role: 'user', content: userMessage }
@@ -413,7 +419,7 @@ Please generate a professional proposal narrative that addresses all six key cli
     const result = await provider.chatCompletion({
       messages,
       temperature: 0.7,
-      maxTokens: 8192  // Larger for comprehensive narratives
+      maxTokens: 4096
     });
 
     return result.content;
