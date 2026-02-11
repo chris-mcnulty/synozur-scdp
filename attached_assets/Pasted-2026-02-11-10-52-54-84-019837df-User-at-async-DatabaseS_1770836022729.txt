@@ -1,0 +1,164 @@
+2026-02-11 10:52:54.84
+019837df
+User
+at async DatabaseStorage.getEstimates (file:///home/runner/workspace/dist/index.js:4127:22)
+2026-02-11 10:52:54.84
+019837df
+User
+length: 128,
+2026-02-11 10:52:54.84
+019837df
+User
+[ERROR] Failed to fetch estimates: error: column estimates.proposal_narrative does not exist
+2026-02-11 10:52:54.84
+019837df
+User
+at async file:///home/runner/workspace/dist/index.js:30467:26 {
+2026-02-11 10:52:54.84
+019837df
+User
+detail: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+hint: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-02-11 10:52:54.84
+019837df
+User
+severity: 'ERROR',
+2026-02-11 10:52:54.84
+019837df
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2026-02-11 10:52:54.84
+019837df
+User
+code: '42703',
+2026-02-11 10:52:54.84
+019837df
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2026-02-11 10:52:54.84
+019837df
+User
+at async file:///home/runner/workspace/dist/index.js:30467:26
+2026-02-11 10:52:54.84
+019837df
+User
+detail: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+severity: 'ERROR',
+2026-02-11 10:52:54.84
+019837df
+User
+dataType: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+length: 128,
+2026-02-11 10:52:54.84
+019837df
+User
+schema: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+at async DatabaseStorage.getEstimates (file:///home/runner/workspace/dist/index.js:4127:22)
+2026-02-11 10:52:54.84
+019837df
+User
+position: '1279',
+2026-02-11 10:52:54.84
+019837df
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-02-11 10:52:54.84
+019837df
+User
+file: 'parse_relation.c',
+2026-02-11 10:52:54.84
+019837df
+User
+internalQuery: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+2026-02-11 10:52:54.84
+019837df
+User
+at async DatabaseStorage.getEstimates (file:///home/runner/workspace/dist/index.js:4127:22)
+2026-02-11 10:52:54.84
+019837df
+User
+where: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2026-02-11 10:52:54.84
+019837df
+User
+at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1345:74
+2026-02-11 10:52:54.84
+019837df
+User
+at async file:///home/runner/workspace/dist/index.js:30467:26 {
+2026-02-11 10:52:54.84
+019837df
+User
+table: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+routine: 'errorMissingColumn'
+2026-02-11 10:52:54.84
+019837df
+User
+}
+2026-02-11 10:52:54.84
+019837df
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2026-02-11 10:52:54.84
+019837df
+User
+[ERROR] Failed to fetch estimates: error: column estimates.proposal_narrative does not exist
+2026-02-11 10:52:54.84
+019837df
+User
+column: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+line: '3722',
+2026-02-11 10:52:54.84
+019837df
+User
+at async NeonPreparedQuery.execute (file:///home/runner/workspace/node_modules/drizzle-orm/neon-serverless/session.js:76:20)
+2026-02-11 10:52:54.84
+019837df
+User
+constraint: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+[ERROR] Stack trace: error: column estimates.proposal_narrative does not exist
+2026-02-11 10:52:54.84
+019837df
+User
+code: '42703',
+2026-02-11 10:52:54.84
+019837df
+User
+hint: undefined,
+2026-02-11 10:52:54.84
+019837df
+User
+internalPosition: undefined,
