@@ -3619,6 +3619,124 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Invoice Report - shows all invoiced amounts with filters for date range, batch type, and subtotaling
+  app.get("/api/reports/invoices", requireAuth, async (req, res) => {
+    try {
+      if (!["admin", "billing-admin", "executive", "pm"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view invoice reports" });
+      }
+
+      const tenantId = req.user?.tenantId;
+      const { startDate, endDate, batchTypeFilter = 'services' } = req.query;
+
+      const currentYear = new Date().getFullYear();
+      const filterStartDate = (startDate as string) || `${currentYear}-01-01`;
+      const filterEndDate = (endDate as string) || new Date().toISOString().split('T')[0];
+
+      const conditions: any[] = [
+        eq(invoiceBatches.status, 'finalized'),
+        sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) >= ${filterStartDate}::timestamp`,
+        sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) <= (${filterEndDate}::date + interval '1 day')`,
+      ];
+
+      if (tenantId) {
+        conditions.push(eq(invoiceBatches.tenantId, tenantId));
+      }
+
+      if (batchTypeFilter === 'services') {
+        conditions.push(inArray(invoiceBatches.batchType, ['services', 'mixed']));
+      } else if (batchTypeFilter === 'expenses') {
+        conditions.push(eq(invoiceBatches.batchType, 'expenses'));
+      }
+      // 'all' - no batch type filter applied
+
+      const rows = await db.select({
+        batchId: invoiceBatches.batchId,
+        startDate: invoiceBatches.startDate,
+        endDate: invoiceBatches.endDate,
+        finalizedAt: invoiceBatches.finalizedAt,
+        totalAmount: invoiceBatches.totalAmount,
+        aggregateAdjustmentTotal: invoiceBatches.aggregateAdjustmentTotal,
+        discountAmount: invoiceBatches.discountAmount,
+        taxAmount: invoiceBatches.taxAmount,
+        taxAmountOverride: invoiceBatches.taxAmountOverride,
+        batchType: invoiceBatches.batchType,
+        glInvoiceNumber: invoiceBatches.glInvoiceNumber,
+        paymentStatus: invoiceBatches.paymentStatus,
+        paymentDate: invoiceBatches.paymentDate,
+        paymentAmount: invoiceBatches.paymentAmount,
+        notes: invoiceBatches.notes,
+      })
+      .from(invoiceBatches)
+      .where(and(...conditions))
+      .orderBy(sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) ASC`);
+
+      const batchIds = rows.map(r => r.batchId);
+
+      let clientMap: Record<string, string> = {};
+      if (batchIds.length > 0) {
+        const lineClients = await db.selectDistinct({
+          batchId: invoiceLines.batchId,
+          clientId: invoiceLines.clientId,
+          clientName: clients.name,
+        })
+        .from(invoiceLines)
+        .innerJoin(clients, eq(invoiceLines.clientId, clients.id))
+        .where(inArray(invoiceLines.batchId, batchIds));
+
+        const batchClientNames: Record<string, Set<string>> = {};
+        for (const lc of lineClients) {
+          if (!batchClientNames[lc.batchId]) batchClientNames[lc.batchId] = new Set();
+          batchClientNames[lc.batchId].add(lc.clientName);
+        }
+        for (const [bid, names] of Object.entries(batchClientNames)) {
+          clientMap[bid] = Array.from(names).join(', ');
+        }
+      }
+
+      const invoices = rows.map(row => {
+        const base = Number(row.totalAmount || 0);
+        const discount = Number(row.discountAmount || 0);
+        const tax = Number(row.taxAmountOverride ?? row.taxAmount ?? 0);
+        const invoiceAmount = base - discount;
+        const invoiceTotal = invoiceAmount + tax;
+        const paid = Number(row.paymentAmount || 0);
+        const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
+
+        return {
+          batchId: row.batchId,
+          invoiceDate: row.finalizedAt ? new Date(row.finalizedAt).toISOString().split('T')[0] : row.startDate,
+          periodStart: row.startDate,
+          periodEnd: row.endDate,
+          clientName: clientMap[row.batchId] || 'Unknown',
+          batchType: row.batchType,
+          glInvoiceNumber: row.glInvoiceNumber,
+          invoiceAmount: Math.round(invoiceAmount * 100) / 100,
+          taxAmount: Math.round(tax * 100) / 100,
+          invoiceTotal: Math.round(invoiceTotal * 100) / 100,
+          paymentStatus: row.paymentStatus,
+          paymentDate: row.paymentDate,
+          amountPaid: Math.round(paid * 100) / 100,
+          outstanding: Math.round(outstanding * 100) / 100,
+        };
+      });
+
+      const totals = {
+        invoiceAmount: invoices.reduce((s, i) => s + i.invoiceAmount, 0),
+        taxAmount: invoices.reduce((s, i) => s + i.taxAmount, 0),
+        invoiceTotal: invoices.reduce((s, i) => s + i.invoiceTotal, 0),
+        amountPaid: invoices.reduce((s, i) => s + i.amountPaid, 0),
+        outstanding: invoices.reduce((s, i) => s + i.outstanding, 0),
+        count: invoices.length,
+      };
+
+      res.json({ invoices, totals, filters: { startDate: filterStartDate, endDate: filterEndDate, batchTypeFilter } });
+    } catch (error) {
+      console.error("Error fetching invoice report:", error);
+      res.status(500).json({ message: "Failed to fetch invoice report" });
+    }
+  });
+
   // Comprehensive Resource Utilization API - Cross-project view with vocabulary integration
   app.get("/api/reports/resource-utilization", requireAuth, async (req, res) => {
     try {

@@ -22,6 +22,7 @@ import BatchDetail from "@/pages/batch-detail";
 import RateManagement from "@/pages/rate-management";
 import Users from "@/pages/users";
 import Reports from "@/pages/reports";
+import InvoiceReport from "@/pages/invoice-report";
 import { MyAssignments } from "@/pages/my-assignments";
 import MyProjectsDashboard from "@/pages/my-projects-dashboard";
 import ResourceManagement from "@/pages/resource-management";
@@ -217,6 +218,9 @@ function Router() {
       </Route>
       <Route path="/rates">
         {user ? <RateManagement /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/invoice-report">
+        {user ? <InvoiceReport /> : <Redirect to="/login" />}
       </Route>
       <Route path="/users">
         {user ? <Users /> : <Redirect to="/login" />}
