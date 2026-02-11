@@ -3675,6 +3675,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         discountAmount: invoiceBatches.discountAmount,
         taxAmount: invoiceBatches.taxAmount,
         taxAmountOverride: invoiceBatches.taxAmountOverride,
+        taxRate: invoiceBatches.taxRate,
         batchType: invoiceBatches.batchType,
         glInvoiceNumber: invoiceBatches.glInvoiceNumber,
         paymentStatus: invoiceBatches.paymentStatus,
@@ -3712,8 +3713,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       const invoices = rows.map(row => {
         const base = Number(row.totalAmount || 0);
         const discount = Number(row.discountAmount || 0);
-        const tax = Number(row.taxAmountOverride ?? row.taxAmount ?? 0);
+        const taxRate = Number(row.taxRate || 0);
         const invoiceAmount = base - discount;
+        const calculatedTax = taxRate > 0 ? Math.round(invoiceAmount * taxRate) / 100 : 0;
+        const storedTax = row.taxAmountOverride ?? row.taxAmount;
+        const tax = storedTax != null ? Number(storedTax) : calculatedTax;
         const invoiceTotal = invoiceAmount + tax;
         const paid = row.paymentStatus === 'paid' ? invoiceTotal : Number(row.paymentAmount || 0);
         const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
