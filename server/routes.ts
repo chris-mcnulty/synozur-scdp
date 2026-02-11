@@ -7043,6 +7043,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         originalQuantity: "1"
       });
       
+      // Recalculate tax after line insertion (taxRate defaults to 9.3% from schema)
+      await storage.recalculateBatchTax(batchId);
+
       // NOTE: Milestone status will be updated to 'invoiced' when the batch is finalized
       // Do not update it here to avoid validation errors during finalization
       
@@ -17255,6 +17258,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       console.log('[API] Finalizing batch ' + batchId + ' by user ' + userId);
 
+      // Ensure tax is calculated before finalizing (safety net)
+      await storage.recalculateBatchTax(batchId);
+
       const updatedBatch = await storage.finalizeBatch(batchId, userId);
 
       res.json({
@@ -17911,6 +17917,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const updatedLine = await storage.updateInvoiceLine(lineId, updates);
+
+      // Recalculate batch tax if amount-affecting fields changed
+      if (updates.billedAmount !== undefined || updates.amount !== undefined || updates.taxable !== undefined) {
+        await storage.recalculateBatchTax(updatedLine.batchId);
+      }
+
       res.json(updatedLine);
     } catch (error: any) {
       console.error("Failed to update invoice line:", error);
@@ -17931,6 +17943,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const updatedLines = await storage.bulkUpdateInvoiceLines(batchId, updates);
+
+      // Recalculate batch tax after bulk line updates
+      await storage.recalculateBatchTax(batchId);
+
       res.json(updatedLines);
     } catch (error: any) {
       console.error("Failed to bulk update invoice lines:", error);
@@ -17981,6 +17997,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         adjustedAmount: targetAmount,
         variance: targetAmount - updatedLines.reduce((sum, line) => sum + parseFloat(line.originalAmount || line.amount), 0)
       };
+
+      // Recalculate batch totals and tax after adjustments
+      await storage.recalculateBatchTax(batchId);
 
       res.json({
         message: "Aggregate adjustment applied successfully",
@@ -18233,6 +18252,11 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       // Update the batch
       const updatedBatch = await storage.updateInvoiceBatch(batchId, validatedUpdates);
+
+      // Recalculate tax if tax-affecting fields changed
+      if ('taxRate' in validatedUpdates || 'discountAmount' in validatedUpdates || 'discountPercent' in validatedUpdates || 'taxAmountOverride' in validatedUpdates) {
+        await storage.recalculateBatchTax(batchId);
+      }
 
       // Get the full batch details to return
       const batchDetails = await storage.getInvoiceBatchDetails(batchId);
@@ -18729,6 +18753,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       console.log(`[REPAIR] Created ${createdCount} invoice lines for batch ${batchId}`);
       
+      // Recalculate batch totals and tax after repair
+      await storage.recalculateBatchTax(batchId);
+
       res.json({
         success: true,
         message: `Repaired batch ${batchId}`,
@@ -18886,6 +18913,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       console.log(`[REPAIR-JSON] Created ${createdCount} invoice lines for batch ${batchId}`);
       
+      // Recalculate batch totals and tax after repair
+      await storage.recalculateBatchTax(batchId);
+
       res.json({
         success: true,
         message: `Repaired batch ${batchId} from JSON data`,

@@ -494,6 +494,7 @@ export interface IStorage {
     paymentMilestone?: { id: string; name: string; amount: string; status: string; projectId: string; projectName: string } | null;
   }) | undefined>;
   updateInvoiceBatch(batchId: string, updates: Partial<InsertInvoiceBatch>): Promise<InvoiceBatch>;
+  recalculateBatchTax(batchId: string, txOrDb?: any): Promise<void>;
   updateInvoicePaymentStatus(batchId: string, paymentData: {
     paymentStatus: "unpaid" | "partial" | "paid";
     paymentDate?: string;
@@ -5928,6 +5929,39 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return convertDecimalFieldsToNumbers(updatedBatch);
+  }
+
+  async recalculateBatchTax(batchId: string, txOrDb?: any): Promise<void> {
+    const executor = txOrDb || db;
+
+    const [batch] = await executor.select().from(invoiceBatches).where(eq(invoiceBatches.batchId, batchId));
+    if (!batch) return;
+
+    const allLines = await executor.select().from(invoiceLines).where(eq(invoiceLines.batchId, batchId));
+
+    const batchTotal = allLines.reduce((sum: number, line: any) => {
+      return sum + normalizeAmount(line.billedAmount || line.amount);
+    }, 0);
+
+    const taxableSubtotal = allLines.reduce((sum: number, line: any) => {
+      if (line.taxable === false) return sum;
+      return sum + normalizeAmount(line.billedAmount || line.amount);
+    }, 0);
+
+    const discountAmount = normalizeAmount(batch.discountAmount);
+    const taxRate = normalizeAmount(batch.taxRate);
+    const taxAmountOverride = batch.taxAmountOverride ? normalizeAmount(batch.taxAmountOverride) : null;
+
+    const discountRatio = batchTotal > 0 ? discountAmount / batchTotal : 0;
+    const taxableAfterDiscount = taxableSubtotal - (taxableSubtotal * discountRatio);
+    const taxAmount = calculateEffectiveTaxAmount(taxableAfterDiscount, taxRate, taxAmountOverride);
+
+    await executor.update(invoiceBatches)
+      .set({
+        totalAmount: round2(batchTotal).toString(),
+        taxAmount: taxAmount.toString()
+      })
+      .where(eq(invoiceBatches.batchId, batchId));
   }
 
   async updateInvoicePaymentStatus(batchId: string, paymentData: {
