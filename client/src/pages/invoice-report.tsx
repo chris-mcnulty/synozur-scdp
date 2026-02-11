@@ -304,19 +304,15 @@ function InvoiceReport() {
       rows.push({
         'Period': `Q${qc.quarter}`,
         [`${priorYear} Invoices`]: qc.prior.count,
-        [`${priorYear} Amount`]: qc.prior.invoiceAmount,
-        [`${priorYear} Tax`]: qc.prior.taxAmount,
-        [`${priorYear} Total`]: qc.prior.invoiceTotal,
+        [`${priorYear} Pre-Tax Amount`]: qc.prior.invoiceAmount,
         [`${priorYear} Paid`]: qc.prior.amountPaid,
         [`${priorYear} Outstanding`]: qc.prior.outstanding,
         [`${currentYear} Invoices`]: qc.current.count,
-        [`${currentYear} Amount`]: qc.current.invoiceAmount,
-        [`${currentYear} Tax`]: qc.current.taxAmount,
-        [`${currentYear} Total`]: qc.current.invoiceTotal,
+        [`${currentYear} Pre-Tax Amount`]: qc.current.invoiceAmount,
         [`${currentYear} Paid`]: qc.current.amountPaid,
         [`${currentYear} Outstanding`]: qc.current.outstanding,
-        'Total Variance': qc.current.invoiceTotal - qc.prior.invoiceTotal,
-        'Variance %': qc.prior.invoiceTotal === 0 ? 'N/A' : `${pctChange(qc.current.invoiceTotal, qc.prior.invoiceTotal).toFixed(1)}%`,
+        'Amount Variance': qc.current.invoiceAmount - qc.prior.invoiceAmount,
+        'Variance %': qc.prior.invoiceAmount === 0 ? 'N/A' : `${pctChange(qc.current.invoiceAmount, qc.prior.invoiceAmount).toFixed(1)}%`,
       });
     }
 
@@ -325,19 +321,15 @@ function InvoiceReport() {
     rows.push({
       'Period': `Selected Quarters Total`,
       [`${priorYear} Invoices`]: fp.count,
-      [`${priorYear} Amount`]: fp.invoiceAmount,
-      [`${priorYear} Tax`]: fp.taxAmount,
-      [`${priorYear} Total`]: fp.invoiceTotal,
+      [`${priorYear} Pre-Tax Amount`]: fp.invoiceAmount,
       [`${priorYear} Paid`]: fp.amountPaid,
       [`${priorYear} Outstanding`]: fp.outstanding,
       [`${currentYear} Invoices`]: ft.count,
-      [`${currentYear} Amount`]: ft.invoiceAmount,
-      [`${currentYear} Tax`]: ft.taxAmount,
-      [`${currentYear} Total`]: ft.invoiceTotal,
+      [`${currentYear} Pre-Tax Amount`]: ft.invoiceAmount,
       [`${currentYear} Paid`]: ft.amountPaid,
       [`${currentYear} Outstanding`]: ft.outstanding,
-      'Total Variance': ft.invoiceTotal - fp.invoiceTotal,
-      'Variance %': fp.invoiceTotal === 0 ? 'N/A' : `${pctChange(ft.invoiceTotal, fp.invoiceTotal).toFixed(1)}%`,
+      'Amount Variance': ft.invoiceAmount - fp.invoiceAmount,
+      'Variance %': fp.invoiceAmount === 0 ? 'N/A' : `${pctChange(ft.invoiceAmount, fp.invoiceAmount).toFixed(1)}%`,
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -641,18 +633,18 @@ function InvoiceReport() {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <ComparisonMetricCard
-                    label="Total Invoiced"
+                    label="Pre-Tax Amount"
                     icon={DollarSign}
-                    priorValue={comparisonData.filteredPriorTotal.invoiceTotal}
-                    currentValue={comparisonData.filteredCurrentTotal.invoiceTotal}
+                    priorValue={comparisonData.filteredPriorTotal.invoiceAmount}
+                    currentValue={comparisonData.filteredCurrentTotal.invoiceAmount}
                     priorYear={priorYear}
                     currentYear={currentYear}
                   />
                   <ComparisonMetricCard
-                    label="Pre-Tax Amount"
+                    label="Total (with Tax)"
                     icon={FileText}
-                    priorValue={comparisonData.filteredPriorTotal.invoiceAmount}
-                    currentValue={comparisonData.filteredCurrentTotal.invoiceAmount}
+                    priorValue={comparisonData.filteredPriorTotal.invoiceTotal}
+                    currentValue={comparisonData.filteredCurrentTotal.invoiceTotal}
                     priorYear={priorYear}
                     currentYear={currentYear}
                   />
@@ -691,10 +683,10 @@ function InvoiceReport() {
                           </TableRow>
                           <TableRow>
                             <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
                             <TableHead className="text-right border-r">Paid</TableHead>
                             <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
                             <TableHead className="text-right border-r">Paid</TableHead>
                             <TableHead className="text-right">$ Change</TableHead>
                             <TableHead className="text-right">% Change</TableHead>
@@ -704,16 +696,16 @@ function InvoiceReport() {
                           {comparisonData.quarterComparisons
                             .filter(qc => selectedQuarters.includes(qc.quarter))
                             .map(qc => {
-                              const delta = qc.current.invoiceTotal - qc.prior.invoiceTotal;
-                              const pct = pctChange(qc.current.invoiceTotal, qc.prior.invoiceTotal);
+                              const delta = qc.current.invoiceAmount - qc.prior.invoiceAmount;
+                              const pct = pctChange(qc.current.invoiceAmount, qc.prior.invoiceAmount);
                               return (
                                 <TableRow key={qc.quarter}>
                                   <TableCell className="font-semibold border-r">Q{qc.quarter}</TableCell>
                                   <TableCell className="text-right tabular-nums">{qc.prior.count}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(qc.prior.invoiceTotal)}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{fmt(qc.prior.invoiceAmount)}</TableCell>
                                   <TableCell className="text-right tabular-nums border-r">{fmt(qc.prior.amountPaid)}</TableCell>
                                   <TableCell className="text-right tabular-nums">{qc.current.count}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(qc.current.invoiceTotal)}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{fmt(qc.current.invoiceAmount)}</TableCell>
                                   <TableCell className="text-right tabular-nums border-r">{fmt(qc.current.amountPaid)}</TableCell>
                                   <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                     {delta > 0 ? '+' : ''}{fmt(delta)}
@@ -727,18 +719,18 @@ function InvoiceReport() {
                           {(() => {
                             const ft = comparisonData.filteredCurrentTotal;
                             const fp = comparisonData.filteredPriorTotal;
-                            const delta = ft.invoiceTotal - fp.invoiceTotal;
-                            const pct = pctChange(ft.invoiceTotal, fp.invoiceTotal);
+                            const delta = ft.invoiceAmount - fp.invoiceAmount;
+                            const pct = pctChange(ft.invoiceAmount, fp.invoiceAmount);
                             return (
                               <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
                                 <TableCell className="border-r">
                                   {selectedQuarters.length === 4 ? 'Full Year' : 'Selected Total'}
                                 </TableCell>
                                 <TableCell className="text-right tabular-nums">{fp.count}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(fp.invoiceTotal)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(fp.invoiceAmount)}</TableCell>
                                 <TableCell className="text-right tabular-nums border-r">{fmt(fp.amountPaid)}</TableCell>
                                 <TableCell className="text-right tabular-nums">{ft.count}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(ft.invoiceTotal)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(ft.invoiceAmount)}</TableCell>
                                 <TableCell className="text-right tabular-nums border-r">{fmt(ft.amountPaid)}</TableCell>
                                 <TableCell className={`text-right tabular-nums ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                   {delta > 0 ? '+' : ''}{fmt(delta)}
