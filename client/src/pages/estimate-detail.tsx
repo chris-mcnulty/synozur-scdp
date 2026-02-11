@@ -103,6 +103,8 @@ function EstimateDetailContent() {
   const [fixedPriceInput, setFixedPriceInput] = useState<string>("");
   const [showPMWizard, setShowPMWizard] = useState(false);
   const [showRecalcDialog, setShowRecalcDialog] = useState(false);
+  const [showMarginOverrideDialog, setShowMarginOverrideDialog] = useState(false);
+  const [targetMarginPercent, setTargetMarginPercent] = useState("");
   const [blockHoursInput, setBlockHoursInput] = useState<string>("");
   const [blockDollarsInput, setBlockDollarsInput] = useState<string>("");
   const [blockDescriptionInput, setBlockDescriptionInput] = useState<string>("");
@@ -580,7 +582,9 @@ function EstimateDetailContent() {
       setShowRecalcDialog(false);
       toast({ 
         title: "Estimate recalculated successfully",
-        description: data.message
+        description: data.marginOverrideCleared 
+          ? "Margin override has been cleared. Reapply if needed."
+          : data.message
       });
     },
     onError: (error: any) => {
@@ -588,6 +592,31 @@ function EstimateDetailContent() {
         title: "Failed to recalculate estimate", 
         description: error.message || "Please try again",
         variant: "destructive" 
+      });
+    }
+  });
+
+  const marginOverrideMutation = useMutation({
+    mutationFn: async (params: { action: 'apply' | 'remove'; targetMarginPercent?: number }) => {
+      return apiRequest(`/api/estimates/${id}/margin-override`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+        headers: { 'Content-Type': 'application/json' }
+      });
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'line-items'] });
+      setShowMarginOverrideDialog(false);
+      toast({
+        title: data.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update margin override",
+        description: error.message || "Please try again",
+        variant: "destructive"
       });
     }
   });
@@ -2144,7 +2173,6 @@ function EstimateDetailContent() {
                     onChange={(e) => setPresentedTotal(e.target.value)}
                     onBlur={() => {
                       if (presentedTotal && estimate) {
-                        // Calculate profit margin: (Quote - Cost) / Quote * 100
                         const quote = parseFloat(presentedTotal);
                         const profit = quote - totalCost;
                         const calculatedMargin = quote > 0 ? ((profit / quote) * 100).toFixed(2) : "0";
@@ -2156,6 +2184,8 @@ function EstimateDetailContent() {
                       }
                     }}
                     className="mt-1"
+                    readOnly={estimate?.marginOverrideActive === true}
+                    disabled={estimate?.marginOverrideActive === true}
                   />
                   <p className="text-sm text-muted-foreground mt-1">
                     Internal Total: ${Math.round(totalAmount).toLocaleString()}
@@ -2177,6 +2207,86 @@ function EstimateDetailContent() {
                     Profit: ${estimate?.presentedTotal ? Math.round(Number(estimate.presentedTotal) - totalCost).toLocaleString() : "N/A"}
                   </p>
                 </div>
+              </div>
+
+              {/* Margin Override Section */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium">Margin Override</h4>
+                  {estimate?.marginOverrideActive ? (
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                      Active: {Number(estimate.marginOverridePercent || 0).toFixed(1)}% target
+                    </Badge>
+                  ) : null}
+                </div>
+                {estimate?.marginOverrideActive ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Target Margin:</span>
+                        <span className="font-semibold">{Number(estimate.marginOverridePercent || 0).toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Total Cost:</span>
+                        <span className="font-medium">${Math.round(totalCost).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Adjusted Total:</span>
+                        <span className="font-semibold text-blue-700 dark:text-blue-300">${Math.round(totalAmount).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Profit:</span>
+                        <span className="font-medium text-green-700 dark:text-green-300">${Math.round(totalAmount - totalCost).toLocaleString()}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground italic mt-2">
+                        Presented Total is locked while margin override is active. Billing rates on all line items have been adjusted proportionally.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setTargetMarginPercent(estimate.marginOverridePercent || "");
+                          setShowMarginOverrideDialog(true);
+                        }}
+                        disabled={!isEditable || marginOverrideMutation.isPending}
+                      >
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Adjust Target
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => marginOverrideMutation.mutate({ action: 'remove' })}
+                        disabled={!isEditable || marginOverrideMutation.isPending}
+                        className="text-orange-600 hover:text-orange-700"
+                      >
+                        {marginOverrideMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <X className="h-4 w-4 mr-1" />}
+                        Remove Override
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      Apply a target margin to proportionally adjust all billing rates. Original rates are preserved and can be restored.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const currentMargin = totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount * 100) : 0;
+                        setTargetMarginPercent(currentMargin > 0 ? currentMargin.toFixed(1) : "");
+                        setShowMarginOverrideDialog(true);
+                      }}
+                      disabled={!isEditable}
+                    >
+                      <Calculator className="h-4 w-4 mr-1" />
+                      Apply Margin Override
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Referral Fee Section */}
@@ -5187,6 +5297,14 @@ function EstimateDetailContent() {
           <p className="text-sm font-medium text-orange-600 mt-4">
             This will overwrite any manual rate adjustments you may have made.
           </p>
+          {estimate?.marginOverrideActive && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg mt-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
+                Margin override is currently active ({Number(estimate.marginOverridePercent || 0).toFixed(1)}%). Recalculating will reset all rates to system defaults and clear the margin override. You will need to reapply margin pricing afterward.
+              </p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button
@@ -5202,6 +5320,100 @@ function EstimateDetailContent() {
             data-testid="button-confirm-recalc"
           >
             {recalculateEstimateMutation.isPending ? "Recalculating..." : "Recalculate All"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Margin Override Dialog */}
+    <Dialog open={showMarginOverrideDialog} onOpenChange={setShowMarginOverrideDialog}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Apply Margin Override</DialogTitle>
+          <DialogDescription>
+            Set a target profit margin. Billing rates on all line items will be adjusted proportionally to achieve this margin. Hours and cost rates remain unchanged.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div>
+            <Label htmlFor="target-margin">Target Margin (%)</Label>
+            <Input
+              id="target-margin"
+              type="number"
+              step="0.1"
+              min="0"
+              max="99.99"
+              placeholder="e.g. 35"
+              value={targetMarginPercent}
+              onChange={(e) => setTargetMarginPercent(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          {targetMarginPercent && Number(targetMarginPercent) > 0 && Number(targetMarginPercent) < 100 && (
+            <div className="p-3 bg-muted rounded-lg space-y-2">
+              <p className="text-sm font-medium">Preview</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Current Total:</span>
+                <span>${Math.round(totalAmount).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Total Cost:</span>
+                <span>${Math.round(totalCost).toLocaleString()}</span>
+              </div>
+              {(() => {
+                const target = Number(targetMarginPercent);
+                const newTotal = totalCost / (1 - target / 100);
+                const newProfit = newTotal - totalCost;
+                const multiplier = totalAmount > 0 ? newTotal / totalAmount : 1;
+                const currentProfit = totalAmount - totalCost;
+                return (
+                  <>
+                    <div className="border-t pt-2 mt-2" />
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">New Total:</span>
+                      <span className="font-semibold text-blue-700 dark:text-blue-300">${Math.round(newTotal).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">New Profit:</span>
+                      <span className="font-medium text-green-700 dark:text-green-300">
+                        ${Math.round(newProfit).toLocaleString()} (was ${Math.round(currentProfit).toLocaleString()})
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Rate Multiplier:</span>
+                      <span>{multiplier.toFixed(4)}x</span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Original rates are saved and can be restored at any time by removing the override. Using "Recalculate All" will reset rates to system defaults and clear the margin override — you would need to reapply it afterward.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setShowMarginOverrideDialog(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              const target = Number(targetMarginPercent);
+              if (target > 0 && target < 100) {
+                marginOverrideMutation.mutate({ action: 'apply', targetMarginPercent: target });
+              }
+            }}
+            disabled={!targetMarginPercent || Number(targetMarginPercent) <= 0 || Number(targetMarginPercent) >= 100 || marginOverrideMutation.isPending}
+          >
+            {marginOverrideMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Applying...</>
+            ) : "Apply Margin Override"}
           </Button>
         </DialogFooter>
       </DialogContent>

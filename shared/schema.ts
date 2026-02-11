@@ -460,6 +460,9 @@ export const estimates = pgTable("estimates", {
   confidenceMediumMultiplier: decimal("confidence_medium_multiplier", { precision: 4, scale: 2 }).default('1.10'),
   confidenceLowMultiplier: decimal("confidence_low_multiplier", { precision: 4, scale: 2 }).default('1.20'),
   archived: boolean("archived").notNull().default(false), // Archive estimates to hide from default view
+  marginOverrideActive: boolean("margin_override_active").notNull().default(false),
+  marginOverridePercent: decimal("margin_override_percent", { precision: 5, scale: 2 }),
+  originalRatesSnapshot: jsonb("original_rates_snapshot"), // { [lineItemId]: originalRate } - stored when margin override is first applied
   retainerConfig: jsonb("retainer_config"), // { monthCount, startMonth, rateTiers: [{name, rate, maxHours}] }
   // Referral fee tracking (paid to sellers/referrers)
   referralFeeType: text("referral_fee_type").default("none"), // 'none', 'percentage', 'flat'

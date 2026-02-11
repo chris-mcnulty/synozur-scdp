@@ -10414,17 +10414,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       const totalMargin = totalFees - totalCost;
       const marginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
 
-      // Update base totals first
+      const hadMarginOverride = estimate.marginOverrideActive === true;
+
       await storage.updateEstimate(estimateId, {
         totalHours: String(totalHours),
         totalFees: String(totalFees),
-        margin: String(marginPercent)
+        margin: String(marginPercent),
+        marginOverrideActive: false,
+        marginOverridePercent: null,
+        originalRatesSnapshot: null,
       });
 
-      // Use helper to recalculate and distribute referral fees
       await recalculateReferralFees(estimateId);
 
-      // Fetch updated estimate to get referral-adjusted values
       const updatedEstimate = await storage.getEstimate(estimateId);
       const referralFeeAmount = Number(updatedEstimate?.referralFeeAmount || 0);
       const netRevenue = Number(updatedEstimate?.netRevenue || 0);
@@ -10433,6 +10435,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({ 
         success: true, 
         message: `Recalculated ${updatedCount} line items`,
+        marginOverrideCleared: hadMarginOverride,
         totals: {
           totalHours,
           totalFees,
@@ -10447,6 +10450,144 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error recalculating estimate:", error);
       res.status(500).json({ message: "Failed to recalculate estimate" });
+    }
+  });
+
+  app.post("/api/estimates/:id/margin-override", requireAuth, async (req, res) => {
+    try {
+      if (!await ensureEstimateIsEditable(req.params.id, res)) return;
+      const estimateId = req.params.id;
+      const { action, targetMarginPercent } = req.body;
+
+      const estimate = await storage.getEstimate(estimateId);
+      if (!estimate) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const lineItems = await storage.getEstimateLineItems(estimateId);
+      if (lineItems.length === 0) {
+        return res.status(400).json({ message: "No line items to adjust" });
+      }
+
+      if (action === 'apply') {
+        if (targetMarginPercent == null || targetMarginPercent < 0 || targetMarginPercent >= 100) {
+          return res.status(400).json({ message: "Target margin must be between 0 and 99.99%" });
+        }
+
+        const currentTotalCost = lineItems.reduce((sum, item) => {
+          if (isLineItemSalaried(item)) return sum;
+          return sum + Number(item.totalCost || 0);
+        }, 0);
+
+        const targetTotal = currentTotalCost / (1 - targetMarginPercent / 100);
+        const currentTotalAmount = lineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+
+        if (currentTotalAmount <= 0) {
+          return res.status(400).json({ message: "Current total amount must be greater than zero" });
+        }
+
+        const multiplier = targetTotal / currentTotalAmount;
+
+        const snapshot: Record<string, string> = {};
+        const existingSnapshot = estimate.originalRatesSnapshot as Record<string, string> | null;
+
+        for (const item of lineItems) {
+          const originalRate = existingSnapshot?.[item.id] ?? item.rate;
+          snapshot[item.id] = String(originalRate);
+
+          const newRate = Number(originalRate) * multiplier;
+          const adjustedHours = Number(item.adjustedHours || 0);
+          const totalAmount = adjustedHours * newRate;
+          const totalCost = Number(item.totalCost || 0);
+          const margin = totalAmount - totalCost;
+          const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+
+          await storage.updateEstimateLineItem(item.id, {
+            rate: String(Math.round(newRate * 100) / 100),
+            totalAmount: String(Math.round(totalAmount * 100) / 100),
+            margin: String(Math.round(margin * 100) / 100),
+            marginPercent: String(Math.round(marginPercent * 100) / 100),
+          });
+        }
+
+        const updatedLineItems = await storage.getEstimateLineItems(estimateId);
+        const totalHours = updatedLineItems.reduce((sum, item) => sum + Number(item.adjustedHours || 0), 0);
+        const totalFees = updatedLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+
+        await storage.updateEstimate(estimateId, {
+          marginOverrideActive: true,
+          marginOverridePercent: String(targetMarginPercent),
+          originalRatesSnapshot: snapshot,
+          totalHours: String(totalHours),
+          totalFees: String(totalFees),
+          margin: String(targetMarginPercent),
+        });
+
+        await recalculateReferralFees(estimateId);
+
+        const updatedEstimate = await storage.getEstimate(estimateId);
+        res.json({
+          success: true,
+          message: `Margin override applied at ${targetMarginPercent}%`,
+          estimate: updatedEstimate,
+        });
+
+      } else if (action === 'remove') {
+        const snapshot = estimate.originalRatesSnapshot as Record<string, string> | null;
+        if (!snapshot) {
+          return res.status(400).json({ message: "No margin override snapshot found to restore" });
+        }
+
+        for (const item of lineItems) {
+          const originalRate = snapshot[item.id];
+          if (originalRate == null) continue;
+
+          const rate = Number(originalRate);
+          const adjustedHours = Number(item.adjustedHours || 0);
+          const totalAmount = adjustedHours * rate;
+          const totalCost = Number(item.totalCost || 0);
+          const margin = totalAmount - totalCost;
+          const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+
+          await storage.updateEstimateLineItem(item.id, {
+            rate: String(rate),
+            totalAmount: String(Math.round(totalAmount * 100) / 100),
+            margin: String(Math.round(margin * 100) / 100),
+            marginPercent: String(Math.round(marginPercent * 100) / 100),
+          });
+        }
+
+        const updatedLineItems = await storage.getEstimateLineItems(estimateId);
+        const totalHours = updatedLineItems.reduce((sum, item) => sum + Number(item.adjustedHours || 0), 0);
+        const totalFees = updatedLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
+        const totalCost = updatedLineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+        const totalMargin = totalFees - totalCost;
+        const overallMarginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
+
+        await storage.updateEstimate(estimateId, {
+          marginOverrideActive: false,
+          marginOverridePercent: null,
+          originalRatesSnapshot: null,
+          totalHours: String(totalHours),
+          totalFees: String(totalFees),
+          margin: String(overallMarginPercent),
+        });
+
+        await recalculateReferralFees(estimateId);
+
+        const updatedEstimate = await storage.getEstimate(estimateId);
+        res.json({
+          success: true,
+          message: "Margin override removed, original rates restored",
+          estimate: updatedEstimate,
+        });
+
+      } else {
+        return res.status(400).json({ message: "action must be 'apply' or 'remove'" });
+      }
+    } catch (error) {
+      console.error("Error applying margin override:", error);
+      res.status(500).json({ message: "Failed to apply margin override" });
     }
   });
 
