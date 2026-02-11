@@ -17,6 +17,38 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.02.11 (February 11, 2026)
+
+**Release Date:** February 11, 2026  
+**Status:** Production Release  
+**Codename:** Year-over-Year Analytics
+
+This release adds powerful year-over-year comparison capabilities to the Invoice Report, enabling side-by-side financial analysis of current and prior year performance with quarter-level granularity.
+
+#### ✨ New Features
+
+**Invoice Report: Year-over-Year Comparison View**
+- New "YoY Comparison" tab alongside the existing Invoice Report
+- Side-by-side comparison of prior year vs current year financial metrics
+- Quarter-over-Quarter breakdown table with selectable quarters (Q1-Q4 multi-select)
+- Year-over-Year summary table showing all financial metrics with variance analysis
+- Comparison metric cards showing Total Invoiced, Pre-Tax Amount, Amount Paid, and Outstanding with delta indicators
+- Color-coded variance indicators (green for growth, red for decline) with dollar and percentage changes
+- Export comparison data to Excel for offline analysis
+
+**Invoice Report: Quick Date Filters**
+- "Prior Year" button instantly sets the date range to the previous full calendar year
+- "Current Year" button resets to January 1 through today
+- Faster navigation between reporting periods
+
+**Invoice Report: Clickable Invoice Numbers**
+- Invoice numbers in the report table are now clickable links
+- Clicking navigates directly to the full invoice batch detail page for review
+
+---
+
+## Recent Releases
+
 ### Version 1.2026.02.08 (February 8, 2026)
 
 **Release Date:** February 8, 2026  
@@ -44,8 +76,6 @@ This release adds a dedicated Portfolio Timeline page, fixes a potential start d
 - Updated Changelog with comprehensive release history
 
 ---
-
-## Recent Releases
 
 ### Version 1.2026.02.07 (February 7, 2026)
 

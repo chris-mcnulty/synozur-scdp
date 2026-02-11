@@ -353,14 +353,24 @@ The following major features have been delivered and are live in production. See
 
 ### 📊 Advanced Financial Reporting
 
-**Status:** 🔮 Future  
-**Target Timeframe:** Q4 2026
+**Status:** 🚧 In Progress  
+**Target Timeframe:** Q1-Q4 2026
+
+#### ✅ Completed (February 2026)
+
+**Year-over-Year Invoice Comparison**
+- Year-over-year revenue analysis with side-by-side prior/current year view
+- Quarter-over-quarter comparison with multi-select Q1-Q4 filtering
+- Variance analysis with dollar and percentage change indicators
+- Comparison metric summary cards with trend indicators
+- Year-over-Year summary table for all financial metrics
+- Quick date filters (Prior Year / Current Year buttons)
+- Clickable invoice numbers linking to batch details
+- Excel export for comparison data
 
 #### Planned Features
 
-**Annual Invoice Reporting**
-- Year-over-year revenue analysis
-- Monthly/quarterly/annual comparisons
+**Annual Invoice Reporting (Remaining)**
 - Client contribution analysis and rankings
 - Service line revenue breakdown
 - Growth rate calculations and projections

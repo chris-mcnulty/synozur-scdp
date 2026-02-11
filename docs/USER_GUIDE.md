@@ -270,7 +270,32 @@ The Dashboard is your central hub for tracking work and priorities.
 - Discounts and adjustments
 - Payment terms and due dates
 
-### 6. Client Management
+### 6. Invoice Report & Financial Analytics
+
+The Invoice Report provides a comprehensive view of all finalized invoices with powerful filtering and comparison tools.
+
+**Accessing the Invoice Report:**
+1. Navigate to Financial Reports from the sidebar
+2. The Invoice Report page opens with the current year's data by default
+
+**Report Tab Features:**
+- **Date Filtering**: Set custom start and end dates to view invoices for any period
+- **Quick Date Buttons**: Use "Prior Year" to instantly view last year's invoices, or "Current Year" to reset to the current year
+- **Invoice Type Filter**: Filter by Services, Expenses, or All Types
+- **Subtotal Grouping**: Group subtotals by Month or Quarter for period-level summaries
+- **Invoice Links**: Click any invoice number to jump directly to the full invoice batch detail
+- **Excel Export**: Download the full report as an Excel spreadsheet
+
+**Year-over-Year Comparison Tab:**
+The YoY Comparison view lets you compare financial performance between the prior year and current year side by side.
+- **Quarter Selection**: Check or uncheck Q1 through Q4 to compare specific quarters
+- **Comparison Cards**: At-a-glance metrics showing Total Invoiced, Pre-Tax Amount, Amount Paid, and Outstanding for both years with variance indicators
+- **Quarter-over-Quarter Table**: Detailed breakdown by quarter showing invoice counts, totals, and paid amounts with dollar and percentage variance
+- **Year-over-Year Summary**: Full-year totals for all financial metrics (Invoice Count, Pre-Tax Amount, Tax, Total Invoiced, Amount Paid, Outstanding)
+- **Variance Indicators**: Green arrows for growth, red arrows for decline, with both dollar amounts and percentages
+- **Export**: Download the comparison data as an Excel file
+
+### 7. Client Management
 
 **Client Records:**
 - Basic information (name, address, contacts)
