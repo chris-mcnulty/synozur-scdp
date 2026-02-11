@@ -3635,8 +3635,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       const conditions: any[] = [
         eq(invoiceBatches.status, 'finalized'),
-        sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) >= ${filterStartDate}::timestamp`,
-        sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) <= (${filterEndDate}::date + interval '1 day')`,
+        sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) >= ${filterStartDate}::date`,
+        sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) <= ${filterEndDate}::date`,
       ];
 
       if (tenantId) {
@@ -3655,6 +3655,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         startDate: invoiceBatches.startDate,
         endDate: invoiceBatches.endDate,
         finalizedAt: invoiceBatches.finalizedAt,
+        asOfDate: invoiceBatches.asOfDate,
         totalAmount: invoiceBatches.totalAmount,
         aggregateAdjustmentTotal: invoiceBatches.aggregateAdjustmentTotal,
         discountAmount: invoiceBatches.discountAmount,
@@ -3669,7 +3670,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       })
       .from(invoiceBatches)
       .where(and(...conditions))
-      .orderBy(sql`COALESCE(${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) ASC`);
+      .orderBy(sql`COALESCE(${invoiceBatches.asOfDate}, ${invoiceBatches.finalizedAt}, ${invoiceBatches.createdAt}) ASC`);
 
       const batchIds = rows.map(r => r.batchId);
 
@@ -3700,12 +3701,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         const tax = Number(row.taxAmountOverride ?? row.taxAmount ?? 0);
         const invoiceAmount = base - discount;
         const invoiceTotal = invoiceAmount + tax;
-        const paid = Number(row.paymentAmount || 0);
+        const paid = row.paymentStatus === 'paid' ? invoiceTotal : Number(row.paymentAmount || 0);
         const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
+
+        const asOfDateStr = row.asOfDate ? new Date(row.asOfDate).toISOString().split('T')[0] : null;
+        const finalizedDateStr = row.finalizedAt ? new Date(row.finalizedAt).toISOString().split('T')[0] : null;
 
         return {
           batchId: row.batchId,
-          invoiceDate: row.finalizedAt ? new Date(row.finalizedAt).toISOString().split('T')[0] : row.startDate,
+          invoiceDate: asOfDateStr || finalizedDateStr || row.startDate,
           periodStart: row.startDate,
           periodEnd: row.endDate,
           clientName: clientMap[row.batchId] || 'Unknown',
