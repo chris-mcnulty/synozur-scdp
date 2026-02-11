@@ -7746,8 +7746,7 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async deleteInvoiceBatch(batchId: string): Promise<void> {
-    // Check if batch exists
+  async deleteInvoiceBatch(batchId: string, options?: { force?: boolean }): Promise<void> {
     const [batch] = await db.select()
       .from(invoiceBatches)
       .where(eq(invoiceBatches.batchId, batchId));
@@ -7756,9 +7755,18 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`Batch ${batchId} not found`);
     }
     
-    // Prevent deletion of finalized batches
     if (batch.status === 'finalized') {
-      throw new Error('Cannot delete a finalized batch');
+      if (options?.force) {
+        const lineCount = await db.select({ count: sql<number>`COUNT(*)` })
+          .from(invoiceLines)
+          .where(eq(invoiceLines.batchId, batchId));
+        if (Number(lineCount[0]?.count) > 0) {
+          throw new Error('Cannot force-delete a finalized batch that has invoice lines');
+        }
+        console.log(`[STORAGE] Force-deleting empty finalized batch ${batchId}`);
+      } else {
+        throw new Error('Cannot delete a finalized batch');
+      }
     }
     
     // FIRST: Get projects and expense lines BEFORE deleting anything

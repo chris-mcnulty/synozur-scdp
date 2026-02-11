@@ -18608,8 +18608,16 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.delete("/api/invoice-batches/:batchId", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const { batchId } = req.params;
+      const force = req.query.force === 'true';
 
-      await storage.deleteInvoiceBatch(batchId);
+      if (force) {
+        const userRole = req.user?.role;
+        if (userRole !== 'admin' && userRole !== 'global_admin' && userRole !== 'constellation_admin') {
+          return res.status(403).json({ message: "Only admins can force-delete finalized batches" });
+        }
+      }
+
+      await storage.deleteInvoiceBatch(batchId, { force });
 
       res.status(204).send(); // No content response for successful deletion
     } catch (error: any) {
