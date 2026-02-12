@@ -223,39 +223,62 @@
   - Industry-specific best practices
 
 ### Advanced Resource Management & Balancing
-**Status:** FUTURE ENHANCEMENT - Builds on P0 assignment foundation
+**Status:** PLANNED — Design complete, ready for implementation  
+**Priority:** P1 — High priority for consulting operations  
+**Added:** October 2025 | **Last Updated:** February 2026  
+**Design Document:** `docs/design/advanced-resource-management.md`
 
-**Why P1:** Advanced multi-project resource optimization features that enhance the foundational assignment management completed in P0.
+**Why P1:** Advanced multi-project resource optimization features that enhance the foundational assignment management completed in P0. Enables intelligent staffing decisions, cost variance visibility, and cross-project capacity planning.
 
-**Prerequisites:** P0 project assignments (Days 4-5) must be complete
+**Prerequisites:** P0 project assignments (Days 4-5) — COMPLETE
 
-**Scope:**
-- [ ] **Cross-Project Workload View**
-  - Unified view of each person's assignments across ALL active projects
-  - Visual timeline showing concurrent project assignments
-  - Capacity utilization percentage (total allocation across all projects)
-  - Over-allocation alerts (>100% capacity)
-  - Available capacity indicators
-  
-- [ ] **Resource Rebalancing Tools**
-  - Drag-and-drop reassignment interface
-  - Rescheduling tools to shift assignments
-  - Workload rebalancing suggestions
-  - Impact analysis before making changes
-  - Bulk assignment operations
-  
-- [ ] **Assignment Bulk Import**
-  - Excel/CSV bulk import for project assignments
-  - Template download with required fields
+**Key Design Decisions:**
+- **Estimate-to-project conversion stays fast** — no assignment suggestions at conversion time. Generic roles flow through unchanged. Smart suggestions happen later in the project's assignment module.
+- **Planner sync protects generic roles** — allocations with roleId but no personId preserve their role context through sync cycles. Inbound sync limited to status/dates/percentComplete only.
+- **Per-person capacity limits** — configurable weekly hours (default 40) accounts for part-time staff and day-off schedules. Used as utilization denominator.
+- **Cost variance drives staffing** — suggestions show financial impact of each candidate vs the estimate's budgeted cost rate.
+
+**Scope (6 Phases, ~7-8 weeks total):**
+
+- [ ] **Phase 1: Role Capabilities & Capacity Profiles (~1 week)**
+  - New `user_role_capabilities` table: map people to multiple generic roles with proficiency levels (primary/secondary/learning)
+  - Optional per-role cost/billing rate overrides per person
+  - Per-person `weeklyCapacityHours` (default 40), `capacityNotes`, `capacityEffectiveDate` on users table
+  - UI: "Capabilities & Capacity" section on user profile, role badges on user list
+  - API: CRUD for role capabilities, capable-users-by-role query
+
+- [ ] **Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)**
+  - Include role name in Planner task title for unassigned allocations: `"[Senior Consultant] Week 3 — Task"`
+  - Add role name to task notes
+  - Define sync field whitelist: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
+  - Prevents future bidirectional sync from overwriting role context
+
+- [ ] **Phase 3: Smart Assignment Suggestions (~2 weeks)**
+  - Suggestion engine in project assignment module (NOT during estimate conversion)
+  - Candidate ranking: role proficiency match + availability vs capacity + cost variance vs budget + salaried bonus + current utilization
+  - Cost variance display per candidate ($ and % vs estimate's cost rate)
+  - Bulk assignment: select multiple generic-role allocations → auto-suggest → review → confirm
+  - Original roleId preserved on allocation after person is assigned
+
+- [ ] **Phase 4: Cross-Project Workload View & Rebalancing (~2 weeks)**
+  - `/resource-planning` dashboard with timeline view and utilization heat map
+  - Utilization = allocated hours / weeklyCapacityHours (per person per week)
+  - Color coding: green (60-80%), yellow (80-100%), red (>100%), grey (<40%)
+  - "Find Replacement" rebalancing with cost impact analysis and margin impact preview
+  - Filters by role capability, project, date range, utilization threshold
+
+- [ ] **Phase 5: Capacity Planning Analytics (~1-2 weeks)**
+  - `/resource-planning/capacity` dashboard with KPI cards
+  - Bench list (people <20% utilization with role capabilities)
+  - Role demand vs supply gap analysis
+  - Forecast tool: "If we win Proposal X, utilization goes from 72% to 91%"
+  - Cost variance trends over time
+
+- [ ] **Phase 6: Bulk Import & Polish (~1 week)**
+  - CSV/Excel templates for bulk role capability and capacity profile imports
   - Validation and error reporting
-  - Support for role-based and person-based assignments
-  
-- [ ] **Capacity Planning & Analytics**
-  - Team capacity dashboard
-  - Utilization forecasting
-  - Bench time visibility
-  - Resource demand vs. supply analysis
-  - Historical utilization trends
+  - Performance optimization for large teams
+  - Historical utilization trend charts
 
 ### Microsoft 365 Project Integration - PARTIALLY COMPLETE
 **Status:** Planner sync implemented, Teams integration pending  

@@ -59,16 +59,20 @@ Constellation empowers consulting organizations to deliver exceptional client va
 The following major features have been delivered and are live in production. See the [Changelog](/changelog) for detailed release notes.
 
 ### ✅ Multi-Tenancy Architecture
-**Completed:** January 2026
+**Completed:** February 2026 (Phases 1-4, 6)
 - UUID-based tenant IDs with full data isolation
 - Service plans (Trial, Team, Enterprise, Unlimited) with plan management UI
-- Subdomain routing for tenant-specific access
+- Self-service signup flow (3-step wizard: org info, admin account, plan selection)
+- Plan lifecycle enforcement with 14-day grace period and warning banners
+- Scheduled plan expiration job (daily at 2:00 AM)
+- Tenant switcher for users with multiple memberships
 - Platform admin UI for managing tenants, service plans, and users
 - Automatic tenant assignment on login via Azure AD mapping, email domain, or fallback
 - Platform roles (`global_admin`, `constellation_admin`) with elevated cross-tenant access
 - Tenant-specific settings: company info, branding, invoice footer, email templates
 - Tenant-scoped vocabulary customization
 - Per-tenant SSO configuration support
+- Subdomain routing deferred (requires custom DNS + wildcard SSL)
 
 ### ✅ Retainer & Commercial Schemes
 **Completed:** January 2026
@@ -469,35 +473,56 @@ The `IStorage` interface remains unified but its implementation is composed from
 
 ---
 
-### 🎯 Advanced Resource Management Enhancements
+### 🎯 Advanced Resource Management
 
-**Status:** 🔮 Future  
-**Target Timeframe:** Q4 2026  
-**Note:** Core resource management, capacity planning, and portfolio timeline completed in January 2026
+**Status:** 📋 Planned  
+**Target Timeframe:** Q2-Q3 2026  
+**Note:** Core resource management, capacity planning, and portfolio timeline completed in January 2026  
+**Design Document:** `docs/design/advanced-resource-management.md`
 
-#### Planned Enhancements
+#### Key Concepts
 
-**Resource Rebalancing Tools**
-- Drag-and-drop reassignment interface
-- Rescheduling tools to shift assignment dates
-- AI-powered workload rebalancing suggestions
-- Impact analysis before making changes
-- Bulk assignment operations
-- What-if scenario modeling
+**Multi-Role Capability Mapping**
+- Map each person to multiple generic roles they can fill (e.g., Senior Consultant who can also serve as BA or Project Lead)
+- Proficiency levels: primary, secondary, learning
+- Optional per-role cost/billing rate overrides per person
+- Used to power smart assignment suggestions and rebalancing
 
-**Assignment Bulk Import**
-- Excel/CSV bulk import for project assignments
-- Downloadable template with required fields
-- Validation and error reporting
-- Support for role-based and person-based assignments
-- Bulk update capabilities
+**Per-Person Capacity Profiles**
+- Configurable weekly capacity hours (default 40) per person
+- Accounts for part-time staff, day-off schedules, contractual limits
+- Used as utilization denominator in all capacity calculations
 
-**Advanced Capacity Analytics**
-- Utilization forecasting by role and person
-- Bench time visibility and optimization
-- Resource demand vs. supply analysis
-- Historical utilization trends
-- Hiring recommendations based on demand
+#### Planned Phases (~7-8 weeks total)
+
+**Phase 1: Role Capabilities & Capacity Profiles (~1 week)**
+- New `user_role_capabilities` table for many-to-many user-role mapping
+- Per-person `weeklyCapacityHours` on users table
+- UI on user profile and user list pages
+
+**Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)**
+- Preserve roleId on allocations through Planner sync cycles
+- Include role name in Planner task titles for unassigned allocations
+- Define sync field whitelist (Constellation-owned vs Planner-owned fields)
+
+**Phase 3: Smart Assignment Suggestions (~2 weeks)**
+- Suggestion engine in project assignment module (not during estimate conversion)
+- Candidates ranked by role proficiency, availability, cost variance, and salaried status
+- Bulk assignment with review screen and cost impact summary
+
+**Phase 4: Cross-Project Workload & Rebalancing (~2 weeks)**
+- Timeline view and utilization heat map at `/resource-planning`
+- "Find Replacement" with cost impact analysis and margin preview
+- Filters by role, project, date range, utilization threshold
+
+**Phase 5: Capacity Planning Analytics (~1-2 weeks)**
+- KPI dashboard, bench list, role demand vs supply gap analysis
+- Forecast tool for pipeline impact on team utilization
+- Cost variance trends over time
+
+**Phase 6: Bulk Import & Polish (~1 week)**
+- CSV/Excel templates for bulk role capability and capacity imports
+- Performance optimization and historical trend charts
 
 ---
 
@@ -652,6 +677,13 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**February 12, 2026 — Advanced Resource Management Design**
+- Completed detailed design document for Advanced Resource Management (`docs/design/advanced-resource-management.md`)
+- Moved from "Future" to "Planned" (Q2-Q3 2026) with 6-phase implementation plan (~7-8 weeks)
+- Key additions: multi-role capability mapping, per-person capacity profiles, Planner sync protection for generic roles
+- Estimate-to-project conversion stays fast; smart assignment suggestions happen in the project assignment module
+- Cost variance analysis drives staffing decisions with budget impact visibility
+
 **February 11, 2026 — User Feedback Session Reprioritization**
 - Reprioritized roadmap based on February 2026 user feedback session (stack ranking, marketplace coins, 2×2 priority matrix)
 - Elevated QuickBooks Online Integration from H2 2026 to Near-Term Q2 2026 (#1 ranked idea, 94 coins)
@@ -692,6 +724,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: February 11, 2026*  
+*Last Updated: February 12, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
