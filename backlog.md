@@ -327,74 +327,80 @@
 **Timeline:** 4-6 weeks remaining (Teams integration only)  
 **Complexity:** High (multiple Microsoft Graph APIs, sync logic, error handling)
 
-### Multi-Tenancy Architecture - NEW
-**Status:** DESIGN COMPLETE - Ready for implementation  
+### Multi-Tenancy Architecture
+**Status:** PHASES 1-4, 6 COMPLETE — Phase 5 deferred, Phase 7 ongoing  
 **Priority:** P1 - High priority for SaaS enablement  
-**Added:** January 2026  
+**Added:** January 2026 | **Last Updated:** February 2026  
 **Design Document:** `docs/design/multi-tenancy-design.md`
 
 **Why P1:** Converts Constellation from single-tenant to multi-tenant SaaS platform, enabling software subscription offerings in 6-12 months. Modeled after Vega's proven multi-tenant architecture.
 
-**Service Plans:**
+**Service Plans (Seeded):**
 | Plan | Users | Billing | Features |
 |------|-------|---------|----------|
-| Trial | 5 | 30-60 days free | Core features, AI, basic branding |
-| Team | 5+ (tiers) | Monthly/Annual | Full features, co-branding, SharePoint |
-| Enterprise | Generous tiers | Annual | SSO, custom subdomain, priority support |
+| Trial | 5 | 30-day free | Core features, AI, basic branding |
+| Team | 15 | $49/mo | Full features, co-branding, SharePoint |
+| Enterprise | 50 | $149/mo annual | SSO, custom subdomain, priority support |
 | Unlimited | Unlimited | Internal | Synozur + priority accounts |
 
 **Key Design Decisions:**
 - **Data Retention**: 60 days after trial/subscription expiration
 - **Co-Branding**: Supported on all paying plans (logo, colors)
-- **Subdomain Routing**: Premium option for Enterprise/Unlimited (`clientname.constellation.synozur.com`)
+- **Subdomain Routing**: Deferred — requires custom DNS + wildcard SSL (not feasible on Replit). Using slug-based tenant context instead.
 - **Migration Strategy**: Remix codebase for parallel development, data migration path maintains production continuity
 
-**Scope:**
+**Completed Phases:**
 
-- [ ] **Phase 1: Foundation (3-4 weeks)**
-  - Create multi-tenant schema tables (tenants, tenantUsers, servicePlans, tenantPlans)
-  - Add tenantId column to all existing tables
-  - Create Synozur as initial tenant
-  - Backfill existing data with Synozur tenant ID
-  - Add tenant middleware layer
+- [x] **Phase 1: Foundation** ✅ COMPLETE
+  - Multi-tenant schema tables (tenants, tenantUsers, servicePlans, consultantAccess)
+  - tenantId column on all data tables
+  - Synozur as initial tenant with data backfilled
+  - Tenant middleware and context resolution
 
-- [ ] **Phase 2: User & Auth (2-3 weeks)**
-  - Create tenantUsers table for multi-tenant membership
-  - Migrate existing users to tenantUsers
-  - Add platform roles (user, constellation_consultant, constellation_admin, global_admin)
-  - Update authentication flow with tenant context
-  - Add tenant switcher UI
+- [x] **Phase 2: User & Auth** ✅ COMPLETE
+  - tenantUsers table for multi-tenant membership
+  - Platform roles (user, constellation_consultant, constellation_admin, global_admin)
+  - Authentication flow with automatic tenant context resolution
+  - Tenant switcher UI in header (dropdown for multi-membership users)
+  - Session-based active tenant override (`activeTenantId` on sessions)
 
-- [ ] **Phase 3: Tenant Admin (2-3 weeks)**
-  - Build Tenant Admin pages (users, settings, branding)
-  - Implement co-branding (logo, colors)
-  - Per-tenant SSO configuration
-  - Per-tenant vocabulary
+- [x] **Phase 3: Tenant Admin** ✅ COMPLETE
+  - Tenant admin settings pages (company info, branding)
+  - Per-tenant vocabulary customization
+  - Invoice footer and email branding
   - User invitation system
 
-- [ ] **Phase 4: Platform Admin (2 weeks)**
-  - Build Platform Admin pages
-  - Service plan management (Trial, Team, Enterprise, Unlimited)
-  - Tenant monitoring dashboard
+- [x] **Phase 4: Platform Admin** ✅ COMPLETE
+  - Platform admin pages (`/platform/tenants`, `/platform/service-plans`, `/platform/users`, `/platform/airports`, `/platform/oconus`)
+  - Service plan CRUD management
+  - Tenant monitoring and management
   - Blocked domains management
   - Consultant access management
 
-- [ ] **Phase 5: Subdomain Routing (1-2 weeks)**
-  - Subdomain detection middleware
-  - Wildcard DNS and SSL configuration
-  - Tenant-specific login pages
-  - Subdomain assignment for Enterprise/Unlimited
+- [x] **Phase 6: Self-Service & Plans** ✅ COMPLETE
+  - Self-service signup flow (3-step wizard: org info, admin account, plan selection)
+  - Auto-slug generation from organization name
+  - Blocked email domain validation
+  - Atomic tenant + admin user + membership creation
+  - Password hashing with bcryptjs (12 rounds)
+  - Plan lifecycle enforcement middleware (blocks writes for expired tenants)
+  - Grace period (14 days) with warning banners
+  - PlanStatusBanner component (trial countdown, grace period alerts, expired notices)
+  - Scheduled job for daily plan expiration checks (2:00 AM)
+  - Job catchup integration for missed plan expiration runs
 
-- [ ] **Phase 6: Self-Service & Plans (2-3 weeks)**
-  - Signup flow with domain detection
-  - Onboarding wizard
-  - Trial plan logic (30/60 days)
-  - Plan expiration and grace period handling
-  - Data retention enforcement (60 days)
+**Remaining / Deferred:**
 
-- [ ] **Phase 7: Polish & Testing (2 weeks)**
+- [ ] **Phase 5: Subdomain Routing** — DEFERRED
+  - Requires custom DNS + wildcard SSL configuration
+  - Not feasible on current Replit hosting
+  - Using slug-based tenant context instead
+  - Revisit when self-hosted or on infrastructure supporting wildcard domains
+
+- [ ] **Phase 7: Polish & Testing (ongoing)**
   - Security audit (tenant isolation)
   - Performance optimization
+  - Data retention enforcement (60-day auto-cleanup after expiration)
   - Documentation updates
 
 **Migration Strategy:**

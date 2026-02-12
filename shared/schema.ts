@@ -184,6 +184,7 @@ export const users = pgTable("users", {
   contractorBillingId: text("contractor_billing_id"), // Contractor's invoice/billing ID or tax ID
   contractorPhone: text("contractor_phone"), // Contractor's phone number
   contractorEmail: text("contractor_email"), // Contractor's billing email (may differ from login email)
+  passwordHash: text("password_hash"),
   // Multi-tenancy fields
   primaryTenantId: varchar("primary_tenant_id").references(() => tenants.id), // User's primary/home tenant
   platformRole: varchar("platform_role", { length: 50 }).default("user"), // user, constellation_consultant, constellation_admin, global_admin
@@ -2516,9 +2517,10 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at").notNull(),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
+  activeTenantId: varchar("active_tenant_id").references(() => tenants.id),
 }, (table) => ({
-  userIdIdx: index("sessions_user_id_idx").on(table.userId), // Non-unique - users can have multiple sessions
-  expiresAtIdx: index("sessions_expires_at_idx").on(table.expiresAt), // Non-unique - multiple sessions can expire at same time
+  userIdIdx: index("sessions_user_id_idx").on(table.userId),
+  expiresAtIdx: index("sessions_expires_at_idx").on(table.expiresAt),
 }));
 
 // Session insert schema

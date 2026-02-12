@@ -258,6 +258,18 @@ async function setupAdditionalServices(app: Express, server: Server, envValid: b
         log(`⚠️ Failed to import Planner sync scheduler: ${importError.message}`);
       });
       
+      // Start the plan expiration scheduler
+      log('🔄 Starting plan expiration scheduler...');
+      import('./services/plan-expiration-scheduler.js').then(({ startPlanExpirationScheduler }) => {
+        startPlanExpirationScheduler().then(() => {
+          log('✅ Plan expiration scheduler started');
+        }).catch((schedulerError: any) => {
+          log(`⚠️ Plan expiration scheduler failed to start: ${schedulerError.message}`);
+        });
+      }).catch((importError: any) => {
+        log(`⚠️ Failed to import plan expiration scheduler: ${importError.message}`);
+      });
+
       // Check for missed jobs after a short delay to allow schedulers to initialize
       setTimeout(async () => {
         log('🔄 Checking for missed scheduled jobs...');

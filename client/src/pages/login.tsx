@@ -117,16 +117,14 @@ export default function Login() {
 
           <div className="border-t border-border/50 pt-6">
             <p className="text-sm text-muted-foreground">
-              Interested in Constellation for your organization?{" "}
+              New to Constellation?{" "}
               <a 
-                href="https://www.synozur.com/contact" 
-                target="_blank" 
-                rel="noopener noreferrer"
+                href="/signup"
                 className="text-primary hover:underline font-medium"
               >
-                Contact us
+                Create an organization
               </a>
-              {" "}to learn about multi-tenant hosting options.
+              {" "}and start your free trial today.
             </p>
           </div>
         </div>
@@ -249,6 +247,15 @@ export default function Login() {
                 }
               </p>
             )}
+
+            <div className="mt-4 pt-4 border-t text-center">
+              <p className="text-sm text-muted-foreground">
+                Don't have an account?{" "}
+                <a href="/signup" className="text-primary hover:underline font-medium">
+                  Create your organization
+                </a>
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

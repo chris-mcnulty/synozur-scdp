@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { MobileNav } from "./mobile-nav";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { TenantSwitcher } from "@/components/tenant-switcher";
 import {
   Dialog,
   DialogContent,
@@ -85,6 +86,7 @@ export function Header() {
         
         {/* User Menu */}
         <div className="flex items-center space-x-4">
+          <TenantSwitcher />
           {user && (
             <>
               <div className="text-right hidden sm:block">

@@ -41,7 +41,7 @@ export async function getDbSession(sessionId: string): Promise<any> {
       }).from(users).where(eq(users.id, session.userId));
       if (user) {
         platformRole = user.platformRole;
-        tenantId = user.primaryTenantId;
+        tenantId = (session as any).activeTenantId || user.primaryTenantId;
       }
     } catch (userError) {
       console.log("[DB-SESSION] Could not fetch platformRole/tenantId:", userError);

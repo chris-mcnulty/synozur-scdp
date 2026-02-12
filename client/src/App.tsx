@@ -40,6 +40,7 @@ import UserGuide from "@/pages/user-guide";
 import Changelog from "@/pages/changelog";
 import Roadmap from "@/pages/roadmap";
 import Login from "@/pages/login";
+import Signup from "@/pages/signup";
 import FileRepository from "@/pages/file-repository";
 import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import NotFound from "@/pages/not-found";
@@ -147,6 +148,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/signup" component={Signup} />
       <Route path="/">
         {user ? <Dashboard /> : <Redirect to="/login" />}
       </Route>

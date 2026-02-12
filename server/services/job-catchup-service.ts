@@ -39,6 +39,14 @@ export async function checkAndRunMissedJobs(): Promise<CatchupResult[]> {
           const { runPlannerSyncJob } = await import('./planner-sync-scheduler.js');
           await runPlannerSyncJob('catchup');
         }
+      },
+      {
+        jobType: 'plan_expiration',
+        getExpectedRun: getExpectedDailyRun,
+        runJob: async () => {
+          const { runPlanExpirationCheck } = await import('./plan-expiration-scheduler.js');
+          await runPlanExpirationCheck('catchup');
+        }
       }
     ];
 
@@ -114,6 +122,11 @@ function getExpectedWeeklyRun(now: Date, jobType: string): Date | null {
   // we'll trigger a catch-up run
   const eightDaysAgo = new Date(now.getTime() - (8 * 24 * 60 * 60 * 1000));
   return eightDaysAgo;
+}
+
+function getExpectedDailyRun(now: Date, _jobType: string): Date | null {
+  const oneDayAgo = new Date(now.getTime() - (25 * 60 * 60 * 1000));
+  return oneDayAgo;
 }
 
 function getExpectedPlannerSyncRun(now: Date, _jobType: string): Date | null {

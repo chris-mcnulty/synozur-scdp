@@ -52,6 +52,60 @@ function requirePlatformAdmin(req: Request, res: Response, next: () => void) {
   next();
 }
 
+const GRACE_PERIOD_DAYS = 14;
+
+export async function enforcePlanStatus(req: Request, res: Response, next: () => void) {
+  const user = (req as any).user;
+  if (!user?.tenantId) return next();
+
+  // Platform admins bypass plan enforcement
+  const platformRole = user.platformRole;
+  if (platformRole === 'global_admin' || platformRole === 'constellation_admin') return next();
+
+  // Allow read-only endpoints even for expired plans
+  if (req.method === 'GET') return next();
+
+  try {
+    const [tenant] = await db.select({
+      planStatus: tenants.planStatus,
+      planExpiresAt: tenants.planExpiresAt,
+    }).from(tenants).where(eq(tenants.id, user.tenantId));
+
+    if (!tenant) return next();
+
+    // Check if plan is expired (past grace period)
+    if (tenant.planExpiresAt) {
+      const now = new Date();
+      const expiresAt = new Date(tenant.planExpiresAt);
+      const msExpired = now.getTime() - expiresAt.getTime();
+      const daysExpired = msExpired / (1000 * 60 * 60 * 24);
+
+      if (daysExpired > GRACE_PERIOD_DAYS) {
+        return res.status(403).json({
+          error: "plan_expired",
+          message: "Your organization's plan has expired. Please contact your administrator to upgrade.",
+        });
+      }
+    }
+
+    // Check explicit suspended/cancelled status
+    if (tenant.planStatus === 'suspended' || tenant.planStatus === 'cancelled') {
+      // Allow admins to still manage settings
+      if (user.role === 'admin' && (req.path.includes('/tenant/settings') || req.path.includes('/platform/'))) {
+        return next();
+      }
+      return res.status(403).json({
+        error: "plan_suspended",
+        message: "Your organization's account has been suspended. Please contact support.",
+      });
+    }
+  } catch (error) {
+    console.error("[PLAN-ENFORCE] Error checking plan status:", error);
+  }
+
+  next();
+}
+
 export function registerPlatformRoutes(app: Express, requireAuth: any) {
   app.get("/api/platform/service-plans", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
@@ -163,6 +217,76 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
   });
 
   // ============================================================================
+  // TENANT PLAN STATUS (for current user's tenant - plan enforcement)
+  // ============================================================================
+
+  app.get("/api/tenant/plan-status", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const tenantId = user?.tenantId;
+
+      if (!tenantId) {
+        return res.json({ status: 'active', planType: 'unknown' });
+      }
+
+      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
+      if (!tenant) {
+        return res.json({ status: 'active', planType: 'unknown' });
+      }
+
+      let plan = null;
+      if (tenant.servicePlanId) {
+        const [p] = await db.select().from(servicePlans).where(eq(servicePlans.id, tenant.servicePlanId));
+        plan = p || null;
+      }
+
+      const now = new Date();
+      let effectiveStatus = tenant.planStatus || 'active';
+      let daysRemaining: number | null = null;
+      let isGracePeriod = false;
+      const GRACE_PERIOD_DAYS = 14;
+
+      if (tenant.planExpiresAt) {
+        const expiresAt = new Date(tenant.planExpiresAt);
+        const msRemaining = expiresAt.getTime() - now.getTime();
+        daysRemaining = Math.ceil(msRemaining / (1000 * 60 * 60 * 24));
+
+        if (daysRemaining <= 0) {
+          const graceDaysUsed = Math.abs(daysRemaining);
+          if (graceDaysUsed <= GRACE_PERIOD_DAYS) {
+            isGracePeriod = true;
+            daysRemaining = GRACE_PERIOD_DAYS - graceDaysUsed;
+            effectiveStatus = 'grace_period';
+          } else {
+            effectiveStatus = 'expired';
+          }
+        }
+      }
+
+      res.json({
+        status: effectiveStatus,
+        planType: plan?.planType || 'unknown',
+        planName: plan?.displayName || 'Unknown',
+        daysRemaining,
+        isGracePeriod,
+        expiresAt: tenant.planExpiresAt,
+        features: plan ? {
+          maxUsers: plan.maxUsers,
+          maxProjects: plan.maxProjects,
+          aiEnabled: plan.aiEnabled,
+          sharePointEnabled: plan.sharePointEnabled,
+          ssoEnabled: plan.ssoEnabled,
+          customBrandingEnabled: plan.customBrandingEnabled,
+          plannerEnabled: plan.plannerEnabled,
+        } : null,
+      });
+    } catch (error) {
+      console.error("Error fetching plan status:", error);
+      res.status(500).json({ error: "Failed to fetch plan status" });
+    }
+  });
+
+  // ============================================================================
   // TENANT SETTINGS ROUTES (for tenant admins to manage their own org)
   // ============================================================================
 
@@ -182,7 +306,6 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         return res.status(404).json({ error: "Tenant not found" });
       }
       
-      // Return only the settings that tenant admins can view/edit
       res.json({
         id: tenant.id,
         name: tenant.name,

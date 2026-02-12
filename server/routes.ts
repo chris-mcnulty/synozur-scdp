@@ -14,7 +14,7 @@ import { containerRegistration } from "./services/container-registration.js";
 import { receiptStorage } from "./services/receipt-storage.js";
 import { emailService } from "./services/email-notification.js";
 import { sharepointStorage, initSharePointStorage } from "./services/sharepoint-storage.js";
-import { registerPlatformRoutes } from "./routes/platform.js";
+import { registerPlatformRoutes, enforcePlanStatus } from "./routes/platform.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -423,6 +423,9 @@ export async function registerRoutes(app: Express): Promise<void> {
   
   // Register platform admin routes
   registerPlatformRoutes(app, requireAuth);
+
+  // Apply plan enforcement middleware globally for all subsequent API routes
+  app.use("/api", enforcePlanStatus);
   
   // Start SSO token refresh scheduler
   startTokenRefreshScheduler();
