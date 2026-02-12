@@ -146,34 +146,33 @@ function VarianceIndicator({ current, prior }: { current: number; prior: number 
   );
 }
 
-function ComparisonMetricCard({ label, icon, priorValue, currentValue, priorYear, currentYear }: {
+function ComparisonMetricCard({ label, icon, years }: {
   label: string;
   icon: any;
-  priorValue: number;
-  currentValue: number;
-  priorYear: number;
-  currentYear: number;
+  years: { year: number; value: number }[];
 }) {
   const Icon = icon;
+  const latest = years[years.length - 1];
+  const prior = years.length >= 2 ? years[years.length - 2] : null;
   return (
     <Card>
       <CardContent className="pt-4 pb-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
           <Icon className="w-4 h-4" /> {label}
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-xs text-muted-foreground mb-0.5">{priorYear}</div>
-            <div className="text-lg font-bold">{fmt(priorValue)}</div>
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground mb-0.5">{currentYear}</div>
-            <div className="text-lg font-bold">{fmt(currentValue)}</div>
-          </div>
+        <div className="grid grid-cols-3 gap-3">
+          {years.map(y => (
+            <div key={y.year}>
+              <div className="text-xs text-muted-foreground mb-0.5">{y.year}</div>
+              <div className="text-lg font-bold">{fmt(y.value)}</div>
+            </div>
+          ))}
         </div>
-        <div className="mt-2 pt-2 border-t">
-          <VarianceIndicator current={currentValue} prior={priorValue} />
-        </div>
+        {prior && (
+          <div className="mt-2 pt-2 border-t">
+            <VarianceIndicator current={latest.value} prior={prior.value} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -182,6 +181,7 @@ function ComparisonMetricCard({ label, icon, priorValue, currentValue, priorYear
 function InvoiceReport() {
   const currentYear = new Date().getFullYear();
   const priorYear = currentYear - 1;
+  const oldestYear = currentYear - 2;
   const [startDate, setStartDate] = useState(`${currentYear}-01-01`);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [batchTypeFilter, setBatchTypeFilter] = useState('services');
@@ -217,6 +217,16 @@ function InvoiceReport() {
     enabled: viewMode === 'comparison',
   });
 
+  const oldestYearParams = new URLSearchParams({
+    startDate: `${oldestYear}-01-01`,
+    endDate: `${oldestYear}-12-31`,
+    batchTypeFilter: comparisonBatchType
+  }).toString();
+  const { data: oldestYearData, isLoading: oldestYearLoading } = useQuery<InvoiceReportData>({
+    queryKey: [`/api/reports/invoices?${oldestYearParams}`],
+    enabled: viewMode === 'comparison',
+  });
+
   const invoices = data?.invoices || [];
   const totals = data?.totals;
 
@@ -232,10 +242,11 @@ function InvoiceReport() {
   }, [invoices, subtotalBy]);
 
   const comparisonData = useMemo(() => {
-    if (!currentYearData || !priorYearData) return null;
+    if (!currentYearData || !priorYearData || !oldestYearData) return null;
 
     const currentInvoices = currentYearData.invoices;
     const priorInvoices = priorYearData.invoices;
+    const oldestInvoices = oldestYearData.invoices;
 
     const byQuarter = (invoiceList: InvoiceRow[]) => {
       const quarters: Record<number, InvoiceRow[]> = { 1: [], 2: [], 3: [], 4: [] };
@@ -248,24 +259,29 @@ function InvoiceReport() {
 
     const currentByQ = byQuarter(currentInvoices);
     const priorByQ = byQuarter(priorInvoices);
+    const oldestByQ = byQuarter(oldestInvoices);
 
     const quarterComparisons = [1, 2, 3, 4].map(q => ({
       quarter: q,
       current: aggregateInvoices(currentByQ[q]),
       prior: aggregateInvoices(priorByQ[q]),
+      oldest: aggregateInvoices(oldestByQ[q]),
     }));
 
     const filteredCurrent = currentInvoices.filter(inv => selectedQuarters.includes(getQuarterNum(inv.invoiceDate)));
     const filteredPrior = priorInvoices.filter(inv => selectedQuarters.includes(getQuarterNum(inv.invoiceDate)));
+    const filteredOldest = oldestInvoices.filter(inv => selectedQuarters.includes(getQuarterNum(inv.invoiceDate)));
 
     return {
       quarterComparisons,
       filteredCurrentTotal: aggregateInvoices(filteredCurrent),
       filteredPriorTotal: aggregateInvoices(filteredPrior),
+      filteredOldestTotal: aggregateInvoices(filteredOldest),
       fullCurrentTotal: aggregateInvoices(currentInvoices),
       fullPriorTotal: aggregateInvoices(priorInvoices),
+      fullOldestTotal: aggregateInvoices(oldestInvoices),
     };
-  }, [currentYearData, priorYearData, selectedQuarters]);
+  }, [currentYearData, priorYearData, oldestYearData, selectedQuarters]);
 
   const handleExport = () => {
     if (!invoices.length) return;
@@ -303,39 +319,42 @@ function InvoiceReport() {
       if (!selectedQuarters.includes(qc.quarter)) continue;
       rows.push({
         'Period': `Q${qc.quarter}`,
+        [`${oldestYear} Invoices`]: qc.oldest.count,
+        [`${oldestYear} Pre-Tax Amount`]: qc.oldest.invoiceAmount,
+        [`${oldestYear} Paid`]: qc.oldest.amountPaid,
         [`${priorYear} Invoices`]: qc.prior.count,
         [`${priorYear} Pre-Tax Amount`]: qc.prior.invoiceAmount,
         [`${priorYear} Paid`]: qc.prior.amountPaid,
-        [`${priorYear} Outstanding`]: qc.prior.outstanding,
         [`${currentYear} Invoices`]: qc.current.count,
         [`${currentYear} Pre-Tax Amount`]: qc.current.invoiceAmount,
         [`${currentYear} Paid`]: qc.current.amountPaid,
-        [`${currentYear} Outstanding`]: qc.current.outstanding,
-        'Amount Variance': qc.current.invoiceAmount - qc.prior.invoiceAmount,
-        'Variance %': qc.prior.invoiceAmount === 0 ? 'N/A' : `${pctChange(qc.current.invoiceAmount, qc.prior.invoiceAmount).toFixed(1)}%`,
+        [`${priorYear} vs ${oldestYear} Variance`]: qc.prior.invoiceAmount - qc.oldest.invoiceAmount,
+        [`${currentYear} vs ${priorYear} Variance`]: qc.current.invoiceAmount - qc.prior.invoiceAmount,
       });
     }
 
     const ft = comparisonData.filteredCurrentTotal;
     const fp = comparisonData.filteredPriorTotal;
+    const fo = comparisonData.filteredOldestTotal;
     rows.push({
       'Period': `Selected Quarters Total`,
+      [`${oldestYear} Invoices`]: fo.count,
+      [`${oldestYear} Pre-Tax Amount`]: fo.invoiceAmount,
+      [`${oldestYear} Paid`]: fo.amountPaid,
       [`${priorYear} Invoices`]: fp.count,
       [`${priorYear} Pre-Tax Amount`]: fp.invoiceAmount,
       [`${priorYear} Paid`]: fp.amountPaid,
-      [`${priorYear} Outstanding`]: fp.outstanding,
       [`${currentYear} Invoices`]: ft.count,
       [`${currentYear} Pre-Tax Amount`]: ft.invoiceAmount,
       [`${currentYear} Paid`]: ft.amountPaid,
-      [`${currentYear} Outstanding`]: ft.outstanding,
-      'Amount Variance': ft.invoiceAmount - fp.invoiceAmount,
-      'Variance %': fp.invoiceAmount === 0 ? 'N/A' : `${pctChange(ft.invoiceAmount, fp.invoiceAmount).toFixed(1)}%`,
+      [`${priorYear} vs ${oldestYear} Variance`]: fp.invoiceAmount - fo.invoiceAmount,
+      [`${currentYear} vs ${priorYear} Variance`]: ft.invoiceAmount - fp.invoiceAmount,
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'YoY Comparison');
-    XLSX.writeFile(wb, `yoy-comparison-${priorYear}-vs-${currentYear}.xlsx`);
+    XLSX.writeFile(wb, `yoy-comparison-${oldestYear}-${priorYear}-${currentYear}.xlsx`);
   };
 
   const toggleQuarter = (q: number) => {
@@ -618,13 +637,13 @@ function InvoiceReport() {
                     </div>
                   </div>
                   <div className="text-sm text-muted-foreground pt-1">
-                    Comparing <span className="font-semibold">{priorYear}</span> vs <span className="font-semibold">{currentYear}</span>
+                    Comparing <span className="font-semibold">{oldestYear}</span>, <span className="font-semibold">{priorYear}</span> &amp; <span className="font-semibold">{currentYear}</span>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {(currentYearLoading || priorYearLoading) ? (
+            {(currentYearLoading || priorYearLoading || oldestYearLoading) ? (
               <div className="space-y-3">
                 <Skeleton className="h-32 w-full" />
                 <Skeleton className="h-64 w-full" />
@@ -635,41 +654,45 @@ function InvoiceReport() {
                   <ComparisonMetricCard
                     label="Pre-Tax Amount"
                     icon={DollarSign}
-                    priorValue={comparisonData.filteredPriorTotal.invoiceAmount}
-                    currentValue={comparisonData.filteredCurrentTotal.invoiceAmount}
-                    priorYear={priorYear}
-                    currentYear={currentYear}
+                    years={[
+                      { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceAmount },
+                      { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceAmount },
+                      { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceAmount },
+                    ]}
                   />
                   <ComparisonMetricCard
                     label="Total (with Tax)"
                     icon={FileText}
-                    priorValue={comparisonData.filteredPriorTotal.invoiceTotal}
-                    currentValue={comparisonData.filteredCurrentTotal.invoiceTotal}
-                    priorYear={priorYear}
-                    currentYear={currentYear}
+                    years={[
+                      { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceTotal },
+                      { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceTotal },
+                      { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceTotal },
+                    ]}
                   />
                   <ComparisonMetricCard
                     label="Amount Paid"
                     icon={CheckCircle}
-                    priorValue={comparisonData.filteredPriorTotal.amountPaid}
-                    currentValue={comparisonData.filteredCurrentTotal.amountPaid}
-                    priorYear={priorYear}
-                    currentYear={currentYear}
+                    years={[
+                      { year: oldestYear, value: comparisonData.filteredOldestTotal.amountPaid },
+                      { year: priorYear, value: comparisonData.filteredPriorTotal.amountPaid },
+                      { year: currentYear, value: comparisonData.filteredCurrentTotal.amountPaid },
+                    ]}
                   />
                   <ComparisonMetricCard
                     label="Outstanding"
                     icon={AlertCircle}
-                    priorValue={comparisonData.filteredPriorTotal.outstanding}
-                    currentValue={comparisonData.filteredCurrentTotal.outstanding}
-                    priorYear={priorYear}
-                    currentYear={currentYear}
+                    years={[
+                      { year: oldestYear, value: comparisonData.filteredOldestTotal.outstanding },
+                      { year: priorYear, value: comparisonData.filteredPriorTotal.outstanding },
+                      { year: currentYear, value: comparisonData.filteredCurrentTotal.outstanding },
+                    ]}
                   />
                 </div>
 
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-lg">Quarter-over-Quarter Comparison</CardTitle>
-                    <CardDescription>{priorYear} vs {currentYear} — {selectedQuarters.length === 4 ? 'All quarters' : selectedQuarters.map(q => `Q${q}`).join(', ')}</CardDescription>
+                    <CardDescription>{oldestYear} / {priorYear} / {currentYear} — {selectedQuarters.length === 4 ? 'All quarters' : selectedQuarters.map(q => `Q${q}`).join(', ')}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -677,19 +700,23 @@ function InvoiceReport() {
                         <TableHeader>
                           <TableRow>
                             <TableHead rowSpan={2} className="border-r align-middle">Quarter</TableHead>
-                            <TableHead colSpan={3} className="text-center border-r bg-muted/30">{priorYear}</TableHead>
+                            <TableHead colSpan={3} className="text-center border-r bg-muted/30">{oldestYear}</TableHead>
+                            <TableHead colSpan={3} className="text-center border-r bg-muted/50">{priorYear}</TableHead>
                             <TableHead colSpan={3} className="text-center border-r bg-blue-50 dark:bg-blue-950/30">{currentYear}</TableHead>
-                            <TableHead colSpan={2} className="text-center">Variance</TableHead>
+                            <TableHead colSpan={2} className="text-center">YoY Variance</TableHead>
                           </TableRow>
                           <TableRow>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right border-r">Paid</TableHead>
-                            <TableHead className="text-right">Invoices</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right border-r">Paid</TableHead>
-                            <TableHead className="text-right">$ Change</TableHead>
-                            <TableHead className="text-right">% Change</TableHead>
+                            <TableHead className="text-right text-xs">#</TableHead>
+                            <TableHead className="text-right text-xs">Amount</TableHead>
+                            <TableHead className="text-right text-xs border-r">Paid</TableHead>
+                            <TableHead className="text-right text-xs">#</TableHead>
+                            <TableHead className="text-right text-xs">Amount</TableHead>
+                            <TableHead className="text-right text-xs border-r">Paid</TableHead>
+                            <TableHead className="text-right text-xs">#</TableHead>
+                            <TableHead className="text-right text-xs">Amount</TableHead>
+                            <TableHead className="text-right text-xs border-r">Paid</TableHead>
+                            <TableHead className="text-right text-xs">$ Change</TableHead>
+                            <TableHead className="text-right text-xs">% Change</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -701,6 +728,9 @@ function InvoiceReport() {
                               return (
                                 <TableRow key={qc.quarter}>
                                   <TableCell className="font-semibold border-r">Q{qc.quarter}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{qc.oldest.count}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{fmt(qc.oldest.invoiceAmount)}</TableCell>
+                                  <TableCell className="text-right tabular-nums border-r">{fmt(qc.oldest.amountPaid)}</TableCell>
                                   <TableCell className="text-right tabular-nums">{qc.prior.count}</TableCell>
                                   <TableCell className="text-right tabular-nums">{fmt(qc.prior.invoiceAmount)}</TableCell>
                                   <TableCell className="text-right tabular-nums border-r">{fmt(qc.prior.amountPaid)}</TableCell>
@@ -719,6 +749,7 @@ function InvoiceReport() {
                           {(() => {
                             const ft = comparisonData.filteredCurrentTotal;
                             const fp = comparisonData.filteredPriorTotal;
+                            const fo = comparisonData.filteredOldestTotal;
                             const delta = ft.invoiceAmount - fp.invoiceAmount;
                             const pct = pctChange(ft.invoiceAmount, fp.invoiceAmount);
                             return (
@@ -726,6 +757,9 @@ function InvoiceReport() {
                                 <TableCell className="border-r">
                                   {selectedQuarters.length === 4 ? 'Full Year' : 'Selected Total'}
                                 </TableCell>
+                                <TableCell className="text-right tabular-nums">{fo.count}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmt(fo.invoiceAmount)}</TableCell>
+                                <TableCell className="text-right tabular-nums border-r">{fmt(fo.amountPaid)}</TableCell>
                                 <TableCell className="text-right tabular-nums">{fp.count}</TableCell>
                                 <TableCell className="text-right tabular-nums">{fmt(fp.invoiceAmount)}</TableCell>
                                 <TableCell className="text-right tabular-nums border-r">{fmt(fp.amountPaid)}</TableCell>
@@ -758,10 +792,11 @@ function InvoiceReport() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Metric</TableHead>
+                            <TableHead className="text-right">{oldestYear}</TableHead>
                             <TableHead className="text-right">{priorYear}</TableHead>
                             <TableHead className="text-right">{currentYear}</TableHead>
-                            <TableHead className="text-right">$ Change</TableHead>
-                            <TableHead className="text-right">% Change</TableHead>
+                            <TableHead className="text-right">$ Change (YoY)</TableHead>
+                            <TableHead className="text-right">% Change (YoY)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -773,15 +808,18 @@ function InvoiceReport() {
                             { label: 'Amount Paid', key: 'amountPaid', isCurrency: true },
                             { label: 'Outstanding', key: 'outstanding', isCurrency: true },
                           ].map(({ label, key, isCurrency }) => {
+                            const oldestVal = comparisonData.fullOldestTotal[key as keyof QuarterAggregates] as number;
                             const priorVal = comparisonData.fullPriorTotal[key as keyof QuarterAggregates] as number;
                             const currentVal = comparisonData.fullCurrentTotal[key as keyof QuarterAggregates] as number;
                             const delta = currentVal - priorVal;
                             const pct = pctChange(currentVal, priorVal);
+                            const fmtVal = (v: number) => isCurrency ? fmt(v) : v;
                             return (
                               <TableRow key={key}>
                                 <TableCell className="font-medium">{label}</TableCell>
-                                <TableCell className="text-right tabular-nums">{isCurrency ? fmt(priorVal) : priorVal}</TableCell>
-                                <TableCell className="text-right tabular-nums">{isCurrency ? fmt(currentVal) : currentVal}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmtVal(oldestVal)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmtVal(priorVal)}</TableCell>
+                                <TableCell className="text-right tabular-nums">{fmtVal(currentVal)}</TableCell>
                                 <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                   {isCurrency ? `${delta > 0 ? '+' : ''}${fmt(delta)}` : `${delta > 0 ? '+' : ''}${delta}`}
                                 </TableCell>
