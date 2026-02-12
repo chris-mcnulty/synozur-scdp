@@ -417,7 +417,7 @@ Please generate a professional proposal narrative that addresses all six key cli
 
     const result = await provider.chatCompletion({
       messages,
-      maxTokens: 4096
+      maxTokens: 16384
     });
 
     return result.content;
@@ -485,7 +485,7 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
 
     const result = await provider.chatCompletion({
       messages,
-      maxTokens: 4096
+      maxTokens: 16384
     });
 
     return result.content;
