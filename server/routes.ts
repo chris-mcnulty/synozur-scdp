@@ -4890,6 +4890,194 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Generate AI-powered status report for a project
+  app.post("/api/projects/:projectId/status-report", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const user = req.user as any;
+      const { startDate, endDate, style } = req.body;
+
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate and endDate are required" });
+      }
+
+      const validStyles = ["executive_brief", "detailed_update", "client_facing"];
+      const reportStyle = validStyles.includes(style) ? style : "detailed_update";
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const [timeEntryData, expenseData, allocations, milestones] = await Promise.all([
+        storage.getTimeEntries({ projectId, startDate, endDate }),
+        storage.getExpenses({ projectId, startDate, endDate }),
+        storage.getProjectAllocations(projectId),
+        storage.getProjectMilestones(projectId),
+      ]);
+
+      const totalHours = timeEntryData.reduce((sum, te) => sum + Number(te.hours || 0), 0);
+      const totalBillableHours = timeEntryData.filter(te => te.billable).reduce((sum, te) => sum + Number(te.hours || 0), 0);
+      const totalExpenses = expenseData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      const teamMembers = new Map<string, { name: string; hours: number; activities: string[] }>();
+      for (const te of timeEntryData) {
+        const key = te.personId;
+        const existing = teamMembers.get(key) || { name: te.person?.name || "Unknown", hours: 0, activities: [] };
+        existing.hours += Number(te.hours || 0);
+        if (te.description && !existing.activities.includes(te.description)) {
+          existing.activities.push(te.description);
+        }
+        teamMembers.set(key, existing);
+      }
+
+      const teamSummary = Array.from(teamMembers.values())
+        .sort((a, b) => b.hours - a.hours)
+        .map(m => `- ${m.name}: ${m.hours.toFixed(1)} hours — ${m.activities.slice(0, 5).join("; ") || "No descriptions logged"}`)
+        .join("\n");
+
+      const expenseSummary = expenseData.length > 0
+        ? expenseData.map(e => `- ${e.category}: $${Number(e.amount).toFixed(2)}${e.description ? ` (${e.description})` : ""}`).join("\n")
+        : "No expenses recorded in this period.";
+
+      const activeMilestones = milestones
+        .filter(m => m.status !== "completed")
+        .map(m => `- ${m.name} (${m.status})${m.dueDate ? ` — Due: ${m.dueDate}` : ""}`)
+        .join("\n") || "No active milestones.";
+
+      const completedMilestones = milestones
+        .filter(m => m.status === "completed")
+        .map(m => `- ${m.name} (completed)`)
+        .join("\n") || "None completed in this period.";
+
+      const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
+      const completedAllocations = allocations.filter((a: any) => a.status === "completed").length;
+
+      const styleInstructions: Record<string, string> = {
+        executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, and next steps. Use bullet points for highlights. Keep it to roughly 300-400 words. This is for senior leadership who want a quick overview.",
+        detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Expenses, Milestones, and Next Steps. Include specific details about what was accomplished. This is for project managers and internal stakeholders. Target 500-700 words.",
+        client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. Use a positive, confident tone. Include sections for Progress Summary, Key Accomplishments, and Upcoming Activities. Target 400-500 words.",
+      };
+
+      const systemPrompt = `You are a professional consulting project manager writing a status report. ${styleInstructions[reportStyle]}
+
+Format the output as clean markdown with headers (##), bullet points, and bold text for emphasis. Do not include a title header — the system will add the project name and period.`;
+
+      const userMessage = `Generate a status report for the following project activity:
+
+PROJECT: ${project.name}
+CLIENT: ${project.client?.name || "Unknown"}
+PERIOD: ${startDate} to ${endDate}
+STATUS: ${project.status}
+COMMERCIAL SCHEME: ${project.commercialScheme}
+${project.description ? `DESCRIPTION: ${project.description}` : ""}
+
+SUMMARY METRICS:
+- Total Hours Logged: ${totalHours.toFixed(1)} (${totalBillableHours.toFixed(1)} billable)
+- Total Expenses: $${totalExpenses.toFixed(2)}
+- Active Assignments: ${activeTeamCount}
+- Completed Assignments: ${completedAllocations}
+
+TEAM ACTIVITY:
+${teamSummary || "No time entries recorded in this period."}
+
+EXPENSES:
+${expenseSummary}
+
+MILESTONES — Active:
+${activeMilestones}
+
+MILESTONES — Completed:
+${completedMilestones}`;
+
+      const { aiService } = await import("./services/ai-service.js");
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.6,
+        maxTokens: 2048,
+      });
+
+      res.json({
+        report: result.content,
+        metadata: {
+          projectName: project.name,
+          clientName: project.client?.name || "Unknown",
+          startDate,
+          endDate,
+          style: reportStyle,
+          totalHours,
+          totalBillableHours,
+          totalExpenses,
+          teamMemberCount: teamMembers.size,
+          generatedAt: new Date().toISOString(),
+          generatedBy: user.name || user.email,
+        },
+      });
+    } catch (error: any) {
+      console.error("[STATUS-REPORT] Failed to generate status report:", error);
+      res.status(500).json({ message: "Failed to generate status report: " + error.message });
+    }
+  });
+
+  // Email a status report
+  app.post("/api/projects/:projectId/status-report/email", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const user = req.user as any;
+      const { recipientEmail, recipientName, subject, reportContent, projectName, periodLabel } = req.body;
+
+      if (!recipientEmail || !reportContent) {
+        return res.status(400).json({ message: "recipientEmail and reportContent are required" });
+      }
+
+      let tenantBranding: any = {};
+      if (user.tenantId) {
+        const tenant = await storage.getTenant(user.tenantId);
+        if (tenant) {
+          tenantBranding = {
+            emailHeaderUrl: tenant.emailHeaderUrl,
+            companyName: tenant.companyName,
+          };
+        }
+      }
+
+      const htmlContent = reportContent
+        .replace(/^## (.*$)/gm, '<h2 style="color: #1a1a2e; margin-top: 20px; margin-bottom: 10px;">$1</h2>')
+        .replace(/^### (.*$)/gm, '<h3 style="color: #333; margin-top: 16px; margin-bottom: 8px;">$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^- (.*$)/gm, '<li style="margin-bottom: 4px;">$1</li>')
+        .replace(/(<li.*<\/li>\n?)+/g, '<ul style="margin: 8px 0; padding-left: 20px;">$&</ul>')
+        .replace(/\n\n/g, '<br/><br/>')
+        .replace(/\n/g, '<br/>');
+
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+          <div style="background: #1a1a2e; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+            <h1 style="margin: 0; font-size: 20px;">Project Status Report</h1>
+            <p style="margin: 8px 0 0; opacity: 0.8;">${projectName || "Project"} — ${periodLabel || ""}</p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+            ${htmlContent}
+            <hr style="margin: 24px 0; border: none; border-top: 1px solid #e5e7eb;" />
+            <p style="color: #666; font-size: 12px;">
+              Generated by ${user.name || user.email} via Constellation
+            </p>
+          </div>
+        </div>
+      `;
+
+      await emailService.sendEmail({
+        to: { email: recipientEmail, name: recipientName || recipientEmail },
+        subject: subject || `Status Report: ${projectName || "Project"} — ${periodLabel || ""}`,
+        body: emailBody,
+      });
+
+      res.json({ success: true, message: "Status report emailed successfully" });
+    } catch (error: any) {
+      console.error("[STATUS-REPORT] Failed to email status report:", error);
+      res.status(500).json({ message: "Failed to email status report: " + error.message });
+    }
+  });
+
   // Create/connect project to Planner
   app.post("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
     try {

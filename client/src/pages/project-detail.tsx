@@ -103,11 +103,12 @@ import {
   ArrowLeft, TrendingUp, TrendingDown, AlertTriangle, Clock, 
   DollarSign, Users, User, Calendar, CheckCircle, AlertCircle, Activity,
   Target, Zap, Briefcase, FileText, Plus, Edit, Trash2, ExternalLink,
-  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus
+  Check, X, FileCheck, Lock, Filter, Download, Upload, Pencil, FolderOpen, Building, UserPlus, Sparkles
 } from "lucide-react";
 import { TimeEntryManagementDialog } from "@/components/time-entry-management-dialog";
 import { PlannerStatusPanel } from "@/components/planner/PlannerStatusPanel";
 import { SubSOWGenerator } from "@/components/sub-sow-generator";
+import { StatusReportDialog } from "@/components/status-report-dialog";
 import { format, startOfMonth, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -335,6 +336,9 @@ export default function ProjectDetail() {
   const [milestoneInvoiceDates, setMilestoneInvoiceDates] = useState({ startDate: '', endDate: '' });
   const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
   
+  // Status report dialog state
+  const [showStatusReport, setShowStatusReport] = useState(false);
+
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportDateRange, setExportDateRange] = useState<'all' | 'month' | 'custom'>('all');
@@ -1854,6 +1858,10 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowStatusReport(true)} data-testid="button-status-report">
+              <Sparkles className="w-4 h-4 mr-2" />
+              Status Report
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setShowExportDialog(true)} data-testid="button-export-report">
               <FileText className="w-4 h-4 mr-2" />
               Export Report
@@ -2066,6 +2074,15 @@ export default function ProjectDetail() {
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Project
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start"
+                    onClick={() => setShowStatusReport(true)}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Status Report
                   </Button>
                   <Button 
                     variant="outline" 
@@ -6125,6 +6142,14 @@ export default function ProjectDetail() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Status Report Dialog */}
+        <StatusReportDialog
+          open={showStatusReport}
+          onOpenChange={setShowStatusReport}
+          projectId={id || ""}
+          projectName={analytics?.project?.name || ""}
+        />
 
         {/* Export Report Dialog */}
         <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
