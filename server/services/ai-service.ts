@@ -199,7 +199,6 @@ Provide a comprehensive work breakdown with realistic hour estimates. Return as 
 
     const result = await provider.chatCompletion({
       messages,
-      temperature: 0.7,
       maxTokens: 4096,
       responseFormat: 'json'
     });
@@ -418,7 +417,6 @@ Please generate a professional proposal narrative that addresses all six key cli
 
     const result = await provider.chatCompletion({
       messages,
-      temperature: 0.7,
       maxTokens: 4096
     });
 
@@ -487,7 +485,6 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
 
     const result = await provider.chatCompletion({
       messages,
-      temperature: 0.7,
       maxTokens: 4096
     });
 
@@ -523,7 +520,6 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
 
     return provider.chatCompletion({
       messages,
-      temperature: options?.temperature ?? 0.7,
       maxTokens: options?.maxTokens ?? 2048,
       responseFormat: options?.responseFormat
     });

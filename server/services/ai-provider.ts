@@ -62,7 +62,6 @@ export class ReplitAIProvider implements IAIProvider {
         role: m.role,
         content: m.content,
       })),
-      temperature: params.temperature ?? 0.7,
       max_completion_tokens: maxTokens,
     };
 
@@ -71,7 +70,7 @@ export class ReplitAIProvider implements IAIProvider {
     }
 
     const totalInputChars = params.messages.reduce((sum, m) => sum + m.content.length, 0);
-    console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}, temp=${params.temperature ?? 0.7}`);
+    console.log(`[AI_PROVIDER] Starting request: ${params.messages.length} messages, ~${totalInputChars} input chars, maxTokens=${maxTokens}`);
     const startTime = Date.now();
 
     try {
@@ -134,7 +133,6 @@ export class AzureOpenAIProvider implements IAIProvider {
 
     const body: Record<string, any> = {
       messages: params.messages,
-      temperature: params.temperature ?? 0.7,
       max_tokens: params.maxTokens ?? 4096,
     };
 
