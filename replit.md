@@ -86,6 +86,11 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
   - **Category Labels**: `{ company_os: "Company Operating System Overview", methodology: "Methodology & Framework", best_practices: "Best Practices", terminology: "Key Terminology", examples: "Examples & Templates" }`.
 - **Key Design Principle**: Vega stores extracted text content directly in the DB record (not file references). Documents are parsed client-side via parse endpoints, then content is saved. This eliminates runtime file I/O during AI calls and keeps the system simpler.
 
+## Backlog
+
+- **Report Summary Drill-Down**: On both the Invoice Report and the Client Revenue Report, clicking any summary card number (e.g., Total Invoiced, Amount Paid, Outstanding) should open a popup/modal showing the individual line items that comprise that total — including client name, invoice number, invoice date, amount, and payment date(s). Applies to both the Report tab summary cards and the 3-Year Comparison tab metric cards.
+- **RAIDD Excel Import/Export**: Import and export RAIDD log entries via Excel/CSV.
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).
