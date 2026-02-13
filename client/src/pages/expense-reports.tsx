@@ -433,7 +433,7 @@ export default function ExpenseReports() {
                         <div className="flex flex-col items-end gap-2">
                           {getStatusBadge(report.status)}
                           <span className="text-lg font-semibold">
-                            {report.currency} {parseFloat(report.totalAmount).toFixed(2)}
+                            {report.currency} {(report.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -677,7 +677,7 @@ export default function ExpenseReports() {
                       <TableRow className="font-semibold">
                         <TableCell colSpan={selectedReport.status === 'draft' && isOwnerOrAdmin ? 4 : 4} className="text-right">Total:</TableCell>
                         <TableCell className="text-right">
-                          {selectedReport.currency} {parseFloat(selectedReport.totalAmount).toFixed(2)}
+                          {selectedReport.currency} {selectedReport.items?.reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                         </TableCell>
                         {selectedReport.status === 'draft' && isOwnerOrAdmin && <TableCell />}
                       </TableRow>
@@ -821,7 +821,7 @@ export default function ExpenseReports() {
             reportId={selectedReport.id}
             reportNumber={selectedReport.reportNumber}
             reportTitle={selectedReport.title}
-            totalAmount={selectedReport.totalAmount}
+            totalAmount={(selectedReport.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
             currency={selectedReport.currency}
           />
         )}

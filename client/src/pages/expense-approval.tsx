@@ -405,7 +405,7 @@ export default function ExpenseApproval() {
                 <div className="flex flex-col items-end gap-2">
                   {getStatusBadge(report.status)}
                   <span className="text-lg font-semibold">
-                    {report.currency} {parseFloat(report.totalAmount).toFixed(2)}
+                    {report.currency} {report.items.reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -561,7 +561,7 @@ export default function ExpenseApproval() {
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Amount</p>
                     <p className="text-xl font-bold mt-0.5">
-                      {selectedReport.currency} {parseFloat(selectedReport.totalAmount).toFixed(2)}
+                      {selectedReport.currency} {selectedReport.items.reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                     </p>
                   </div>
                 </div>
@@ -597,7 +597,7 @@ export default function ExpenseApproval() {
                   <div className="flex justify-end items-center gap-2 mt-2 px-4 py-2 bg-muted/40 rounded-lg">
                     <span className="text-sm font-medium">Total:</span>
                     <span className="text-lg font-bold">
-                      {selectedReport.currency} {parseFloat(selectedReport.totalAmount).toFixed(2)}
+                      {selectedReport.currency} {selectedReport.items.reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -697,7 +697,7 @@ export default function ExpenseApproval() {
               <div className="py-4">
                 <p className="font-medium">{selectedReport.title}</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedReport.reportNumber} • {selectedReport.currency} {parseFloat(selectedReport.totalAmount).toFixed(2)}
+                  {selectedReport.reportNumber} • {selectedReport.currency} {selectedReport.items.reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
                   {selectedReport.items.length} expense{selectedReport.items.length !== 1 ? 's' : ''} from {selectedReport.submitter.name}

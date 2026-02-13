@@ -3286,7 +3286,29 @@ export class DatabaseStorage implements IStorage {
 
   async updateExpense(id: string, updateExpense: Partial<InsertExpense>): Promise<Expense> {
     const [expense] = await db.update(expenses).set(updateExpense).where(eq(expenses.id, id)).returning();
-    // Format date to YYYY-MM-DD string before returning
+
+    if (updateExpense.amount !== undefined) {
+      const linkedReportItems = await db.select()
+        .from(expenseReportItems)
+        .where(eq(expenseReportItems.expenseId, id));
+
+      for (const item of linkedReportItems) {
+        const allItems = await db.select()
+          .from(expenseReportItems)
+          .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
+          .where(eq(expenseReportItems.reportId, item.reportId));
+
+        const newTotal = allItems.reduce((sum: number, row: any) => sum + parseFloat(row.expenses.amount), 0);
+
+        await db.update(expenseReports)
+          .set({
+            totalAmount: newTotal.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(expenseReports.id, item.reportId));
+      }
+    }
+
     const formattedDate = formatDateToYYYYMMDD(expense.date);
     return {
       ...expense,
