@@ -32,6 +32,7 @@ import {
   Plane,
   Globe,
   Database,
+  ShieldAlert,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -118,7 +119,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
-  { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
+  { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus"] },
@@ -245,6 +246,9 @@ export function MobileNav() {
                   >
                     <MobileNavItem href="/" icon={<ChartLine />} label="Dashboard" onClick={handleNavClick} />
                     <MobileNavItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" onClick={handleNavClick} />
+                    {hasAnyRole(["admin", "pm", "executive"]) && (
+                      <MobileNavItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" onClick={handleNavClick} />
+                    )}
                     <MobileNavItem href="/projects" icon={<FolderOpen />} label="All Projects" onClick={handleNavClick} />
                     <MobileNavItem href="/clients" icon={<Building2 />} label="Clients" onClick={handleNavClick} />
                     <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />

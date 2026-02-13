@@ -56,7 +56,7 @@ import {
   raiddEntries, type RaiddEntry, type InsertRaiddEntry
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
+import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1012,6 +1012,7 @@ export interface IStorage {
   convertRiskToIssue(riskId: string, updatedBy: string): Promise<RaiddEntry>;
   supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
+  getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -10978,6 +10979,43 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(raiddEntries.projectId, projectId), eq(raiddEntries.type, type)));
     const nextNum = (Number(result?.count) || 0) + 1;
     return `${prefix}-${String(nextNum).padStart(3, '0')}`;
+  }
+
+  async getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]> {
+    const conditions: SQL[] = [eq(raiddEntries.tenantId, tenantId)];
+    if (filters?.type) conditions.push(eq(raiddEntries.type, filters.type));
+    if (filters?.status) conditions.push(eq(raiddEntries.status, filters.status));
+    if (filters?.priority) conditions.push(eq(raiddEntries.priority, filters.priority));
+    if (filters?.projectId) conditions.push(eq(raiddEntries.projectId, filters.projectId));
+    if (filters?.activeProjectsOnly !== false) {
+      conditions.push(eq(projects.status, 'active'));
+    }
+
+    const rows = await db.select({
+      entry: raiddEntries,
+      ownerName: this.raiddOwnerAlias.name,
+      assigneeName: this.raiddAssigneeAlias.name,
+      createdByName: this.raiddCreatedByAlias.name,
+      projectName: projects.name,
+      clientName: clients.name,
+    })
+    .from(raiddEntries)
+    .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
+    .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
+    .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .where(and(...conditions))
+    .orderBy(desc(raiddEntries.createdAt));
+
+    return rows.map(r => ({
+      ...r.entry,
+      ownerName: r.ownerName ?? undefined,
+      assigneeName: r.assigneeName ?? undefined,
+      createdByName: r.createdByName ?? undefined,
+      projectName: r.projectName ?? undefined,
+      clientName: r.clientName ?? undefined,
+    }));
   }
 }
 

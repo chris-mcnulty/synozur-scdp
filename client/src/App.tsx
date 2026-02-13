@@ -43,6 +43,7 @@ import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import FileRepository from "@/pages/file-repository";
 import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
+import PortfolioRaidd from "@/pages/portfolio-raidd";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -164,6 +165,13 @@ function Router() {
       </Route>
       <Route path="/portfolio/timeline">
         {user ? <PortfolioTimelinePage /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/portfolio/raidd">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "pm", "executive"]}>
+            <PortfolioRaidd />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/projects">
         {user ? <Projects /> : <Redirect to="/login" />}

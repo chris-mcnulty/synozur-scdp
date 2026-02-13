@@ -21277,6 +21277,58 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
   });
 
   // ============================================================================
+  // Portfolio RAIDD Report
+  // ============================================================================
+
+  app.get("/api/reports/raidd", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+
+      const { type, status, priority, projectId, activeOnly } = req.query;
+      const filters: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean } = {};
+      if (type && typeof type === 'string') filters.type = type;
+      if (status && typeof status === 'string') filters.status = status;
+      if (priority && typeof priority === 'string') filters.priority = priority;
+      if (projectId && typeof projectId === 'string') filters.projectId = projectId;
+      filters.activeProjectsOnly = activeOnly !== 'false';
+
+      const entries = await storage.getPortfolioRaiddEntries(tenantId, filters);
+
+      const openStatuses = ["open", "in_progress"];
+      const openEntries = entries.filter(e => openStatuses.includes(e.status));
+      const summary = {
+        totalEntries: entries.length,
+        openRisks: openEntries.filter(e => e.type === "risk").length,
+        openIssues: openEntries.filter(e => e.type === "issue").length,
+        openActionItems: openEntries.filter(e => e.type === "action_item").length,
+        openDependencies: openEntries.filter(e => e.type === "dependency").length,
+        recentDecisions: entries.filter(e => e.type === "decision" && e.status !== "superseded").length,
+        criticalItems: openEntries.filter(e => e.priority === "critical").length,
+        highPriorityItems: openEntries.filter(e => e.priority === "high").length,
+        overdueActionItems: openEntries.filter(e => e.type === "action_item" && e.dueDate && new Date(e.dueDate) < new Date()).length,
+        closedThisMonth: entries.filter(e => {
+          if (!e.closedAt) return false;
+          const closed = new Date(e.closedAt);
+          const now = new Date();
+          return closed.getMonth() === now.getMonth() && closed.getFullYear() === now.getFullYear();
+        }).length,
+        projectsWithEntries: new Set(entries.map(e => e.projectId)).size,
+      };
+
+      const projectList = Array.from(new Set(entries.map(e => JSON.stringify({ id: e.projectId, name: e.projectName })))).map(s => JSON.parse(s));
+
+      res.json({ entries, summary, projectList });
+    } catch (error: any) {
+      console.error("Error fetching portfolio RAIDD data:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch portfolio RAIDD data" });
+    }
+  });
+
+  // ============================================================================
   // RAIDD Log Routes
   // ============================================================================
 
