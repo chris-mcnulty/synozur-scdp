@@ -116,7 +116,7 @@ interface SectionRoute {
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
-  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
+  { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
@@ -232,6 +232,7 @@ export function Sidebar() {
               >
                 <SidebarItem href="/billing" icon={<DollarSign />} label="Billing & Invoicing" />
                 <SidebarItem href="/invoice-report" icon={<FileText />} label="Invoice Report" />
+                <SidebarItem href="/client-revenue-report" icon={<Building2 />} label="Client Revenue" />
                 <SidebarItem href="/expense-management" icon={<CreditCard />} label="Expense Management" />
                 <SidebarItem href="/expense-approval" icon={<Receipt />} label="Expense Approval" />
                 <SidebarItem href="/reimbursement-batches" icon={<Banknote />} label="Reimbursements" />

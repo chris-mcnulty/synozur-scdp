@@ -3765,6 +3765,208 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // Client Revenue Report - invoice revenue grouped by client or client/project with date range and 3-year comparison
+  app.get("/api/reports/client-revenue", requireAuth, async (req, res) => {
+    try {
+      if (!["admin", "billing-admin", "executive"].includes(req.user!.role)) {
+        return res.status(403).json({ message: "Insufficient permissions to view client revenue reports" });
+      }
+
+      const tenantId = req.user?.tenantId;
+      const { startDate, endDate, batchTypeFilter = 'services', groupBy = 'client' } = req.query;
+
+      let tenantTimezone = 'America/New_York';
+      if (tenantId) {
+        const tenantSettings = await db.select({ defaultTimezone: tenants.defaultTimezone })
+          .from(tenants)
+          .where(eq(tenants.id, tenantId))
+          .limit(1);
+        if (tenantSettings.length > 0 && tenantSettings[0].defaultTimezone) {
+          tenantTimezone = tenantSettings[0].defaultTimezone;
+        }
+      }
+
+      const currentYear = new Date().getFullYear();
+      const filterStartDate = (startDate as string) || `${currentYear}-01-01`;
+      const filterEndDate = (endDate as string) || new Date().toISOString().split('T')[0];
+
+      const effectiveDateExpr = sql`COALESCE(${invoiceBatches.asOfDate}, (${invoiceBatches.finalizedAt} AT TIME ZONE ${tenantTimezone})::date, (${invoiceBatches.createdAt} AT TIME ZONE ${tenantTimezone})::date)`;
+
+      const conditions: any[] = [
+        eq(invoiceBatches.status, 'finalized'),
+        sql`${effectiveDateExpr} >= ${filterStartDate}::date`,
+        sql`${effectiveDateExpr} <= ${filterEndDate}::date`,
+      ];
+
+      if (tenantId) {
+        conditions.push(eq(invoiceBatches.tenantId, tenantId));
+      }
+
+      if (batchTypeFilter === 'services') {
+        conditions.push(inArray(invoiceBatches.batchType, ['services', 'mixed']));
+      } else if (batchTypeFilter === 'expenses') {
+        conditions.push(eq(invoiceBatches.batchType, 'expenses'));
+      }
+
+      const rows = await db.select({
+        batchId: invoiceBatches.batchId,
+        startDate: invoiceBatches.startDate,
+        endDate: invoiceBatches.endDate,
+        effectiveDate: sql<string>`${effectiveDateExpr}::text`.as('effective_date'),
+        totalAmount: invoiceBatches.totalAmount,
+        discountAmount: invoiceBatches.discountAmount,
+        taxAmount: invoiceBatches.taxAmount,
+        taxAmountOverride: invoiceBatches.taxAmountOverride,
+        taxRate: invoiceBatches.taxRate,
+        batchType: invoiceBatches.batchType,
+        paymentStatus: invoiceBatches.paymentStatus,
+        paymentAmount: invoiceBatches.paymentAmount,
+      })
+      .from(invoiceBatches)
+      .where(and(...conditions))
+      .orderBy(sql`${effectiveDateExpr} ASC`);
+
+      const batchIds = rows.map(r => r.batchId);
+
+      if (batchIds.length === 0) {
+        return res.json({
+          rows: [],
+          totals: { invoiceAmount: 0, taxAmount: 0, invoiceTotal: 0, amountPaid: 0, outstanding: 0, invoiceCount: 0 },
+          filters: { startDate: filterStartDate, endDate: filterEndDate, batchTypeFilter, groupBy },
+        });
+      }
+
+      const lineDetailsRaw = await db.execute(sql`
+        SELECT 
+          il.batch_id as "batchId",
+          il.client_id as "clientId", 
+          c.name as "clientName",
+          il.project_id as "projectId",
+          p.name as "projectName",
+          il.amount as "lineTotal"
+        FROM invoice_lines il
+        INNER JOIN clients c ON il.client_id = c.id
+        LEFT JOIN projects p ON il.project_id = p.id
+        WHERE il.batch_id = ANY(${sql.raw(`ARRAY[${batchIds.map(id => `'${id}'`).join(',')}]`)})
+      `);
+      const lineDetails = (lineDetailsRaw as any).rows || lineDetailsRaw;
+
+      const batchTotals: Record<string, { invoiceAmount: number; taxAmount: number; invoiceTotal: number; amountPaid: number; outstanding: number }> = {};
+      for (const row of rows) {
+        const base = Number(row.totalAmount || 0);
+        const discount = Number(row.discountAmount || 0);
+        const invoiceAmount = base - discount;
+        const taxRate = Number(row.taxRate || 0);
+        const calculatedTax = taxRate > 0 ? Math.round(invoiceAmount * taxRate) / 100 : 0;
+        const storedTax = row.taxAmountOverride ?? row.taxAmount;
+        const tax = storedTax != null ? Number(storedTax) : calculatedTax;
+        const invoiceTotal = invoiceAmount + tax;
+        const paid = row.paymentStatus === 'paid' ? invoiceTotal : Number(row.paymentAmount || 0);
+        const outstanding = row.paymentStatus === 'paid' ? 0 : invoiceTotal - paid;
+
+        batchTotals[row.batchId] = {
+          invoiceAmount: Math.round(invoiceAmount * 100) / 100,
+          taxAmount: Math.round(tax * 100) / 100,
+          invoiceTotal: Math.round(invoiceTotal * 100) / 100,
+          amountPaid: Math.round(paid * 100) / 100,
+          outstanding: Math.round(outstanding * 100) / 100,
+        };
+      }
+
+      const batchLineTotals: Record<string, number> = {};
+      for (const line of lineDetails) {
+        const key = line.batchId;
+        batchLineTotals[key] = (batchLineTotals[key] || 0) + Number(line.lineTotal || 0);
+      }
+
+      type GroupKey = string;
+      const groupedData: Record<GroupKey, {
+        clientId: string;
+        clientName: string;
+        projectId: string | null;
+        projectName: string | null;
+        invoiceAmount: number;
+        taxAmount: number;
+        invoiceTotal: number;
+        amountPaid: number;
+        outstanding: number;
+        invoiceCount: number;
+        batchIds: Set<string>;
+      }> = {};
+
+      for (const line of lineDetails) {
+        const batch = batchTotals[line.batchId];
+        if (!batch) continue;
+
+        const batchTotal = batchLineTotals[line.batchId] || 1;
+        const lineAmount = Number(line.lineTotal || 0);
+        const proportion = batchTotal > 0 ? lineAmount / batchTotal : 0;
+
+        const key = groupBy === 'client-project'
+          ? `${line.clientId}::${line.projectId || 'no-project'}`
+          : line.clientId;
+
+        if (!groupedData[key]) {
+          groupedData[key] = {
+            clientId: line.clientId,
+            clientName: line.clientName,
+            projectId: groupBy === 'client-project' ? line.projectId : null,
+            projectName: groupBy === 'client-project' ? line.projectName : null,
+            invoiceAmount: 0,
+            taxAmount: 0,
+            invoiceTotal: 0,
+            amountPaid: 0,
+            outstanding: 0,
+            invoiceCount: 0,
+            batchIds: new Set(),
+          };
+        }
+
+        const g = groupedData[key];
+        g.invoiceAmount += batch.invoiceAmount * proportion;
+        g.taxAmount += batch.taxAmount * proportion;
+        g.invoiceTotal += batch.invoiceTotal * proportion;
+        g.amountPaid += batch.amountPaid * proportion;
+        g.outstanding += batch.outstanding * proportion;
+        if (!g.batchIds.has(line.batchId)) {
+          g.batchIds.add(line.batchId);
+          g.invoiceCount += 1;
+        }
+      }
+
+      const resultRows = Object.values(groupedData).map(g => ({
+        clientId: g.clientId,
+        clientName: g.clientName,
+        projectId: g.projectId,
+        projectName: g.projectName,
+        invoiceAmount: Math.round(g.invoiceAmount * 100) / 100,
+        taxAmount: Math.round(g.taxAmount * 100) / 100,
+        invoiceTotal: Math.round(g.invoiceTotal * 100) / 100,
+        amountPaid: Math.round(g.amountPaid * 100) / 100,
+        outstanding: Math.round(g.outstanding * 100) / 100,
+        invoiceCount: g.invoiceCount,
+      })).sort((a, b) => b.invoiceTotal - a.invoiceTotal);
+
+      const totals = {
+        invoiceAmount: resultRows.reduce((s, r) => s + r.invoiceAmount, 0),
+        taxAmount: resultRows.reduce((s, r) => s + r.taxAmount, 0),
+        invoiceTotal: resultRows.reduce((s, r) => s + r.invoiceTotal, 0),
+        amountPaid: resultRows.reduce((s, r) => s + r.amountPaid, 0),
+        outstanding: resultRows.reduce((s, r) => s + r.outstanding, 0),
+        invoiceCount: rows.length,
+      };
+
+      res.json({
+        rows: resultRows,
+        totals,
+        filters: { startDate: filterStartDate, endDate: filterEndDate, batchTypeFilter, groupBy },
+      });
+    } catch (error) {
+      console.error("Error fetching client revenue report:", error);
+      res.status(500).json({ message: "Failed to fetch client revenue report" });
+    }
+  });
+
   // Comprehensive Resource Utilization API - Cross-project view with vocabulary integration
   app.get("/api/reports/resource-utilization", requireAuth, async (req, res) => {
     try {
