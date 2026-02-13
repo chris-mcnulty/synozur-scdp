@@ -21696,7 +21696,7 @@ Provide a JSON response with:
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 1536,
+        maxTokens: 4096,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
@@ -21889,7 +21889,7 @@ Return a JSON response:
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 2048,
+        maxTokens: 4096,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
