@@ -35,6 +35,8 @@ import PlatformServicePlans from "@/pages/platform-service-plans";
 import PlatformUsers from "@/pages/platform-users";
 import PlatformAirports from "@/pages/platform-airports";
 import PlatformOconus from "@/pages/platform-oconus";
+import PlatformGroundingDocs from "@/pages/platform-grounding-docs";
+import TenantGroundingDocs from "@/pages/tenant-grounding-docs";
 import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
 import Changelog from "@/pages/changelog";
@@ -292,11 +294,25 @@ function Router() {
           </PlatformAdminGuard>
         ) : <Redirect to="/login" />}
       </Route>
+      <Route path="/platform/grounding-docs">
+        {user ? (
+          <PlatformAdminGuard>
+            <PlatformGroundingDocs />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
+      </Route>
       <Route path="/vocabulary">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
       </Route>
       <Route path="/file-repository">
         {user ? <FileRepository /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/ai-grounding">
+        {user ? (
+          <PermissionGuard allowedRoles={["admin", "pm"]}>
+            <TenantGroundingDocs />
+          </PermissionGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/reports">
         {user ? <Reports /> : <Redirect to="/login" />}

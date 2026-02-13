@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -2944,12 +2944,18 @@ export async function registerRoutes(app: Express): Promise<void> {
         : changelogContent.substring(0, 2000);
 
       try {
-        const { aiService } = await import("./services/ai-service.js");
+        const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
         if (aiService.isConfigured()) {
+          const clTenantId = (req.user as any)?.tenantId;
+          const clGroundingDocs = clTenantId
+            ? await storage.getActiveGroundingDocumentsForTenant(clTenantId)
+            : await storage.getActiveGroundingDocuments();
+          const clGroundingCtx = buildGroundingContext(clGroundingDocs, 'changelog');
+
           const result = await aiService.customPrompt(
             "You summarize software release notes into friendly, non-technical overviews for business users. Return valid JSON only.",
             `Summarize these release notes from the last two weeks into a friendly, non-technical overview. Combine all versions into a single cohesive summary. Group into 3-5 highlights with emoji icons. Format as JSON: { "summary": "brief overview sentence", "highlights": [{ "icon": "emoji", "title": "short title", "description": "1-2 sentence description" }] }\n\nRelease notes:\n${relevantSection}`,
-            { temperature: 0.5, maxTokens: 1024, responseFormat: "json" }
+            { temperature: 0.5, maxTokens: 1024, responseFormat: "json", groundingContext: clGroundingCtx }
           );
 
           if (result.content && result.content.trim()) {
@@ -5060,10 +5066,17 @@ ${dependencySummary}
 RAIDD LOG — Decisions This Period (${recentDecisions.length}):
 ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}`;
 
-      const { aiService } = await import("./services/ai-service.js");
+      const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+      const srTenantId = (req.user as any)?.tenantId;
+      const srGroundingDocs = srTenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(srTenantId)
+        : await storage.getActiveGroundingDocuments();
+      const srGroundingCtx = buildGroundingContext(srGroundingDocs, 'status_report');
+
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
         maxTokens: 3072,
+        groundingContext: srGroundingCtx,
       });
 
       res.json({
@@ -9062,9 +9075,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       let narrative = '';
       if (generateNarrative) {
-        const { aiService } = await import('./services/ai-service.js');
+        const { aiService, buildGroundingContext } = await import('./services/ai-service.js');
         
         if (aiService.isConfigured()) {
+          const sowTenantId = (req.user as any)?.tenantId;
+          const sowGroundingDocs = sowTenantId
+            ? await storage.getActiveGroundingDocumentsForTenant(sowTenantId)
+            : await storage.getActiveGroundingDocuments();
+          const sowGroundingCtx = buildGroundingContext(sowGroundingDocs, 'sub_sow');
+
           narrative = await aiService.generateSubSOWNarrative({
             projectName: project.name,
             clientName: client?.name || 'Unknown Client',
@@ -9076,7 +9095,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             assignments,
             projectStartDate: project.startDate || undefined,
             projectEndDate: project.endDate || undefined
-          });
+          }, sowGroundingCtx);
         } else {
           narrative = 'AI narrative generation is not configured. Please provide a manual narrative.';
         }
@@ -21062,7 +21081,15 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       });
 
       const validated = schema.parse(req.body);
-      const narrative = await aiService.generateInvoiceNarrative(validated);
+
+      const { buildGroundingContext } = await import('./services/ai-service.js');
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'invoice_narrative');
+
+      const narrative = await aiService.generateInvoiceNarrative(validated, groundingCtx);
 
       console.log(`[AI] Generated invoice narrative for project "${validated.projectName}" by user ${req.user!.id}`);
 
@@ -21253,11 +21280,18 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
 
       const lineItemCount = lineItems.length;
       const epicCount = epics.length;
+      const { buildGroundingContext } = await import('./services/ai-service.js');
+      const estTenantId = (req.user as any)?.tenantId;
+      const estGroundingDocs = estTenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(estTenantId)
+        : await storage.getActiveGroundingDocuments();
+      const estGroundingCtx = buildGroundingContext(estGroundingDocs, 'estimate_narrative');
+
       console.log(`[AI] Generating estimate narrative for "${estimate.name}" (${estimateId}) by user ${req.user!.id}`);
       console.log(`[AI] Estimate has ${epicCount} epics and ${lineItemCount} line items`);
       
       const startTime = Date.now();
-      const narrative = await aiService.generateEstimateNarrative(narrativeInput);
+      const narrative = await aiService.generateEstimateNarrative(narrativeInput, estGroundingCtx);
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       
       console.log(`[AI] Narrative generated in ${duration}s (${narrative.length} chars)`);
@@ -21486,6 +21520,204 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     } catch (error: any) {
       console.error("Error superseding decision:", error);
       res.status(400).json({ message: error.message || "Failed to supersede decision" });
+    }
+  });
+
+  // ============================================================================
+  // GROUNDING DOCUMENTS (AI Knowledge Base)
+  // ============================================================================
+
+  const docParseUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const allowed = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ];
+      if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error(`File type ${file.mimetype} not allowed. Only PDF and DOCX are supported.`));
+      }
+    }
+  });
+
+  app.post("/api/ai/parse-pdf", requireAuth, requireRole(["admin", "pm"]), docParseUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      const pdfParse = (await import("pdf-parse")).default;
+      const data = await pdfParse(req.file.buffer);
+      res.json({ text: data.text, pages: data.numpages });
+    } catch (error: any) {
+      console.error("Error parsing PDF:", error);
+      res.status(500).json({ message: error.message || "Failed to parse PDF" });
+    }
+  });
+
+  app.post("/api/ai/parse-docx", requireAuth, requireRole(["admin", "pm"]), docParseUpload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+      res.json({ text: result.value });
+    } catch (error: any) {
+      console.error("Error parsing DOCX:", error);
+      res.status(500).json({ message: error.message || "Failed to parse DOCX" });
+    }
+  });
+
+  app.get("/api/grounding-documents/categories", requireAuth, async (_req, res) => {
+    res.json(GROUNDING_DOC_CATEGORY_LABELS);
+  });
+
+  app.get("/api/grounding-documents", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const platformRole = user?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      const { scope, category, isActive } = req.query;
+
+      const filters: { tenantId?: string | null; category?: string; isActive?: boolean } = {};
+
+      if (scope === 'platform') {
+        if (!isPlatformAdmin) {
+          return res.status(403).json({ message: "Platform admin access required" });
+        }
+        filters.tenantId = null;
+      } else if (scope === 'tenant') {
+        if (!user.tenantId) {
+          return res.status(400).json({ message: "No tenant context" });
+        }
+        filters.tenantId = user.tenantId;
+      } else if (!isPlatformAdmin) {
+        filters.tenantId = user.tenantId || null;
+      }
+
+      if (category && typeof category === 'string') {
+        filters.category = category;
+      }
+      if (isActive !== undefined) {
+        filters.isActive = isActive === 'true';
+      }
+
+      const docs = await storage.getGroundingDocuments(filters);
+      res.json(docs);
+    } catch (error: any) {
+      console.error("Error fetching grounding documents:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch grounding documents" });
+    }
+  });
+
+  app.get("/api/grounding-documents/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const doc = await storage.getGroundingDocument(req.params.id);
+      if (!doc) {
+        return res.status(404).json({ message: "Grounding document not found" });
+      }
+      const user = req.user as any;
+      const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+      if (doc.tenantId && doc.tenantId !== user.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (!doc.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Platform admin access required" });
+      }
+      res.json(doc);
+    } catch (error: any) {
+      console.error("Error fetching grounding document:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch grounding document" });
+    }
+  });
+
+  app.post("/api/grounding-documents", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+
+      const body = { ...req.body };
+      if (body.tenantId === 'current') {
+        body.tenantId = user.tenantId;
+      }
+      if (!body.tenantId) {
+        if (!isPlatformAdmin) {
+          return res.status(403).json({ message: "Platform admin access required for global documents" });
+        }
+        body.tenantId = null;
+      } else {
+        if (body.tenantId !== user.tenantId && !isPlatformAdmin) {
+          return res.status(403).json({ message: "Access denied" });
+        }
+      }
+
+      body.createdBy = user.id;
+      body.updatedBy = user.id;
+
+      const parsed = insertGroundingDocumentSchema.parse(body);
+      const doc = await storage.createGroundingDocument(parsed);
+      res.status(201).json(doc);
+    } catch (error: any) {
+      console.error("Error creating grounding document:", error);
+      res.status(400).json({ message: error.message || "Failed to create grounding document" });
+    }
+  });
+
+  app.patch("/api/grounding-documents/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const existing = await storage.getGroundingDocument(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Grounding document not found" });
+      }
+
+      const user = req.user as any;
+      const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+
+      if (!existing.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Platform admin access required" });
+      }
+      if (existing.tenantId && existing.tenantId !== user.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const updates = { ...req.body, updatedBy: user.id };
+      delete updates.id;
+      delete updates.createdAt;
+      delete updates.createdBy;
+
+      const doc = await storage.updateGroundingDocument(req.params.id, updates);
+      res.json(doc);
+    } catch (error: any) {
+      console.error("Error updating grounding document:", error);
+      res.status(400).json({ message: error.message || "Failed to update grounding document" });
+    }
+  });
+
+  app.delete("/api/grounding-documents/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const existing = await storage.getGroundingDocument(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Grounding document not found" });
+      }
+
+      const user = req.user as any;
+      const isPlatformAdmin = user?.platformRole === 'global_admin' || user?.platformRole === 'constellation_admin';
+
+      if (!existing.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Platform admin access required" });
+      }
+      if (existing.tenantId && existing.tenantId !== user.tenantId && !isPlatformAdmin) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteGroundingDocument(req.params.id);
+      res.json({ message: "Grounding document deleted" });
+    } catch (error: any) {
+      console.error("Error deleting grounding document:", error);
+      res.status(500).json({ message: error.message || "Failed to delete grounding document" });
     }
   });
 

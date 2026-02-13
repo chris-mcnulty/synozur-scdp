@@ -33,6 +33,7 @@ import {
   ChevronRight,
   HelpCircle,
   ShieldAlert,
+  Brain,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -116,8 +117,8 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint"] },
-  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus"] },
+  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
+  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
 function getSectionForPath(path: string): string | null {
@@ -251,6 +252,7 @@ export function Sidebar() {
                 <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary" />
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
+                <SidebarItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" />
               </CollapsibleSection>
             )}
             
@@ -266,6 +268,7 @@ export function Sidebar() {
                 <SidebarItem href="/platform/users" icon={<Shield />} label="Platform Users" />
                 <SidebarItem href="/platform/airports" icon={<Plane />} label="Airport Codes" />
                 <SidebarItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" />
+                <SidebarItem href="/platform/grounding-docs" icon={<Brain />} label="AI Grounding" />
               </CollapsibleSection>
             )}
           </nav>

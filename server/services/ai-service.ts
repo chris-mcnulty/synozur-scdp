@@ -1,4 +1,52 @@
 import { getAIProvider, ChatMessage, ChatCompletionResult } from './ai-provider.js';
+import type { GroundingDocument, GroundingDocCategory } from '@shared/schema';
+import { GROUNDING_DOC_CATEGORY_LABELS } from '@shared/schema';
+
+export type GroundingFeature = 'estimate_narrative' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
+
+const FEATURE_CATEGORY_MAP: Record<GroundingFeature, GroundingDocCategory[]> = {
+  estimate_narrative: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
+  invoice_narrative: ['invoice_narrative', 'brand_voice', 'general'],
+  status_report: ['status_report', 'raidd_guidance', 'pm_methodology', 'brand_voice', 'general'],
+  sub_sow: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
+  changelog: ['general', 'brand_voice'],
+  general: ['general', 'pm_methodology', 'brand_voice'],
+};
+
+export function buildGroundingContext(docs: GroundingDocument[], feature?: GroundingFeature): string {
+  if (!docs || docs.length === 0) return '';
+
+  let relevantDocs = docs;
+  if (feature) {
+    const relevantCategories = FEATURE_CATEGORY_MAP[feature] || [];
+    relevantDocs = docs.filter(d =>
+      d.isTenantBackground || relevantCategories.includes(d.category as GroundingDocCategory)
+    );
+  }
+
+  if (relevantDocs.length === 0) return '';
+
+  relevantDocs.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return (a.category || '').localeCompare(b.category || '');
+  });
+
+  const MAX_GROUNDING_CHARS = 50000;
+  let totalChars = 0;
+  const sections: string[] = [];
+
+  for (const doc of relevantDocs) {
+    const label = GROUNDING_DOC_CATEGORY_LABELS[doc.category as GroundingDocCategory] || doc.category;
+    const section = `### ${label}: ${doc.title}\n${doc.content}`;
+    if (totalChars + section.length > MAX_GROUNDING_CHARS) break;
+    sections.push(section);
+    totalChars += section.length;
+  }
+
+  if (sections.length === 0) return '';
+
+  return `\n\n## Grounding Knowledge Base\nThe following knowledge documents provide context and guidelines. Use them to inform your response style, methodology, and domain knowledge.\n\n${sections.join('\n\n')}`;
+}
 
 export interface EstimateGenerationInput {
   projectDescription: string;
@@ -237,7 +285,7 @@ Please provide a helpful response to the user's query based on the available con
     return result.content;
   }
 
-  async generateInvoiceNarrative(input: InvoiceNarrativeInput): Promise<string> {
+  async generateInvoiceNarrative(input: InvoiceNarrativeInput, groundingContext?: string): Promise<string> {
     const provider = getAIProvider();
 
     const lineItemsSummary = input.lineItems.map(item => 
@@ -257,8 +305,9 @@ ${input.milestones?.length ? `Key Milestones: ${input.milestones.join(', ')}` : 
 
 Write a professional narrative suitable for the invoice.`;
 
+    const systemContent = this.systemPrompts.invoiceNarrative + (groundingContext || '');
     const messages: ChatMessage[] = [
-      { role: 'system', content: this.systemPrompts.invoiceNarrative },
+      { role: 'system', content: systemContent },
       { role: 'user', content: userMessage }
     ];
 
@@ -271,7 +320,7 @@ Write a professional narrative suitable for the invoice.`;
     return result.content;
   }
 
-  async generateEstimateNarrative(input: EstimateNarrativeInput): Promise<string> {
+  async generateEstimateNarrative(input: EstimateNarrativeInput, groundingContext?: string): Promise<string> {
     const provider = getAIProvider();
 
     // Extract assumptions from all line item comments
@@ -410,8 +459,9 @@ Please generate a professional proposal narrative that addresses all six key cli
       userMessage = userMessage.substring(0, MAX_PROMPT_CHARS) + '\n\n[Note: Some line item details were trimmed for length. Generate the narrative based on the information provided above.]';
     }
 
+    const systemContent = this.systemPrompts.estimateNarrative + (groundingContext || '');
     const messages: ChatMessage[] = [
-      { role: 'system', content: this.systemPrompts.estimateNarrative },
+      { role: 'system', content: systemContent },
       { role: 'user', content: userMessage }
     ];
 
@@ -423,7 +473,7 @@ Please generate a professional proposal narrative that addresses all six key cli
     return result.content;
   }
 
-  async generateSubSOWNarrative(input: SubSOWNarrativeInput): Promise<string> {
+  async generateSubSOWNarrative(input: SubSOWNarrativeInput, groundingContext?: string): Promise<string> {
     const provider = getAIProvider();
 
     // Group assignments by epic
@@ -478,8 +528,9 @@ ${epicSummaries}
 
 Please generate a professional Sub-SOW narrative suitable for inclusion in a subcontractor agreement. Focus on clearly defining the scope of work, deliverables, and expectations.`;
 
+    const systemContent = this.systemPrompts.subSOWNarrative + (groundingContext || '');
     const messages: ChatMessage[] = [
-      { role: 'system', content: this.systemPrompts.subSOWNarrative },
+      { role: 'system', content: systemContent },
       { role: 'user', content: userMessage }
     ];
 
@@ -509,12 +560,13 @@ Please generate a professional Sub-SOW narrative suitable for inclusion in a sub
   async customPrompt(
     systemPrompt: string,
     userMessage: string,
-    options?: { temperature?: number; maxTokens?: number; responseFormat?: 'text' | 'json' }
+    options?: { temperature?: number; maxTokens?: number; responseFormat?: 'text' | 'json'; groundingContext?: string }
   ): Promise<ChatCompletionResult> {
     const provider = getAIProvider();
 
+    const systemContent = systemPrompt + (options?.groundingContext || '');
     const messages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: systemContent },
       { role: 'user', content: userMessage }
     ];
 

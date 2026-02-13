@@ -2632,6 +2632,65 @@ export const insertRaiddEntrySchema = createInsertSchema(raiddEntries).omit({
 export type InsertRaiddEntry = z.infer<typeof insertRaiddEntrySchema>;
 export type RaiddEntry = typeof raiddEntries.$inferSelect;
 
+// ============================================================================
+// GROUNDING DOCUMENTS (AI Knowledge Base - Following Vega Pattern)
+// ============================================================================
+
+export const groundingDocCategoryEnum = z.enum([
+  'pm_methodology',
+  'brand_voice',
+  'raidd_guidance',
+  'status_report',
+  'estimate_narrative',
+  'invoice_narrative',
+  'general',
+]);
+export type GroundingDocCategory = z.infer<typeof groundingDocCategoryEnum>;
+
+export const GROUNDING_DOC_CATEGORY_LABELS: Record<GroundingDocCategory, string> = {
+  pm_methodology: "PM Methodology & Framework",
+  brand_voice: "Brand Voice & Communication Style",
+  raidd_guidance: "RAIDD Governance Guidelines",
+  status_report: "Status Report Guidance",
+  estimate_narrative: "Estimate & Proposal Narrative",
+  invoice_narrative: "Invoice Narrative",
+  general: "General Knowledge",
+};
+
+export const groundingDocuments = pgTable("grounding_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").references(() => tenants.id, { onDelete: 'cascade' }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 50 }).notNull().default('general'),
+  content: text("content").notNull(),
+  priority: integer("priority").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  isTenantBackground: boolean("is_tenant_background").notNull().default(false),
+  createdBy: varchar("created_by").references(() => users.id),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_grounding_docs_tenant").on(table.tenantId),
+  categoryIdx: index("idx_grounding_docs_category").on(table.category),
+  activeIdx: index("idx_grounding_docs_active").on(table.isActive),
+}));
+
+export const groundingDocumentsRelations = relations(groundingDocuments, ({ one }) => ({
+  tenant: one(tenants, { fields: [groundingDocuments.tenantId], references: [tenants.id] }),
+  createdByUser: one(users, { fields: [groundingDocuments.createdBy], references: [users.id] }),
+  updatedByUser: one(users, { fields: [groundingDocuments.updatedBy], references: [users.id] }),
+}));
+
+export const insertGroundingDocumentSchema = createInsertSchema(groundingDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSchema>;
+export type GroundingDocument = typeof groundingDocuments.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,

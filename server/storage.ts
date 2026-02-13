@@ -53,7 +53,8 @@ import {
   type Tenant,
   type VocabularyTerms, DEFAULT_VOCABULARY,
   scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun,
-  raiddEntries, type RaiddEntry, type InsertRaiddEntry
+  raiddEntries, type RaiddEntry, type InsertRaiddEntry,
+  groundingDocuments, type GroundingDocument, type InsertGroundingDocument
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1013,6 +1014,17 @@ export interface IStorage {
   supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
   getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
+
+  // Grounding Documents
+  getGroundingDocuments(filters?: { tenantId?: string | null; category?: string; isActive?: boolean }): Promise<GroundingDocument[]>;
+  getGroundingDocument(id: string): Promise<GroundingDocument | undefined>;
+  getGlobalGroundingDocuments(): Promise<GroundingDocument[]>;
+  getTenantGroundingDocuments(tenantId: string): Promise<GroundingDocument[]>;
+  getActiveGroundingDocuments(): Promise<GroundingDocument[]>;
+  getActiveGroundingDocumentsForTenant(tenantId: string): Promise<GroundingDocument[]>;
+  createGroundingDocument(doc: InsertGroundingDocument): Promise<GroundingDocument>;
+  updateGroundingDocument(id: string, updates: Partial<InsertGroundingDocument>): Promise<GroundingDocument>;
+  deleteGroundingDocument(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -11016,6 +11028,82 @@ export class DatabaseStorage implements IStorage {
       projectName: r.projectName ?? undefined,
       clientName: r.clientName ?? undefined,
     }));
+  }
+
+  // ============================================================================
+  // GROUNDING DOCUMENTS
+  // ============================================================================
+
+  async getGroundingDocuments(filters?: { tenantId?: string | null; category?: string; isActive?: boolean }): Promise<GroundingDocument[]> {
+    const conditions: SQL[] = [];
+    if (filters?.tenantId !== undefined) {
+      if (filters.tenantId === null) {
+        conditions.push(isNull(groundingDocuments.tenantId));
+      } else {
+        conditions.push(eq(groundingDocuments.tenantId, filters.tenantId));
+      }
+    }
+    if (filters?.category) {
+      conditions.push(eq(groundingDocuments.category, filters.category));
+    }
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(groundingDocuments.isActive, filters.isActive));
+    }
+
+    return await db.select()
+      .from(groundingDocuments)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(groundingDocuments.priority), groundingDocuments.category, groundingDocuments.title);
+  }
+
+  async getGroundingDocument(id: string): Promise<GroundingDocument | undefined> {
+    const [doc] = await db.select()
+      .from(groundingDocuments)
+      .where(eq(groundingDocuments.id, id));
+    return doc;
+  }
+
+  async getGlobalGroundingDocuments(): Promise<GroundingDocument[]> {
+    return this.getGroundingDocuments({ tenantId: null });
+  }
+
+  async getTenantGroundingDocuments(tenantId: string): Promise<GroundingDocument[]> {
+    return this.getGroundingDocuments({ tenantId });
+  }
+
+  async getActiveGroundingDocuments(): Promise<GroundingDocument[]> {
+    return await db.select()
+      .from(groundingDocuments)
+      .where(and(eq(groundingDocuments.isActive, true), isNull(groundingDocuments.tenantId)))
+      .orderBy(desc(groundingDocuments.priority), groundingDocuments.category);
+  }
+
+  async getActiveGroundingDocumentsForTenant(tenantId: string): Promise<GroundingDocument[]> {
+    return await db.select()
+      .from(groundingDocuments)
+      .where(and(
+        eq(groundingDocuments.isActive, true),
+        or(isNull(groundingDocuments.tenantId), eq(groundingDocuments.tenantId, tenantId))
+      ))
+      .orderBy(desc(groundingDocuments.priority), groundingDocuments.category);
+  }
+
+  async createGroundingDocument(doc: InsertGroundingDocument): Promise<GroundingDocument> {
+    const [created] = await db.insert(groundingDocuments).values(doc).returning();
+    return created;
+  }
+
+  async updateGroundingDocument(id: string, updates: Partial<InsertGroundingDocument>): Promise<GroundingDocument> {
+    const [updated] = await db.update(groundingDocuments)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(groundingDocuments.id, id))
+      .returning();
+    if (!updated) throw new Error("Grounding document not found");
+    return updated;
+  }
+
+  async deleteGroundingDocument(id: string): Promise<void> {
+    await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
   }
 }
 

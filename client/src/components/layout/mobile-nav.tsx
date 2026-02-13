@@ -33,6 +33,7 @@ import {
   Globe,
   Database,
   ShieldAlert,
+  Brain,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -121,8 +122,8 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint"] },
-  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus"] },
+  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
+  { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
 function getSectionForPath(path: string): string | null {
@@ -292,6 +293,7 @@ export function MobileNav() {
                     <MobileNavItem href="/vocabulary" icon={<Languages />} label="Vocabulary" onClick={handleNavClick} />
                     <MobileNavItem href="/file-repository" icon={<Database />} label="File Repository" onClick={handleNavClick} />
                     <MobileNavItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" onClick={handleNavClick} />
+                    <MobileNavItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
@@ -310,6 +312,7 @@ export function MobileNav() {
                     <MobileNavItem href="/platform/users" icon={<Shield />} label="Platform Users" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/airports" icon={<Plane />} label="Airport Codes" onClick={handleNavClick} />
                     <MobileNavItem href="/platform/oconus" icon={<Globe />} label="OCONUS Rates" onClick={handleNavClick} />
+                    <MobileNavItem href="/platform/grounding-docs" icon={<Brain />} label="AI Grounding" onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
