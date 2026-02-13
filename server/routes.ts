@@ -15633,7 +15633,8 @@ ${completedMilestones}`;
       const { fileURLToPath } = await import('url');
       const path = await import('path');
       const fs = await import('fs');
-      const Handlebars = await import('handlebars');
+      const HandlebarsModule = await import('handlebars');
+      const Handlebars = HandlebarsModule.default || HandlebarsModule;
       
       const __filename = fileURLToPath(import.meta.url);
       const __dirname = path.dirname(__filename);
