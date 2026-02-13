@@ -64,6 +64,10 @@ function fmt(n: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 }
 
+function fmtCompact(n: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+}
+
 function fmtPct(n: number): string {
   if (!isFinite(n)) return 'N/A';
   const sign = n > 0 ? '+' : '';
@@ -141,7 +145,7 @@ function VarianceIndicator({ current, prior }: { current: number; prior: number 
   return (
     <span className={`text-xs flex items-center gap-1 ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
       {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-      {fmt(Math.abs(delta))} ({fmtPct(pct)})
+      {fmtCompact(Math.abs(delta))} ({fmtPct(pct)})
     </span>
   );
 }
@@ -160,11 +164,11 @@ function ComparisonMetricCard({ label, icon, years }: {
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
           <Icon className="w-4 h-4" /> {label}
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           {years.map(y => (
-            <div key={y.year}>
+            <div key={y.year} className="min-w-0">
               <div className="text-xs text-muted-foreground mb-0.5">{y.year}</div>
-              <div className="text-lg font-bold">{fmt(y.value)}</div>
+              <div className="text-base font-bold truncate" title={fmt(y.value)}>{fmtCompact(y.value)}</div>
             </div>
           ))}
         </div>
