@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
@@ -55,7 +55,8 @@ import {
   TrendingUp,
   Clock,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Filter
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
@@ -100,6 +101,7 @@ export default function ClientDetail() {
   const [location, setLocation] = useLocation();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<ClientEditForm>({});
+  const [invoiceYearFilter, setInvoiceYearFilter] = useState<string>("all");
 
   const { toast } = useToast();
 
@@ -190,6 +192,47 @@ export default function ClientDetail() {
     queryKey: ["/api/clients", clientId, "invoice-batches"],
     enabled: !!clientId
   });
+
+  const getEffectiveDate = (batch: InvoiceBatchWithDetails) => {
+    return batch.asOfDate || (batch.finalizedAt ? new Date(batch.finalizedAt).toISOString().split('T')[0] : null) || new Date(batch.createdAt).toISOString().split('T')[0];
+  };
+
+  const invoiceAvailableYears = useMemo(() => {
+    const years = new Set<string>();
+    clientBatches.forEach(batch => {
+      const d = getEffectiveDate(batch);
+      if (d) years.add(new Date(d + 'T00:00:00').getFullYear().toString());
+    });
+    return Array.from(years).sort().reverse();
+  }, [clientBatches]);
+
+  const invoiceFilteredBatches = useMemo(() => {
+    if (invoiceYearFilter === 'all') return clientBatches;
+    return clientBatches.filter(batch => {
+      const d = getEffectiveDate(batch);
+      return d && new Date(d + 'T00:00:00').getFullYear().toString() === invoiceYearFilter;
+    });
+  }, [clientBatches, invoiceYearFilter]);
+
+  const invoiceTotals = useMemo(() => {
+    let totalAmount = 0;
+    let totalTax = 0;
+    let totalPaid = 0;
+    let count = 0;
+    for (const batch of invoiceFilteredBatches) {
+      if (batch.status !== 'finalized') continue;
+      const base = Number(batch.totalAmount || 0) - Number(batch.discountAmount || 0);
+      const tax = batch.taxAmountOverride != null ? Number(batch.taxAmountOverride) : (batch.taxAmount != null ? Number(batch.taxAmount) : 0);
+      totalAmount += base;
+      totalTax += tax;
+      const invoiceTotal = base + tax;
+      totalPaid += batch.paymentStatus === 'paid' ? invoiceTotal : Number(batch.paymentAmount || 0);
+      count++;
+    }
+    return { totalAmount, totalTax, totalInvoiced: totalAmount + totalTax, totalPaid, outstanding: (totalAmount + totalTax) - totalPaid, count };
+  }, [invoiceFilteredBatches]);
+
+  const fmtCurrency = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
   const updateClientMutation = useMutation({
     mutationFn: async (updates: Partial<Client>) => {
@@ -1086,75 +1129,151 @@ export default function ClientDetail() {
           {/* Invoices Tab */}
           <TabsContent value="invoices" className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle>Invoice History</CardTitle>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle>Invoice History</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-4 h-4 text-muted-foreground" />
+                    <Select value={invoiceYearFilter} onValueChange={setInvoiceYearFilter}>
+                      <SelectTrigger className="w-36">
+                        <SelectValue placeholder="Filter by year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Years</SelectItem>
+                        {invoiceAvailableYears.map(year => (
+                          <SelectItem key={year} value={year}>{year}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                {clientBatches.length === 0 ? (
+                {invoiceTotals.count > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Invoices</div>
+                      <div className="text-lg font-bold">{invoiceTotals.count}</div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Total Invoiced</div>
+                      <div className="text-lg font-bold">{fmtCurrency(invoiceTotals.totalInvoiced)}</div>
+                      <div className="text-xs text-muted-foreground">{fmtCurrency(invoiceTotals.totalAmount)} + {fmtCurrency(invoiceTotals.totalTax)} tax</div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Amount Paid</div>
+                      <div className="text-lg font-bold text-green-600">{fmtCurrency(invoiceTotals.totalPaid)}</div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Outstanding</div>
+                      <div className={`text-lg font-bold ${invoiceTotals.outstanding > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{fmtCurrency(invoiceTotals.outstanding)}</div>
+                    </div>
+                    <div className="rounded-lg border p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Period</div>
+                      <div className="text-sm font-medium">{invoiceYearFilter === 'all' ? 'All Time' : invoiceYearFilter}</div>
+                      <div className="text-xs text-muted-foreground">By as-of date</div>
+                    </div>
+                  </div>
+                )}
+
+                {invoiceFilteredBatches.length === 0 ? (
                   <div className="text-center py-8">
                     <Receipt className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-muted-foreground">No invoices found for this client</p>
+                    <p className="text-muted-foreground">
+                      {clientBatches.length === 0 ? 'No invoices found for this client' : `No invoices found for ${invoiceYearFilter}`}
+                    </p>
                   </div>
                 ) : (
                   <div className="border rounded-md">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Batch ID</TableHead>
+                          <TableHead>Invoice #</TableHead>
                           <TableHead>Period</TableHead>
+                          <TableHead>As-Of Date</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Amount</TableHead>
-                          <TableHead>Lines</TableHead>
-                          <TableHead>Date</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead className="text-right">Tax</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead>Payment</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {clientBatches.map((batch) => (
-                          <TableRow key={batch.batchId} data-testid={`row-batch-${batch.batchId}`}>
-                            <TableCell className="font-mono text-sm">
-                              {batch.batchId}
+                        {invoiceFilteredBatches.map((batch) => {
+                          const effectiveDate = getEffectiveDate(batch);
+                          const base = Number(batch.totalAmount || 0) - Number(batch.discountAmount || 0);
+                          const tax = batch.taxAmountOverride != null ? Number(batch.taxAmountOverride) : (batch.taxAmount != null ? Number(batch.taxAmount) : 0);
+                          const total = base + tax;
+
+                          return (
+                            <TableRow key={batch.batchId} data-testid={`row-batch-${batch.batchId}`}>
+                              <TableCell className="font-mono text-sm">
+                                {batch.glInvoiceNumber || batch.batchId}
+                              </TableCell>
+                              <TableCell>
+                                {batch.startDate && batch.endDate ? (
+                                  <div className="text-sm">
+                                    {format(new Date(batch.startDate + 'T00:00:00'), "MMM d")} - {format(new Date(batch.endDate + 'T00:00:00'), "MMM d, yyyy")}
+                                  </div>
+                                ) : (
+                                  'Custom period'
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {effectiveDate ? format(new Date(effectiveDate + 'T00:00:00'), "MMM d, yyyy") : '—'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={
+                                    batch.status === 'finalized' ? 'default' :
+                                    batch.status === 'review' ? 'secondary' : 'outline'
+                                  }
+                                >
+                                  {batch.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums">
+                                {fmtCurrency(base)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums text-muted-foreground">
+                                {fmtCurrency(tax)}
+                              </TableCell>
+                              <TableCell className="text-right tabular-nums font-medium">
+                                {fmtCurrency(total)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={
+                                  batch.paymentStatus === 'paid' ? 'default' :
+                                  batch.paymentStatus === 'partial' ? 'secondary' : 'destructive'
+                                } className={
+                                  batch.paymentStatus === 'paid' ? 'bg-green-600' :
+                                  batch.paymentStatus === 'partial' ? 'bg-amber-500' : ''
+                                }>
+                                  {batch.paymentStatus || 'unpaid'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Link href={`/billing/batches/${batch.batchId}`}>
+                                  <Button size="sm" variant="outline">
+                                    View
+                                  </Button>
+                                </Link>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {invoiceFilteredBatches.some(b => b.status === 'finalized') && (
+                          <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
+                            <TableCell colSpan={4} className="text-right">
+                              Totals ({invoiceTotals.count} finalized)
                             </TableCell>
-                            <TableCell>
-                              {batch.startDate && batch.endDate ? (
-                                <div className="text-sm">
-                                  {format(new Date(batch.startDate), "MMM d")} - {format(new Date(batch.endDate), "MMM d, yyyy")}
-                                </div>
-                              ) : (
-                                'Custom period'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Badge 
-                                variant={
-                                  batch.status === 'finalized' ? 'default' :
-                                  batch.status === 'review' ? 'secondary' : 'outline'
-                                }
-                              >
-                                {batch.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {batch.totalAmount ? 
-                                `${client.currency} ${Number(batch.totalAmount).toLocaleString()}` : 
-                                'TBD'
-                              }
-                            </TableCell>
-                            <TableCell>
-                              {batch.totalLinesCount || 0} lines
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {format(new Date(batch.createdAt), "MMM d, yyyy")}
-                            </TableCell>
-                            <TableCell>
-                              <Link href={`/billing/batches/${batch.batchId}`}>
-                                <Button size="sm" variant="outline">
-                                  View
-                                </Button>
-                              </Link>
-                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{fmtCurrency(invoiceTotals.totalAmount)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{fmtCurrency(invoiceTotals.totalTax)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{fmtCurrency(invoiceTotals.totalInvoiced)}</TableCell>
+                            <TableCell colSpan={2}></TableCell>
                           </TableRow>
-                        ))}
+                        )}
                       </TableBody>
                     </Table>
                   </div>

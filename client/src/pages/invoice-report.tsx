@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -193,6 +193,7 @@ function InvoiceReport() {
   const [viewMode, setViewMode] = useState<'report' | 'comparison'>('report');
   const [selectedQuarters, setSelectedQuarters] = useState<number[]>([1, 2, 3, 4]);
   const [comparisonBatchType, setComparisonBatchType] = useState('services');
+  const [clientFilter, setClientFilter] = useState('all');
 
   const { hasAnyRole } = useAuth();
 
@@ -231,8 +232,32 @@ function InvoiceReport() {
     enabled: viewMode === 'comparison',
   });
 
-  const invoices = data?.invoices || [];
-  const totals = data?.totals;
+  const allClients = useMemo(() => {
+    const names = new Set<string>();
+    (data?.invoices || []).forEach(inv => names.add(inv.clientName));
+    (currentYearData?.invoices || []).forEach(inv => names.add(inv.clientName));
+    (priorYearData?.invoices || []).forEach(inv => names.add(inv.clientName));
+    (oldestYearData?.invoices || []).forEach(inv => names.add(inv.clientName));
+    return Array.from(names).sort();
+  }, [data, currentYearData, priorYearData, oldestYearData]);
+
+  const invoices = useMemo(() => {
+    const all = data?.invoices || [];
+    if (clientFilter === 'all') return all;
+    return all.filter(inv => inv.clientName === clientFilter);
+  }, [data, clientFilter]);
+
+  const totals = useMemo(() => {
+    if (clientFilter === 'all') return data?.totals;
+    return {
+      invoiceAmount: invoices.reduce((s, i) => s + i.invoiceAmount, 0),
+      taxAmount: invoices.reduce((s, i) => s + i.taxAmount, 0),
+      invoiceTotal: invoices.reduce((s, i) => s + i.invoiceTotal, 0),
+      amountPaid: invoices.reduce((s, i) => s + i.amountPaid, 0),
+      outstanding: invoices.reduce((s, i) => s + i.outstanding, 0),
+      count: invoices.length,
+    };
+  }, [data, clientFilter, invoices]);
 
   const grouped = useMemo(() => {
     if (subtotalBy === 'none') return null;
@@ -248,9 +273,10 @@ function InvoiceReport() {
   const comparisonData = useMemo(() => {
     if (!currentYearData || !priorYearData || !oldestYearData) return null;
 
-    const currentInvoices = currentYearData.invoices;
-    const priorInvoices = priorYearData.invoices;
-    const oldestInvoices = oldestYearData.invoices;
+    const filterByClient = (list: InvoiceRow[]) => clientFilter === 'all' ? list : list.filter(inv => inv.clientName === clientFilter);
+    const currentInvoices = filterByClient(currentYearData.invoices);
+    const priorInvoices = filterByClient(priorYearData.invoices);
+    const oldestInvoices = filterByClient(oldestYearData.invoices);
 
     const byQuarter = (invoiceList: InvoiceRow[]) => {
       const quarters: Record<number, InvoiceRow[]> = { 1: [], 2: [], 3: [], 4: [] };
@@ -285,7 +311,7 @@ function InvoiceReport() {
       fullPriorTotal: aggregateInvoices(priorInvoices),
       fullOldestTotal: aggregateInvoices(oldestInvoices),
     };
-  }, [currentYearData, priorYearData, oldestYearData, selectedQuarters]);
+  }, [currentYearData, priorYearData, oldestYearData, selectedQuarters, clientFilter]);
 
   const handleExport = () => {
     if (!invoices.length) return;
@@ -373,8 +399,8 @@ function InvoiceReport() {
     }
     const entries = Object.entries(grouped);
     return entries.map(([label, groupInvoices]) => (
-      <>{groupInvoices.map(inv => <InvoiceTableRow key={inv.batchId} inv={inv} />)}
-        <SubtotalRow label={label} invoices={groupInvoices} /></>
+      <Fragment key={label}>{groupInvoices.map(inv => <InvoiceTableRow key={inv.batchId} inv={inv} />)}
+        <SubtotalRow label={label} invoices={groupInvoices} /></Fragment>
     ));
   };
 
@@ -450,6 +476,20 @@ function InvoiceReport() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
+                    <Label className="text-sm">Client</Label>
+                    <Select value={clientFilter} onValueChange={setClientFilter}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All Clients" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        {allClients.map(name => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-sm">Subtotal By</Label>
                     <Select value={subtotalBy} onValueChange={setSubtotalBy}>
                       <SelectTrigger className="w-40">
@@ -493,6 +533,7 @@ function InvoiceReport() {
                         setEndDate(new Date().toISOString().split('T')[0]);
                         setBatchTypeFilter('services');
                         setSubtotalBy('none');
+                        setClientFilter('all');
                       }}
                     >
                       Reset
@@ -622,6 +663,20 @@ function InvoiceReport() {
                         <SelectItem value="services">Services</SelectItem>
                         <SelectItem value="expenses">Expenses</SelectItem>
                         <SelectItem value="all">All Types</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">Client</Label>
+                    <Select value={clientFilter} onValueChange={setClientFilter}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="All Clients" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        {allClients.map(name => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
