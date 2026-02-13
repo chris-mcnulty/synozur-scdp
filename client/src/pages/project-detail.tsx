@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from "r
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
+import { RaiddLogTab } from "@/components/raidd-log-tab";
 import { Button } from "@/components/ui/button";
 
 // Error Boundary for catching render errors
@@ -240,7 +241,7 @@ export default function ProjectDetail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
-  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices'];
+  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd'];
   
   const selectedTab = useMemo(() => {
     const params = new URLSearchParams(searchString);
@@ -2110,6 +2111,7 @@ export default function ProjectDetail() {
                   <TabsTrigger value="time" data-testid="tab-time">Time</TabsTrigger>
                 )}
                 <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
+                <TabsTrigger value="raidd" data-testid="tab-raidd">RAIDD</TabsTrigger>
               </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -4430,6 +4432,13 @@ export default function ProjectDetail() {
               )}
             </TabsContent>
           )}
+
+          <TabsContent value="raidd" className="space-y-6">
+            <RaiddLogTab
+              projectId={id || ''}
+              projectTeamMembers={users.map((u: any) => ({ id: u.id, name: u.name || u.email }))}
+            />
+          </TabsContent>
           
             </Tabs>
           </div>

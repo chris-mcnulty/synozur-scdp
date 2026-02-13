@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -21202,6 +21202,167 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     } catch (error: any) {
       console.error("[AI] Estimate narrative generation failed:", error);
       res.status(500).json({ message: error.message || "Failed to generate estimate narrative" });
+    }
+  });
+
+  // ============================================================================
+  // RAIDD Log Routes
+  // ============================================================================
+
+  app.get("/api/projects/:id/raidd", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const filters: any = {};
+      if (req.query.type) filters.type = req.query.type;
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.priority) filters.priority = req.query.priority;
+      if (req.query.ownerId) filters.ownerId = req.query.ownerId;
+      if (req.query.assigneeId) filters.assigneeId = req.query.assigneeId;
+      const entries = await storage.getRaiddEntries(req.params.id, filters);
+      res.json(entries);
+    } catch (error: any) {
+      console.error("Error fetching RAIDD entries:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch RAIDD entries" });
+    }
+  });
+
+  app.post("/api/projects/:id/raidd", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const body = {
+        ...req.body,
+        projectId: req.params.id,
+        tenantId: project.tenantId || tenantId,
+        createdBy: req.user!.id,
+        updatedBy: req.user!.id,
+      };
+      const parsed = insertRaiddEntrySchema.parse(body);
+      if (parsed.type === 'action_item' && !parsed.parentEntryId) {
+        return res.status(400).json({ message: "Action items must be linked to a parent RAIDD entry" });
+      }
+      const entry = await storage.createRaiddEntry(parsed);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation failed", errors: error.errors });
+      }
+      console.error("Error creating RAIDD entry:", error);
+      res.status(500).json({ message: error.message || "Failed to create RAIDD entry" });
+    }
+  });
+
+  app.get("/api/raidd/:id", requireAuth, async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && entry.tenantId && entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const childEntries = await storage.getRaiddEntries(entry.projectId, {});
+      const children = childEntries.filter(e => e.parentEntryId === entry.id);
+      const convertedFrom = entry.convertedFromId ? await storage.getRaiddEntry(entry.convertedFromId) : null;
+      const supersededBy = entry.supersededById ? await storage.getRaiddEntry(entry.supersededById) : null;
+      res.json({ ...entry, children, convertedFrom, supersededBy });
+    } catch (error: any) {
+      console.error("Error fetching RAIDD entry:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch RAIDD entry" });
+    }
+  });
+
+  app.patch("/api/raidd/:id", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && entry.tenantId && entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const updateSchema = insertRaiddEntrySchema.partial().omit({
+        tenantId: true,
+        projectId: true,
+        type: true,
+        createdBy: true,
+      });
+      const parsed = updateSchema.parse(req.body);
+      if (entry.type === 'action_item' && parsed.parentEntryId === null) {
+        return res.status(400).json({ message: "Action items must remain linked to a parent RAIDD entry" });
+      }
+      const updates = { ...parsed, updatedBy: req.user!.id };
+      const updated = await storage.updateRaiddEntry(req.params.id, updates);
+      res.json(updated);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Validation failed", errors: error.errors });
+      }
+      console.error("Error updating RAIDD entry:", error);
+      res.status(error.message?.includes('cannot be modified') ? 400 : 500).json({ message: error.message || "Failed to update RAIDD entry" });
+    }
+  });
+
+  app.delete("/api/raidd/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && entry.tenantId && entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      await storage.deleteRaiddEntry(req.params.id);
+      res.json({ message: "RAIDD entry deleted" });
+    } catch (error: any) {
+      console.error("Error deleting RAIDD entry:", error);
+      res.status(error.message?.includes('Cannot delete') ? 400 : 500).json({ message: error.message || "Failed to delete RAIDD entry" });
+    }
+  });
+
+  app.post("/api/raidd/:id/convert-to-issue", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && entry.tenantId && entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const issue = await storage.convertRiskToIssue(req.params.id, req.user!.id);
+      res.json(issue);
+    } catch (error: any) {
+      console.error("Error converting risk to issue:", error);
+      res.status(400).json({ message: error.message || "Failed to convert risk to issue" });
+    }
+  });
+
+  app.post("/api/raidd/:id/supersede", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const entry = await storage.getRaiddEntry(req.params.id);
+      if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && entry.tenantId && entry.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const body = {
+        ...req.body,
+        projectId: entry.projectId,
+        tenantId: entry.tenantId,
+        createdBy: req.user!.id,
+        updatedBy: req.user!.id,
+      };
+      const parsed = insertRaiddEntrySchema.parse(body);
+      const newDecision = await storage.supersedeDecision(req.params.id, parsed);
+      res.json(newDecision);
+    } catch (error: any) {
+      console.error("Error superseding decision:", error);
+      res.status(400).json({ message: error.message || "Failed to supersede decision" });
     }
   });
 

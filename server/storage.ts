@@ -52,7 +52,8 @@ import {
   type UserAzureMapping, type InsertUserAzureMapping,
   type Tenant,
   type VocabularyTerms, DEFAULT_VOCABULARY,
-  scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun
+  scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun,
+  raiddEntries, type RaiddEntry, type InsertRaiddEntry
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like } from "drizzle-orm";
@@ -1001,6 +1002,16 @@ export interface IStorage {
     successfulRuns: number;
     failedRuns: number;
   }[]>;
+
+  // RAIDD Log Methods
+  getRaiddEntries(projectId: string, filters?: { type?: string; status?: string; priority?: string; ownerId?: string; assigneeId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string })[]>;
+  getRaiddEntry(id: string): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string }) | undefined>;
+  createRaiddEntry(entry: InsertRaiddEntry): Promise<RaiddEntry>;
+  updateRaiddEntry(id: string, updates: Partial<InsertRaiddEntry>): Promise<RaiddEntry>;
+  deleteRaiddEntry(id: string): Promise<void>;
+  convertRiskToIssue(riskId: string, updatedBy: string): Promise<RaiddEntry>;
+  supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
+  getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -10807,6 +10818,166 @@ export class DatabaseStorage implements IStorage {
     }));
 
     return result;
+  }
+
+  // ============================================================================
+  // RAIDD Log Methods
+  // ============================================================================
+
+  private raiddOwnerAlias = alias(users, 'raidd_owner');
+  private raiddAssigneeAlias = alias(users, 'raidd_assignee');
+  private raiddCreatedByAlias = alias(users, 'raidd_created_by');
+
+  async getRaiddEntries(projectId: string, filters?: { type?: string; status?: string; priority?: string; ownerId?: string; assigneeId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string })[]> {
+    const conditions = [eq(raiddEntries.projectId, projectId)];
+    if (filters?.type) conditions.push(eq(raiddEntries.type, filters.type));
+    if (filters?.status) conditions.push(eq(raiddEntries.status, filters.status));
+    if (filters?.priority) conditions.push(eq(raiddEntries.priority, filters.priority));
+    if (filters?.ownerId) conditions.push(eq(raiddEntries.ownerId, filters.ownerId));
+    if (filters?.assigneeId) conditions.push(eq(raiddEntries.assigneeId, filters.assigneeId));
+
+    const rows = await db.select({
+      entry: raiddEntries,
+      ownerName: this.raiddOwnerAlias.name,
+      assigneeName: this.raiddAssigneeAlias.name,
+      createdByName: this.raiddCreatedByAlias.name,
+    })
+    .from(raiddEntries)
+    .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
+    .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
+    .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .where(and(...conditions))
+    .orderBy(desc(raiddEntries.createdAt));
+
+    return rows.map(r => ({
+      ...r.entry,
+      ownerName: r.ownerName ?? undefined,
+      assigneeName: r.assigneeName ?? undefined,
+      createdByName: r.createdByName ?? undefined,
+    }));
+  }
+
+  async getRaiddEntry(id: string): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string }) | undefined> {
+    const [row] = await db.select({
+      entry: raiddEntries,
+      ownerName: this.raiddOwnerAlias.name,
+      assigneeName: this.raiddAssigneeAlias.name,
+      createdByName: this.raiddCreatedByAlias.name,
+    })
+    .from(raiddEntries)
+    .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
+    .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
+    .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .where(eq(raiddEntries.id, id));
+
+    if (!row) return undefined;
+    return {
+      ...row.entry,
+      ownerName: row.ownerName ?? undefined,
+      assigneeName: row.assigneeName ?? undefined,
+      createdByName: row.createdByName ?? undefined,
+    };
+  }
+
+  async createRaiddEntry(entry: InsertRaiddEntry): Promise<RaiddEntry> {
+    const refNumber = await this.getNextRaiddRefNumber(entry.projectId, entry.type);
+    const [created] = await db.insert(raiddEntries).values({ ...entry, refNumber }).returning();
+    return created;
+  }
+
+  async updateRaiddEntry(id: string, updates: Partial<InsertRaiddEntry>): Promise<RaiddEntry> {
+    const existing = await this.getRaiddEntry(id);
+    if (!existing) throw new Error('RAIDD entry not found');
+    if (existing.type === 'decision' && existing.status !== 'open') {
+      const allowedFields = ['resolutionNotes', 'updatedBy'];
+      const attemptedFields = Object.keys(updates).filter(k => !allowedFields.includes(k));
+      if (attemptedFields.length > 0) {
+        throw new Error('Decisions cannot be modified after they are accepted. Create a superseding decision instead.');
+      }
+    }
+
+    const closingStatuses = ['closed', 'resolved', 'mitigated', 'accepted'];
+    const closedAt = updates.status && closingStatuses.includes(updates.status) && !existing.closedAt
+      ? new Date()
+      : undefined;
+
+    const [updated] = await db.update(raiddEntries)
+      .set({ ...updates, updatedAt: new Date(), ...(closedAt ? { closedAt } : {}) })
+      .where(eq(raiddEntries.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRaiddEntry(id: string): Promise<void> {
+    const childEntries = await db.select({ id: raiddEntries.id })
+      .from(raiddEntries)
+      .where(eq(raiddEntries.parentEntryId, id));
+    if (childEntries.length > 0) {
+      throw new Error('Cannot delete entry with linked action items. Remove linked items first.');
+    }
+    await db.delete(raiddEntries).where(eq(raiddEntries.id, id));
+  }
+
+  async convertRiskToIssue(riskId: string, updatedBy: string): Promise<RaiddEntry> {
+    const risk = await this.getRaiddEntry(riskId);
+    if (!risk) throw new Error('Risk not found');
+    if (risk.type !== 'risk') throw new Error('Only risks can be converted to issues');
+
+    await db.update(raiddEntries)
+      .set({ status: 'closed', updatedBy, updatedAt: new Date(), closedAt: new Date(), resolutionNotes: 'Converted to issue' })
+      .where(eq(raiddEntries.id, riskId));
+
+    const refNumber = await this.getNextRaiddRefNumber(risk.projectId, 'issue');
+    const [issue] = await db.insert(raiddEntries).values({
+      tenantId: risk.tenantId,
+      projectId: risk.projectId,
+      type: 'issue',
+      refNumber,
+      title: risk.title,
+      description: risk.description,
+      status: 'open',
+      priority: risk.priority,
+      impact: risk.impact,
+      ownerId: risk.ownerId,
+      assigneeId: risk.assigneeId,
+      dueDate: risk.dueDate,
+      category: risk.category,
+      convertedFromId: riskId,
+      tags: risk.tags,
+      createdBy: updatedBy,
+      updatedBy,
+    }).returning();
+
+    return issue;
+  }
+
+  async supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry> {
+    const decision = await this.getRaiddEntry(decisionId);
+    if (!decision) throw new Error('Decision not found');
+    if (decision.type !== 'decision') throw new Error('Only decisions can be superseded');
+
+    const refNumber = await this.getNextRaiddRefNumber(decision.projectId, 'decision');
+    const [newDecision] = await db.insert(raiddEntries).values({
+      ...newEntry,
+      type: 'decision',
+      refNumber,
+      convertedFromId: decisionId,
+    }).returning();
+
+    await db.update(raiddEntries)
+      .set({ status: 'superseded', supersededById: newDecision.id, updatedAt: new Date() })
+      .where(eq(raiddEntries.id, decisionId));
+
+    return newDecision;
+  }
+
+  async getNextRaiddRefNumber(projectId: string, type: string): Promise<string> {
+    const prefix = { risk: 'R', issue: 'I', decision: 'D', dependency: 'DEP', action_item: 'A' }[type] || 'X';
+    const [result] = await db.select({ count: sql<number>`count(*)` })
+      .from(raiddEntries)
+      .where(and(eq(raiddEntries.projectId, projectId), eq(raiddEntries.type, type)));
+    const nextNum = (Number(result?.count) || 0) + 1;
+    return `${prefix}-${String(nextNum).padStart(3, '0')}`;
   }
 }
 
