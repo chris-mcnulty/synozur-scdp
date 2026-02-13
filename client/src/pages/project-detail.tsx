@@ -456,6 +456,11 @@ export default function ProjectDetail() {
     queryKey: [`/api/clients/${currentClientId}`],
     enabled: !!currentClientId,
   });
+
+  const { data: clientContactsList = [] } = useQuery<any[]>({
+    queryKey: [`/api/clients/${currentClientId}/contacts`],
+    enabled: !!currentClientId,
+  });
   
   // Budget history query
   const { data: budgetHistory = [], isLoading: budgetHistoryLoading } = useQuery<any[]>({
@@ -4436,7 +4441,11 @@ export default function ProjectDetail() {
           <TabsContent value="raidd" className="space-y-6">
             <RaiddLogTab
               projectId={id || ''}
-              projectTeamMembers={users.map((u: any) => ({ id: u.id, name: u.name || u.email }))}
+              projectTeamMembers={engagements
+                .filter((e: any) => e.status === 'active' && e.user)
+                .map((e: any) => ({ id: e.user.id, name: e.user.name || e.user.email }))}
+              clientContacts={clientContactsList.map((c: any) => ({ id: c.id, name: c.name, email: c.email }))}
+              clientId={currentClientId}
             />
           </TabsContent>
           

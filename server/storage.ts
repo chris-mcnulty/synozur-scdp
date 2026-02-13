@@ -54,6 +54,7 @@ import {
   type VocabularyTerms, DEFAULT_VOCABULARY,
   scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun,
   raiddEntries, type RaiddEntry, type InsertRaiddEntry,
+  clientContacts, type ClientContact, type InsertClientContact,
   groundingDocuments, type GroundingDocument, type InsertGroundingDocument
 } from "@shared/schema";
 import { db } from "./db";
@@ -1014,6 +1015,13 @@ export interface IStorage {
   supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
   getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
+
+  // Client Contacts
+  getClientContacts(clientId: string): Promise<ClientContact[]>;
+  getClientContact(id: string): Promise<ClientContact | undefined>;
+  createClientContact(contact: InsertClientContact): Promise<ClientContact>;
+  updateClientContact(id: string, updates: Partial<InsertClientContact>): Promise<ClientContact>;
+  deleteClientContact(id: string): Promise<void>;
 
   // Grounding Documents
   getGroundingDocuments(filters?: { tenantId?: string | null; category?: string; isActive?: boolean }): Promise<GroundingDocument[]>;
@@ -10840,6 +10848,8 @@ export class DatabaseStorage implements IStorage {
   private raiddOwnerAlias = alias(users, 'raidd_owner');
   private raiddAssigneeAlias = alias(users, 'raidd_assignee');
   private raiddCreatedByAlias = alias(users, 'raidd_created_by');
+  private raiddOwnerContactAlias = alias(clientContacts, 'raidd_owner_contact');
+  private raiddAssigneeContactAlias = alias(clientContacts, 'raidd_assignee_contact');
 
   async getRaiddEntries(projectId: string, filters?: { type?: string; status?: string; priority?: string; ownerId?: string; assigneeId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string })[]> {
     const conditions = [eq(raiddEntries.projectId, projectId)];
@@ -10854,18 +10864,22 @@ export class DatabaseStorage implements IStorage {
       ownerName: this.raiddOwnerAlias.name,
       assigneeName: this.raiddAssigneeAlias.name,
       createdByName: this.raiddCreatedByAlias.name,
+      ownerContactName: this.raiddOwnerContactAlias.name,
+      assigneeContactName: this.raiddAssigneeContactAlias.name,
     })
     .from(raiddEntries)
     .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
     .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
     .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .leftJoin(this.raiddOwnerContactAlias, eq(raiddEntries.ownerContactId, this.raiddOwnerContactAlias.id))
+    .leftJoin(this.raiddAssigneeContactAlias, eq(raiddEntries.assigneeContactId, this.raiddAssigneeContactAlias.id))
     .where(and(...conditions))
     .orderBy(desc(raiddEntries.createdAt));
 
     return rows.map(r => ({
       ...r.entry,
-      ownerName: r.ownerName ?? undefined,
-      assigneeName: r.assigneeName ?? undefined,
+      ownerName: r.ownerName || r.ownerContactName || undefined,
+      assigneeName: r.assigneeName || r.assigneeContactName || undefined,
       createdByName: r.createdByName ?? undefined,
     }));
   }
@@ -10876,18 +10890,22 @@ export class DatabaseStorage implements IStorage {
       ownerName: this.raiddOwnerAlias.name,
       assigneeName: this.raiddAssigneeAlias.name,
       createdByName: this.raiddCreatedByAlias.name,
+      ownerContactName: this.raiddOwnerContactAlias.name,
+      assigneeContactName: this.raiddAssigneeContactAlias.name,
     })
     .from(raiddEntries)
     .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
     .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
     .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .leftJoin(this.raiddOwnerContactAlias, eq(raiddEntries.ownerContactId, this.raiddOwnerContactAlias.id))
+    .leftJoin(this.raiddAssigneeContactAlias, eq(raiddEntries.assigneeContactId, this.raiddAssigneeContactAlias.id))
     .where(eq(raiddEntries.id, id));
 
     if (!row) return undefined;
     return {
       ...row.entry,
-      ownerName: row.ownerName ?? undefined,
-      assigneeName: row.assigneeName ?? undefined,
+      ownerName: row.ownerName || row.ownerContactName || undefined,
+      assigneeName: row.assigneeName || row.assigneeContactName || undefined,
       createdByName: row.createdByName ?? undefined,
     };
   }
@@ -11008,6 +11026,8 @@ export class DatabaseStorage implements IStorage {
       ownerName: this.raiddOwnerAlias.name,
       assigneeName: this.raiddAssigneeAlias.name,
       createdByName: this.raiddCreatedByAlias.name,
+      ownerContactName: this.raiddOwnerContactAlias.name,
+      assigneeContactName: this.raiddAssigneeContactAlias.name,
       projectName: projects.name,
       clientName: clients.name,
     })
@@ -11017,17 +11037,54 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
     .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
     .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .leftJoin(this.raiddOwnerContactAlias, eq(raiddEntries.ownerContactId, this.raiddOwnerContactAlias.id))
+    .leftJoin(this.raiddAssigneeContactAlias, eq(raiddEntries.assigneeContactId, this.raiddAssigneeContactAlias.id))
     .where(and(...conditions))
     .orderBy(desc(raiddEntries.createdAt));
 
     return rows.map(r => ({
       ...r.entry,
-      ownerName: r.ownerName ?? undefined,
-      assigneeName: r.assigneeName ?? undefined,
+      ownerName: r.ownerName || r.ownerContactName || undefined,
+      assigneeName: r.assigneeName || r.assigneeContactName || undefined,
       createdByName: r.createdByName ?? undefined,
       projectName: r.projectName ?? undefined,
       clientName: r.clientName ?? undefined,
     }));
+  }
+
+  // ============================================================================
+  // CLIENT CONTACTS
+  // ============================================================================
+
+  async getClientContacts(clientId: string): Promise<ClientContact[]> {
+    return db.select()
+      .from(clientContacts)
+      .where(eq(clientContacts.clientId, clientId))
+      .orderBy(clientContacts.name);
+  }
+
+  async getClientContact(id: string): Promise<ClientContact | undefined> {
+    const [contact] = await db.select()
+      .from(clientContacts)
+      .where(eq(clientContacts.id, id));
+    return contact;
+  }
+
+  async createClientContact(contact: InsertClientContact): Promise<ClientContact> {
+    const [created] = await db.insert(clientContacts).values(contact).returning();
+    return created;
+  }
+
+  async updateClientContact(id: string, updates: Partial<InsertClientContact>): Promise<ClientContact> {
+    const [updated] = await db.update(clientContacts)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(clientContacts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteClientContact(id: string): Promise<void> {
+    await db.delete(clientContacts).where(eq(clientContacts.id, id));
   }
 
   // ============================================================================

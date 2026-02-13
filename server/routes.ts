@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertClientContactSchema, clientContacts } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -21568,6 +21568,343 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     } catch (error: any) {
       console.error("Error parsing DOCX:", error);
       res.status(500).json({ message: error.message || "Failed to parse DOCX" });
+    }
+  });
+
+  // ============================================================================
+  // CLIENT CONTACTS
+  // ============================================================================
+
+  app.get("/api/clients/:clientId/contacts", requireAuth, async (req, res) => {
+    try {
+      const contacts = await storage.getClientContacts(req.params.clientId);
+      res.json(contacts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch client contacts" });
+    }
+  });
+
+  app.post("/api/clients/:clientId/contacts", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const body = {
+        ...req.body,
+        clientId: req.params.clientId,
+        tenantId: user.tenantId,
+        createdBy: user.id,
+      };
+      const parsed = insertClientContactSchema.parse(body);
+      const contact = await storage.createClientContact(parsed);
+      res.status(201).json(contact);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to create client contact" });
+    }
+  });
+
+  app.patch("/api/client-contacts/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const existing = await storage.getClientContact(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Client contact not found" });
+      }
+      const updates = { ...req.body };
+      delete updates.id;
+      delete updates.createdAt;
+      delete updates.createdBy;
+      const contact = await storage.updateClientContact(req.params.id, updates);
+      res.json(contact);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || "Failed to update client contact" });
+    }
+  });
+
+  app.delete("/api/client-contacts/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const existing = await storage.getClientContact(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ message: "Client contact not found" });
+      }
+      await storage.deleteClientContact(req.params.id);
+      res.json({ message: "Client contact deleted" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to delete client contact" });
+    }
+  });
+
+  // ============================================================================
+  // RAIDD AI FEATURES
+  // ============================================================================
+
+  app.post("/api/raidd/ai/suggest-mitigation", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const { title, description, type, impact, likelihood, projectContext } = req.body;
+      if (!title) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+      if (!aiService.isConfigured()) {
+        return res.status(503).json({ message: "AI service not configured" });
+      }
+
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'general');
+
+      const itemType = type || 'risk';
+      const systemPrompt = `You are a consulting project management expert specializing in RAIDD (Risks, Actions, Issues, Decisions, Dependencies) governance. Provide actionable, specific suggestions tailored to consulting projects.`;
+
+      let userMessage = '';
+      if (itemType === 'risk') {
+        userMessage = `Suggest a detailed mitigation plan for this project risk:
+
+Title: ${title}
+${description ? `Description: ${description}` : ''}
+${impact ? `Impact: ${impact}` : ''}
+${likelihood ? `Likelihood: ${likelihood}` : ''}
+${projectContext ? `Project Context: ${projectContext}` : ''}
+
+Provide a JSON response with:
+{
+  "mitigationPlan": "Detailed step-by-step mitigation strategy",
+  "suggestedActions": [
+    { "title": "Action item title", "description": "What needs to be done", "priority": "high|medium|low" }
+  ],
+  "residualRisk": "Description of remaining risk after mitigation"
+}`;
+      } else if (itemType === 'issue') {
+        userMessage = `Suggest a resolution plan for this project issue:
+
+Title: ${title}
+${description ? `Description: ${description}` : ''}
+${impact ? `Impact: ${impact}` : ''}
+${projectContext ? `Project Context: ${projectContext}` : ''}
+
+Provide a JSON response with:
+{
+  "resolutionNotes": "Detailed resolution approach",
+  "suggestedActions": [
+    { "title": "Action item title", "description": "What needs to be done", "priority": "high|medium|low" }
+  ],
+  "preventionMeasures": "Steps to prevent recurrence"
+}`;
+      } else {
+        return res.status(400).json({ message: "AI suggestions are available for risks and issues" });
+      }
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.6,
+        maxTokens: 1536,
+        responseFormat: 'json',
+        groundingContext: groundingCtx,
+      });
+
+      let parsed;
+      try {
+        parsed = JSON.parse(result.content);
+      } catch {
+        parsed = { mitigationPlan: result.content, suggestedActions: [] };
+      }
+
+      res.json(parsed);
+    } catch (error: any) {
+      console.error("[AI] Suggest mitigation/resolution failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate suggestion" });
+    }
+  });
+
+  app.post("/api/raidd/ai/ingest-text", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { text, projectContext } = req.body;
+      if (!text) {
+        return res.status(400).json({ message: "Text content is required" });
+      }
+
+      const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+      if (!aiService.isConfigured()) {
+        return res.status(503).json({ message: "AI service not configured" });
+      }
+
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'general');
+
+      const systemPrompt = `You are a consulting project management expert. Analyze the given text and extract any risks, issues, decisions, dependencies, or action items (RAIDD items). Categorize each item accurately and provide structured output.`;
+
+      const userMessage = `Analyze this text and extract all RAIDD items (risks, issues, decisions, dependencies, action items):
+
+${text}
+${projectContext ? `\nProject Context: ${projectContext}` : ''}
+
+Return a JSON array of items:
+{
+  "items": [
+    {
+      "type": "risk|issue|decision|dependency|action_item",
+      "title": "Clear, concise title",
+      "description": "Detailed description",
+      "priority": "critical|high|medium|low",
+      "impact": "critical|high|medium|low",
+      "likelihood": "almost_certain|likely|possible|unlikely|rare",
+      "category": "Optional category like Technical, Legal, Resource, etc.",
+      "mitigationPlan": "For risks: suggested mitigation",
+      "resolutionNotes": "For issues: suggested resolution",
+      "suggestedOwnerRole": "Suggested role for the owner (e.g., Project Manager, Tech Lead)"
+    }
+  ]
+}
+
+Only include fields relevant to each item type. Be specific and actionable.`;
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.5,
+        maxTokens: 3072,
+        responseFormat: 'json',
+        groundingContext: groundingCtx,
+      });
+
+      let parsed;
+      try {
+        parsed = JSON.parse(result.content);
+      } catch {
+        parsed = { items: [] };
+      }
+
+      res.json(parsed);
+    } catch (error: any) {
+      console.error("[AI] Ingest text failed:", error);
+      res.status(500).json({ message: error.message || "Failed to analyze text" });
+    }
+  });
+
+  app.post("/api/raidd/ai/extract-decisions", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const { text, projectContext } = req.body;
+      if (!text) {
+        return res.status(400).json({ message: "Text content is required" });
+      }
+
+      const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+      if (!aiService.isConfigured()) {
+        return res.status(503).json({ message: "AI service not configured" });
+      }
+
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'general');
+
+      const systemPrompt = `You are a consulting project management expert. Analyze the provided document text and identify all decisions that need to be made, have been made, or are implied. Focus on identifying both explicit decisions and implicit decisions that should be formally captured.`;
+
+      const userMessage = `Analyze this document and extract all decisions (made, pending, or implied):
+
+${text}
+${projectContext ? `\nProject Context: ${projectContext}` : ''}
+
+Return a JSON response:
+{
+  "decisions": [
+    {
+      "title": "Clear decision title",
+      "description": "What the decision is about and any context",
+      "status": "open",
+      "priority": "critical|high|medium|low",
+      "category": "Optional category like Architecture, Process, Staffing, Budget, etc.",
+      "suggestedOwnerRole": "Who should own this decision",
+      "rationale": "Any reasoning or context from the document"
+    }
+  ]
+}
+
+Extract decisions broadly — look for statements about choices, directions, agreements, approvals, trade-offs, and pending questions that need resolution.`;
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.5,
+        maxTokens: 3072,
+        responseFormat: 'json',
+        groundingContext: groundingCtx,
+      });
+
+      let parsed;
+      try {
+        parsed = JSON.parse(result.content);
+      } catch {
+        parsed = { decisions: [] };
+      }
+
+      res.json(parsed);
+    } catch (error: any) {
+      console.error("[AI] Extract decisions failed:", error);
+      res.status(500).json({ message: error.message || "Failed to extract decisions" });
+    }
+  });
+
+  app.post("/api/raidd/ai/suggest-actions", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const { title, description, type, projectContext, teamMembers } = req.body;
+      if (!title) {
+        return res.status(400).json({ message: "Title is required" });
+      }
+
+      const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+      if (!aiService.isConfigured()) {
+        return res.status(503).json({ message: "AI service not configured" });
+      }
+
+      const tenantId = (req.user as any)?.tenantId;
+      const groundingDocs = tenantId
+        ? await storage.getActiveGroundingDocumentsForTenant(tenantId)
+        : await storage.getActiveGroundingDocuments();
+      const groundingCtx = buildGroundingContext(groundingDocs, 'general');
+
+      const teamContext = teamMembers && teamMembers.length > 0
+        ? `\nAvailable team members: ${teamMembers.map((m: any) => m.name).join(', ')}`
+        : '';
+
+      const systemPrompt = `You are a consulting project management expert. Suggest specific, actionable action items that should be created to address the given RAIDD item. Consider the team composition when suggesting assignments.`;
+
+      const userMessage = `Suggest action items for this ${type || 'item'}:
+
+Title: ${title}
+${description ? `Description: ${description}` : ''}
+${projectContext ? `Project Context: ${projectContext}` : ''}${teamContext}
+
+Return a JSON response:
+{
+  "actions": [
+    {
+      "title": "Specific action item title",
+      "description": "What needs to be done in detail",
+      "priority": "critical|high|medium|low",
+      "suggestedAssignee": "Name of suggested team member (if team provided) or role",
+      "estimatedDays": 3
+    }
+  ]
+}`;
+
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        temperature: 0.6,
+        maxTokens: 2048,
+        responseFormat: 'json',
+        groundingContext: groundingCtx,
+      });
+
+      let parsed;
+      try {
+        parsed = JSON.parse(result.content);
+      } catch {
+        parsed = { actions: [] };
+      }
+
+      res.json(parsed);
+    } catch (error: any) {
+      console.error("[AI] Suggest actions failed:", error);
+      res.status(500).json({ message: error.message || "Failed to suggest actions" });
     }
   });
 

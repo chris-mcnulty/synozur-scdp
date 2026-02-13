@@ -19,10 +19,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Shield, AlertTriangle, Scale, Link2, CheckSquare, Plus, MoreHorizontal,
   Edit, Trash2, ArrowRightLeft, Replace, ChevronDown, ChevronUp, X,
-  ArrowUpDown, Calendar, User, Tag
+  ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, UserPlus, Loader2
 } from "lucide-react";
 
 interface RaiddEntry {
@@ -39,6 +40,8 @@ interface RaiddEntry {
   likelihood: string | null;
   ownerId: string | null;
   assigneeId: string | null;
+  ownerContactId: string | null;
+  assigneeContactId: string | null;
   dueDate: string | null;
   closedAt: Date | null;
   category: string | null;
@@ -66,6 +69,8 @@ interface RaiddEntryDetail extends RaiddEntry {
 interface RaiddLogTabProps {
   projectId: string;
   projectTeamMembers?: { id: string; name: string }[];
+  clientContacts?: { id: string; name: string; email?: string }[];
+  clientId?: string;
 }
 
 const RAIDD_TYPES = [
@@ -140,7 +145,7 @@ const raiddFormSchema = z.object({
 
 type RaiddFormData = z.infer<typeof raiddFormSchema>;
 
-export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabProps) {
+export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts = [], clientId }: RaiddLogTabProps) {
   const { toast } = useToast();
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -154,6 +159,19 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
   const [createWithType, setCreateWithType] = useState<string | null>(null);
   const [createWithParent, setCreateWithParent] = useState<string | null>(null);
   const [supersedeEntryId, setSupersedeEntryId] = useState<string | null>(null);
+
+  const [showIngestTextDialog, setShowIngestTextDialog] = useState(false);
+  const [showExtractDecisionsDialog, setShowExtractDecisionsDialog] = useState(false);
+  const [showAddContactDialog, setShowAddContactDialog] = useState(false);
+  const [showAiReviewDialog, setShowAiReviewDialog] = useState(false);
+  const [aiReviewItems, setAiReviewItems] = useState<any[]>([]);
+  const [aiReviewTitle, setAiReviewTitle] = useState("");
+  const [showSuggestMitigationDialog, setShowSuggestMitigationDialog] = useState(false);
+  const [suggestMitigationEntry, setSuggestMitigationEntry] = useState<RaiddEntry | null>(null);
+  const [aiSuggestionResult, setAiSuggestionResult] = useState<any>(null);
+  const [showSuggestActionsDialog, setShowSuggestActionsDialog] = useState(false);
+  const [suggestActionsEntry, setSuggestActionsEntry] = useState<RaiddEntry | null>(null);
+  const [aiSuggestedActions, setAiSuggestedActions] = useState<any[]>([]);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -299,6 +317,123 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
     },
   });
 
+  const ingestTextMutation = useMutation({
+    mutationFn: async (data: { text: string; projectContext?: string }) => {
+      const res = await apiRequest("/api/raidd/ai/ingest-text", {
+        method: "POST",
+        body: JSON.stringify({ ...data, projectId }),
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const items = data.items || data.entries || [];
+      setAiReviewItems(items.map((item: any, idx: number) => ({ ...item, selected: true, id: `ai-${idx}` })));
+      setAiReviewTitle("AI-Detected RAIDD Items");
+      setShowIngestTextDialog(false);
+      setShowAiReviewDialog(true);
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI Analysis Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const extractDecisionsMutation = useMutation({
+    mutationFn: async (data: { text: string }) => {
+      const res = await apiRequest("/api/raidd/ai/extract-decisions", {
+        method: "POST",
+        body: JSON.stringify({ ...data, projectId }),
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const items = data.decisions || data.items || [];
+      setAiReviewItems(items.map((item: any, idx: number) => ({ ...item, type: "decision", selected: true, id: `ai-${idx}` })));
+      setAiReviewTitle("Extracted Decisions");
+      setShowExtractDecisionsDialog(false);
+      setShowAiReviewDialog(true);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Decision Extraction Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const addContactMutation = useMutation({
+    mutationFn: async (data: { name: string; email?: string; title?: string; phone?: string }) => {
+      return apiRequest(`/api/clients/${clientId}/contacts`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Contact Added", description: "Client contact added successfully" });
+      setShowAddContactDialog(false);
+      queryClient.invalidateQueries({ queryKey: [`/api/clients/${clientId}/contacts`] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const suggestMitigationMutation = useMutation({
+    mutationFn: async (entry: RaiddEntry) => {
+      const res = await apiRequest("/api/raidd/ai/suggest-mitigation", {
+        method: "POST",
+        body: JSON.stringify({ entryId: entry.id, type: entry.type, title: entry.title, description: entry.description, projectId }),
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setAiSuggestionResult(data);
+      setShowSuggestMitigationDialog(true);
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI Suggestion Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const suggestActionsMutation = useMutation({
+    mutationFn: async (entry: RaiddEntry) => {
+      const res = await apiRequest("/api/raidd/ai/suggest-actions", {
+        method: "POST",
+        body: JSON.stringify({ entryId: entry.id, type: entry.type, title: entry.title, description: entry.description, projectId }),
+      });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const actions = data.actions || data.actionItems || [];
+      setAiSuggestedActions(actions.map((a: any, idx: number) => ({ ...a, selected: true, id: `action-${idx}` })));
+      setShowSuggestActionsDialog(true);
+    },
+    onError: (error: Error) => {
+      toast({ title: "AI Suggestion Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const batchCreateMutation = useMutation({
+    mutationFn: async (items: any[]) => {
+      const results = [];
+      for (const item of items) {
+        const res = await apiRequest(`/api/projects/${projectId}/raidd`, {
+          method: "POST",
+          body: JSON.stringify(item),
+        });
+        results.push(res);
+      }
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+      toast({ title: "Created", description: "Selected items created successfully" });
+      setShowAiReviewDialog(false);
+      setShowSuggestActionsDialog(false);
+      setAiReviewItems([]);
+      setAiSuggestedActions([]);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   function handleSort(field: string) {
     if (sortField === field) {
       setSortDir(d => (d === "asc" ? "desc" : "asc"));
@@ -333,9 +468,34 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
               {summaryCounts.A > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">A:{summaryCounts.A}</Badge>}
             </div>
           </div>
-          <Button size="sm" onClick={() => { setCreateWithType(null); setCreateWithParent(null); setShowCreateDialog(true); }}>
-            <Plus className="h-4 w-4 mr-1" /> New Entry
-          </Button>
+          <div className="flex gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Sparkles className="h-4 w-4 mr-1" /> AI Assistant <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setShowIngestTextDialog(true)}>
+                  <Brain className="h-4 w-4 mr-2" /> Analyze Text for RAIDD Items
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setShowExtractDecisionsDialog(true)}>
+                  <FileText className="h-4 w-4 mr-2" /> Extract Decisions from Document
+                </DropdownMenuItem>
+                {clientId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setShowAddContactDialog(true)}>
+                      <UserPlus className="h-4 w-4 mr-2" /> Add Client Contact
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button size="sm" onClick={() => { setCreateWithType(null); setCreateWithParent(null); setShowCreateDialog(true); }}>
+              <Plus className="h-4 w-4 mr-1" /> New Entry
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-3">
           <div className="flex gap-1 flex-wrap">
@@ -456,6 +616,20 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
+                          {entry.type === "risk" && (
+                            <DropdownMenuItem onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}>
+                              <Sparkles className="h-4 w-4 mr-2" /> AI: Suggest Mitigation
+                            </DropdownMenuItem>
+                          )}
+                          {entry.type === "issue" && (
+                            <DropdownMenuItem onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}>
+                              <Sparkles className="h-4 w-4 mr-2" /> AI: Suggest Resolution
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => { setSuggestActionsEntry(entry); suggestActionsMutation.mutate(entry); }}>
+                            <Brain className="h-4 w-4 mr-2" /> AI: Suggest Action Items
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-red-600 dark:text-red-400" onClick={() => setDeletingEntryId(entry.id)}>
                             <Trash2 className="h-4 w-4 mr-2" /> Delete
                           </DropdownMenuItem>
@@ -489,6 +663,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         isPending={createMutation.isPending}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
+        contactsList={clientContacts}
         defaultType={createWithType}
         defaultParentId={createWithParent}
       />
@@ -501,6 +676,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         entry={editingEntry}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
+        contactsList={clientContacts}
         isEdit
       />
 
@@ -510,6 +686,87 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         entryId={supersedeEntryId}
         onSubmit={(data) => supersedeEntryId && supersedeMutation.mutate({ id: supersedeEntryId, data })}
         isPending={supersedeMutation.isPending}
+      />
+
+      <IngestTextDialog
+        open={showIngestTextDialog}
+        onOpenChange={setShowIngestTextDialog}
+        onSubmit={(data) => ingestTextMutation.mutate(data)}
+        isPending={ingestTextMutation.isPending}
+      />
+
+      <ExtractDecisionsDialog
+        open={showExtractDecisionsDialog}
+        onOpenChange={setShowExtractDecisionsDialog}
+        onSubmit={(data) => extractDecisionsMutation.mutate(data)}
+        isPending={extractDecisionsMutation.isPending}
+      />
+
+      {clientId && (
+        <AddContactDialog
+          open={showAddContactDialog}
+          onOpenChange={setShowAddContactDialog}
+          onSubmit={(data) => addContactMutation.mutate(data)}
+          isPending={addContactMutation.isPending}
+        />
+      )}
+
+      <AiReviewDialog
+        open={showAiReviewDialog}
+        onOpenChange={setShowAiReviewDialog}
+        title={aiReviewTitle}
+        items={aiReviewItems}
+        onItemsChange={setAiReviewItems}
+        onCreateSelected={(items) => {
+          const toCreate = items.filter(i => i.selected).map(({ selected, id, ...rest }: any) => rest);
+          if (toCreate.length > 0) batchCreateMutation.mutate(toCreate);
+        }}
+        isPending={batchCreateMutation.isPending}
+      />
+
+      <SuggestMitigationDialog
+        open={showSuggestMitigationDialog}
+        onOpenChange={setShowSuggestMitigationDialog}
+        entry={suggestMitigationEntry}
+        suggestion={aiSuggestionResult}
+        isPending={suggestMitigationMutation.isPending}
+        onApply={(patchData, actionItems) => {
+          if (suggestMitigationEntry) {
+            updateMutation.mutate({ id: suggestMitigationEntry.id, data: patchData });
+            if (actionItems && actionItems.length > 0) {
+              const items = actionItems.map((a: any) => ({
+                type: "action_item",
+                title: a.title,
+                description: a.description,
+                priority: a.priority || "medium",
+                status: "open",
+                parentEntryId: suggestMitigationEntry.id,
+              }));
+              batchCreateMutation.mutate(items);
+            }
+          }
+          setShowSuggestMitigationDialog(false);
+        }}
+      />
+
+      <SuggestActionsDialog
+        open={showSuggestActionsDialog}
+        onOpenChange={setShowSuggestActionsDialog}
+        entry={suggestActionsEntry}
+        actions={aiSuggestedActions}
+        onActionsChange={setAiSuggestedActions}
+        onCreateSelected={(actions) => {
+          const toCreate = actions.filter(a => a.selected).map(({ selected, id, ...rest }: any) => ({
+            type: "action_item",
+            title: rest.title,
+            description: rest.description,
+            priority: rest.priority || "medium",
+            status: "open",
+            parentEntryId: suggestActionsEntry?.id,
+          }));
+          if (toCreate.length > 0) batchCreateMutation.mutate(toCreate);
+        }}
+        isPending={batchCreateMutation.isPending}
       />
 
       <AlertDialog open={!!deletingEntryId} onOpenChange={(open) => { if (!open) setDeletingEntryId(null); }}>
@@ -685,6 +942,7 @@ function RaiddFormDialog({
   entry,
   projectEntries = [],
   teamMembers = [],
+  contactsList = [],
   isEdit = false,
   defaultType,
   defaultParentId,
@@ -696,6 +954,7 @@ function RaiddFormDialog({
   entry?: RaiddEntry | null;
   projectEntries?: RaiddEntry[];
   teamMembers?: { id: string; name: string }[];
+  contactsList?: { id: string; name: string; email?: string }[];
   isEdit?: boolean;
   defaultType?: string | null;
   defaultParentId?: string | null;
@@ -712,8 +971,8 @@ function RaiddFormDialog({
       priority: (entry?.priority as any) || "medium",
       impact: entry?.impact || "",
       likelihood: entry?.likelihood || "",
-      ownerId: entry?.ownerId || "",
-      assigneeId: entry?.assigneeId || "",
+      ownerId: entry?.ownerContactId ? `contact:${entry.ownerContactId}` : entry?.ownerId || "",
+      assigneeId: entry?.assigneeContactId ? `contact:${entry.assigneeContactId}` : entry?.assigneeId || "",
       dueDate: entry?.dueDate || "",
       category: entry?.category || "",
       mitigationPlan: entry?.mitigationPlan || "",
@@ -732,6 +991,21 @@ function RaiddFormDialog({
     } else {
       payload.tags = [];
     }
+
+    if (payload.ownerId && payload.ownerId.startsWith("contact:")) {
+      payload.ownerContactId = payload.ownerId.replace("contact:", "");
+      payload.ownerId = null;
+    } else {
+      payload.ownerContactId = null;
+    }
+
+    if (payload.assigneeId && payload.assigneeId.startsWith("contact:")) {
+      payload.assigneeContactId = payload.assigneeId.replace("contact:", "");
+      payload.assigneeId = null;
+    } else {
+      payload.assigneeContactId = null;
+    }
+
     Object.keys(payload).forEach(key => {
       if (payload[key] === "" || payload[key] === undefined) {
         delete payload[key];
@@ -874,9 +1148,24 @@ function RaiddFormDialog({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
-                        {teamMembers.map(m => (
-                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                        ))}
+                        {teamMembers.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Team Members</div>
+                            {teamMembers.map(m => (
+                              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                          </>
+                        )}
+                        {contactsList.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Contacts</div>
+                            {contactsList.map(c => (
+                              <SelectItem key={`contact:${c.id}`} value={`contact:${c.id}`}>{c.name} (Client)</SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -898,9 +1187,24 @@ function RaiddFormDialog({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="none">None</SelectItem>
-                        {teamMembers.map(m => (
-                          <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                        ))}
+                        {teamMembers.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Team Members</div>
+                            {teamMembers.map(m => (
+                              <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                          </>
+                        )}
+                        {contactsList.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Contacts</div>
+                            {contactsList.map(c => (
+                              <SelectItem key={`contact:${c.id}`} value={`contact:${c.id}`}>{c.name} (Client)</SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1145,6 +1449,413 @@ function SupersedeDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function IngestTextDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { text: string; projectContext?: string }) => void;
+  isPending: boolean;
+}) {
+  const [text, setText] = useState("");
+  const [projectContext, setProjectContext] = useState("");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5" /> Analyze Text for RAIDD Items
+          </DialogTitle>
+          <DialogDescription>
+            Paste meeting notes, emails, or other text. AI will identify risks, issues, actions, decisions, and dependencies.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Text to Analyze</label>
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder="Paste your text here..." />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Project Context (optional)</label>
+            <Input value={projectContext} onChange={(e) => setProjectContext(e.target.value)} placeholder="Brief project context to improve analysis" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onSubmit({ text, projectContext: projectContext || undefined })} disabled={isPending || !text.trim()}>
+            {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Analyzing...</> : "Analyze"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ExtractDecisionsDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { text: string }) => void;
+  isPending: boolean;
+}) {
+  const [text, setText] = useState("");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" /> Extract Decisions from Document
+          </DialogTitle>
+          <DialogDescription>
+            Paste document text or meeting minutes. AI will extract decisions that were made.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Document Text</label>
+            <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={10} placeholder="Paste document content here..." />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onSubmit({ text })} disabled={isPending || !text.trim()}>
+            {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Extracting...</> : "Extract Decisions"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddContactDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { name: string; email?: string; title?: string; phone?: string }) => void;
+  isPending: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [title, setTitle] = useState("");
+  const [phone, setPhone] = useState("");
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5" /> Add Client Contact
+          </DialogTitle>
+          <DialogDescription>
+            Add a new contact for this client.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Name *</label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Contact name" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Email</label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Title</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Job title" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Phone</label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onSubmit({ name, email: email || undefined, title: title || undefined, phone: phone || undefined })} disabled={isPending || !name.trim()}>
+            {isPending ? "Adding..." : "Add Contact"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AiReviewDialog({
+  open,
+  onOpenChange,
+  title,
+  items,
+  onItemsChange,
+  onCreateSelected,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  items: any[];
+  onItemsChange: (items: any[]) => void;
+  onCreateSelected: (items: any[]) => void;
+  isPending: boolean;
+}) {
+  const selectedCount = items.filter(i => i.selected).length;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" /> {title}
+          </DialogTitle>
+          <DialogDescription>
+            Review AI-detected items. Select the ones you want to create as RAIDD entries.
+          </DialogDescription>
+        </DialogHeader>
+        {items.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <p>No items were detected. Try providing more detailed text.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item, idx) => (
+              <div key={item.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <Checkbox
+                  checked={item.selected}
+                  onCheckedChange={(checked) => {
+                    const updated = [...items];
+                    updated[idx] = { ...updated[idx], selected: !!checked };
+                    onItemsChange(updated);
+                  }}
+                  className="mt-1"
+                />
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Badge className="text-xs">{getTypeLabel(item.type || "risk")}</Badge>
+                    {item.priority && <Badge className={`text-xs ${priorityColors[item.priority] || ""}`}>{formatLabel(item.priority)}</Badge>}
+                  </div>
+                  <Input
+                    value={item.title || ""}
+                    onChange={(e) => {
+                      const updated = [...items];
+                      updated[idx] = { ...updated[idx], title: e.target.value };
+                      onItemsChange(updated);
+                    }}
+                    className="text-sm font-medium"
+                  />
+                  <Textarea
+                    value={item.description || ""}
+                    onChange={(e) => {
+                      const updated = [...items];
+                      updated[idx] = { ...updated[idx], description: e.target.value };
+                      onItemsChange(updated);
+                    }}
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onCreateSelected(items)} disabled={isPending || selectedCount === 0}>
+            {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : `Create Selected (${selectedCount})`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SuggestMitigationDialog({
+  open,
+  onOpenChange,
+  entry,
+  suggestion,
+  isPending,
+  onApply,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  entry: RaiddEntry | null;
+  suggestion: any;
+  isPending: boolean;
+  onApply: (patchData: any, actionItems: any[]) => void;
+}) {
+  const isRisk = entry?.type === "risk";
+  const fieldLabel = isRisk ? "Mitigation Plan" : "Resolution Notes";
+  const fieldKey = isRisk ? "mitigationPlan" : "resolutionNotes";
+  const [editedText, setEditedText] = useState("");
+  const [editedActions, setEditedActions] = useState<any[]>([]);
+
+  useMemo(() => {
+    if (suggestion) {
+      setEditedText(suggestion.suggestion || suggestion.mitigationPlan || suggestion.resolutionNotes || "");
+      setEditedActions(suggestion.actionItems || suggestion.actions || []);
+    }
+  }, [suggestion]);
+
+  if (isPending) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">AI is generating suggestions...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5" /> AI {isRisk ? "Mitigation" : "Resolution"} Suggestion
+          </DialogTitle>
+          <DialogDescription>
+            Review and edit the AI suggestion before applying it to {entry?.refNumber || "this entry"}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">{fieldLabel}</label>
+            <Textarea value={editedText} onChange={(e) => setEditedText(e.target.value)} rows={4} />
+          </div>
+          {editedActions.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-2">Suggested Action Items</label>
+              <div className="space-y-2">
+                {editedActions.map((action: any, idx: number) => (
+                  <div key={idx} className="p-2 border border-gray-200 dark:border-gray-700 rounded text-sm">
+                    <div className="font-medium">{action.title}</div>
+                    {action.description && <div className="text-gray-500 dark:text-gray-400 text-xs mt-1">{action.description}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onApply({ [fieldKey]: editedText }, editedActions)} disabled={!editedText.trim()}>
+            Apply
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SuggestActionsDialog({
+  open,
+  onOpenChange,
+  entry,
+  actions,
+  onActionsChange,
+  onCreateSelected,
+  isPending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  entry: RaiddEntry | null;
+  actions: any[];
+  onActionsChange: (actions: any[]) => void;
+  onCreateSelected: (actions: any[]) => void;
+  isPending: boolean;
+}) {
+  const selectedCount = actions.filter(a => a.selected).length;
+
+  if (actions.length === 0 && !isPending) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5" /> Suggested Action Items
+            </DialogTitle>
+          </DialogHeader>
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+            <p>AI is generating action item suggestions...</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5" /> Suggested Action Items
+          </DialogTitle>
+          <DialogDescription>
+            AI-suggested action items for {entry?.refNumber || "this entry"}. Select and edit before creating.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {actions.map((action, idx) => (
+            <div key={action.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+              <Checkbox
+                checked={action.selected}
+                onCheckedChange={(checked) => {
+                  const updated = [...actions];
+                  updated[idx] = { ...updated[idx], selected: !!checked };
+                  onActionsChange(updated);
+                }}
+                className="mt-1"
+              />
+              <div className="flex-1 space-y-2">
+                <Input
+                  value={action.title || ""}
+                  onChange={(e) => {
+                    const updated = [...actions];
+                    updated[idx] = { ...updated[idx], title: e.target.value };
+                    onActionsChange(updated);
+                  }}
+                  className="text-sm font-medium"
+                />
+                <Textarea
+                  value={action.description || ""}
+                  onChange={(e) => {
+                    const updated = [...actions];
+                    updated[idx] = { ...updated[idx], description: e.target.value };
+                    onActionsChange(updated);
+                  }}
+                  rows={2}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => onCreateSelected(actions)} disabled={isPending || selectedCount === 0}>
+            {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating...</> : `Create Selected (${selectedCount})`}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
