@@ -23,6 +23,17 @@ interface StatusReportDialogProps {
   projectName: string;
 }
 
+interface RaiddCounts {
+  openRisks: number;
+  openIssues: number;
+  openActionItems: number;
+  openDependencies: number;
+  recentDecisions: number;
+  totalEntries: number;
+  criticalItems: number;
+  overdueActionItems: number;
+}
+
 interface ReportMetadata {
   projectName: string;
   clientName: string;
@@ -35,6 +46,7 @@ interface ReportMetadata {
   teamMemberCount: number;
   generatedAt: string;
   generatedBy: string;
+  raidd?: RaiddCounts;
 }
 
 type ReportStyle = "executive_brief" | "detailed_update" | "client_facing";
@@ -263,6 +275,12 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                   {metadata && (
                     <span className="text-xs text-muted-foreground">
                       {metadata.totalHours.toFixed(1)}h logged | {metadata.teamMemberCount} team member{metadata.teamMemberCount !== 1 ? "s" : ""} | ${metadata.totalExpenses.toFixed(0)} expenses
+                      {metadata.raidd && (metadata.raidd.openRisks > 0 || metadata.raidd.openIssues > 0 || metadata.raidd.openActionItems > 0) && (
+                        <> | {metadata.raidd.openRisks} risk{metadata.raidd.openRisks !== 1 ? "s" : ""}, {metadata.raidd.openIssues} issue{metadata.raidd.openIssues !== 1 ? "s" : ""}, {metadata.raidd.openActionItems} action item{metadata.raidd.openActionItems !== 1 ? "s" : ""}</>
+                      )}
+                      {metadata.raidd && metadata.raidd.criticalItems > 0 && (
+                        <> | <span className="text-red-500 font-medium">{metadata.raidd.criticalItems} critical</span></>
+                      )}
                     </span>
                   )}
                 </div>

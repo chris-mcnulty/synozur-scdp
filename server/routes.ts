@@ -4909,11 +4909,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const [timeEntryData, expenseData, allocations, milestones] = await Promise.all([
+      const [timeEntryData, expenseData, allocations, milestones, raiddData] = await Promise.all([
         storage.getTimeEntries({ projectId, startDate, endDate }),
         storage.getExpenses({ projectId, startDate, endDate }),
         storage.getProjectAllocations(projectId),
         storage.getProjectMilestones(projectId),
+        storage.getRaiddEntries(projectId, {}),
       ]);
 
       const totalHours = timeEntryData.reduce((sum, te) => sum + Number(te.hours || 0), 0);
@@ -4953,10 +4954,64 @@ export async function registerRoutes(app: Express): Promise<void> {
       const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
       const completedAllocations = allocations.filter((a: any) => a.status === "completed").length;
 
+      const openStatuses = ["open", "in_progress"];
+      const raiddByType = {
+        risks: raiddData.filter(r => r.type === "risk"),
+        issues: raiddData.filter(r => r.type === "issue"),
+        decisions: raiddData.filter(r => r.type === "decision"),
+        dependencies: raiddData.filter(r => r.type === "dependency"),
+        actionItems: raiddData.filter(r => r.type === "action_item"),
+      };
+
+      const activeRisks = raiddByType.risks.filter(r => openStatuses.includes(r.status));
+      const activeIssues = raiddByType.issues.filter(r => openStatuses.includes(r.status));
+      const activeActionItems = raiddByType.actionItems.filter(r => openStatuses.includes(r.status));
+      const activeDependencies = raiddByType.dependencies.filter(r => openStatuses.includes(r.status));
+      const recentDecisions = raiddByType.decisions
+        .filter(d => {
+          const updatedAt = new Date(d.updatedAt);
+          return updatedAt >= new Date(startDate) && updatedAt <= new Date(endDate + "T23:59:59");
+        });
+
+      const formatPriority = (p: string | null) => p ? ` [${p.toUpperCase()}]` : "";
+      const formatOwner = (name?: string) => name ? ` — Owner: ${name}` : "";
+      const formatDue = (d: string | null) => d ? ` — Due: ${d}` : "";
+
+      const riskSummary = activeRisks.length > 0
+        ? activeRisks.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${r.impact ? ` | Impact: ${r.impact}` : ""}${r.likelihood ? ` | Likelihood: ${r.likelihood}` : ""}${formatOwner(r.ownerName)}${r.mitigationPlan ? `\n  Mitigation: ${r.mitigationPlan}` : ""}`).join("\n")
+        : "No active risks.";
+
+      const issueSummary = activeIssues.length > 0
+        ? activeIssues.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.ownerName)}${r.resolutionNotes ? `\n  Resolution notes: ${r.resolutionNotes}` : ""}`).join("\n")
+        : "No active issues.";
+
+      const actionItemSummary = activeActionItems.length > 0
+        ? activeActionItems.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.assigneeName || r.ownerName)}${formatDue(r.dueDate)}`).join("\n")
+        : "No open action items.";
+
+      const dependencySummary = activeDependencies.length > 0
+        ? activeDependencies.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.ownerName)}`).join("\n")
+        : "No active dependencies.";
+
+      const decisionSummary = recentDecisions.length > 0
+        ? recentDecisions.map(r => `- ${r.refNumber || ""} ${r.title} (${r.status})${r.resolutionNotes ? ` — ${r.resolutionNotes}` : ""}`).join("\n")
+        : "No decisions recorded in this period.";
+
+      const raiddCounts = {
+        openRisks: activeRisks.length,
+        openIssues: activeIssues.length,
+        openActionItems: activeActionItems.length,
+        openDependencies: activeDependencies.length,
+        recentDecisions: recentDecisions.length,
+        totalEntries: raiddData.length,
+        criticalItems: raiddData.filter(r => r.priority === "critical" && openStatuses.includes(r.status)).length,
+        overdueActionItems: activeActionItems.filter(r => r.dueDate && new Date(r.dueDate) < new Date()).length,
+      };
+
       const styleInstructions: Record<string, string> = {
-        executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, and next steps. Use bullet points for highlights. Keep it to roughly 300-400 words. This is for senior leadership who want a quick overview.",
-        detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Expenses, Milestones, and Next Steps. Include specific details about what was accomplished. This is for project managers and internal stakeholders. Target 500-700 words.",
-        client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. Use a positive, confident tone. Include sections for Progress Summary, Key Accomplishments, and Upcoming Activities. Target 400-500 words.",
+        executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, issues, and next steps. Use bullet points for highlights. Keep it to roughly 300-400 words. This is for senior leadership who want a quick overview. Highlight any critical or high-priority risks and issues prominently.",
+        detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Risks & Issues (RAIDD), Expenses, Milestones, and Next Steps. Include specific details about what was accomplished and any active risks, issues, action items, decisions, and dependencies. This is for project managers and internal stakeholders. Target 500-800 words.",
+        client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. Mention key risks and decisions that affect the client, but keep the tone positive and confident. Include sections for Progress Summary, Key Accomplishments, Key Risks & Decisions, and Upcoming Activities. Target 400-500 words.",
       };
 
       const systemPrompt = `You are a professional consulting project manager writing a status report. ${styleInstructions[reportStyle]}
@@ -4988,12 +5043,27 @@ MILESTONES — Active:
 ${activeMilestones}
 
 MILESTONES — Completed:
-${completedMilestones}`;
+${completedMilestones}
+
+RAIDD LOG — Active Risks (${activeRisks.length}):
+${riskSummary}
+
+RAIDD LOG — Active Issues (${activeIssues.length}):
+${issueSummary}
+
+RAIDD LOG — Open Action Items (${activeActionItems.length}):
+${actionItemSummary}
+
+RAIDD LOG — Active Dependencies (${activeDependencies.length}):
+${dependencySummary}
+
+RAIDD LOG — Decisions This Period (${recentDecisions.length}):
+${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}`;
 
       const { aiService } = await import("./services/ai-service.js");
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 2048,
+        maxTokens: 3072,
       });
 
       res.json({
@@ -5010,6 +5080,7 @@ ${completedMilestones}`;
           teamMemberCount: teamMembers.size,
           generatedAt: new Date().toISOString(),
           generatedBy: user.name || user.email,
+          raidd: raiddCounts,
         },
       });
     } catch (error: any) {
