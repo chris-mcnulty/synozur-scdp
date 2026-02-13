@@ -104,6 +104,7 @@ export default function Billing() {
   const [batchStatusFilter, setBatchStatusFilter] = useState<string>('all');
   const [batchPaymentFilter, setBatchPaymentFilter] = useState<string>('all');
   const [batchYearFilter, setBatchYearFilter] = useState<string>('all');
+  const [batchClientFilter, setBatchClientFilter] = useState<string>('all');
   const [batchPage, setBatchPage] = useState(1);
   const BATCHES_PER_PAGE = 25;
   
@@ -813,6 +814,28 @@ export default function Billing() {
                       <SelectItem value="partial">Partial</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select value={batchClientFilter} onValueChange={(v) => { setBatchClientFilter(v); setBatchPage(1); }}>
+                    <SelectTrigger className="w-[150px] h-9" data-testid="filter-batch-client">
+                      <SelectValue placeholder="Client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Clients</SelectItem>
+                      {(() => {
+                        const clientSet = new Map<string, string>();
+                        (invoiceBatches as InvoiceBatchData[]).forEach((b) => {
+                          if (b.clientName && !clientSet.has(b.clientName)) {
+                            clientSet.set(b.clientName, b.clientName);
+                          }
+                          b.clientNames?.forEach(cn => {
+                            if (cn && !clientSet.has(cn)) clientSet.set(cn, cn);
+                          });
+                        });
+                        return Array.from(clientSet.keys()).sort().map(name => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ));
+                      })()}
+                    </SelectContent>
+                  </Select>
                   <Select value={batchYearFilter} onValueChange={(v) => { setBatchYearFilter(v); setBatchPage(1); }}>
                     <SelectTrigger className="w-[100px] h-9" data-testid="filter-batch-year">
                       <SelectValue placeholder="Year" />
@@ -878,7 +901,15 @@ export default function Billing() {
                     }
                     if (batchPaymentFilter !== 'all' && (batch.paymentStatus || 'unpaid') !== batchPaymentFilter) return false;
                     if (batchYearFilter !== 'all' && !batch.startDate?.startsWith(batchYearFilter)) return false;
+                    if (batchClientFilter !== 'all') {
+                      const batchClients = [batch.clientName, ...(batch.clientNames || [])].filter(Boolean);
+                      if (!batchClients.includes(batchClientFilter)) return false;
+                    }
                     return true;
+                  }).sort((a, b) => {
+                    const dateA = a.asOfDate || a.createdAt || '';
+                    const dateB = b.asOfDate || b.createdAt || '';
+                    return dateB.localeCompare(dateA);
                   });
 
                   const totalPages = Math.ceil(filtered.length / BATCHES_PER_PAGE);
@@ -889,7 +920,7 @@ export default function Billing() {
                       <div className="text-center py-8">
                         <Search className="w-10 h-10 mx-auto text-muted-foreground opacity-50 mb-3" />
                         <p className="text-muted-foreground">No batches match your filters.</p>
-                        <Button variant="link" size="sm" onClick={() => { setBatchSearch(''); setBatchStatusFilter('all'); setBatchPaymentFilter('all'); setBatchYearFilter('all'); }}>
+                        <Button variant="link" size="sm" onClick={() => { setBatchSearch(''); setBatchStatusFilter('all'); setBatchPaymentFilter('all'); setBatchClientFilter('all'); setBatchYearFilter('all'); }}>
                           Clear filters
                         </Button>
                       </div>
