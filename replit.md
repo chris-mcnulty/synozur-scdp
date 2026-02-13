@@ -66,6 +66,25 @@ Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pa
 - **Airport Code Reference Data**: `airport_codes` table (5,163 IATA codes).
 - **OCONUS Per Diem Rates**: `oconus_per_diem_rates` table for Outside Continental US locations.
 
+## Related Synozur Products
+
+### Orion (Synozur Maturity Model Platform)
+- **Repository**: https://github.com/chris-mcnulty/synozur-maturitymodeler
+- **Purpose**: Multi-model maturity assessment platform with AI-powered recommendations, benchmarking, and knowledge base grounding.
+- **Relevant Patterns**: Knowledge document uploads (PDF/DOCX/TXT/MD) with `DocumentExtractionService` (mammoth + pdf-parse), AI usage logging (token counts, costs). Documents stored in Replit Object Storage.
+
+### Vega (Synozur Company OS Platform)
+- **Repository**: https://github.com/chris-mcnulty/synozur-vega
+- **Purpose**: AI-augmented Company Operating System for OKR management, strategy tracking, and focus rhythm. Multi-tenant with Microsoft 365 integration.
+- **Relevant Patterns for Constellation (Primary Reference for Grounding Docs)**:
+  - **Grounding Documents System**: `grounding_documents` table with `tenantId` (null = global/platform, value = tenant-specific), `title`, `description`, `category` (methodology, best_practices, terminology, examples, background_context, company_os), `content` (extracted plain text stored directly — NOT file references), `priority` (integer, higher = included first in AI context), `isActive` (boolean on/off toggle), `isTenantBackground` (auto-include in all tenant AI conversations), `createdBy`, `updatedBy`, `createdAt`, `updatedAt`.
+  - **Document Parsing Routes**: Separate `/api/ai/parse-pdf` and `/api/ai/parse-docx` endpoints that accept raw binary uploads and return extracted text. The frontend uploads the file, gets back text, then stores the text content (not the file) in the grounding doc record. This keeps token sizes small and avoids runtime file parsing.
+  - **AI Prompt Injection**: `buildSystemPrompt(tenantId?)` function fetches active grounding docs (global + tenant-specific if tenantId provided), sorts by priority descending then category, formats each as `### {categoryLabel}: {title}\n{content}`, and prepends to system prompt under `## Grounding Knowledge Base` section.
+  - **Storage Interface**: `getActiveGroundingDocuments()` (global active docs), `getActiveGroundingDocumentsForTenant(tenantId)` (active global + tenant docs using `or(isNull(tenantId), eq(tenantId, id))`), CRUD with `getAllGroundingDocuments()`, `getGlobalGroundingDocuments()`, `getTenantGroundingDocuments(tenantId)`.
+  - **AI Configuration**: `ai_configuration` table for runtime provider/model switching, rate limiting, token budgets. AI usage logging with `ai_usage_logs` (provider, model, feature, prompt/completion tokens, estimated cost in microdollars, latency).
+  - **Category Labels**: `{ company_os: "Company Operating System Overview", methodology: "Methodology & Framework", best_practices: "Best Practices", terminology: "Key Terminology", examples: "Examples & Templates" }`.
+- **Key Design Principle**: Vega stores extracted text content directly in the DB record (not file references). Documents are parsed client-side via parse endpoints, then content is saved. This eliminates runtime file I/O during AI calls and keeps the system simpler.
+
 ## External Dependencies
 
 - **Database Hosting**: Neon Database (PostgreSQL).
