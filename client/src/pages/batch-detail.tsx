@@ -694,12 +694,31 @@ export default function BatchDetail() {
 
   const [isPDFGenerating, setIsPDFGenerating] = useState(false);
   const [isReceiptsDownloading, setIsReceiptsDownloading] = useState(false);
+  const [isExpandAll, setIsExpandAll] = useState(false);
 
   // Check if receipts bundle is available
   const { data: receiptsBundleData } = useQuery<{ available: boolean; count: number }>({
     queryKey: ["/api/invoice-batches", batchId, "receipts-bundle", "check"],
     enabled: !!batchId,
   });
+
+  const handleToggleExpand = () => {
+    if (isExpandAll) {
+      collapseAll();
+    } else {
+      expandAll();
+    }
+    setIsExpandAll(!isExpandAll);
+  };
+
+  const handleToggleExpand = () => {
+    if (isExpandAll) {
+      collapseAll();
+    } else {
+      expandAll();
+    }
+    setIsExpandAll(!isExpandAll);
+  };
 
   const handleDownloadReceiptsBundle = async () => {
     if (!batchId) return;
@@ -1159,445 +1178,156 @@ export default function BatchDetail() {
   return (
     <Layout>
       <div className="container mx-auto py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        {/* Compact Header & Action Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight" data-testid="text-batch-id">
-              Invoice Batch: {batchId}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Review invoice details and line items
-            </p>
-          </div>
-          <Button
-            onClick={() => navigate("/billing")}
-            variant="outline"
-            data-testid="button-back"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Billing
-          </Button>
-        </div>
-
-        {/* Actions Bar */}
-        <div className="flex gap-2 mb-6 flex-wrap">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" data-testid="button-export-csv">
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => navigate("/billing")}
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                data-testid="button-back"
+              >
+                <ArrowLeft className="h-4 w-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              <DropdownMenuLabel>Export Line Items</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleExportCSV('all')} data-testid="dropdown-export-all">
-                All Line Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportCSV('expense')} data-testid="dropdown-export-expenses">
-                Expenses Only
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleExportCSV('time')} data-testid="dropdown-export-time">
-                Time Entries Only
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          
-          {/* QuickBooks CSV Export - only for admins/billing-admins, enabled when finalized */}
-          {['admin', 'billing-admin'].includes(user?.role || '') && (
-            <Button
-              onClick={async () => {
-                if (!batchId) return;
-                
-                try {
-                  // Get session ID from localStorage for authenticated request
-                  const sessionId = localStorage.getItem('sessionId');
-                  
-                  if (!sessionId) {
-                    toast({
-                      title: "Authentication required",
-                      description: "Please log in to export to QuickBooks CSV",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-                  
-                  const response = await fetch(`/api/invoice-batches/${batchId}/export-qbo-csv`, {
-                    credentials: 'include',
-                    headers: {
-                      'X-Session-Id': sessionId
-                    }
-                  });
-                  
-                  if (!response.ok) {
-                    let errorMessage = 'Failed to export to QuickBooks CSV';
-                    
-                    // Try to parse JSON error, fallback to text
-                    try {
-                      const errorData = await response.json();
-                      errorMessage = errorData.message || errorMessage;
-                    } catch {
-                      const errorText = await response.text();
-                      if (errorText) errorMessage = errorText;
-                    }
-                    
-                    // Special handling for auth errors
-                    if (response.status === 401 || response.status === 403) {
-                      errorMessage = 'Authentication required. Please log in again.';
-                    }
-                    
-                    throw new Error(errorMessage);
-                  }
-                  
-                  // Download the CSV file
-                  const blob = await response.blob();
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `invoice-${batchId}-qbo.csv`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  window.URL.revokeObjectURL(url);
-                  
-                  toast({
-                    title: "Export successful",
-                    description: "QuickBooks CSV has been downloaded.",
-                  });
-                } catch (error: any) {
-                  toast({
-                    title: "Export failed",
-                    description: error.message || "Failed to export to QuickBooks CSV",
-                    variant: "destructive"
-                  });
-                }
-              }}
-              variant="outline"
-              disabled={batchDetails?.status !== 'finalized'}
-              data-testid="button-export-qbo-csv"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export to QuickBooks CSV
-            </Button>
-          )}
-          
-          {receiptsBundleData?.available ? (
+              <h1 className="text-xl font-bold tracking-tight" data-testid="text-batch-id">
+                Batch: {batchId}
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <div className="flex bg-muted p-1 rounded-md">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs px-2"
+                onClick={() => handleExportCSV()}
+              >
+                <Download className="mr-1 h-3 w-3" />
+                CSV
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs px-2"
+                onClick={handleExportToQBO}
+              >
+                <Upload className="mr-1 h-3 w-3" />
+                QuickBooks
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs px-2"
+                onClick={handleDownloadPDF}
+                disabled={isPDFGenerating}
+              >
+                <FileText className="mr-1 h-3 w-3" />
+                {isPDFGenerating ? "Generating..." : "Generate PDF"}
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-8 text-xs px-2"
+                onClick={handleDownloadReceiptsBundle}
+                disabled={isReceiptsDownloading || !receiptsBundleData?.available}
+              >
+                <Archive className="mr-1 h-3 w-3" />
+                Receipts
+              </Button>
+            </div>
+            
+            <Separator orientation="vertical" className="h-6" />
+
+            {batchDetails?.status === 'draft' && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8 text-xs"
+                onClick={handleReviewBatch}
+                disabled={reviewMutation.isPending}
+              >
+                <CheckSquare className="mr-1 h-3 w-3" />
+                Review
+              </Button>
+            )}
+
+            {canFinalize() && (
+              <Button 
+                size="sm" 
+                className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={handleFinalizeBatch}
+              >
+                <Lock className="mr-1 h-3 w-3" />
+                Finalize
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={isPDFGenerating || isReceiptsDownloading}
-                  data-testid="button-download-dropdown"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  {isPDFGenerating ? "Generating PDF..." : isReceiptsDownloading ? "Downloading..." : "Download"}
-                  <ChevronDown className="ml-2 h-4 w-4" />
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                  <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Download Options</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleDownloadPDF} disabled={isPDFGenerating}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  Invoice PDF
+                <DropdownMenuItem onClick={() => setShowAdjustmentHistory(true)}>
+                  <History className="mr-2 h-4 w-4" /> History
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleDownloadReceiptsBundle} disabled={isReceiptsDownloading}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Complete Receipts (ZIP)
-                  <Badge variant="secondary" className="ml-2 text-xs">
-                    {receiptsBundleData.count}
-                  </Badge>
+                <DropdownMenuItem onClick={handleToggleExpand}>
+                  {isExpandAll ? <ChevronDown className="mr-2 h-4 w-4" /> : <ChevronRight className="mr-2 h-4 w-4" />}
+                  {isExpandAll ? "Collapse All" : "Expand All"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-destructive"
+                  onClick={handleDeleteBatch}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Delete Batch
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <Button
-              onClick={handleDownloadPDF}
-              variant="outline"
-              disabled={isPDFGenerating}
-              data-testid="button-download-pdf"
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              {isPDFGenerating ? "Generating PDF..." : "Download PDF"}
-            </Button>
-          )}
-          
-          <Button
-            onClick={async () => {
-              if (!batchId) return;
-              try {
-                const sessionId = localStorage.getItem('sessionId');
-                if (!sessionId) {
-                  toast({
-                    title: "Authentication required",
-                    description: "Please log in to view PDFs.",
-                    variant: "destructive"
-                  });
-                  return;
-                }
-
-                // Download PDF with authentication
-                const response = await fetch(`/api/invoice-batches/${batchId}/pdf`, {
-                  method: 'GET',
-                  headers: {
-                    'X-Session-Id': sessionId,
-                  },
-                });
-
-                if (!response.ok) {
-                  throw new Error(`Failed to load PDF: ${response.statusText}`);
-                }
-
-                const pdfBlob = await response.blob();
-                
-                // Create blob URL and open in new tab
-                const url = URL.createObjectURL(pdfBlob);
-                window.open(url, '_blank');
-                
-                // Clean up blob URL after a delay
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-              } catch (error: any) {
-                console.error("PDF view error:", error);
-                toast({
-                  title: "View failed",
-                  description: error.message || "Failed to view PDF. Please try again.",
-                  variant: "destructive"
-                });
-              }
-            }}
-            variant="outline"
-            data-testid="button-view-pdf-sharepoint"
-          >
-            <ExternalLink className="mr-2 h-4 w-4" />
-            View PDF
-          </Button>
-
-          {batchDetails?.status === 'finalized' && (
-            <Button
-              onClick={handleExportToQBO}
-              variant="outline"
-              disabled={batchDetails.exportedToQBO || exportToQBOMutation.isPending}
-              data-testid="button-export-qbo"
-            >
-              {batchDetails.exportedToQBO ? (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Exported to QBO
-                </>
-              ) : (
-                <>
-                  <Building className="mr-2 h-4 w-4" />
-                  {exportToQBOMutation.isPending ? 'Exporting...' : 'Export to QBO'}
-                </>
-              )}
-            </Button>
-          )}
-          
-          {canEditLines() && selectedLines.size > 0 && (
-            <>
-              <Button
-                onClick={handleBulkEdit}
-                variant="outline"
-                data-testid="button-bulk-edit"
-              >
-                <Edit className="mr-2 h-4 w-4" />
-                Edit {selectedLines.size} Selected
-              </Button>
-              <Button
-                onClick={() => setSelectedLines(new Set())}
-                variant="ghost"
-                size="sm"
-                data-testid="button-clear-selection"
-              >
-                Clear Selection
-              </Button>
-            </>
-          )}
-          {canEditLines() && (
-            <>
-              <Button
-                onClick={() => setShowAggregateAdjustmentDialog(true)}
-                variant="outline"
-                data-testid="button-aggregate-adjustment"
-              >
-                <Calculator className="mr-2 h-4 w-4" />
-                Apply Contract Adjustment
-              </Button>
-              <Button
-                onClick={() => setShowAdjustmentHistory(!showAdjustmentHistory)}
-                variant="outline"
-                data-testid="button-adjustment-history"
-              >
-                <History className="mr-2 h-4 w-4" />
-                {showAdjustmentHistory ? "Hide" : "View"} History
-              </Button>
-            </>
-          )}
-          
-          {canEditLines() && batchDetails?.status !== 'finalized' && (
-            <Button
-              onClick={handleDeleteBatch}
-              variant="destructive"
-              disabled={deleteBatchMutation.isPending}
-              data-testid="button-delete-batch"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {deleteBatchMutation.isPending ? 'Deleting...' : 'Delete Batch'}
-            </Button>
-          )}
-          {canReview() && (
-            <Button
-              onClick={handleReviewBatch}
-              variant="outline"
-              disabled={reviewMutation.isPending}
-              data-testid="button-review"
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              Mark as Reviewed
-            </Button>
-          )}
-          {canFinalize() && (
-            <Button
-              onClick={handleFinalizeBatch}
-              variant="default"
-              disabled={finalizeMutation.isPending}
-              data-testid="button-finalize"
-            >
-              <Lock className="mr-2 h-4 w-4" />
-              Finalize Invoice
-            </Button>
-          )}
-          {canUnfinalize() && (
-            <Button
-              onClick={handleUnfinalizeBatch}
-              variant="destructive"
-              disabled={unfinalizeMutation.isPending}
-              data-testid="button-unfinalize"
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              Revert to Draft
-            </Button>
-          )}
-          {batchDetails.status === 'finalized' && batchDetails.exportedToQBO && (
-            <Badge variant="outline" className="px-3 py-2">
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Exported to QuickBooks
-            </Badge>
-          )}
-          <div className="ml-auto flex gap-2">
-            <Button
-              onClick={expandAll}
-              variant="ghost"
-              size="sm"
-              data-testid="button-expand-all"
-            >
-              Expand All
-            </Button>
-            <Button
-              onClick={collapseAll}
-              variant="ghost"
-              size="sm"
-              data-testid="button-collapse-all"
-            >
-              Collapse All
-            </Button>
           </div>
         </div>
 
-        {/* Adjustment History (conditionally shown) */}
-        {showAdjustmentHistory && (
-          <div className="mb-6">
-            <AdjustmentHistory 
-              batchId={batchId || ''} 
-              canReverse={canEditLines() && batchDetails?.status !== 'finalized'}
-              onReverse={(adjustmentId) => {
-                if (confirm('Are you sure you want to reverse this adjustment? Invoice amounts will be restored to their original values.')) {
-                  removeAdjustmentMutation.mutate(adjustmentId);
-                }
-              }}
-            />
-          </div>
-        )}
-
-        {/* Batch Summary Card */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Batch Summary</CardTitle>
-              {getStatusBadge()}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Calendar className="mr-1 h-3 w-3" />
-                  Date Range
-                </div>
-                <p className="font-medium" data-testid="text-date-range">
-                  {formatBusinessDate(batchDetails.startDate)} - {formatBusinessDate(batchDetails.endDate)}
+        <Card className="border-none shadow-none bg-accent/5 mb-6">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Status</p>
+                {getStatusBadge()}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Date Range</p>
+                <p className="text-sm font-medium">{batchDetails ? `${formatBusinessDate(batchDetails.startDate, 'MMM d')} - ${formatBusinessDate(batchDetails.endDate, 'MMM d, yyyy')}` : '-'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center">
+                  As-Of Date
+                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={handleStartAsOfDateEdit}>
+                    <Edit className="h-3 w-3" />
+                  </Button>
                 </p>
+                <p className="text-sm font-medium">{batchDetails?.asOfDate ? formatBusinessDate(batchDetails.asOfDate, 'MMM d, yyyy') : "-"}</p>
               </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center text-sm text-muted-foreground">
-                    <Calendar className="mr-1 h-3 w-3" />
-                    As Of Date
-                  </div>
-                  {user?.role === 'admin' && !isEditingAsOfDate && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleStartAsOfDateEdit}
-                      data-testid="button-edit-as-of-date"
-                    >
-                      <Edit className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-                {isEditingAsOfDate ? (
-                  <div className="space-y-2">
-                    <Input
-                      type="date"
-                      value={newAsOfDate}
-                      onChange={(e) => setNewAsOfDate(e.target.value)}
-                      data-testid="input-as-of-date"
-                      className="text-sm"
-                    />
-                    <div className="flex space-x-1">
-                      <Button
-                        size="sm"
-                        onClick={handleSaveAsOfDate}
-                        disabled={updateAsOfDateMutation.isPending}
-                        data-testid="button-save-as-of-date"
-                      >
-                        {updateAsOfDateMutation.isPending ? 'Saving...' : 'Save'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCancelAsOfDateEdit}
-                        data-testid="button-cancel-as-of-date"
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="font-medium" data-testid="text-as-of-date">
-                    {batchDetails.asOfDate 
-                      ? formatBusinessDate(batchDetails.asOfDate)
-                      : formatTimestamp(batchDetails.createdAt, "MMM d, yyyy")}
-                  </p>
-                )}
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Created By</p>
+                <p className="text-sm font-medium">{batchDetails?.creator?.name || "System"}</p>
               </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Building className="mr-1 h-3 w-3" />
-                  Clients
+              <div className="col-span-1 lg:col-span-2 flex justify-end items-center space-x-4">
+                <div className="text-right">
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Subtotal</p>
+                  <p className="text-sm font-medium">${Number(batchDetails?.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                 </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Grand Total</p>
+                  <p className="text-xl font-bold text-green-600">${calculateGrandTotal().toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
                 <p className="font-medium" data-testid="text-client-count">{batchDetails.clientCount}</p>
               </div>
               

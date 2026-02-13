@@ -34,11 +34,14 @@ import {
   Users,
   CreditCard,
   Layers,
-  Trash2
+  Trash2,
+  Search,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
-import { getTodayBusinessDate } from "@/lib/date-utils";
+import { getTodayBusinessDate, formatBusinessDate } from "@/lib/date-utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { UnbilledItemsResponse } from "@shared/schema";
 
@@ -62,7 +65,8 @@ interface InvoiceBatchData {
   notes?: string | null;
   exportedToQBO: boolean;
   exportedAt?: string;
-  // Payment tracking fields
+  glInvoiceNumber?: string | null;
+  asOfDate?: string | null;
   paymentStatus: 'unpaid' | 'partial' | 'paid';
   paymentDate?: string;
   paymentAmount?: number;
@@ -96,6 +100,12 @@ export default function Billing() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [batchToDelete, setBatchToDelete] = useState<InvoiceBatchData | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [batchSearch, setBatchSearch] = useState('');
+  const [batchStatusFilter, setBatchStatusFilter] = useState<string>('all');
+  const [batchPaymentFilter, setBatchPaymentFilter] = useState<string>('all');
+  const [batchYearFilter, setBatchYearFilter] = useState<string>('all');
+  const [batchPage, setBatchPage] = useState(1);
+  const BATCHES_PER_PAGE = 25;
   
   const { canViewPricing, user } = useAuth();
   const { toast } = useToast();
@@ -764,13 +774,63 @@ export default function Billing() {
 
           <TabsContent value="batches" className="space-y-4">
             <Card data-testid="invoice-batches-table">
-              <CardHeader>
-                <div className="flex items-center justify-between">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between mb-3">
                   <CardTitle>Invoice Batches</CardTitle>
-                  <Button variant="outline" size="sm" data-testid="button-filter-batches">
-                    <Filter className="w-4 h-4 mr-1" />
-                    Filter
-                  </Button>
+                  <span className="text-sm text-muted-foreground">{invoiceBatches.length} total</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by batch ID, GL#, client, project..."
+                      value={batchSearch}
+                      onChange={(e) => { setBatchSearch(e.target.value); setBatchPage(1); }}
+                      className="pl-9 h-9"
+                      data-testid="input-batch-search"
+                    />
+                  </div>
+                  <Select value={batchStatusFilter} onValueChange={(v) => { setBatchStatusFilter(v); setBatchPage(1); }}>
+                    <SelectTrigger className="w-[130px] h-9" data-testid="filter-batch-status">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Status</SelectItem>
+                      <SelectItem value="draft">Draft</SelectItem>
+                      <SelectItem value="reviewed">Reviewed</SelectItem>
+                      <SelectItem value="finalized">Finalized</SelectItem>
+                      <SelectItem value="exported">Exported</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={batchPaymentFilter} onValueChange={(v) => { setBatchPaymentFilter(v); setBatchPage(1); }}>
+                    <SelectTrigger className="w-[130px] h-9" data-testid="filter-batch-payment">
+                      <SelectValue placeholder="Payment" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Payment</SelectItem>
+                      <SelectItem value="paid">Paid</SelectItem>
+                      <SelectItem value="unpaid">Unpaid</SelectItem>
+                      <SelectItem value="partial">Partial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={batchYearFilter} onValueChange={(v) => { setBatchYearFilter(v); setBatchPage(1); }}>
+                    <SelectTrigger className="w-[100px] h-9" data-testid="filter-batch-year">
+                      <SelectValue placeholder="Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Years</SelectItem>
+                      {(() => {
+                        const years = new Set<string>();
+                        invoiceBatches.forEach((b: any) => {
+                          const yr = b.startDate?.substring(0, 4);
+                          if (yr) years.add(yr);
+                        });
+                        return Array.from(years).sort().reverse().map(yr => (
+                          <SelectItem key={yr} value={yr}>{yr}</SelectItem>
+                        ));
+                      })()}
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardHeader>
               <CardContent>
@@ -799,145 +859,196 @@ export default function Billing() {
                     <p className="text-muted-foreground">Create your first invoice batch to get started.</p>
                   </div>
                 )}
-                {!batchesLoading && !batchesError && invoiceBatches.length > 0 && (
-                <div className="space-y-6">
-                  {(() => {
-                    // Group batches by client
-                    const batchesByClient = new Map<string, any[]>();
-                    (invoiceBatches as any[]).forEach((batch: any) => {
-                      let clientKey = 'Multiple Clients';
-                      
-                      // Handle single client - check both clientNames array and clientName string
-                      if (batch.clientNames && batch.clientNames.length === 1) {
-                        clientKey = batch.clientNames[0];
-                      } else if (batch.clientName) {
-                        clientKey = batch.clientName;
-                      } else if (batch.clientNames && batch.clientNames.length > 1) {
-                        clientKey = 'Multiple Clients';
-                      }
-                      
-                      if (!batchesByClient.has(clientKey)) {
-                        batchesByClient.set(clientKey, []);
-                      }
-                      batchesByClient.get(clientKey)!.push(batch);
-                    });
+                {!batchesLoading && !batchesError && invoiceBatches.length > 0 && (() => {
+                  const searchLower = batchSearch.toLowerCase();
+                  const filtered = (invoiceBatches as InvoiceBatchData[]).filter((batch) => {
+                    if (batchSearch) {
+                      const searchableText = [
+                        batch.batchId,
+                        batch.glInvoiceNumber,
+                        batch.clientName,
+                        ...(batch.clientNames || []),
+                        ...(batch.projectNames || []),
+                      ].filter(Boolean).join(' ').toLowerCase();
+                      if (!searchableText.includes(searchLower)) return false;
+                    }
+                    if (batchStatusFilter !== 'all') {
+                      if (batchStatusFilter === 'exported' && !batch.exportedToQBO) return false;
+                      if (batchStatusFilter !== 'exported' && batch.status !== batchStatusFilter) return false;
+                    }
+                    if (batchPaymentFilter !== 'all' && (batch.paymentStatus || 'unpaid') !== batchPaymentFilter) return false;
+                    if (batchYearFilter !== 'all' && !batch.startDate?.startsWith(batchYearFilter)) return false;
+                    return true;
+                  });
 
-                    // Sort clients alphabetically, with "Multiple Clients" last
-                    const sortedClients = Array.from(batchesByClient.entries()).sort(([a], [b]) => {
-                      if (a === 'Multiple Clients') return 1;
-                      if (b === 'Multiple Clients') return -1;
-                      return a.localeCompare(b);
-                    });
+                  const totalPages = Math.ceil(filtered.length / BATCHES_PER_PAGE);
+                  const paginated = filtered.slice((batchPage - 1) * BATCHES_PER_PAGE, batchPage * BATCHES_PER_PAGE);
 
-                    return sortedClients.map(([clientName, batches]) => (
-                      <div key={clientName} className="space-y-3">
-                        <div className="flex items-center space-x-2 pb-2 border-b">
-                          <Building className="w-4 h-4 text-muted-foreground" />
-                          <h3 className="font-semibold text-sm" data-testid={`client-group-${clientName}`}>{clientName}</h3>
-                          <span className="text-xs text-muted-foreground">({batches.length} batch{batches.length !== 1 ? 'es' : ''})</span>
-                        </div>
-                        <div className="space-y-3 pl-6">
-                          {batches.map((batch: any) => (
-                            <div
-                              key={batch.id}
-                              className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
-                              data-testid={`batch-${batch.id}`}
-                            >
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <Link href={`/billing/batches/${batch.batchId}`}>
-                            <div className="font-medium text-primary hover:underline cursor-pointer" data-testid={`batch-id-${batch.id}`}>
-                              {batch.batchId}
-                            </div>
-                          </Link>
-                          <div className="text-sm text-muted-foreground" data-testid={`batch-client-${batch.id}`}>
-                            {batch.clientNames && batch.clientNames.length > 0 && batch.clientNames.length <= 3 ? (
-                              <span>
-                                <Building className="w-3 h-3 mr-1 inline" />
-                                {batch.clientNames.join(", ")}
-                              </span>
-                            ) : (
-                              <span>
-                                <Building className="w-3 h-3 mr-1 inline" />
-                                {batch.clientCount || 0} client{batch.clientCount !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                            <span className="mx-2">•</span>
-                            {batch.projectNames && batch.projectNames.length > 0 && batch.projectNames.length <= 3 ? (
-                              <span>
-                                <FolderOpen className="w-3 h-3 mr-1 inline" />
-                                {batch.projectNames.join(", ")}
-                              </span>
-                            ) : (
-                              <span>
-                                <FolderOpen className="w-3 h-3 mr-1 inline" />
-                                {batch.projectCount || 0} project{batch.projectCount !== 1 ? 's' : ''}
-                              </span>
-                            )}
-                          </div>
-                          <Badge variant="outline" className="text-xs">
-                            {batch.invoicingMode === 'client' ? (
-                              <><Building className="w-3 h-3 mr-1" />Client</>  
-                            ) : (
-                              <><FolderOpen className="w-3 h-3 mr-1" />Project</>
-                            )}
-                          </Badge>
-                          {getStatusBadge(batch)}
-                          {batch.status === 'finalized' && getPaymentStatusBadge(batch.paymentStatus || 'unpaid')}
-                        </div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {format(new Date(batch.startDate), 'MMM d')} - {format(new Date(batch.endDate), 'MMM d, yyyy')} • 
-                          {batch.discountAmount && ` Discount: $${Number(batch.discountAmount).toLocaleString()} • `}
-                          Created {format(new Date(batch.createdAt), 'MMM d, yyyy')}
-                          {batch.paymentDate && ` • Payment: ${format(new Date(batch.paymentDate), 'MMM d, yyyy')}`}
-                        </div>
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center py-8">
+                        <Search className="w-10 h-10 mx-auto text-muted-foreground opacity-50 mb-3" />
+                        <p className="text-muted-foreground">No batches match your filters.</p>
+                        <Button variant="link" size="sm" onClick={() => { setBatchSearch(''); setBatchStatusFilter('all'); setBatchPaymentFilter('all'); setBatchYearFilter('all'); }}>
+                          Clear filters
+                        </Button>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <div className="text-right">
-                          <div className="font-medium text-lg" data-testid={`batch-amount-${batch.id}`}>
-                            {canViewPricing ? `$${Number(batch.totalAmount || 0).toLocaleString()}` : '***'}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {batch.invoicingMode === 'client' ? 'Client billing' : 'Project billing'}
-                          </div>
-                        </div>
-                        <div className="flex space-x-2">
-                          {batch.status === 'finalized' && (
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="pb-2 pr-3 font-medium">Batch / GL#</th>
+                              <th className="pb-2 pr-3 font-medium">Client / Project</th>
+                              <th className="pb-2 pr-3 font-medium">Period</th>
+                              <th className="pb-2 pr-3 font-medium">As-Of Date</th>
+                              <th className="pb-2 pr-3 font-medium">Status</th>
+                              <th className="pb-2 pr-3 font-medium">Payment</th>
+                              <th className="pb-2 pr-3 font-medium text-right">Amount</th>
+                              <th className="pb-2 font-medium"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paginated.map((batch: InvoiceBatchData) => (
+                              <tr
+                                key={batch.id}
+                                className="border-b border-border/50 hover:bg-accent/30 transition-colors"
+                                data-testid={`batch-${batch.id}`}
+                              >
+                                <td className="py-2.5 pr-3">
+                                  <Link href={`/billing/batches/${batch.batchId}`}>
+                                    <span className="font-medium text-primary hover:underline cursor-pointer" data-testid={`batch-id-${batch.id}`}>
+                                      {batch.batchId}
+                                    </span>
+                                  </Link>
+                                  {batch.glInvoiceNumber && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                      GL# {batch.glInvoiceNumber}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-2.5 pr-3">
+                                  <div className="text-sm" data-testid={`batch-client-${batch.id}`}>
+                                    {batch.clientNames && batch.clientNames.length > 0 && batch.clientNames.length <= 3
+                                      ? batch.clientNames.join(", ")
+                                      : `${batch.clientCount || 0} client${(batch.clientCount || 0) !== 1 ? 's' : ''}`}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {batch.projectNames && batch.projectNames.length > 0 && batch.projectNames.length <= 3
+                                      ? batch.projectNames.join(", ")
+                                      : `${batch.projectCount || 0} project${(batch.projectCount || 0) !== 1 ? 's' : ''}`}
+                                  </div>
+                                </td>
+                                <td className="py-2.5 pr-3 whitespace-nowrap">
+                                  <div className="text-sm">
+                                    {formatBusinessDate(batch.startDate, 'MMM d')} - {formatBusinessDate(batch.endDate, 'MMM d, yyyy')}
+                                  </div>
+                                </td>
+                                <td className="py-2.5 pr-3 whitespace-nowrap">
+                                  <div className="text-sm">
+                                    {batch.asOfDate ? formatBusinessDate(batch.asOfDate, 'MMM d, yyyy') : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2.5 pr-3">
+                                  <div className="flex items-center gap-1.5">
+                                    {getStatusBadge(batch)}
+                                    <Badge variant="outline" className="text-xs">
+                                      {batch.invoicingMode === 'client' ? 'Client' : 'Project'}
+                                    </Badge>
+                                  </div>
+                                </td>
+                                <td className="py-2.5 pr-3">
+                                  {batch.status === 'finalized' ? (
+                                    <div>
+                                      {getPaymentStatusBadge(batch.paymentStatus || 'unpaid')}
+                                      {batch.paymentDate && (
+                                        <div className="text-xs text-muted-foreground mt-0.5">
+                                          {formatBusinessDate(batch.paymentDate, 'MMM d, yyyy')}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">-</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 pr-3 text-right whitespace-nowrap">
+                                  <span className="font-medium" data-testid={`batch-amount-${batch.id}`}>
+                                    {canViewPricing ? `$${Number(batch.totalAmount || 0).toLocaleString()}` : '***'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5">
+                                  <div className="flex items-center gap-1">
+                                    {batch.status === 'finalized' && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 px-2"
+                                        onClick={() => handleOpenPaymentDialog(batch)}
+                                        data-testid={`button-payment-${batch.id}`}
+                                        title="Payment"
+                                      >
+                                        <CreditCard className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                    {batch.status !== 'finalized' && user && (user.role === 'admin' || user.role === 'billing-admin') && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteBatch(batch);
+                                        }}
+                                        disabled={deleteBatchMutation.isPending}
+                                        data-testid={`button-delete-batch-${batch.id}`}
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-3 border-t">
+                          <span className="text-sm text-muted-foreground">
+                            Showing {(batchPage - 1) * BATCHES_PER_PAGE + 1}-{Math.min(batchPage * BATCHES_PER_PAGE, filtered.length)} of {filtered.length}
+                          </span>
+                          <div className="flex items-center gap-2">
                             <Button
-                              size="sm"
                               variant="outline"
-                              onClick={() => handleOpenPaymentDialog(batch)}
-                              data-testid={`button-payment-${batch.id}`}
-                            >
-                              <CreditCard className="w-4 h-4 mr-1" />
-                              Payment
-                            </Button>
-                          )}
-                          {batch.status !== 'finalized' && user && (user.role === 'admin' || user.role === 'billing-admin') && (
-                            <Button
                               size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteBatch(batch);
-                              }}
-                              disabled={deleteBatchMutation.isPending}
-                              data-testid={`button-delete-batch-${batch.id}`}
+                              disabled={batchPage <= 1}
+                              onClick={() => setBatchPage(p => p - 1)}
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <ChevronLeft className="w-4 h-4" />
                             </Button>
-                          )}
+                            <span className="text-sm">Page {batchPage} of {totalPages}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={batchPage >= totalPages}
+                              onClick={() => setBatchPage(p => p + 1)}
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
-                          ))}
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-                )}
+                  );
+                })()}
               </CardContent>
             </Card>
           </TabsContent>
