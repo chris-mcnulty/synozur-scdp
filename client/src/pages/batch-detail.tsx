@@ -858,9 +858,10 @@ export default function BatchDetail() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
       
-      // If this batch is linked to a payment milestone, invalidate milestone caches
       if (batchDetails?.paymentMilestone) {
         queryClient.invalidateQueries({ queryKey: ['/api/payment-milestones/all'] });
         if (batchDetails.paymentMilestone.projectId) {
@@ -891,7 +892,8 @@ export default function BatchDetail() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
       toast({
         title: "Batch reviewed",
         description: "The batch has been marked as reviewed.",
@@ -913,7 +915,9 @@ export default function BatchDetail() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches", batchId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/details`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/invoice-batches/${batchId}/lines`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-batches"] });
       toast({
         title: "Batch reverted",
         description: "The batch has been reverted to draft status.",
@@ -1493,393 +1497,294 @@ export default function BatchDetail() {
           </div>
         )}
 
-        {/* Payment Terms Card - Only show if not finalized */}
-        {batchDetails.status !== 'finalized' && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Payment Terms</CardTitle>
-              <CardDescription>
-                Configure payment terms for this invoice batch
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!isEditingPaymentTerms ? (
-                <div className="space-y-4">
-                  <div className="rounded-lg border p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">
-                        Current Payment Terms
-                      </Label>
-                      {batchDetails.paymentTerms && (
-                        <Badge variant="secondary" className="text-xs">
-                          Custom
-                        </Badge>
-                      )}
-                      {!batchDetails.paymentTerms && batchDetails.clientPaymentTerms && (
-                        <Badge variant="outline" className="text-xs">
-                          Client Default
-                        </Badge>
-                      )}
-                      {!batchDetails.paymentTerms && !batchDetails.clientPaymentTerms && (
-                        <Badge variant="outline" className="text-xs">
-                          Using Default
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground" data-testid="text-current-payment-terms">
-                      {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
-                    </p>
-                  </div>
-                  {canEditLines() && (
-                    <Button
-                      onClick={() => {
-                        setIsEditingPaymentTerms(true);
-                        setUseCustomPaymentTerms(!!batchDetails.paymentTerms);
-                        setCustomPaymentTerms(batchDetails.paymentTerms || '');
-                      }}
-                      variant="outline"
-                      data-testid="button-edit-payment-terms"
-                    >
-                      <Edit className="mr-2 h-4 w-4" />
-                      Edit Payment Terms
-                    </Button>
+        {/* Consolidated Invoice Settings Card - Payment Terms, GL#, Tax Override side by side */}
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Calculator className="h-4 w-4" />
+              Invoice Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Payment Terms Column */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Payment Terms</Label>
+                  {batchDetails.paymentTerms ? (
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1">Custom</Badge>
+                  ) : batchDetails.clientPaymentTerms ? (
+                    <Badge variant="outline" className="text-[9px] h-4 px-1">Client</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] h-4 px-1">Default</Badge>
                   )}
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-3">
-                    <Switch
-                      id="custom-payment-terms"
-                      checked={useCustomPaymentTerms}
-                      onCheckedChange={(checked) => {
-                        setUseCustomPaymentTerms(checked);
-                        if (!checked) {
-                          setCustomPaymentTerms('');
-                        }
-                      }}
-                      data-testid="switch-custom-payment-terms"
-                    />
-                    <Label htmlFor="custom-payment-terms" className="cursor-pointer">
-                      Use custom payment terms for this batch
-                    </Label>
+                {!isEditingPaymentTerms ? (
+                  <div className="space-y-2">
+                    <p className="text-sm" data-testid={batchDetails.status === 'finalized' ? 'text-finalized-payment-terms' : 'text-current-payment-terms'}>
+                      {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+                    </p>
+                    {batchDetails.status !== 'finalized' && canEditLines() && (
+                      <Button
+                        onClick={() => {
+                          setIsEditingPaymentTerms(true);
+                          setUseCustomPaymentTerms(!!batchDetails.paymentTerms);
+                          setCustomPaymentTerms(batchDetails.paymentTerms || '');
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        data-testid="button-edit-payment-terms"
+                      >
+                        <Edit className="mr-1 h-3 w-3" />
+                        Edit
+                      </Button>
+                    )}
+                    {batchDetails.status === 'finalized' && (
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Lock className="h-2.5 w-2.5" />
+                        <span>Cannot modify for finalized batches</span>
+                      </div>
+                    )}
                   </div>
-                  
-                  {useCustomPaymentTerms && (
-                    <div className="space-y-2">
-                      <Label htmlFor="payment-terms-input">
-                        Custom Payment Terms
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id="custom-payment-terms"
+                        checked={useCustomPaymentTerms}
+                        onCheckedChange={(checked) => {
+                          setUseCustomPaymentTerms(checked);
+                          if (!checked) setCustomPaymentTerms('');
+                        }}
+                        data-testid="switch-custom-payment-terms"
+                        className="scale-75"
+                      />
+                      <Label htmlFor="custom-payment-terms" className="cursor-pointer text-xs">
+                        Custom terms
                       </Label>
+                    </div>
+                    {useCustomPaymentTerms ? (
                       <Textarea
                         id="payment-terms-input"
                         value={customPaymentTerms}
                         onChange={(e) => setCustomPaymentTerms(e.target.value)}
                         placeholder={defaultPaymentTerms || 'Payment due within 30 days'}
-                        className="min-h-[80px]"
+                        className="min-h-[60px] text-xs"
                         data-testid="textarea-payment-terms"
                       />
+                    ) : (
                       <p className="text-xs text-muted-foreground">
-                        Enter the payment terms that will appear on invoices for this batch.
+                        Using {batchDetails.clientPaymentTerms ? 'client' : 'default'}: {batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                       </p>
+                    )}
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => {
+                          const newPaymentTerms = useCustomPaymentTerms ? customPaymentTerms.trim() : null;
+                          updatePaymentTermsMutation.mutate(newPaymentTerms);
+                        }}
+                        disabled={updatePaymentTermsMutation.isPending || (useCustomPaymentTerms && !customPaymentTerms.trim())}
+                        size="sm"
+                        className="h-7 text-xs"
+                        data-testid="button-save-payment-terms"
+                      >
+                        {updatePaymentTermsMutation.isPending ? '...' : 'Save'}
+                      </Button>
+                      <Button
+                        onClick={() => { setIsEditingPaymentTerms(false); setUseCustomPaymentTerms(false); setCustomPaymentTerms(''); }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={updatePaymentTermsMutation.isPending}
+                        data-testid="button-cancel-payment-terms"
+                      >
+                        Cancel
+                      </Button>
                     </div>
-                  )}
-                  
-                  {!useCustomPaymentTerms && (
-                    <div className="rounded-lg bg-muted/50 p-3">
-                      <p className="text-sm text-muted-foreground">
-                        This batch will use the {batchDetails.clientPaymentTerms ? 'client' : 'default'} payment terms:
-                      </p>
-                      <p className="text-sm font-medium mt-1">
-                        {batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
-                      </p>
-                    </div>
-                  )}
-                  
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => {
-                        const newPaymentTerms = useCustomPaymentTerms ? customPaymentTerms.trim() : null;
-                        updatePaymentTermsMutation.mutate(newPaymentTerms);
-                      }}
-                      disabled={updatePaymentTermsMutation.isPending || (useCustomPaymentTerms && !customPaymentTerms.trim())}
-                      data-testid="button-save-payment-terms"
-                    >
-                      {updatePaymentTermsMutation.isPending ? 'Saving...' : 'Save Payment Terms'}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setIsEditingPaymentTerms(false);
-                        setUseCustomPaymentTerms(false);
-                        setCustomPaymentTerms('');
-                      }}
-                      variant="outline"
-                      disabled={updatePaymentTermsMutation.isPending}
-                      data-testid="button-cancel-payment-terms"
-                    >
-                      Cancel
-                    </Button>
                   </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-        
-        {/* Payment Terms Read-Only for Finalized Batches */}
-        {batchDetails.status === 'finalized' && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Payment Terms</CardTitle>
-              <CardDescription>
-                Payment terms for this finalized invoice batch
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg border p-4 bg-muted/30">
-                <div className="flex items-center justify-between mb-2">
-                  <Label className="text-sm font-medium">
-                    Payment Terms (Locked)
-                  </Label>
-                  {batchDetails.paymentTerms ? (
-                    <Badge variant="secondary" className="text-xs">
-                      Custom
-                    </Badge>
-                  ) : batchDetails.clientPaymentTerms ? (
-                    <Badge variant="outline" className="text-xs">
-                      Client Default
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs">
-                      Default
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-sm" data-testid="text-finalized-payment-terms">
-                  {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
-                </p>
-                <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
-                  <Lock className="h-3 w-3" />
-                  <span>Payment terms cannot be modified for finalized batches</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Invoice Settings Card - GL Invoice Number and Tax Override */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5" />
-              Invoice Settings
-            </CardTitle>
-            <CardDescription>
-              External accounting integration and tax configuration
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* GL Invoice Number Section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">GL Invoice Number</Label>
-                {batchDetails.glInvoiceNumber && (
-                  <Badge variant="secondary" className="text-xs">Set</Badge>
                 )}
               </div>
-              
-              {!isEditingGlNumber ? (
-                <div className="rounded-lg border p-4 space-y-3">
-                  <p className="text-sm" data-testid="text-gl-invoice-number">
-                    {batchDetails.glInvoiceNumber || <span className="text-muted-foreground italic">Not set</span>}
-                  </p>
-                  {batchDetails.status !== 'finalized' && canEditLines() && (
-                    <Button
-                      onClick={() => {
-                        setIsEditingGlNumber(true);
-                        setGlInvoiceNumber(batchDetails.glInvoiceNumber || '');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      data-testid="button-edit-gl-number"
-                    >
-                      <Edit className="mr-2 h-3 w-3" />
-                      {batchDetails.glInvoiceNumber ? 'Edit' : 'Add'} GL Number
-                    </Button>
-                  )}
-                  {batchDetails.status === 'finalized' && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Lock className="h-3 w-3" />
-                      <span>Locked for finalized batch</span>
-                    </div>
+
+              {/* GL Invoice Number Column */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">GL Invoice #</Label>
+                  {batchDetails.glInvoiceNumber && (
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1">Set</Badge>
                   )}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <Input
-                    value={glInvoiceNumber}
-                    onChange={(e) => setGlInvoiceNumber(e.target.value)}
-                    placeholder="Enter GL invoice number (e.g., INV-2024-001)"
-                    data-testid="input-gl-invoice-number"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => updateGlNumberMutation.mutate(glInvoiceNumber.trim() || null)}
-                      disabled={updateGlNumberMutation.isPending}
-                      size="sm"
-                      data-testid="button-save-gl-number"
-                    >
-                      {updateGlNumberMutation.isPending ? 'Saving...' : 'Save'}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setIsEditingGlNumber(false);
-                        setGlInvoiceNumber('');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      disabled={updateGlNumberMutation.isPending}
-                      data-testid="button-cancel-gl-number"
-                    >
-                      Cancel
-                    </Button>
-                    {batchDetails.glInvoiceNumber && (
+                {!isEditingGlNumber ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-mono" data-testid="text-gl-invoice-number">
+                      {batchDetails.glInvoiceNumber || <span className="text-muted-foreground italic font-sans">Not set</span>}
+                    </p>
+                    {batchDetails.status !== 'finalized' && canEditLines() && (
                       <Button
-                        onClick={() => updateGlNumberMutation.mutate(null)}
-                        variant="ghost"
+                        onClick={() => { setIsEditingGlNumber(true); setGlInvoiceNumber(batchDetails.glInvoiceNumber || ''); }}
+                        variant="outline"
                         size="sm"
-                        disabled={updateGlNumberMutation.isPending}
-                        className="text-destructive"
-                        data-testid="button-clear-gl-number"
+                        className="h-7 text-xs"
+                        data-testid="button-edit-gl-number"
                       >
-                        <Trash2 className="mr-2 h-3 w-3" />
-                        Clear
+                        <Edit className="mr-1 h-3 w-3" />
+                        {batchDetails.glInvoiceNumber ? 'Edit' : 'Add'}
                       </Button>
                     )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <Separator />
-
-            {/* Tax Override Section */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Tax Amount Override</Label>
-                {isManualTaxOverride && (
-                  <Badge variant="secondary" className="text-xs">Manual Override</Badge>
-                )}
-              </div>
-              
-              {!isEditingTaxOverride ? (
-                <div className="rounded-lg border p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Tax Rate:</span>
-                      <span className="ml-2 font-medium">{taxRate.toFixed(2)}%</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Calculated Tax:</span>
-                      <span className="ml-2 font-medium">
-                        ${(subtotalAfterDiscount * (taxRate / 100)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  {isManualTaxOverride && (
-                    <div className="bg-blue-50 dark:bg-blue-950/30 p-3 rounded-lg">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Info className="h-4 w-4 text-blue-600" />
-                        <span className="text-blue-800 dark:text-blue-300">
-                          Manual override: <strong>${taxAmountOverride?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                          <span className="text-muted-foreground ml-1">
-                            (effective rate: {effectiveTaxPercent.toFixed(2)}%)
-                          </span>
-                        </span>
+                    {batchDetails.status === 'finalized' && (
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Lock className="h-2.5 w-2.5" />
+                        <span>Locked</span>
                       </div>
-                    </div>
-                  )}
-                  
-                  {batchDetails.status !== 'finalized' && canEditLines() && (
-                    <Button
-                      onClick={() => {
-                        setIsEditingTaxOverride(true);
-                        // Initialize with existing override value (convert from string/null)
-                        setTaxOverrideValue(batchDetails.taxAmountOverride ? String(batchDetails.taxAmountOverride) : '');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      data-testid="button-edit-tax-override"
-                    >
-                      <Edit className="mr-2 h-3 w-3" />
-                      {isManualTaxOverride ? 'Edit Override' : 'Set Override'}
-                    </Button>
-                  )}
-                  {batchDetails.status === 'finalized' && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Lock className="h-3 w-3" />
-                      <span>Locked for finalized batch</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">$</span>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={taxOverrideValue}
-                      onChange={(e) => setTaxOverrideValue(e.target.value)}
-                      placeholder="Enter exact tax amount"
-                      className="max-w-48"
-                      data-testid="input-tax-override"
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Enter the exact tax amount to override the calculated tax ({taxRate}% = ${(subtotalAfterDiscount * (taxRate / 100)).toFixed(2)})
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => {
-                        const value = parseFloat(taxOverrideValue);
-                        // Allow zero as a valid override value
-                        updateTaxOverrideMutation.mutate(isNaN(value) ? null : value);
-                      }}
-                      disabled={updateTaxOverrideMutation.isPending || taxOverrideValue === ''}
-                      size="sm"
-                      data-testid="button-save-tax-override"
-                    >
-                      {updateTaxOverrideMutation.isPending ? 'Saving...' : 'Save Override'}
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        setIsEditingTaxOverride(false);
-                        setTaxOverrideValue('');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      disabled={updateTaxOverrideMutation.isPending}
-                      data-testid="button-cancel-tax-override"
-                    >
-                      Cancel
-                    </Button>
-                    {isManualTaxOverride && (
-                      <Button
-                        onClick={() => updateTaxOverrideMutation.mutate(null)}
-                        variant="ghost"
-                        size="sm"
-                        disabled={updateTaxOverrideMutation.isPending}
-                        className="text-destructive"
-                        data-testid="button-clear-tax-override"
-                      >
-                        <Undo className="mr-2 h-3 w-3" />
-                        Reset to Calculated
-                      </Button>
                     )}
                   </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Input
+                      value={glInvoiceNumber}
+                      onChange={(e) => setGlInvoiceNumber(e.target.value)}
+                      placeholder="e.g., INV-2024-001"
+                      className="h-8 text-xs"
+                      data-testid="input-gl-invoice-number"
+                    />
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => updateGlNumberMutation.mutate(glInvoiceNumber.trim() || null)}
+                        disabled={updateGlNumberMutation.isPending}
+                        size="sm"
+                        className="h-7 text-xs"
+                        data-testid="button-save-gl-number"
+                      >
+                        {updateGlNumberMutation.isPending ? '...' : 'Save'}
+                      </Button>
+                      <Button
+                        onClick={() => { setIsEditingGlNumber(false); setGlInvoiceNumber(''); }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={updateGlNumberMutation.isPending}
+                        data-testid="button-cancel-gl-number"
+                      >
+                        Cancel
+                      </Button>
+                      {batchDetails.glInvoiceNumber && (
+                        <Button
+                          onClick={() => updateGlNumberMutation.mutate(null)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-destructive"
+                          disabled={updateGlNumberMutation.isPending}
+                          data-testid="button-clear-gl-number"
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Tax Override Column */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Tax</Label>
+                  {isManualTaxOverride && (
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1">Override</Badge>
+                  )}
                 </div>
-              )}
+                {!isEditingTaxOverride ? (
+                  <div className="space-y-2">
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Rate:</span> <span className="font-medium">{taxRate.toFixed(1)}%</span>
+                      <span className="text-muted-foreground ml-2">= </span>
+                      <span className="font-medium">${(subtotalAfterDiscount * (taxRate / 100)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    {isManualTaxOverride && (
+                      <div className="flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400">
+                        <Info className="h-3 w-3" />
+                        <span>Override: <strong>${taxAmountOverride?.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> ({effectiveTaxPercent.toFixed(1)}%)</span>
+                      </div>
+                    )}
+                    {batchDetails.status !== 'finalized' && canEditLines() && (
+                      <Button
+                        onClick={() => {
+                          setIsEditingTaxOverride(true);
+                          setTaxOverrideValue(batchDetails.taxAmountOverride ? String(batchDetails.taxAmountOverride) : '');
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        data-testid="button-edit-tax-override"
+                      >
+                        <Edit className="mr-1 h-3 w-3" />
+                        {isManualTaxOverride ? 'Edit' : 'Set Override'}
+                      </Button>
+                    )}
+                    {batchDetails.status === 'finalized' && (
+                      <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Lock className="h-2.5 w-2.5" />
+                        <span>Locked</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground text-sm">$</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={taxOverrideValue}
+                        onChange={(e) => setTaxOverrideValue(e.target.value)}
+                        placeholder="Exact tax amount"
+                        className="h-8 text-xs max-w-32"
+                        data-testid="input-tax-override"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Calculated: ${(subtotalAfterDiscount * (taxRate / 100)).toFixed(2)}
+                    </p>
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => {
+                          const value = parseFloat(taxOverrideValue);
+                          updateTaxOverrideMutation.mutate(isNaN(value) ? null : value);
+                        }}
+                        disabled={updateTaxOverrideMutation.isPending || taxOverrideValue === ''}
+                        size="sm"
+                        className="h-7 text-xs"
+                        data-testid="button-save-tax-override"
+                      >
+                        {updateTaxOverrideMutation.isPending ? '...' : 'Save'}
+                      </Button>
+                      <Button
+                        onClick={() => { setIsEditingTaxOverride(false); setTaxOverrideValue(''); }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={updateTaxOverrideMutation.isPending}
+                        data-testid="button-cancel-tax-override"
+                      >
+                        Cancel
+                      </Button>
+                      {isManualTaxOverride && (
+                        <Button
+                          onClick={() => updateTaxOverrideMutation.mutate(null)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-destructive"
+                          disabled={updateTaxOverrideMutation.isPending}
+                          data-testid="button-clear-tax-override"
+                        >
+                          <Undo className="mr-1 h-3 w-3" />
+                          Reset
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
