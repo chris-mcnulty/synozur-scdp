@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.2 | Last Updated: February 1, 2026
+Version 1.3 | Last Updated: February 13, 2026
 
 ---
 
@@ -12,13 +12,16 @@ Version 1.2 | Last Updated: February 1, 2026
 2. [Getting Started](#getting-started)
 3. [Dashboard Overview](#dashboard-overview)
 4. [Core Features](#core-features)
-5. [User Roles](#user-roles)
-6. [Common Workflows](#common-workflows)
-7. [Microsoft 365 Integration](#microsoft-365-integration)
-8. [Settings & Preferences](#settings--preferences)
-9. [Tips & Best Practices](#tips--best-practices)
-10. [Troubleshooting](#troubleshooting)
-11. [Detailed Documentation](#detailed-documentation)
+5. [Project Governance (RAIDD)](#project-governance-raidd)
+6. [AI-Powered Status Reports](#ai-powered-status-reports)
+7. [Portfolio Management](#portfolio-management)
+8. [User Roles](#user-roles)
+9. [Common Workflows](#common-workflows)
+10. [Microsoft 365 Integration](#microsoft-365-integration)
+11. [Settings & Preferences](#settings--preferences)
+12. [Tips & Best Practices](#tips--best-practices)
+13. [Troubleshooting](#troubleshooting)
+14. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -281,6 +284,7 @@ The Invoice Report provides a comprehensive view of all finalized invoices with 
 **Report Tab Features:**
 - **Date Filtering**: Set custom start and end dates to view invoices for any period
 - **Quick Date Buttons**: Use "Prior Year" to instantly view last year's invoices, or "Current Year" to reset to the current year
+- **Client Filter**: Filter invoices by a specific client to focus on individual client portfolios
 - **Invoice Type Filter**: Filter by Services, Expenses, or All Types
 - **Subtotal Grouping**: Group subtotals by Month or Quarter for period-level summaries
 - **Invoice Links**: Click any invoice number to jump directly to the full invoice batch detail
@@ -294,6 +298,132 @@ The YoY Comparison view lets you compare financial performance between the prior
 - **Year-over-Year Summary**: Full-year totals for all financial metrics (Invoice Count, Pre-Tax Amount, Tax, Total Invoiced, Amount Paid, Outstanding)
 - **Variance Indicators**: Green arrows for growth, red arrows for decline, with both dollar amounts and percentages
 - **Export**: Download the comparison data as an Excel file
+
+---
+
+## Project Governance (RAIDD)
+
+The RAIDD Log provides a structured way to track and manage Risks, Action Items, Issues, Dependencies, and Decisions within each project. It improves governance, accountability, and visibility into items that can impact project delivery.
+
+### Accessing the RAIDD Log
+
+1. Navigate to any project detail page
+2. Click the **RAIDD** tab
+3. The RAIDD register shows all entries for that project
+
+### Entry Types
+
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Risk** | Potential future problems | "Key developer may leave mid-project" |
+| **Issue** | Current problems needing resolution | "API integration failing in staging environment" |
+| **Action Item** | Tasks that need to be completed | "Schedule stakeholder review meeting" |
+| **Dependency** | External dependencies the project relies on | "Waiting on client to provide access credentials" |
+| **Decision** | Important decisions that have been made | "Decided to use Azure over AWS for hosting" |
+
+### Creating a RAIDD Entry
+
+1. Click **Add Entry** on the RAIDD tab
+2. Select the entry **Type** (Risk, Issue, Action Item, Dependency, or Decision)
+3. Enter a **Title** and optional **Description**
+4. Set **Priority** (Critical, High, Medium, Low)
+5. For risks: set **Impact** and **Likelihood** levels
+6. Assign an **Owner** and optionally an **Assignee**
+7. Set a **Due Date** if applicable
+8. Add a **Category** for organization
+9. For risks: add a **Mitigation Plan**
+10. Click **Save**
+
+### Managing RAIDD Entries
+
+**Filtering & Sorting:**
+- Filter by type, status, priority, owner, or due date
+- Sort columns to find specific entries quickly
+- Overdue action items are highlighted in red
+
+**Status Workflow:**
+- **Open** → **In Progress** → **Mitigated/Resolved/Closed**
+- Items can also be **Deferred** or **Superseded**
+- Decisions become locked (immutable) once their status changes from Open
+- Risks can be converted to Issues while preserving lineage
+
+**Exporting:**
+- Click the **Export** button to download the RAIDD log as an Excel spreadsheet
+- Export respects your current filters
+
+### Governance Rules
+
+- **Decisions** are immutable once they move past the "Open" status — this preserves the integrity of the decision record
+- **Risks** can be converted to **Issues** when they materialize, maintaining a link to the original risk entry
+- **Action Items** support parent entry references for traceability
+
+---
+
+## AI-Powered Status Reports
+
+Constellation can generate AI-powered status reports for any project, summarizing recent activity and governance items into a professional narrative.
+
+### Generating a Status Report
+
+1. Navigate to the project detail page
+2. Click the **Generate Status Report** button
+3. Select the reporting period (weekly or monthly)
+4. Choose a summary style:
+   - **Executive Brief** — High-level summary for leadership
+   - **Detailed Update** — Comprehensive activity breakdown
+   - **Client-Facing** — Polished report suitable for client communication
+5. Click **Generate** to create the AI-powered report
+
+### What's Included in the Report
+
+The AI analyzes and summarizes:
+- **Time entries** — Hours logged by team members and roles
+- **Expenses** — Costs incurred during the period
+- **Assignment status** — Team member allocations and progress
+- **Milestone progress** — Payment milestones and deliverable status
+- **RAIDD items** — Open risks, issues, action items, dependencies, and recent decisions
+  - Critical and overdue items are highlighted
+  - RAIDD counts appear in the metadata bar above the report
+
+### Using the Report
+
+- **Copy** the report to clipboard for pasting into emails, Teams messages, or documents
+- **Download** as formatted text
+- Edit the text before sharing — AI output is a starting point you can refine
+
+---
+
+## Portfolio Management
+
+### Portfolio Timeline
+
+The Portfolio Timeline page (`/portfolio/timeline`) provides a cross-project Gantt-style view of all active project schedules, helping you visualize overlapping timelines and resource demands.
+
+### Portfolio RAIDD Dashboard
+
+The Portfolio RAIDD page (`/portfolio/raidd`) provides a cross-project view of all RAIDD entries across your active projects. This is available to administrators, project managers, and executives.
+
+**Summary Cards:**
+- Open Risks, Open Issues, Action Items, and Dependencies at a glance
+- Critical and High priority item counts
+- Overdue action items count
+- Items closed this month
+- Number of projects with RAIDD entries
+
+**Filtering & Grouping:**
+- **Status filter** — Show Open, In Progress, Closed, or All entries
+- **Type filter** — Focus on just Risks, Issues, Action Items, Dependencies, or Decisions
+- **Priority filter** — View only Critical, High, Medium, or Low items
+- **Project filter** — Focus on a single project's entries
+- **Group By** — Organize the table by Project, Type, Priority, or Status with count headers
+
+**Exporting:**
+- Click **Export** to download filtered entries as an Excel spreadsheet for stakeholder reporting or offline analysis
+
+**Navigation:**
+- Click any project name in the table to navigate directly to that project's RAIDD tab for detailed management
+
+---
 
 ### 7. Client Management
 
@@ -866,7 +996,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: February 1, 2026*  
-*Version: 1.2*  
+*Last Updated: February 13, 2026*  
+*Version: 1.3*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

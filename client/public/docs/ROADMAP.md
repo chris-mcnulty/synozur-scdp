@@ -157,14 +157,14 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 📋 Priority: Enhanced Status Reporting
+### ✅ Priority: Enhanced Status Reporting
 
-**Status:** 📋 Planned  
-**Target Completion:** Q1 2026  
+**Status:** ✅ Complete  
+**Completed:** February 2026  
 **User Feedback:** Ranked #2 overall in stack ranking with strong marketplace coin support. The cohort expressed high interest in AI-driven efficiency enhancements for project communication.  
 **Value Proposition:** Transform existing project activity data into polished, AI-generated status reports that can be viewed, shared, and delivered on a recurring schedule — reducing the manual effort of writing weekly and monthly project updates.
 
-#### Phase 1: Interactive Status Report Generation (Initial Release)
+#### Phase 1: Interactive Status Report Generation ✅ Complete
 
 **On-Screen Report Viewer**
 - New dialog/modal accessible from the project detail page
@@ -174,14 +174,17 @@ The following major features have been delivered and are live in production. See
 - Download as plain text or formatted document
 
 **AI-Powered Report Processing**
-- Option to send the raw activity data through AI to produce a standardized narrative summary
+- AI-generated narrative summary from raw activity data (time entries, expenses, assignments, milestones)
 - Configurable summary style (executive brief, detailed update, client-facing)
 - Editable output — PMs can review and tweak the AI-generated text before sharing
+- RAIDD integration — open risks, issues, action items, dependencies, and decisions automatically included
+- Critical and overdue items highlighted in reports
+- RAIDD counts displayed in the report metadata bar
 - Consistent formatting across all projects for uniform reporting
 
 **Export & Sharing**
-- Download generated report as PDF or Word document
-- Email report directly from the dialog (leveraging existing email infrastructure)
+- Copy-to-clipboard for easy pasting into emails
+- Download generated report as formatted text
 
 #### Phase 2: Automated Scheduling (Future Enhancement)
 
@@ -194,41 +197,50 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-### 📒 Priority: RAIDD Log
+### ✅ Priority: RAIDD Log
 
-**Status:** 📋 Planned  
-**Target Completion:** Q1 2026  
-**Value Proposition:** Provide project managers with a structured, trackable register for Risks, Assumptions, Issues, Dependencies, and Decisions (RAIDD) — improving project governance, accountability, and visibility into items that can impact delivery.
+**Status:** ✅ Complete  
+**Completed:** February 2026  
+**Value Proposition:** Provide project managers with a structured, trackable register for Risks, Action Items, Issues, Dependencies, and Decisions (RAIDD) — improving project governance, accountability, and visibility into items that can impact delivery.
 
-#### Core Features
+#### Core Features ✅ Complete
 
 **RAIDD Register**
 - Dedicated RAIDD tab within the project detail page
-- Entry types: Risk, Assumption, Issue, Dependency, Decision
-- Fields per entry: title, description, type, status, priority/severity, owner (assigned user), due date, resolution notes, date raised, date resolved
+- Entry types: Risk, Issue, Action Item, Dependency, Decision
+- Fields per entry: title, description, type, status, priority/severity, impact, likelihood, owner, assignee, due date, resolution notes, category, tags, mitigation plan
 - Filterable and sortable table view by type, status, priority, owner, or due date
-- Status workflow: Open → In Progress → Mitigated/Resolved/Closed
+- Status workflow: Open → In Progress → Mitigated/Resolved/Closed/Deferred/Superseded
 - Color-coded severity indicators (Critical, High, Medium, Low)
+- Governance rules: decisions immutable after status change, risks convert to issues with lineage preserved
 
 **Assignment & Tracking**
-- Assign each item to a project team member
+- Assign each item to a project team member (owner and assignee)
 - Due date tracking with overdue highlighting
-- Activity history showing status changes and updates
-- Bulk status update support
+- Reference numbering for organized tracking
+- Category tagging for classification
 
 **Export & Reporting**
-- Export full RAIDD log as Excel or CSV
+- Export full RAIDD log as Excel spreadsheet
 - Filtered export (e.g., only open risks, only decisions)
 - Summary view showing counts by type and status
 
 **AI Integration**
-- AI-generated summary of open risks and issues for inclusion in status reports
-- Option to pull RAIDD highlights into the Enhanced Status Report (above)
+- AI-generated summary of open risks and issues included in status reports
+- RAIDD data automatically pulled into Enhanced Status Reports
+- Critical and overdue warnings highlighted in AI-generated narratives
+
+**Portfolio RAIDD Dashboard ✅ Complete**
+- Cross-project RAIDD dashboard at `/portfolio/raidd` for portfolio-level risk visibility
+- Summary cards: open risks, issues, action items, dependencies, critical/high counts, overdue items, closed this month
+- Filterable by status, type, priority, and project
+- Grouping by project, type, priority, or status
+- XLSX export for stakeholder reporting
+- Role-restricted access (admin, PM, executive)
 
 #### Future Enhancements
 - Link RAIDD items to specific project milestones or stages
 - Notification triggers when items approach or pass due dates (integrates with Notifications System)
-- Cross-project RAIDD dashboard for portfolio-level risk visibility
 - RAIDD templates with pre-populated common risks by project type
 
 ---
@@ -360,6 +372,9 @@ The following major features have been delivered and are live in production. See
 - Quick date filters (Prior Year / Current Year buttons)
 - Clickable invoice numbers linking to batch details
 - Excel export for comparison data
+- Client filter on both Report and YoY Comparison views
+- Three-year data support for broader historical analysis
+- Batch type filtering and improved date handling
 
 #### Planned Features
 
@@ -677,6 +692,13 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**February 13, 2026 — Project Governance & Portfolio Insights**
+- Marked Enhanced Status Reporting as ✅ Complete (Phase 1: interactive generation with AI narratives, RAIDD integration, copy/download)
+- Marked RAIDD Log as ✅ Complete (full register, governance rules, AI integration, Excel export, portfolio dashboard)
+- Added Portfolio RAIDD dashboard to completed RAIDD deliverables (cross-project view with summary cards, filters, grouping, export)
+- Updated Advanced Financial Reporting with client filter, three-year data support, and batch type filtering
+- Updated Per Diem & Expense Automation with city lookup, airport codes, exchange rates, and improved calculations
+
 **February 12, 2026 — Advanced Resource Management Design**
 - Completed detailed design document for Advanced Resource Management (`docs/design/advanced-resource-management.md`)
 - Moved from "Future" to "Planned" (Q2-Q3 2026) with 6-phase implementation plan (~7-8 weeks)
@@ -724,6 +746,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: February 12, 2026*  
+*Last Updated: February 13, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*

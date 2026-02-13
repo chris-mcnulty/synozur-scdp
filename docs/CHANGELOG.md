@@ -17,6 +17,97 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.02.13 (February 13, 2026)
+
+**Release Date:** February 13, 2026  
+**Status:** Production Release  
+**Codename:** Project Governance & Portfolio Insights
+
+This release introduces the RAIDD Log for structured project governance, AI-powered status reports with RAIDD integration, a cross-project Portfolio RAIDD dashboard, enhanced invoice reporting with client filtering, and improvements to billing workflow and expense management.
+
+#### ✨ New Features
+
+**RAIDD Log (Risks, Action Items, Issues, Dependencies, Decisions)**
+- New RAIDD tab within each project detail page for structured governance tracking
+- Five entry types: Risk, Issue, Action Item, Dependency, Decision
+- Full lifecycle management with status workflow (Open → In Progress → Mitigated/Resolved/Closed)
+- Color-coded priority indicators (Critical, High, Medium, Low)
+- Impact and likelihood assessment for risk entries
+- Owner and assignee tracking with due date management
+- Overdue highlighting for action items past their due date
+- Category tagging and reference numbering for organized tracking
+- Governance rules: decisions become immutable after status change, action items require parent entries, risks convert to issues with lineage preserved
+- Filterable and sortable table view by type, status, priority, owner, or due date
+- Export full RAIDD log as Excel spreadsheet with all fields
+
+**AI-Powered Project Status Reports**
+- New status report generation accessible from the project detail page
+- AI-generated narrative summaries of project activity for selected time periods
+- Supports weekly and monthly period selection
+- Includes time entry summaries, expense totals, assignment status, and milestone progress
+- RAIDD integration: automatically includes open risks, issues, action items, dependencies, and recent decisions in the AI prompt
+- Critical and overdue items highlighted in the generated report
+- RAIDD counts displayed in the report metadata bar
+- Copy-to-clipboard for easy pasting into emails or documents
+- Download as formatted text
+- Configurable summary style (executive brief, detailed update, client-facing)
+
+**Portfolio RAIDD Dashboard**
+- New cross-project RAIDD view at `/portfolio/raidd` under Portfolio in the sidebar
+- Summary cards showing open risks, issues, action items, dependencies, critical/high priority counts, overdue items, and items closed this month
+- Filterable by status, type, priority, and project
+- Grouping options: group entries by project, type, priority, or status with count headers
+- Clickable project links for drill-down to individual project RAIDD tabs
+- XLSX export of filtered data for offline analysis and stakeholder sharing
+- Role-restricted access (admin, PM, executive only)
+- Tenant-scoped data isolation for multi-tenant security
+
+**Invoice Report: Client Filter**
+- New client dropdown filter on both the Report view and YoY Comparison view
+- Client list automatically populated from loaded invoice data
+- All totals, summaries, and comparison metrics recalculate when a client filter is applied
+- Enables focused financial analysis for individual client portfolios
+
+**Invoice Report: Three-Year Data Support**
+- Extended invoice report to support three years of financial data
+- Enables broader historical trend analysis
+
+**Billing & Invoice Improvements**
+- Enhanced batch detail page with improved layout, action buttons, and filtering options
+- Client filtering and default sorting on the billing invoices list page
+- Improved invoice review and finalize state management
+- Condensed payment details display for cleaner invoice layouts
+- Removed cents from invoice report summary amounts for cleaner presentation
+- Fixed invoice PDF generation error caused by incorrect Handlebars import
+
+**Expense Management Improvements**
+- Updated expense report calculations to use item-level amounts for more accurate totals
+- Enhanced per diem city lookup with improved GSA API integration
+- Airport code reference data (5,163 IATA codes) for travel location selection in expense forms
+- OCONUS per diem rate support with DoD-sourced data for international travel
+- Exchange rate integration for multi-currency expense reporting
+- Improved expense filtering and receipt download capabilities
+
+**Estimate Enhancements**
+- Added ability to apply and remove margin overrides on estimates
+- Increased AI narrative generation token limit for longer, more detailed content
+- Improved AI prompt size limits for better narrative quality
+
+#### 🐛 Bug Fixes
+- Fixed invoice PDF generation error caused by incorrect Handlebars import
+- Fixed React Fragment key warning in grouped invoice report table rows
+- Resolved edge cases in expense report calculations using item amounts
+- Removed unsupported temperature settings from AI requests for better compatibility
+
+#### 📚 Documentation
+- Added project governance document for best practices
+- Updated roadmap with advanced resource management design details
+- Updated backlog with completed status for RAIDD and status reporting features
+
+---
+
+## Recent Releases
+
 ### Version 1.2026.02.11 (February 11, 2026)
 
 **Release Date:** February 11, 2026  
@@ -46,8 +137,6 @@ This release adds powerful year-over-year comparison capabilities to the Invoice
 - Clicking navigates directly to the full invoice batch detail page for review
 
 ---
-
-## Recent Releases
 
 ### Version 1.2026.02.08 (February 8, 2026)
 
@@ -549,5 +638,5 @@ Have ideas for improving Constellation? Contact your administrator or reach out 
 
 ---
 
-*Last Updated: February 8, 2026*  
+*Last Updated: February 13, 2026*  
 *Maintained by: Synozur IT Team*

@@ -14,7 +14,66 @@
 
 ---
 
-## ✅ Recently Completed (January 31, 2026)
+## ✅ Recently Completed (February 13, 2026)
+
+### RAIDD Log ✅ COMPLETE
+- [x] Dedicated RAIDD tab within project detail page
+- [x] Five entry types: Risk, Issue, Action Item, Dependency, Decision
+- [x] Full lifecycle management with status workflow (Open → In Progress → Mitigated/Resolved/Closed/Deferred/Superseded)
+- [x] Color-coded priority indicators (Critical, High, Medium, Low)
+- [x] Impact and likelihood assessment for risk entries
+- [x] Owner and assignee tracking with due date management and overdue highlighting
+- [x] Governance rules: decisions immutable after status change, risks convert to issues with lineage
+- [x] Category tagging, reference numbering, mitigation plans
+- [x] Export RAIDD log as Excel spreadsheet
+- [x] AI integration: RAIDD data included in status reports with critical/overdue warnings
+
+### Portfolio RAIDD Dashboard ✅ COMPLETE
+- [x] Cross-project RAIDD view at `/portfolio/raidd`
+- [x] Summary cards: open risks, issues, action items, dependencies, critical/high counts, overdue items, closed this month
+- [x] Filterable by status, type, priority, and project
+- [x] Grouping by project, type, priority, or status with count headers
+- [x] XLSX export for stakeholder reporting
+- [x] Role-restricted access (admin, PM, executive)
+- [x] Tenant-scoped data isolation
+
+### AI-Powered Project Status Reports ✅ COMPLETE
+- [x] Status report generation dialog on project detail page
+- [x] AI-generated narrative summaries from project activity data
+- [x] Weekly and monthly period selection
+- [x] Configurable summary style (executive brief, detailed update, client-facing)
+- [x] RAIDD integration: includes open risks, issues, action items, dependencies, decisions
+- [x] Critical and overdue items highlighted, RAIDD counts in metadata bar
+- [x] Copy-to-clipboard and download as formatted text
+
+### Invoice Report Enhancements ✅ COMPLETE
+- [x] Client filter dropdown on Report and YoY Comparison views
+- [x] Three-year data support for broader historical analysis
+- [x] Batch type filtering and improved date handling
+
+### Billing & Invoice Improvements ✅ COMPLETE
+- [x] Enhanced batch detail page with improved layout and action buttons
+- [x] Client filtering and default sorting on billing invoices list
+- [x] Improved invoice review and finalize state management
+- [x] Condensed payment details display
+- [x] Removed cents from invoice report summary amounts
+- [x] Fixed invoice PDF generation error (Handlebars import)
+
+### Expense Management Improvements ✅ COMPLETE
+- [x] Updated expense report calculations to use item-level amounts
+- [x] Enhanced per diem city lookup with improved GSA API integration
+- [x] Airport code reference data for travel location selection
+- [x] OCONUS per diem rate support for international travel
+- [x] Exchange rate integration for multi-currency expense reporting
+
+### Estimate Enhancements ✅ COMPLETE
+- [x] Margin override apply/remove on estimates
+- [x] Increased AI narrative generation token limit
+- [x] Improved AI prompt size limits
+
+---
+
+## ✅ Previously Completed (January 31, 2026)
 
 ### Scheduled Jobs Monitoring System ✅ COMPLETE
 - [x] Created `scheduled_job_runs` database table for job execution tracking
