@@ -7,6 +7,7 @@ Constellation is a comprehensive platform designed to manage the entire lifecycl
 Preferred communication style: Simple, everyday language.
 User management should be consolidated into a single, unified view (like Vega) rather than separate admin pages.
 Prefer scope-based filtering over separate "Platform Users" vs "Tenant Users" pages.
+Multi-tenant user model: A user in one tenant can be a client in another tenant, so NO separate client_contacts table. Use the existing users table for all people across tenants.
 
 ## System Architecture
 

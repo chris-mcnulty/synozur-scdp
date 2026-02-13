@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertClientContactSchema, clientContacts } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -21572,65 +21572,6 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
   });
 
   // ============================================================================
-  // CLIENT CONTACTS
-  // ============================================================================
-
-  app.get("/api/clients/:clientId/contacts", requireAuth, async (req, res) => {
-    try {
-      const contacts = await storage.getClientContacts(req.params.clientId);
-      res.json(contacts);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message || "Failed to fetch client contacts" });
-    }
-  });
-
-  app.post("/api/clients/:clientId/contacts", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const body = {
-        ...req.body,
-        clientId: req.params.clientId,
-        tenantId: user.tenantId,
-        createdBy: user.id,
-      };
-      const parsed = insertClientContactSchema.parse(body);
-      const contact = await storage.createClientContact(parsed);
-      res.status(201).json(contact);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Failed to create client contact" });
-    }
-  });
-
-  app.patch("/api/client-contacts/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
-    try {
-      const existing = await storage.getClientContact(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ message: "Client contact not found" });
-      }
-      const updates = { ...req.body };
-      delete updates.id;
-      delete updates.createdAt;
-      delete updates.createdBy;
-      const contact = await storage.updateClientContact(req.params.id, updates);
-      res.json(contact);
-    } catch (error: any) {
-      res.status(400).json({ message: error.message || "Failed to update client contact" });
-    }
-  });
-
-  app.delete("/api/client-contacts/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
-    try {
-      const existing = await storage.getClientContact(req.params.id);
-      if (!existing) {
-        return res.status(404).json({ message: "Client contact not found" });
-      }
-      await storage.deleteClientContact(req.params.id);
-      res.json({ message: "Client contact deleted" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message || "Failed to delete client contact" });
-    }
-  });
-
   // ============================================================================
   // RAIDD AI FEATURES
   // ============================================================================

@@ -457,11 +457,6 @@ export default function ProjectDetail() {
     enabled: !!currentClientId,
   });
 
-  const { data: clientContactsList = [] } = useQuery<any[]>({
-    queryKey: [`/api/clients/${currentClientId}/contacts`],
-    enabled: !!currentClientId,
-  });
-  
   // Budget history query
   const { data: budgetHistory = [], isLoading: budgetHistoryLoading } = useQuery<any[]>({
     queryKey: [`/api/projects/${id}/budget-history`],
@@ -4444,8 +4439,6 @@ export default function ProjectDetail() {
               projectTeamMembers={engagements
                 .filter((e: any) => e.status === 'active' && e.user)
                 .map((e: any) => ({ id: e.user.id, name: e.user.name || e.user.email }))}
-              clientContacts={clientContactsList.map((c: any) => ({ id: c.id, name: c.name, email: c.email }))}
-              clientId={currentClientId}
             />
           </TabsContent>
           

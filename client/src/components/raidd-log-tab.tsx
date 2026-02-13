@@ -23,7 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Shield, AlertTriangle, Scale, Link2, CheckSquare, Plus, MoreHorizontal,
   Edit, Trash2, ArrowRightLeft, Replace, ChevronDown, ChevronUp, X,
-  ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, UserPlus, Loader2
+  ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, Loader2
 } from "lucide-react";
 
 interface RaiddEntry {
@@ -40,8 +40,6 @@ interface RaiddEntry {
   likelihood: string | null;
   ownerId: string | null;
   assigneeId: string | null;
-  ownerContactId: string | null;
-  assigneeContactId: string | null;
   dueDate: string | null;
   closedAt: Date | null;
   category: string | null;
@@ -69,8 +67,6 @@ interface RaiddEntryDetail extends RaiddEntry {
 interface RaiddLogTabProps {
   projectId: string;
   projectTeamMembers?: { id: string; name: string }[];
-  clientContacts?: { id: string; name: string; email?: string }[];
-  clientId?: string;
 }
 
 const RAIDD_TYPES = [
@@ -145,7 +141,7 @@ const raiddFormSchema = z.object({
 
 type RaiddFormData = z.infer<typeof raiddFormSchema>;
 
-export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts = [], clientId }: RaiddLogTabProps) {
+export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabProps) {
   const { toast } = useToast();
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -162,7 +158,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
 
   const [showIngestTextDialog, setShowIngestTextDialog] = useState(false);
   const [showExtractDecisionsDialog, setShowExtractDecisionsDialog] = useState(false);
-  const [showAddContactDialog, setShowAddContactDialog] = useState(false);
   const [showAiReviewDialog, setShowAiReviewDialog] = useState(false);
   const [aiReviewItems, setAiReviewItems] = useState<any[]>([]);
   const [aiReviewTitle, setAiReviewTitle] = useState("");
@@ -357,23 +352,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
     },
   });
 
-  const addContactMutation = useMutation({
-    mutationFn: async (data: { name: string; email?: string; title?: string; phone?: string }) => {
-      return apiRequest(`/api/clients/${clientId}/contacts`, {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-    },
-    onSuccess: () => {
-      toast({ title: "Contact Added", description: "Client contact added successfully" });
-      setShowAddContactDialog(false);
-      queryClient.invalidateQueries({ queryKey: [`/api/clients/${clientId}/contacts`] });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
   const suggestMitigationMutation = useMutation({
     mutationFn: async (entry: RaiddEntry) => {
       const res = await apiRequest("/api/raidd/ai/suggest-mitigation", {
@@ -482,14 +460,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
                 <DropdownMenuItem onClick={() => setShowExtractDecisionsDialog(true)}>
                   <FileText className="h-4 w-4 mr-2" /> Extract Decisions from Document
                 </DropdownMenuItem>
-                {clientId && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setShowAddContactDialog(true)}>
-                      <UserPlus className="h-4 w-4 mr-2" /> Add Client Contact
-                    </DropdownMenuItem>
-                  </>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
             <Button size="sm" onClick={() => { setCreateWithType(null); setCreateWithParent(null); setShowCreateDialog(true); }}>
@@ -663,7 +633,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
         isPending={createMutation.isPending}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
-        contactsList={clientContacts}
         defaultType={createWithType}
         defaultParentId={createWithParent}
       />
@@ -676,7 +645,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
         entry={editingEntry}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
-        contactsList={clientContacts}
         isEdit
       />
 
@@ -701,15 +669,6 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [], clientContacts
         onSubmit={(data) => extractDecisionsMutation.mutate(data)}
         isPending={extractDecisionsMutation.isPending}
       />
-
-      {clientId && (
-        <AddContactDialog
-          open={showAddContactDialog}
-          onOpenChange={setShowAddContactDialog}
-          onSubmit={(data) => addContactMutation.mutate(data)}
-          isPending={addContactMutation.isPending}
-        />
-      )}
 
       <AiReviewDialog
         open={showAiReviewDialog}
@@ -942,7 +901,6 @@ function RaiddFormDialog({
   entry,
   projectEntries = [],
   teamMembers = [],
-  contactsList = [],
   isEdit = false,
   defaultType,
   defaultParentId,
@@ -954,7 +912,6 @@ function RaiddFormDialog({
   entry?: RaiddEntry | null;
   projectEntries?: RaiddEntry[];
   teamMembers?: { id: string; name: string }[];
-  contactsList?: { id: string; name: string; email?: string }[];
   isEdit?: boolean;
   defaultType?: string | null;
   defaultParentId?: string | null;
@@ -971,8 +928,8 @@ function RaiddFormDialog({
       priority: (entry?.priority as any) || "medium",
       impact: entry?.impact || "",
       likelihood: entry?.likelihood || "",
-      ownerId: entry?.ownerContactId ? `contact:${entry.ownerContactId}` : entry?.ownerId || "",
-      assigneeId: entry?.assigneeContactId ? `contact:${entry.assigneeContactId}` : entry?.assigneeId || "",
+      ownerId: entry?.ownerId || "",
+      assigneeId: entry?.assigneeId || "",
       dueDate: entry?.dueDate || "",
       category: entry?.category || "",
       mitigationPlan: entry?.mitigationPlan || "",
@@ -990,20 +947,6 @@ function RaiddFormDialog({
       payload.tags = payload.tags.split(",").map((t: string) => t.trim()).filter(Boolean);
     } else {
       payload.tags = [];
-    }
-
-    if (payload.ownerId && payload.ownerId.startsWith("contact:")) {
-      payload.ownerContactId = payload.ownerId.replace("contact:", "");
-      payload.ownerId = null;
-    } else {
-      payload.ownerContactId = null;
-    }
-
-    if (payload.assigneeId && payload.assigneeId.startsWith("contact:")) {
-      payload.assigneeContactId = payload.assigneeId.replace("contact:", "");
-      payload.assigneeId = null;
-    } else {
-      payload.assigneeContactId = null;
     }
 
     Object.keys(payload).forEach(key => {
@@ -1157,15 +1100,6 @@ function RaiddFormDialog({
                             ))}
                           </>
                         )}
-                        {contactsList.length > 0 && (
-                          <>
-                            <Separator className="my-1" />
-                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Contacts</div>
-                            {contactsList.map(c => (
-                              <SelectItem key={`contact:${c.id}`} value={`contact:${c.id}`}>{c.name} (Client)</SelectItem>
-                            ))}
-                          </>
-                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1193,15 +1127,6 @@ function RaiddFormDialog({
                             <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Team Members</div>
                             {teamMembers.map(m => (
                               <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                            ))}
-                          </>
-                        )}
-                        {contactsList.length > 0 && (
-                          <>
-                            <Separator className="my-1" />
-                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Contacts</div>
-                            {contactsList.map(c => (
-                              <SelectItem key={`contact:${c.id}`} value={`contact:${c.id}`}>{c.name} (Client)</SelectItem>
                             ))}
                           </>
                         )}
@@ -1534,62 +1459,6 @@ function ExtractDecisionsDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={() => onSubmit({ text })} disabled={isPending || !text.trim()}>
             {isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Extracting...</> : "Extract Decisions"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AddContactDialog({
-  open,
-  onOpenChange,
-  onSubmit,
-  isPending,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { name: string; email?: string; title?: string; phone?: string }) => void;
-  isPending: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [title, setTitle] = useState("");
-  const [phone, setPhone] = useState("");
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5" /> Add Client Contact
-          </DialogTitle>
-          <DialogDescription>
-            Add a new contact for this client.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Name *</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Contact name" />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Email</label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Title</label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Job title" />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 block mb-1">Phone</label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => onSubmit({ name, email: email || undefined, title: title || undefined, phone: phone || undefined })} disabled={isPending || !name.trim()}>
-            {isPending ? "Adding..." : "Add Contact"}
           </Button>
         </DialogFooter>
       </DialogContent>

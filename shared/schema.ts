@@ -2575,36 +2575,6 @@ export type RaiddImpact = z.infer<typeof raiddImpactEnum>;
 export const raiddLikelihoodEnum = z.enum(['almost_certain', 'likely', 'possible', 'unlikely', 'rare']);
 export type RaiddLikelihood = z.infer<typeof raiddLikelihoodEnum>;
 
-export const clientContacts = pgTable("client_contacts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  clientId: varchar("client_id").notNull().references(() => clients.id, { onDelete: 'cascade' }),
-  name: text("name").notNull(),
-  email: text("email"),
-  title: text("title"),
-  phone: text("phone"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdBy: varchar("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
-}, (table) => ({
-  tenantIdx: index("idx_client_contacts_tenant").on(table.tenantId),
-  clientIdx: index("idx_client_contacts_client").on(table.clientId),
-}));
-
-export const clientContactsRelations = relations(clientContacts, ({ one }) => ({
-  client: one(clients, { fields: [clientContacts.clientId], references: [clients.id] }),
-  tenant: one(tenants, { fields: [clientContacts.tenantId], references: [tenants.id] }),
-}));
-
-export const insertClientContactSchema = createInsertSchema(clientContacts).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-export type InsertClientContact = z.infer<typeof insertClientContactSchema>;
-export type ClientContact = typeof clientContacts.$inferSelect;
-
 export const raiddEntries = pgTable("raidd_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -2619,8 +2589,6 @@ export const raiddEntries = pgTable("raidd_entries", {
   likelihood: varchar("likelihood", { length: 20 }),
   ownerId: varchar("owner_id").references(() => users.id),
   assigneeId: varchar("assignee_id").references(() => users.id),
-  ownerContactId: varchar("owner_contact_id").references(() => clientContacts.id),
-  assigneeContactId: varchar("assignee_contact_id").references(() => clientContacts.id),
   dueDate: date("due_date"),
   closedAt: timestamp("closed_at"),
   category: varchar("category", { length: 100 }),
@@ -2646,8 +2614,6 @@ export const raiddEntriesRelations = relations(raiddEntries, ({ one }) => ({
   project: one(projects, { fields: [raiddEntries.projectId], references: [projects.id] }),
   owner: one(users, { fields: [raiddEntries.ownerId], references: [users.id] }),
   assignee: one(users, { fields: [raiddEntries.assigneeId], references: [users.id] }),
-  ownerContact: one(clientContacts, { fields: [raiddEntries.ownerContactId], references: [clientContacts.id] }),
-  assigneeContact: one(clientContacts, { fields: [raiddEntries.assigneeContactId], references: [clientContacts.id] }),
   createdByUser: one(users, { fields: [raiddEntries.createdBy], references: [users.id] }),
   parentEntry: one(raiddEntries, { fields: [raiddEntries.parentEntryId], references: [raiddEntries.id] }),
   convertedFrom: one(raiddEntries, { fields: [raiddEntries.convertedFromId], references: [raiddEntries.id] }),
