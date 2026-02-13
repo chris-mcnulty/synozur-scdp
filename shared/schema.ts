@@ -2556,6 +2556,82 @@ export const insertScheduledJobRunSchema = createInsertSchema(scheduledJobRuns).
 export type InsertScheduledJobRun = z.infer<typeof insertScheduledJobRunSchema>;
 export type ScheduledJobRun = typeof scheduledJobRuns.$inferSelect;
 
+// ============================================================================
+// RAIDD LOG TABLES (Risks, Action Items, Issues, Decisions, Dependencies)
+// ============================================================================
+
+export const raiddTypeEnum = z.enum(['risk', 'issue', 'decision', 'dependency', 'action_item']);
+export type RaiddType = z.infer<typeof raiddTypeEnum>;
+
+export const raiddStatusEnum = z.enum(['open', 'in_progress', 'mitigated', 'closed', 'deferred', 'superseded', 'resolved', 'accepted']);
+export type RaiddStatus = z.infer<typeof raiddStatusEnum>;
+
+export const raiddPriorityEnum = z.enum(['critical', 'high', 'medium', 'low']);
+export type RaiddPriority = z.infer<typeof raiddPriorityEnum>;
+
+export const raiddImpactEnum = z.enum(['critical', 'high', 'medium', 'low']);
+export type RaiddImpact = z.infer<typeof raiddImpactEnum>;
+
+export const raiddLikelihoodEnum = z.enum(['almost_certain', 'likely', 'possible', 'unlikely', 'rare']);
+export type RaiddLikelihood = z.infer<typeof raiddLikelihoodEnum>;
+
+export const raiddEntries = pgTable("raidd_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  type: varchar("type", { length: 20 }).notNull(),
+  refNumber: varchar("ref_number", { length: 20 }),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 20 }).notNull().default('open'),
+  priority: varchar("priority", { length: 20 }).notNull().default('medium'),
+  impact: varchar("impact", { length: 20 }),
+  likelihood: varchar("likelihood", { length: 20 }),
+  ownerId: varchar("owner_id").references(() => users.id),
+  assigneeId: varchar("assignee_id").references(() => users.id),
+  dueDate: date("due_date"),
+  closedAt: timestamp("closed_at"),
+  category: varchar("category", { length: 100 }),
+  mitigationPlan: text("mitigation_plan"),
+  resolutionNotes: text("resolution_notes"),
+  parentEntryId: varchar("parent_entry_id"),
+  convertedFromId: varchar("converted_from_id"),
+  supersededById: varchar("superseded_by_id"),
+  tags: jsonb("tags").$type<string[]>(),
+  createdBy: varchar("created_by").references(() => users.id),
+  updatedBy: varchar("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_raidd_entries_tenant").on(table.tenantId),
+  projectIdx: index("idx_raidd_entries_project").on(table.projectId),
+  typeIdx: index("idx_raidd_entries_type").on(table.type),
+  statusIdx: index("idx_raidd_entries_status").on(table.status),
+  parentIdx: index("idx_raidd_entries_parent").on(table.parentEntryId),
+}));
+
+export const raiddEntriesRelations = relations(raiddEntries, ({ one }) => ({
+  project: one(projects, { fields: [raiddEntries.projectId], references: [projects.id] }),
+  owner: one(users, { fields: [raiddEntries.ownerId], references: [users.id] }),
+  assignee: one(users, { fields: [raiddEntries.assigneeId], references: [users.id] }),
+  createdByUser: one(users, { fields: [raiddEntries.createdBy], references: [users.id] }),
+  parentEntry: one(raiddEntries, { fields: [raiddEntries.parentEntryId], references: [raiddEntries.id] }),
+  convertedFrom: one(raiddEntries, { fields: [raiddEntries.convertedFromId], references: [raiddEntries.id] }),
+  supersededBy: one(raiddEntries, { fields: [raiddEntries.supersededById], references: [raiddEntries.id] }),
+}));
+
+export const insertRaiddEntrySchema = createInsertSchema(raiddEntries).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  refNumber: true,
+  closedAt: true,
+  supersededById: true,
+  convertedFromId: true,
+});
+export type InsertRaiddEntry = z.infer<typeof insertRaiddEntrySchema>;
+export type RaiddEntry = typeof raiddEntries.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,
