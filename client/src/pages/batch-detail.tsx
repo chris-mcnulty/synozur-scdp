@@ -711,15 +711,6 @@ export default function BatchDetail() {
     setIsExpandAll(!isExpandAll);
   };
 
-  const handleToggleExpand = () => {
-    if (isExpandAll) {
-      collapseAll();
-    } else {
-      expandAll();
-    }
-    setIsExpandAll(!isExpandAll);
-  };
-
   const handleDownloadReceiptsBundle = async () => {
     if (!batchId) return;
     
@@ -1272,13 +1263,39 @@ export default function BatchDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowAdjustmentHistory(true)}>
-                  <History className="mr-2 h-4 w-4" /> History
+                <DropdownMenuItem onClick={() => setShowAdjustmentHistory(!showAdjustmentHistory)}>
+                  <History className="mr-2 h-4 w-4" /> {showAdjustmentHistory ? "Hide" : "View"} History
                 </DropdownMenuItem>
+                {canEditLines() && (
+                  <DropdownMenuItem onClick={() => setShowAggregateAdjustmentDialog(true)}>
+                    <Calculator className="mr-2 h-4 w-4" /> Contract Adjustment
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={handleToggleExpand}>
                   {isExpandAll ? <ChevronDown className="mr-2 h-4 w-4" /> : <ChevronRight className="mr-2 h-4 w-4" />}
                   {isExpandAll ? "Collapse All" : "Expand All"}
                 </DropdownMenuItem>
+                {canUnfinalize() && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleUnfinalizeBatch} className="text-orange-600">
+                      <FileText className="mr-2 h-4 w-4" /> Revert to Draft
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {batchDetails.status === 'finalized' && !batchDetails.exportedToQBO && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleExportToQBO}>
+                      <Building className="mr-2 h-4 w-4" /> Export to QBO
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {batchDetails.exportedToQBO && (
+                  <DropdownMenuItem disabled>
+                    <CheckCircle className="mr-2 h-4 w-4" /> Exported to QBO
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="text-destructive"
@@ -1300,303 +1317,181 @@ export default function BatchDetail() {
               </div>
               <div>
                 <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Date Range</p>
-                <p className="text-sm font-medium">{batchDetails ? `${formatBusinessDate(batchDetails.startDate, 'MMM d')} - ${formatBusinessDate(batchDetails.endDate, 'MMM d, yyyy')}` : '-'}</p>
+                <p className="text-sm font-medium" data-testid="text-date-range">{batchDetails ? `${formatBusinessDate(batchDetails.startDate, 'MMM d')} - ${formatBusinessDate(batchDetails.endDate, 'MMM d, yyyy')}` : '-'}</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center">
                   As-Of Date
-                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={handleStartAsOfDateEdit}>
-                    <Edit className="h-3 w-3" />
-                  </Button>
+                  {user?.role === 'admin' && !isEditingAsOfDate && (
+                    <Button variant="ghost" size="sm" className="h-4 w-4 p-0 ml-1" onClick={handleStartAsOfDateEdit} data-testid="button-edit-as-of-date">
+                      <Edit className="h-3 w-3" />
+                    </Button>
+                  )}
                 </p>
-                <p className="text-sm font-medium">{batchDetails?.asOfDate ? formatBusinessDate(batchDetails.asOfDate, 'MMM d, yyyy') : "-"}</p>
+                {isEditingAsOfDate ? (
+                  <div className="space-y-1">
+                    <Input type="date" value={newAsOfDate} onChange={(e) => setNewAsOfDate(e.target.value)} data-testid="input-as-of-date" className="text-xs h-7" />
+                    <div className="flex space-x-1">
+                      <Button size="sm" className="h-6 text-xs px-2" onClick={handleSaveAsOfDate} disabled={updateAsOfDateMutation.isPending} data-testid="button-save-as-of-date">
+                        {updateAsOfDateMutation.isPending ? '...' : 'Save'}
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={handleCancelAsOfDateEdit} data-testid="button-cancel-as-of-date">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium" data-testid="text-as-of-date">
+                    {batchDetails?.asOfDate ? formatBusinessDate(batchDetails.asOfDate, 'MMM d, yyyy') : formatTimestamp(batchDetails.createdAt, "MMM d, yyyy")}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Created By</p>
-                <p className="text-sm font-medium">{batchDetails?.creator?.name || "System"}</p>
+                <p className="text-sm font-medium" data-testid="text-created-by">{batchDetails?.creator?.name || "System"}</p>
               </div>
               <div className="col-span-1 lg:col-span-2 flex justify-end items-center space-x-4">
                 <div className="text-right">
                   <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Subtotal</p>
-                  <p className="text-sm font-medium">${Number(batchDetails?.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  <p className="text-sm font-medium" data-testid="text-subtotal">${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
+                {discountAmount > 0 && (
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Discount</p>
+                    <p className="text-sm font-medium text-red-600" data-testid="text-discount">-${discountAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                )}
+                {taxAmount > 0 && (
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1 flex items-center justify-end gap-1">
+                      Tax ({effectiveTaxPercent.toFixed(1)}%)
+                      {isManualTaxOverride && <Badge variant="secondary" className="text-[8px] h-3 px-1">Override</Badge>}
+                    </p>
+                    <p className="text-sm font-medium text-blue-600 dark:text-blue-400" data-testid="text-tax">${taxAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                )}
                 <div className="text-right">
-                  <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Grand Total</p>
-                  <p className="text-xl font-bold text-green-600">${calculateGrandTotal().toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Total</p>
+                  <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-net-total">${netTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-                <p className="font-medium" data-testid="text-client-count">{batchDetails.clientCount}</p>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <FolderOpen className="mr-1 h-3 w-3" />
-                  Projects
-                </div>
-                <p className="font-medium" data-testid="text-project-count">{batchDetails.projectCount}</p>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <FileText className="mr-1 h-3 w-3" />
-                  Line Items
-                </div>
-                <p className="font-medium" data-testid="text-line-count">{batchDetails.totalLinesCount}</p>
-              </div>
-              
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <Calendar className="mr-1 h-3 w-3" />
-                  Created Date
-                </div>
-                <p className="font-medium" data-testid="text-created-date">
-                  {formatTimestamp(batchDetails.createdAt, "MMM d, yyyy")}
-                </p>
               </div>
             </div>
 
-            {/* Creator Row */}
-            <Separator className="my-4" />
-            <div className="space-y-1">
-              <div className="flex items-center text-sm text-muted-foreground">
-                <UserIcon className="mr-1 h-3 w-3" />
-                Created By
-              </div>
-              <p className="font-medium" data-testid="text-created-by">
-                {batchDetails.creator?.name || 'System'}
-              </p>
-            </div>
-            
-            {/* Payment Milestone Info */}
             {batchDetails.paymentMilestone && (
               <>
-                <Separator className="my-4" />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Target className="mr-1 h-3 w-3" />
-                      Payment Milestone
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium" data-testid="text-milestone-name">
-                        {batchDetails.paymentMilestone.name}
-                      </p>
-                      <Badge 
+                <Separator className="my-3" />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Payment Milestone</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-sm font-medium" data-testid="text-milestone-name">{batchDetails.paymentMilestone.name}</p>
+                      <Badge
                         variant={
-                          batchDetails.paymentMilestone.status === 'invoiced' ? 'default' : 
-                          batchDetails.paymentMilestone.status === 'paid' ? 'default' :
-                          batchDetails.paymentMilestone.status === 'planned' ? 'secondary' : 
-                          batchDetails.paymentMilestone.status === 'cancelled' || batchDetails.paymentMilestone.status === 'canceled' ? 'destructive' :
-                          'outline'
+                          batchDetails.paymentMilestone.status === 'invoiced' || batchDetails.paymentMilestone.status === 'paid' ? 'default' :
+                          batchDetails.paymentMilestone.status === 'planned' ? 'secondary' :
+                          batchDetails.paymentMilestone.status === 'cancelled' || batchDetails.paymentMilestone.status === 'canceled' ? 'destructive' : 'outline'
                         }
+                        className="text-[9px] h-4 px-1"
                         data-testid="badge-milestone-status"
                       >
-                        {batchDetails.paymentMilestone.status === 'invoiced' ? 'Invoiced' : 
-                         batchDetails.paymentMilestone.status === 'paid' ? 'Paid' :
-                         batchDetails.paymentMilestone.status === 'planned' ? 'Planned' : 
-                         batchDetails.paymentMilestone.status === 'cancelled' || batchDetails.paymentMilestone.status === 'canceled' ? 'Cancelled' :
-                         batchDetails.paymentMilestone.status || 'Active'}
+                        {batchDetails.paymentMilestone.status}
                       </Badge>
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <FolderOpen className="mr-1 h-3 w-3" />
-                      Project
-                    </div>
-                    <Link 
-                      href={`/projects/${batchDetails.paymentMilestone.projectId}`}
-                      className="font-medium text-blue-600 hover:underline dark:text-blue-400" 
-                      data-testid="link-milestone-project"
-                    >
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Project</p>
+                    <Link href={`/projects/${batchDetails.paymentMilestone.projectId}`} className="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" data-testid="link-milestone-project">
                       {batchDetails.paymentMilestone.projectName}
                     </Link>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <DollarSign className="mr-1 h-3 w-3" />
-                      Target Amount
-                    </div>
-                    <p className="font-medium" data-testid="text-milestone-amount">
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Target Amount</p>
+                    <p className="text-sm font-medium" data-testid="text-milestone-amount">
                       ${Number(batchDetails.paymentMilestone.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                 </div>
               </>
             )}
-            
-            {/* Finalization Info */}
+
             {batchDetails.status === 'finalized' && batchDetails.finalizedAt && (
               <>
-                <Separator className="my-4" />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <div className="text-sm text-muted-foreground">Finalized By</div>
-                    <p className="font-medium" data-testid="text-finalized-by">
-                      {batchDetails.finalizer?.name || 'System'}
-                    </p>
+                <Separator className="my-3" />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Finalized By</p>
+                    <p className="text-sm font-medium" data-testid="text-finalized-by">{batchDetails.finalizer?.name || 'System'}</p>
                   </div>
-                  <div className="space-y-1">
-                    <div className="text-sm text-muted-foreground">Finalized At</div>
-                    <p className="font-medium" data-testid="text-finalized-at">
-                      {format(new Date(batchDetails.finalizedAt), "MMM d, yyyy h:mm a")}
-                    </p>
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Finalized At</p>
+                    <p className="text-sm font-medium" data-testid="text-finalized-at">{format(new Date(batchDetails.finalizedAt), "MMM d, yyyy h:mm a")}</p>
                   </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-muted-foreground">As Of Date</div>
-                      {user?.role === 'admin' && !isEditingAsOfDate && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleStartAsOfDateEdit}
-                          data-testid="button-edit-as-of-date"
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                      )}
+                  {batchDetails.exportedAt && (
+                    <div>
+                      <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Exported</p>
+                      <p className="text-sm font-medium">{format(new Date(batchDetails.exportedAt), "MMM d, yyyy h:mm a")}</p>
                     </div>
-                    {isEditingAsOfDate ? (
-                      <div className="space-y-2">
-                        <Input
-                          type="date"
-                          value={newAsOfDate}
-                          onChange={(e) => setNewAsOfDate(e.target.value)}
-                          data-testid="input-as-of-date"
-                        />
-                        <div className="flex space-x-2">
-                          <Button
-                            size="sm"
-                            onClick={handleSaveAsOfDate}
-                            disabled={updateAsOfDateMutation.isPending}
-                            data-testid="button-save-as-of-date"
-                          >
-                            {updateAsOfDateMutation.isPending ? 'Saving...' : 'Save'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleCancelAsOfDateEdit}
-                            data-testid="button-cancel-as-of-date"
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="font-medium" data-testid="text-as-of-date">
-                        {batchDetails.asOfDate 
-                          ? formatBusinessDate(batchDetails.asOfDate)
-                          : formatTimestamp(batchDetails.finalizedAt, "MMM d, yyyy")}
-                      </p>
-                    )}
-                  </div>
+                  )}
                 </div>
               </>
             )}
-            
-            {/* Review Notes */}
+
             {batchDetails.notes && (
               <>
-                <Separator className="my-4" />
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Review Notes</div>
+                <Separator className="my-3" />
+                <div>
+                  <p className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Review Notes</p>
                   <p className="text-sm" data-testid="text-review-notes">{batchDetails.notes}</p>
                 </div>
               </>
             )}
 
-            {/* Payment Terms Display */}
-            <Separator className="my-4" />
-            <div className="space-y-1">
-              <div className="text-sm text-muted-foreground">Payment Terms</div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium" data-testid="text-payment-terms">
-                  {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
-                </p>
-                {batchDetails.paymentTerms && (
-                  <Badge variant="secondary" className="text-xs">
-                    Custom
-                  </Badge>
-                )}
-                {!batchDetails.paymentTerms && batchDetails.clientPaymentTerms && (
-                  <Badge variant="outline" className="text-xs">
-                    Client Default
-                  </Badge>
-                )}
-                {!batchDetails.paymentTerms && !batchDetails.clientPaymentTerms && (
-                  <Badge variant="outline" className="text-xs">
-                    Default
-                  </Badge>
-                )}
-              </div>
-            </div>
-
-            <Separator className="my-4" />
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center text-sm text-muted-foreground">
-                  <DollarSign className="mr-1 h-3 w-3" />
-                  Subtotal
-                </div>
-                <p className="text-xl font-semibold" data-testid="text-subtotal">
-                  ${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
-              
-              {discountAmount > 0 && (
-                <div className="space-y-1">
-                  <div className="text-sm text-muted-foreground">Discount</div>
-                  <p className="text-xl font-semibold text-red-600 dark:text-red-400" data-testid="text-discount">
-                    -${discountAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
+            <Separator className="my-3" />
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] uppercase font-semibold text-muted-foreground">Payment Terms</p>
+              <p className="text-sm font-medium" data-testid="text-payment-terms">
+                {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
+              </p>
+              {batchDetails.paymentTerms ? (
+                <Badge variant="secondary" className="text-[9px] h-4 px-1">Custom</Badge>
+              ) : batchDetails.clientPaymentTerms ? (
+                <Badge variant="outline" className="text-[9px] h-4 px-1">Client</Badge>
+              ) : (
+                <Badge variant="outline" className="text-[9px] h-4 px-1">Default</Badge>
               )}
-              
-              {taxAmount > 0 && (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    Tax ({effectiveTaxPercent.toFixed(2)}%)
-                    {isManualTaxOverride && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger>
-                            <Badge variant="secondary" className="text-xs ml-1">Override</Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Manual tax override applied (rate: {taxRate}%)</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
-                  </div>
-                  <p className="text-xl font-semibold text-blue-600 dark:text-blue-400" data-testid="text-tax">
-                    ${taxAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-              )}
-              
-              <div className="space-y-1">
-                <div className="text-sm text-muted-foreground">Total</div>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-net-total">
-                  ${netTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
             </div>
-
-            {batchDetails.exportedAt && (
-              <div className="mt-4 pt-4 border-t">
-                <p className="text-sm text-muted-foreground">
-                  Exported on {format(new Date(batchDetails.exportedAt), "MMM d, yyyy 'at' h:mm a")}
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
+
+        {/* Adjustment History (conditionally shown) */}
+        {showAdjustmentHistory && (
+          <div className="mb-4">
+            <AdjustmentHistory 
+              batchId={batchId || ''} 
+              canReverse={canEditLines() && batchDetails?.status !== 'finalized'}
+              onReverse={(adjustmentId) => {
+                if (confirm('Are you sure you want to reverse this adjustment? Invoice amounts will be restored to their original values.')) {
+                  removeAdjustmentMutation.mutate(adjustmentId);
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* Sticky Action Bar for Selected Lines */}
+        {selectedLines.size > 0 && (
+          <div className="sticky top-4 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-lg flex items-center justify-between mb-4">
+            <span className="text-sm font-medium">{selectedLines.size} items selected</span>
+            <div className="flex items-center space-x-2">
+              <Button size="sm" variant="secondary" className="h-8" onClick={handleBulkEdit}>
+                <Calculator className="mr-2 h-4 w-4" /> Bulk Adjust
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8 text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setSelectedLines(new Set())}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Payment Terms Card - Only show if not finalized */}
         {batchDetails.status !== 'finalized' && (
