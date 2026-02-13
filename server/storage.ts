@@ -54,7 +54,10 @@ import {
   type VocabularyTerms, DEFAULT_VOCABULARY,
   scheduledJobRuns, type ScheduledJobRun, type InsertScheduledJobRun,
   raiddEntries, type RaiddEntry, type InsertRaiddEntry,
-  groundingDocuments, type GroundingDocument, type InsertGroundingDocument
+  groundingDocuments, type GroundingDocument, type InsertGroundingDocument,
+  supportTickets, type SupportTicket, type InsertSupportTicket,
+  ticketComments, type TicketComment, type InsertTicketComment,
+  feedback, type Feedback, type InsertFeedback
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -11104,6 +11107,205 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGroundingDocument(id: string): Promise<void> {
     await db.delete(groundingDocuments).where(eq(groundingDocuments.id, id));
+  }
+
+  // ============================================================================
+  // SUPPORT TICKETS
+  // ============================================================================
+
+  private ticketSubmitterAlias = alias(users, 'ticket_submitter');
+  private ticketAssigneeAlias = alias(users, 'ticket_assignee');
+
+  async getSupportTickets(filters: { tenantId: string; status?: string; type?: string; priority?: string; submittedBy?: string; assignedTo?: string }): Promise<(SupportTicket & { submitterName?: string; assigneeName?: string })[]> {
+    const conditions: SQL[] = [eq(supportTickets.tenantId, filters.tenantId)];
+    if (filters.status) conditions.push(eq(supportTickets.status, filters.status));
+    if (filters.type) conditions.push(eq(supportTickets.type, filters.type));
+    if (filters.priority) conditions.push(eq(supportTickets.priority, filters.priority));
+    if (filters.submittedBy) conditions.push(eq(supportTickets.submittedBy, filters.submittedBy));
+    if (filters.assignedTo) conditions.push(eq(supportTickets.assignedTo, filters.assignedTo));
+
+    const rows = await db.select({
+      ticket: supportTickets,
+      submitterName: this.ticketSubmitterAlias.name,
+      assigneeName: this.ticketAssigneeAlias.name,
+    })
+    .from(supportTickets)
+    .leftJoin(this.ticketSubmitterAlias, eq(supportTickets.submittedBy, this.ticketSubmitterAlias.id))
+    .leftJoin(this.ticketAssigneeAlias, eq(supportTickets.assignedTo, this.ticketAssigneeAlias.id))
+    .where(and(...conditions))
+    .orderBy(desc(supportTickets.createdAt));
+
+    return rows.map(r => ({
+      ...r.ticket,
+      submitterName: r.submitterName ?? undefined,
+      assigneeName: r.assigneeName ?? undefined,
+    }));
+  }
+
+  async getSupportTicket(id: string): Promise<(SupportTicket & { submitterName?: string; assigneeName?: string }) | undefined> {
+    const [row] = await db.select({
+      ticket: supportTickets,
+      submitterName: this.ticketSubmitterAlias.name,
+      assigneeName: this.ticketAssigneeAlias.name,
+    })
+    .from(supportTickets)
+    .leftJoin(this.ticketSubmitterAlias, eq(supportTickets.submittedBy, this.ticketSubmitterAlias.id))
+    .leftJoin(this.ticketAssigneeAlias, eq(supportTickets.assignedTo, this.ticketAssigneeAlias.id))
+    .where(eq(supportTickets.id, id));
+    if (!row) return undefined;
+    return {
+      ...row.ticket,
+      submitterName: row.submitterName ?? undefined,
+      assigneeName: row.assigneeName ?? undefined,
+    };
+  }
+
+  async getNextTicketNumber(tenantId: string): Promise<string> {
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(supportTickets)
+      .where(eq(supportTickets.tenantId, tenantId));
+    const count = Number(result[0]?.count ?? 0) + 1;
+    return `CON-${String(count).padStart(4, '0')}`;
+  }
+
+  async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
+    const ticketNumber = await this.getNextTicketNumber(ticket.tenantId);
+    const [created] = await db.insert(supportTickets).values({
+      ...ticket,
+      ticketNumber,
+      applicationSource: 'Constellation',
+    }).returning();
+    return created;
+  }
+
+  async updateSupportTicket(id: string, updates: Partial<InsertSupportTicket> & { resolvedAt?: Date; closedAt?: Date }): Promise<SupportTicket> {
+    const [updated] = await db.update(supportTickets)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(supportTickets.id, id))
+      .returning();
+    if (!updated) throw new Error("Support ticket not found");
+    return updated;
+  }
+
+  async deleteSupportTicket(id: string): Promise<void> {
+    await db.delete(supportTickets).where(eq(supportTickets.id, id));
+  }
+
+  // ============================================================================
+  // TICKET COMMENTS
+  // ============================================================================
+
+  private commentAuthorAlias = alias(users, 'comment_author');
+
+  async getTicketComments(ticketId: string, isAdmin: boolean = false): Promise<(TicketComment & { authorName?: string })[]> {
+    const conditions: SQL[] = [eq(ticketComments.ticketId, ticketId)];
+    if (!isAdmin) conditions.push(eq(ticketComments.isInternal, false));
+
+    const rows = await db.select({
+      comment: ticketComments,
+      authorName: this.commentAuthorAlias.name,
+    })
+    .from(ticketComments)
+    .leftJoin(this.commentAuthorAlias, eq(ticketComments.createdBy, this.commentAuthorAlias.id))
+    .where(and(...conditions))
+    .orderBy(ticketComments.createdAt);
+
+    return rows.map(r => ({
+      ...r.comment,
+      authorName: r.authorName ?? undefined,
+    }));
+  }
+
+  async createTicketComment(comment: InsertTicketComment): Promise<TicketComment> {
+    const [created] = await db.insert(ticketComments).values(comment).returning();
+    return created;
+  }
+
+  async deleteTicketComment(id: string): Promise<void> {
+    await db.delete(ticketComments).where(eq(ticketComments.id, id));
+  }
+
+  // ============================================================================
+  // FEEDBACK
+  // ============================================================================
+
+  private feedbackSubmitterAlias = alias(users, 'feedback_submitter');
+  private feedbackReviewerAlias = alias(users, 'feedback_reviewer');
+
+  async getFeedback(filters: { tenantId: string; category?: string; isReviewed?: boolean; submittedBy?: string }): Promise<(Feedback & { submitterName?: string; reviewerName?: string })[]> {
+    const conditions: SQL[] = [eq(feedback.tenantId, filters.tenantId)];
+    if (filters.category) conditions.push(eq(feedback.category, filters.category));
+    if (filters.isReviewed !== undefined) conditions.push(eq(feedback.isReviewed, filters.isReviewed));
+    if (filters.submittedBy) conditions.push(eq(feedback.submittedBy, filters.submittedBy));
+
+    const rows = await db.select({
+      fb: feedback,
+      submitterName: this.feedbackSubmitterAlias.name,
+      reviewerName: this.feedbackReviewerAlias.name,
+    })
+    .from(feedback)
+    .leftJoin(this.feedbackSubmitterAlias, eq(feedback.submittedBy, this.feedbackSubmitterAlias.id))
+    .leftJoin(this.feedbackReviewerAlias, eq(feedback.reviewedBy, this.feedbackReviewerAlias.id))
+    .where(and(...conditions))
+    .orderBy(desc(feedback.createdAt));
+
+    return rows.map(r => ({
+      ...r.fb,
+      submitterName: r.submitterName ?? undefined,
+      reviewerName: r.reviewerName ?? undefined,
+    }));
+  }
+
+  async getFeedbackItem(id: string): Promise<(Feedback & { submitterName?: string; reviewerName?: string }) | undefined> {
+    const [row] = await db.select({
+      fb: feedback,
+      submitterName: this.feedbackSubmitterAlias.name,
+      reviewerName: this.feedbackReviewerAlias.name,
+    })
+    .from(feedback)
+    .leftJoin(this.feedbackSubmitterAlias, eq(feedback.submittedBy, this.feedbackSubmitterAlias.id))
+    .leftJoin(this.feedbackReviewerAlias, eq(feedback.reviewedBy, this.feedbackReviewerAlias.id))
+    .where(eq(feedback.id, id));
+    if (!row) return undefined;
+    return {
+      ...row.fb,
+      submitterName: row.submitterName ?? undefined,
+      reviewerName: row.reviewerName ?? undefined,
+    };
+  }
+
+  async createFeedback(fb: InsertFeedback): Promise<Feedback> {
+    const [created] = await db.insert(feedback).values({
+      ...fb,
+      applicationSource: 'Constellation',
+    }).returning();
+    return created;
+  }
+
+  async updateFeedback(id: string, updates: Partial<{ isReviewed: boolean; reviewedBy: string; reviewedAt: Date; adminResponse: string }>): Promise<Feedback> {
+    const [updated] = await db.update(feedback)
+      .set(updates)
+      .where(eq(feedback.id, id))
+      .returning();
+    if (!updated) throw new Error("Feedback not found");
+    return updated;
+  }
+
+  async deleteFeedback(id: string): Promise<void> {
+    await db.delete(feedback).where(eq(feedback.id, id));
+  }
+
+  async getFeedbackStats(tenantId: string): Promise<{ totalCount: number; avgRating: number; categoryBreakdown: Record<string, number> }> {
+    const allFeedback = await db.select()
+      .from(feedback)
+      .where(eq(feedback.tenantId, tenantId));
+    const totalCount = allFeedback.length;
+    const avgRating = totalCount > 0 ? allFeedback.reduce((sum, f) => sum + f.rating, 0) / totalCount : 0;
+    const categoryBreakdown: Record<string, number> = {};
+    allFeedback.forEach(f => {
+      categoryBreakdown[f.category] = (categoryBreakdown[f.category] || 0) + 1;
+    });
+    return { totalCount, avgRating: Math.round(avgRating * 10) / 10, categoryBreakdown };
   }
 }
 
