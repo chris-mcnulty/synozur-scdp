@@ -107,6 +107,7 @@ export default function ClientDetail() {
   const [invoiceYearFilter, setInvoiceYearFilter] = useState<string>("all");
   const [showAddStakeholder, setShowAddStakeholder] = useState(false);
   const [stakeholderForm, setStakeholderForm] = useState({ email: '', name: '', stakeholderTitle: '' });
+  const [matchedUser, setMatchedUser] = useState<{ id: string; name: string; email: string } | null>(null);
 
   const { toast } = useToast();
 
@@ -201,6 +202,11 @@ export default function ClientDetail() {
   const { data: stakeholders = [], isLoading: stakeholdersLoading } = useQuery<any[]>({
     queryKey: ["/api/clients", clientId, "stakeholders"],
     enabled: !!clientId
+  });
+
+  const { data: allPlatformUsers = [], isError: usersQueryError } = useQuery<{ id: string; name: string; email: string }[]>({
+    queryKey: ["/api/users"],
+    enabled: showAddStakeholder,
   });
 
   const addStakeholderMutation = useMutation({
@@ -1399,7 +1405,10 @@ export default function ClientDetail() {
         </Tabs>
 
         {/* Add Stakeholder Dialog */}
-        <Dialog open={showAddStakeholder} onOpenChange={setShowAddStakeholder}>
+        <Dialog open={showAddStakeholder} onOpenChange={(open) => {
+          setShowAddStakeholder(open);
+          if (!open) { setMatchedUser(null); setStakeholderForm({ email: '', name: '', stakeholderTitle: '' }); }
+        }}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Client Stakeholder</DialogTitle>
@@ -1410,11 +1419,59 @@ export default function ClientDetail() {
                 <Input
                   id="stakeholder-email"
                   type="email"
-                  placeholder="stakeholder@clientcompany.com"
+                  placeholder="Start typing to search existing users..."
                   value={stakeholderForm.email}
-                  onChange={(e) => setStakeholderForm({ ...stakeholderForm, email: e.target.value })}
+                  onChange={(e) => {
+                    const email = e.target.value;
+                    setStakeholderForm({ ...stakeholderForm, email });
+                    const found = allPlatformUsers.find(u => u.email?.toLowerCase() === email.toLowerCase().trim());
+                    if (found) {
+                      setMatchedUser(found);
+                      setStakeholderForm(prev => ({ ...prev, email, name: found.name }));
+                    } else {
+                      setMatchedUser(null);
+                    }
+                  }}
                 />
-                <p className="text-xs text-muted-foreground">If the person already exists in the system, they will be linked. Otherwise, a new user will be created.</p>
+                {matchedUser ? (
+                  <div className="flex items-center gap-2 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 px-3 py-2">
+                    <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    <span className="text-sm text-green-700 dark:text-green-300">
+                      Existing user found: <strong>{matchedUser.name}</strong> ({matchedUser.email}). They will be linked, not duplicated.
+                    </span>
+                  </div>
+                ) : usersQueryError ? (
+                  <p className="text-xs text-muted-foreground">If this email belongs to an existing user, they will be linked automatically. Otherwise a new user will be created.</p>
+                ) : stakeholderForm.email.length > 2 ? (
+                  <p className="text-xs text-muted-foreground">No existing user matches this email. A new user account will be created.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Enter the email of an existing platform user or a new person.</p>
+                )}
+                {stakeholderForm.email.length >= 2 && !matchedUser && (() => {
+                  const suggestions = allPlatformUsers.filter(u =>
+                    (u.email || '').toLowerCase().includes(stakeholderForm.email.toLowerCase().trim()) ||
+                    (u.name || '').toLowerCase().includes(stakeholderForm.email.toLowerCase().trim())
+                  ).slice(0, 5);
+                  if (suggestions.length === 0) return null;
+                  return (
+                    <div className="border rounded-md divide-y text-sm max-h-40 overflow-y-auto">
+                      {suggestions.map(u => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-muted transition-colors flex justify-between items-center"
+                          onClick={() => {
+                            setStakeholderForm(prev => ({ ...prev, email: u.email, name: u.name }));
+                            setMatchedUser(u);
+                          }}
+                        >
+                          <span className="font-medium">{u.name}</span>
+                          <span className="text-muted-foreground">{u.email}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="stakeholder-name">Name</Label>
@@ -1423,7 +1480,9 @@ export default function ClientDetail() {
                   placeholder="Jane Smith"
                   value={stakeholderForm.name}
                   onChange={(e) => setStakeholderForm({ ...stakeholderForm, name: e.target.value })}
+                  disabled={!!matchedUser}
                 />
+                {matchedUser && <p className="text-xs text-muted-foreground">Name auto-filled from existing user record.</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="stakeholder-title">Title / Role at Client</Label>
