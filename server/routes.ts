@@ -21725,6 +21725,234 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
+  app.get("/api/projects/:id/raidd/export", requireAuth, requireRole(["admin", "pm", "employee"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const entries = await storage.getRaiddEntries(req.params.id, {});
+      const xlsx = await import("xlsx");
+      const wb = xlsx.utils.book_new();
+      const headers = ["Ref #", "Type", "Title", "Description", "Status", "Priority", "Impact", "Likelihood", "Owner", "Assignee", "Due Date", "Category", "Mitigation Plan", "Resolution Notes", "Tags", "Created Date"];
+      const rows = entries.map((e: any) => [
+        e.refNumber || "",
+        e.type || "",
+        e.title || "",
+        e.description || "",
+        e.status || "",
+        e.priority || "",
+        e.impact || "",
+        e.likelihood || "",
+        e.ownerName || "",
+        e.assigneeName || "",
+        e.dueDate ? new Date(e.dueDate).toLocaleDateString() : "",
+        e.category || "",
+        e.mitigationPlan || "",
+        e.resolutionNotes || "",
+        Array.isArray(e.tags) ? e.tags.join(", ") : "",
+        e.createdAt ? new Date(e.createdAt).toLocaleDateString() : "",
+      ]);
+      const ws = xlsx.utils.aoa_to_sheet([headers, ...rows]);
+      ws["!cols"] = [
+        { wch: 10 }, { wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 12 },
+        { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 20 },
+        { wch: 12 }, { wch: 15 }, { wch: 30 }, { wch: 30 }, { wch: 20 }, { wch: 12 },
+      ];
+      xlsx.utils.book_append_sheet(wb, ws, "RAIDD Export");
+      const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      const safeName = (project.name || "project").replace(/[^a-zA-Z0-9_\- ]/g, "");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeName}-RAIDD-Export.xlsx"`);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.send(Buffer.from(buf));
+    } catch (error: any) {
+      console.error("Error exporting RAIDD entries:", error);
+      res.status(500).json({ message: error.message || "Failed to export RAIDD entries" });
+    }
+  });
+
+  app.get("/api/projects/:id/raidd/template", requireAuth, async (req, res) => {
+    try {
+      const xlsx = await import("xlsx");
+      const wb = xlsx.utils.book_new();
+      const importHeaders = ["Type", "Title", "Description", "Status", "Priority", "Impact", "Likelihood", "Owner (Name or Email)", "Assignee (Name or Email)", "Due Date", "Category", "Mitigation Plan", "Tags (comma-separated)"];
+      const exampleRows = [
+        ["risk", "Data migration failure", "Risk of data loss during migration", "open", "high", "high", "possible", "john@example.com", "jane@example.com", "2026-03-15", "Technical", "Run test migration first", "migration, data"],
+        ["issue", "API rate limiting", "Third-party API rate limits exceeded", "in_progress", "medium", "medium", "", "John Smith", "", "2026-02-28", "Integration", "Implement retry logic", "api, performance"],
+        ["decision", "Use PostgreSQL", "Selected PostgreSQL over MongoDB for data store", "accepted", "low", "", "", "", "", "", "Architecture", "", "database, architecture"],
+      ];
+      const emptyRows = Array.from({ length: 30 }, () => Array(importHeaders.length).fill(""));
+      const ws1 = xlsx.utils.aoa_to_sheet([importHeaders, ...exampleRows, ...emptyRows]);
+      ws1["!cols"] = [
+        { wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 10 },
+        { wch: 10 }, { wch: 15 }, { wch: 25 }, { wch: 25 },
+        { wch: 12 }, { wch: 15 }, { wch: 30 }, { wch: 25 },
+      ];
+      xlsx.utils.book_append_sheet(wb, ws1, "RAIDD Import");
+      const refData = [
+        ["Field", "Allowed Values"],
+        ["Type", "risk, issue, decision, dependency, action_item"],
+        ["Status", "open, in_progress, mitigated, closed, deferred, superseded, resolved, accepted"],
+        ["Priority", "critical, high, medium, low"],
+        ["Impact", "critical, high, medium, low"],
+        ["Likelihood", "almost_certain, likely, possible, unlikely, rare"],
+      ];
+      const ws2 = xlsx.utils.aoa_to_sheet(refData);
+      ws2["!cols"] = [{ wch: 15 }, { wch: 60 }];
+      xlsx.utils.book_append_sheet(wb, ws2, "Reference Values");
+      const buf = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Disposition", `attachment; filename="RAIDD-Import-Template.xlsx"`);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.send(Buffer.from(buf));
+    } catch (error: any) {
+      console.error("Error generating RAIDD template:", error);
+      res.status(500).json({ message: error.message || "Failed to generate RAIDD template" });
+    }
+  });
+
+  app.post("/api/projects/:id/raidd/import", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const xlsx = await import("xlsx");
+      const fileData = req.body.file;
+      if (!fileData) return res.status(400).json({ message: "No file data provided" });
+      const buffer = Buffer.from(fileData, "base64");
+      const workbook = xlsx.read(buffer, { type: "buffer" });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+      const allUsers = await storage.getUsers();
+      const userEmailToId = new Map(allUsers.filter((u: any) => u.email).map((u: any) => [u.email.toLowerCase(), u.id]));
+      const userNameToId = new Map(allUsers.map((u: any) => [u.name.toLowerCase(), u.id]));
+
+      const validTypes = ["risk", "issue", "decision", "dependency", "action_item"];
+      const validStatuses = ["open", "in_progress", "mitigated", "closed", "deferred", "superseded", "resolved", "accepted"];
+      const validPriorities = ["critical", "high", "medium", "low"];
+      const validImpacts = ["critical", "high", "medium", "low"];
+      const validLikelihoods = ["almost_certain", "likely", "possible", "unlikely", "rare"];
+
+      const errors: { row: number; message: string }[] = [];
+      let created = 0;
+
+      for (let i = 1; i < data.length; i++) {
+        try {
+          const row = data[i];
+          if (!row || row.every((cell: any) => !cell && cell !== 0)) continue;
+
+          const rawType = String(row[0] || "").trim().toLowerCase();
+          const title = String(row[1] || "").trim();
+          const description = String(row[2] || "").trim();
+          const rawStatus = String(row[3] || "").trim().toLowerCase();
+          const rawPriority = String(row[4] || "").trim().toLowerCase();
+          const rawImpact = String(row[5] || "").trim().toLowerCase();
+          const rawLikelihood = String(row[6] || "").trim().toLowerCase();
+          const ownerRef = String(row[7] || "").trim();
+          const assigneeRef = String(row[8] || "").trim();
+          const rawDueDate = row[9];
+          const category = String(row[10] || "").trim();
+          const mitigationPlan = String(row[11] || "").trim();
+          const rawTags = String(row[12] || "").trim();
+
+          if (!validTypes.includes(rawType)) {
+            errors.push({ row: i + 1, message: `Invalid type "${row[0]}". Must be one of: ${validTypes.join(", ")}` });
+            continue;
+          }
+          if (!title) {
+            errors.push({ row: i + 1, message: "Title is required" });
+            continue;
+          }
+          const status = rawStatus ? (validStatuses.includes(rawStatus) ? rawStatus : null) : "open";
+          if (status === null) {
+            errors.push({ row: i + 1, message: `Invalid status "${row[3]}". Must be one of: ${validStatuses.join(", ")}` });
+            continue;
+          }
+          const priority = rawPriority ? (validPriorities.includes(rawPriority) ? rawPriority : null) : "medium";
+          if (priority === null) {
+            errors.push({ row: i + 1, message: `Invalid priority "${row[4]}". Must be one of: ${validPriorities.join(", ")}` });
+            continue;
+          }
+          let impact: string | undefined;
+          if (rawImpact) {
+            if (!validImpacts.includes(rawImpact)) {
+              errors.push({ row: i + 1, message: `Invalid impact "${row[5]}". Must be one of: ${validImpacts.join(", ")}` });
+              continue;
+            }
+            impact = rawImpact;
+          }
+          let likelihood: string | undefined;
+          if (rawLikelihood) {
+            if (!validLikelihoods.includes(rawLikelihood)) {
+              errors.push({ row: i + 1, message: `Invalid likelihood "${row[6]}". Must be one of: ${validLikelihoods.join(", ")}` });
+              continue;
+            }
+            likelihood = rawLikelihood;
+          }
+
+          let ownerId: string | undefined;
+          if (ownerRef) {
+            const lc = ownerRef.toLowerCase();
+            ownerId = userEmailToId.get(lc) || userNameToId.get(lc);
+          }
+          let assigneeId: string | undefined;
+          if (assigneeRef) {
+            const lc = assigneeRef.toLowerCase();
+            assigneeId = userEmailToId.get(lc) || userNameToId.get(lc);
+          }
+
+          let dueDate: string | undefined;
+          if (rawDueDate) {
+            if (typeof rawDueDate === "number") {
+              const d = xlsx.SSF.parse_date_code(rawDueDate);
+              if (d) dueDate = `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+            } else {
+              const parsed = new Date(String(rawDueDate));
+              if (!isNaN(parsed.getTime())) {
+                dueDate = parsed.toISOString().split("T")[0];
+              }
+            }
+          }
+
+          const tags = rawTags ? rawTags.split(",").map((t: string) => t.trim()).filter(Boolean) : undefined;
+
+          await storage.createRaiddEntry({
+            projectId: req.params.id,
+            tenantId: project.tenantId || tenantId || "",
+            type: rawType,
+            title,
+            description: description || undefined,
+            status,
+            priority,
+            impact,
+            likelihood,
+            ownerId,
+            assigneeId,
+            dueDate,
+            category: category || undefined,
+            mitigationPlan: mitigationPlan || undefined,
+            tags,
+            createdBy: req.user!.id,
+            updatedBy: req.user!.id,
+          });
+          created++;
+        } catch (rowError: any) {
+          errors.push({ row: i + 1, message: rowError.message || "Unknown error" });
+        }
+      }
+
+      res.json({ created, errors, total: data.length - 1 });
+    } catch (error: any) {
+      console.error("Error importing RAIDD entries:", error);
+      res.status(500).json({ message: error.message || "Failed to import RAIDD entries" });
+    }
+  });
+
   // ============================================================================
   // GROUNDING DOCUMENTS (AI Knowledge Base)
   // ============================================================================

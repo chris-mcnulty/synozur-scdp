@@ -23,7 +23,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Shield, AlertTriangle, Scale, Link2, CheckSquare, Plus, MoreHorizontal,
   Edit, Trash2, ArrowRightLeft, Replace, ChevronDown, ChevronUp, X,
-  ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, Loader2
+  ArrowUpDown, Calendar, User, Tag, Sparkles, Brain, FileText, Loader2,
+  Download, Upload
 } from "lucide-react";
 
 interface RaiddEntry {
@@ -167,6 +168,12 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
   const [showSuggestActionsDialog, setShowSuggestActionsDialog] = useState(false);
   const [suggestActionsEntry, setSuggestActionsEntry] = useState<RaiddEntry | null>(null);
   const [aiSuggestedActions, setAiSuggestedActions] = useState<any[]>([]);
+
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ created: number; errors: { row: number; message: string }[]; total: number } | null>(null);
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -427,6 +434,80 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
     setShowCreateDialog(true);
   }
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/raidd/export`, {
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const filename = disposition?.match(/filename="(.+)"/)?.[1] || 'RAIDD-Export.xlsx';
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Exported", description: "RAIDD log exported to Excel" });
+    } catch (error: any) {
+      toast({ title: "Export failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/raidd/template`, {
+        headers: { 'x-session-id': localStorage.getItem('sessionId') || '' },
+      });
+      if (!response.ok) throw new Error('Template download failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'RAIDD-Import-Template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({ title: "Download failed", description: error.message, variant: "destructive" });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const buffer = await importFile.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      const response = await apiRequest(`/api/projects/${projectId}/raidd/import`, {
+        method: 'POST',
+        body: JSON.stringify({ file: base64 }),
+      });
+      const result = response as any;
+      setImportResult(result);
+      if (result.created > 0) {
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
+        toast({ title: "Import complete", description: `${result.created} of ${result.total} entries imported successfully` });
+      }
+      if (result.errors?.length > 0 && result.created === 0) {
+        toast({ title: "Import failed", description: `All ${result.total} rows had errors`, variant: "destructive" });
+      }
+    } catch (error: any) {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const SortIcon = ({ field }: { field: string }) => {
     if (sortField !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
     return sortDir === "asc" ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />;
@@ -459,6 +540,26 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setShowExtractDecisionsDialog(true)}>
                   <FileText className="h-4 w-4 mr-2" /> Extract Decisions from Document
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Download className="h-4 w-4 mr-1" /> Excel <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExport} disabled={isExporting}>
+                  {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                  Export RAIDD Log
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { setImportFile(null); setImportResult(null); setShowImportDialog(true); }}>
+                  <Upload className="h-4 w-4 mr-2" /> Import from Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadTemplate}>
+                  <FileText className="h-4 w-4 mr-2" /> Download Import Template
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -747,6 +848,60 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import RAIDD Entries from Excel</DialogTitle>
+            <DialogDescription>
+              Upload an Excel file to bulk-import RAIDD entries. Use the template for the correct format.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null);
+                  setImportResult(null);
+                }}
+                data-testid="input-import-file"
+              />
+            </div>
+            <Button variant="link" className="h-auto p-0 text-sm" onClick={handleDownloadTemplate}>
+              <Download className="h-3 w-3 mr-1" /> Download import template
+            </Button>
+            {importResult && (
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant={importResult.created > 0 ? "default" : "destructive"}>
+                    {importResult.created} of {importResult.total} imported
+                  </Badge>
+                  {importResult.errors.length > 0 && (
+                    <Badge variant="outline" className="text-red-600">{importResult.errors.length} error{importResult.errors.length !== 1 ? 's' : ''}</Badge>
+                  )}
+                </div>
+                {importResult.errors.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto text-xs space-y-1">
+                    {importResult.errors.map((err, i) => (
+                      <div key={i} className="text-red-600 dark:text-red-400">
+                        Row {err.row}: {err.message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
+            <Button onClick={handleImport} disabled={!importFile || isImporting}>
+              {isImporting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importing...</> : <><Upload className="h-4 w-4 mr-1" /> Import</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
