@@ -397,19 +397,57 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
 
   const batchCreateMutation = useMutation({
     mutationFn: async (items: any[]) => {
+      const parentItems = items.filter(i => i.type !== 'action_item');
+      const actionItems = items.filter(i => i.type === 'action_item');
       const results = [];
-      for (const item of items) {
-        const res = await apiRequest(`/api/projects/${projectId}/raidd`, {
-          method: "POST",
-          body: JSON.stringify(item),
-        });
-        results.push(res);
+      const createdParents: any[] = [];
+      let errors = 0;
+
+      for (const item of parentItems) {
+        try {
+          const res = await apiRequest(`/api/projects/${projectId}/raidd`, {
+            method: "POST",
+            body: JSON.stringify(item),
+          });
+          results.push(res);
+          createdParents.push(res);
+        } catch (e) {
+          errors++;
+          console.error("Failed to create RAIDD item:", item.title, e);
+        }
       }
-      return results;
+
+      for (const item of actionItems) {
+        try {
+          const payload = { ...item };
+          if (!payload.parentEntryId && createdParents.length > 0) {
+            const matchingParent = createdParents.find(
+              (p: any) => p.category && item.category && p.category === item.category
+            );
+            payload.parentEntryId = matchingParent?.id || createdParents[0]?.id;
+          }
+          const res = await apiRequest(`/api/projects/${projectId}/raidd`, {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          results.push(res);
+        } catch (e) {
+          errors++;
+          console.error("Failed to create action item:", item.title, e);
+        }
+      }
+
+      return { results, errors, total: items.length };
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/raidd`] });
-      toast({ title: "Created", description: "Selected items created successfully" });
+      const created = data.results?.length || 0;
+      const errors = data.errors || 0;
+      if (errors > 0) {
+        toast({ title: "Partially Created", description: `${created} of ${data.total} items created. ${errors} failed.`, variant: "destructive" });
+      } else {
+        toast({ title: "Created", description: `${created} items created successfully` });
+      }
       setShowAiReviewDialog(false);
       setShowSuggestActionsDialog(false);
       setAiReviewItems([]);

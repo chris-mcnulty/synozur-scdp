@@ -9454,9 +9454,6 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         updatedBy: req.user!.id,
       };
       const parsed = insertRaiddEntrySchema.parse(body);
-      if (parsed.type === 'action_item' && !parsed.parentEntryId) {
-        return res.status(400).json({ message: "Action items must be linked to a parent RAIDD entry" });
-      }
       const entry = await storage.createRaiddEntry(parsed);
       res.status(201).json(entry);
     } catch (error: any) {
@@ -9502,7 +9499,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         createdBy: true,
       });
       const parsed = updateSchema.parse(req.body);
-      if (entry.type === 'action_item' && parsed.parentEntryId === null) {
+      if (entry.type === 'action_item' && entry.parentEntryId && parsed.parentEntryId === null) {
         return res.status(400).json({ message: "Action items must remain linked to a parent RAIDD entry" });
       }
       const updates = { ...parsed, updatedBy: req.user!.id };
