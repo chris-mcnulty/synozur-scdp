@@ -8986,6 +8986,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         console.warn('[HELP-CHAT] Could not read User Guide, proceeding without it');
       }
 
+      const messageCount = (validated.history?.length || 0) + 1;
+
       const systemPrompt = `You are Constellation's built-in help assistant. Your job is to answer "how to" questions about using the Constellation consulting delivery platform.
 
 KNOWLEDGE BASE (User Guide):
@@ -9002,12 +9004,30 @@ INSTRUCTIONS:
   "answer": "Your helpful answer text here (use markdown formatting for clarity)",
   "suggestions": [
     { "label": "Page Name", "route": "/route-path" }
-  ]
+  ],
+  "ticketSuggestion": null
 }
 4. The "suggestions" array should contain 0-3 relevant navigation suggestions. Only include them when they genuinely help the user get to the right place.
 5. Do NOT suggest routes that are not in the AVAILABLE NAVIGATION list.
 6. If you don't know the answer, say so honestly and suggest checking the User Guide page.
 7. Keep answers focused and practical - users want quick guidance, not essays.
+
+SUPPORT TICKET SUGGESTION:
+- This conversation has ${messageCount} total user messages so far.
+- After the user has sent at least 2 messages, evaluate whether their issue would benefit from a support ticket.
+- If the user is reporting a bug, requesting a feature, describing a persistent problem, or asking about something you cannot resolve through guidance alone, include a "ticketSuggestion" object in your response.
+- The ticketSuggestion should be a pre-filled ticket based on the full conversation context.
+- Only suggest a ticket when it is genuinely appropriate — do NOT suggest it for simple "how to" questions that you can answer.
+- Format the ticketSuggestion as:
+{
+  "ticketSuggestion": {
+    "category": "bug" | "feature_request" | "question" | "feedback",
+    "subject": "Brief summary of the issue",
+    "description": "Detailed description synthesized from the conversation",
+    "priority": "low" | "medium" | "high"
+  }
+}
+- Set ticketSuggestion to null if a support ticket is not appropriate for this message.
 
 IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.`;
 
@@ -9036,11 +9056,29 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
         s && s.route && s.label && validRouteSet.has(s.route)
       );
 
-      console.log(`[HELP-CHAT] Query from user ${req.user!.id} (${userRole}): "${validated.message.substring(0, 50)}..." → ${parsed.suggestions.length} nav suggestions`);
+      let ticketSuggestion = null;
+      if (parsed.ticketSuggestion && typeof parsed.ticketSuggestion === 'object') {
+        const ts = parsed.ticketSuggestion;
+        const validCategories = ['bug', 'feature_request', 'question', 'feedback'];
+        const validPriorities = ['low', 'medium', 'high'];
+        if (ts.subject && ts.description &&
+            validCategories.includes(ts.category) &&
+            validPriorities.includes(ts.priority)) {
+          ticketSuggestion = {
+            category: ts.category,
+            subject: String(ts.subject).slice(0, 200),
+            description: String(ts.description),
+            priority: ts.priority
+          };
+        }
+      }
+
+      console.log(`[HELP-CHAT] Query from user ${req.user!.id} (${userRole}): "${validated.message.substring(0, 50)}..." → ${parsed.suggestions.length} nav suggestions${ticketSuggestion ? ', ticket suggested' : ''}`);
 
       res.json({
         answer: parsed.answer,
         suggestions: parsed.suggestions,
+        ticketSuggestion,
         usage: {
           promptTokens: result.promptTokens,
           completionTokens: result.completionTokens,
