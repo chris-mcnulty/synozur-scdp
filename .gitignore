@@ -8,3 +8,4 @@ certs/
 *.pem
 *.key
 *.crt
+attached_assets/
