@@ -15,7 +15,7 @@ import {
   Clock,
   Loader2
 } from "lucide-react";
-import { SiMicrosoftteams } from "react-icons/si";
+import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { PlannerConnectionDialog } from "./PlannerConnectionDialog";
@@ -162,7 +162,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
         <Card data-testid="planner-not-connected">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <SiMicrosoftteams className="h-5 w-5 text-[#6264A7]" />
+              <MicrosoftPlannerIcon className="h-5 w-5" />
               Microsoft Planner
             </CardTitle>
             <CardDescription>
@@ -171,7 +171,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
           </CardHeader>
           <CardContent>
             <Button onClick={() => setShowConnectDialog(true)} data-testid="button-connect-planner">
-              <SiMicrosoftteams className="mr-2 h-4 w-4 text-[#6264A7]" />
+              <MicrosoftPlannerIcon className="mr-2 h-4 w-4" />
               Connect to Planner
             </Button>
           </CardContent>
@@ -214,7 +214,7 @@ export function PlannerStatusPanel({ projectId, projectName, clientName, clientT
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <SiMicrosoftteams className="h-5 w-5 text-[#6264A7]" />
+              <MicrosoftPlannerIcon className="h-5 w-5" />
               <CardTitle>Microsoft Planner</CardTitle>
               <Badge variant="outline" className="text-green-600 border-green-600">
                 Connected
