@@ -49,6 +49,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
 - **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks.
 - **Scheduled Jobs**: Background job system for expense reminders, time reminders, and Planner sync, with admin monitoring and multi-tenant scoping.
+- **Support Ticket Planner Integration**: Bidirectional sync between support tickets and Microsoft Planner tasks. New tickets create Planner tasks; Planner task completion auto-closes tickets. Tenant-level configuration via system settings UI. Tracked in `supportTicketPlannerSync` table.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring.
 - **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement.
 - **Retainer Estimates & Management**: New estimate type for monthly hour-block engagements with creation wizard, auto-generated structure, utilization tracking, and live retainer month management at the project level.
