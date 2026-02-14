@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -641,6 +641,14 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         </div>
       </CardHeader>
       <CardContent>
+        {(suggestMitigationMutation.isPending || suggestActionsMutation.isPending) && (
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <span className="text-sm font-medium text-primary">
+              {suggestMitigationMutation.isPending ? "AI is analyzing and generating suggestions..." : "AI is suggesting action items..."}
+            </span>
+          </div>
+        )}
         {isLoading ? (
           <div className="space-y-2">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
@@ -727,17 +735,35 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                           )}
                           <DropdownMenuSeparator />
                           {entry.type === "risk" && (
-                            <DropdownMenuItem onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}>
-                              <Sparkles className="h-4 w-4 mr-2" /> AI: Suggest Mitigation
+                            <DropdownMenuItem
+                              disabled={suggestMitigationMutation.isPending}
+                              onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
+                            >
+                              {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
+                                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                : <Sparkles className="h-4 w-4 mr-2" />}
+                              AI: Suggest Mitigation
                             </DropdownMenuItem>
                           )}
                           {entry.type === "issue" && (
-                            <DropdownMenuItem onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}>
-                              <Sparkles className="h-4 w-4 mr-2" /> AI: Suggest Resolution
+                            <DropdownMenuItem
+                              disabled={suggestMitigationMutation.isPending}
+                              onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
+                            >
+                              {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
+                                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                : <Sparkles className="h-4 w-4 mr-2" />}
+                              AI: Suggest Resolution
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onClick={() => { setSuggestActionsEntry(entry); suggestActionsMutation.mutate(entry); }}>
-                            <Brain className="h-4 w-4 mr-2" /> AI: Suggest Action Items
+                          <DropdownMenuItem
+                            disabled={suggestActionsMutation.isPending}
+                            onClick={() => { setSuggestActionsEntry(entry); suggestActionsMutation.mutate(entry); }}
+                          >
+                            {suggestActionsMutation.isPending && suggestActionsEntry?.id === entry.id
+                              ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              : <Brain className="h-4 w-4 mr-2" />}
+                            AI: Suggest Action Items
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-red-600 dark:text-red-400" onClick={() => setDeletingEntryId(entry.id)}>
@@ -1136,6 +1162,28 @@ function RaiddFormDialog({
       tags: entry?.tags?.join(", ") || "",
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        type: (entry?.type as any) || (defaultType as any) || "risk",
+        title: entry?.title || "",
+        description: entry?.description || "",
+        status: entry?.status || "open",
+        priority: (entry?.priority as any) || "medium",
+        impact: entry?.impact || "",
+        likelihood: entry?.likelihood || "",
+        ownerId: entry?.ownerId || "",
+        assigneeId: entry?.assigneeId || "",
+        dueDate: entry?.dueDate || "",
+        category: entry?.category || "",
+        mitigationPlan: entry?.mitigationPlan || "",
+        resolutionNotes: entry?.resolutionNotes || "",
+        parentEntryId: entry?.parentEntryId || defaultParentId || "",
+        tags: entry?.tags?.join(", ") || "",
+      });
+    }
+  }, [open, entry?.id]);
 
   const watchType = form.watch("type");
 
