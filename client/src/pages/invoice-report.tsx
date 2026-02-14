@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Download, DollarSign, FileText, Clock, CheckCircle, AlertCircle, Calendar, TrendingUp, TrendingDown, Minus, ArrowLeftRight } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Download, DollarSign, FileText, Clock, CheckCircle, AlertCircle, Calendar, TrendingUp, TrendingDown, Minus, ArrowLeftRight, X } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
@@ -99,6 +100,98 @@ function emptyAggregates(): QuarterAggregates {
   return { invoiceAmount: 0, taxAmount: 0, invoiceTotal: 0, amountPaid: 0, outstanding: 0, count: 0 };
 }
 
+type DrillDownFilter = 'all' | 'invoiced' | 'paid' | 'outstanding' | 'unpaid' | 'partial';
+
+function filterInvoicesForDrillDown(invoices: InvoiceRow[], filter: DrillDownFilter): InvoiceRow[] {
+  switch (filter) {
+    case 'paid': return invoices.filter(i => i.amountPaid > 0);
+    case 'outstanding': return invoices.filter(i => i.outstanding > 0);
+    case 'unpaid': return invoices.filter(i => i.paymentStatus === 'unpaid');
+    case 'partial': return invoices.filter(i => i.paymentStatus === 'partial');
+    default: return invoices;
+  }
+}
+
+function getDrillDownTitle(filter: DrillDownFilter): string {
+  switch (filter) {
+    case 'all': return 'All Invoices';
+    case 'invoiced': return 'Total Invoiced';
+    case 'paid': return 'Amount Paid';
+    case 'outstanding': return 'Outstanding Invoices';
+    case 'unpaid': return 'Unpaid Invoices';
+    case 'partial': return 'Partially Paid Invoices';
+    default: return 'Invoice Details';
+  }
+}
+
+function InvoiceDrillDownDialog({ open, onClose, title, description, invoices }: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description: string;
+  invoices: InvoiceRow[];
+}) {
+  const total = invoices.reduce((s, i) => s + i.invoiceTotal, 0);
+  const totalPaid = invoices.reduce((s, i) => s + i.amountPaid, 0);
+  const totalOutstanding = invoices.reduce((s, i) => s + i.outstanding, 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description} — {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}</DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-4 text-sm mb-2">
+          <span className="text-muted-foreground">Total: <span className="font-semibold text-foreground">{fmt(total)}</span></span>
+          <span className="text-muted-foreground">Paid: <span className="font-semibold text-green-600">{fmt(totalPaid)}</span></span>
+          <span className="text-muted-foreground">Outstanding: <span className="font-semibold text-amber-600">{fmt(totalOutstanding)}</span></span>
+        </div>
+        <div className="overflow-auto flex-1">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Client</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead>Date Paid</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Outstanding</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No invoices match this filter</TableCell>
+                </TableRow>
+              ) : invoices.map(inv => (
+                <TableRow key={inv.batchId}>
+                  <TableCell className="font-mono text-sm">
+                    <Link href={`/billing/batches/${inv.batchId}`} className="text-primary hover:underline">
+                      {inv.glInvoiceNumber || inv.batchId.substring(0, 12)}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{inv.invoiceDate}</TableCell>
+                  <TableCell className="max-w-[180px] truncate" title={inv.clientName}>{inv.clientName}</TableCell>
+                  <TableCell className="text-right tabular-nums">{fmt(inv.invoiceTotal)}</TableCell>
+                  <TableCell className="text-center"><PaymentStatusBadge status={inv.paymentStatus} /></TableCell>
+                  <TableCell className="whitespace-nowrap">{inv.paymentDate || '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inv.amountPaid > 0 ? fmt(inv.amountPaid) : '—'}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {inv.outstanding > 0 ? <span className="text-amber-600">{fmt(inv.outstanding)}</span> : '—'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function aggregateInvoices(invoices: InvoiceRow[]): QuarterAggregates {
   return invoices.reduce((acc, inv) => ({
     invoiceAmount: acc.invoiceAmount + inv.invoiceAmount,
@@ -150,16 +243,17 @@ function VarianceIndicator({ current, prior }: { current: number; prior: number 
   );
 }
 
-function ComparisonMetricCard({ label, icon, years }: {
+function ComparisonMetricCard({ label, icon, years, onClick }: {
   label: string;
   icon: any;
   years: { year: number; value: number }[];
+  onClick?: () => void;
 }) {
   const Icon = icon;
   const latest = years[years.length - 1];
   const prior = years.length >= 2 ? years[years.length - 2] : null;
   return (
-    <Card>
+    <Card className={onClick ? "cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" : ""} onClick={onClick}>
       <CardContent className="pt-4 pb-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
           <Icon className="w-4 h-4" /> {label}
@@ -194,6 +288,7 @@ function InvoiceReport() {
   const [selectedQuarters, setSelectedQuarters] = useState<number[]>([1, 2, 3, 4]);
   const [comparisonBatchType, setComparisonBatchType] = useState('services');
   const [clientFilter, setClientFilter] = useState('all');
+  const [drillDown, setDrillDown] = useState<{ filter: DrillDownFilter; source: InvoiceRow[]; description: string } | null>(null);
 
   const { hasAnyRole } = useAuth();
 
@@ -551,7 +646,7 @@ function InvoiceReport() {
             ) : (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <Card>
+                  <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => setDrillDown({ filter: 'all', source: invoices, description: `${startDate} to ${endDate}` })}>
                     <CardContent className="pt-4 pb-3">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         <FileText className="w-4 h-4" /> Invoices
@@ -562,7 +657,7 @@ function InvoiceReport() {
                       </div>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => setDrillDown({ filter: 'invoiced', source: invoices, description: `${startDate} to ${endDate}` })}>
                     <CardContent className="pt-4 pb-3">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         <DollarSign className="w-4 h-4" /> Total Invoiced
@@ -573,7 +668,7 @@ function InvoiceReport() {
                       </div>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => setDrillDown({ filter: 'paid', source: invoices, description: `${startDate} to ${endDate}` })}>
                     <CardContent className="pt-4 pb-3">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         <CheckCircle className="w-4 h-4" /> Amount Paid
@@ -581,7 +676,7 @@ function InvoiceReport() {
                       <div className="text-2xl font-bold text-green-600">{fmt(totals?.amountPaid || 0)}</div>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => setDrillDown({ filter: 'outstanding', source: invoices, description: `${startDate} to ${endDate}` })}>
                     <CardContent className="pt-4 pb-3">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                         <AlertCircle className="w-4 h-4" /> Outstanding
@@ -710,42 +805,61 @@ function InvoiceReport() {
             ) : comparisonData ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <ComparisonMetricCard
-                    label="Pre-Tax Amount"
-                    icon={DollarSign}
-                    years={[
-                      { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceAmount },
-                      { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceAmount },
-                      { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceAmount },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Total (with Tax)"
-                    icon={FileText}
-                    years={[
-                      { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceTotal },
-                      { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceTotal },
-                      { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceTotal },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Amount Paid"
-                    icon={CheckCircle}
-                    years={[
-                      { year: oldestYear, value: comparisonData.filteredOldestTotal.amountPaid },
-                      { year: priorYear, value: comparisonData.filteredPriorTotal.amountPaid },
-                      { year: currentYear, value: comparisonData.filteredCurrentTotal.amountPaid },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Outstanding"
-                    icon={AlertCircle}
-                    years={[
-                      { year: oldestYear, value: comparisonData.filteredOldestTotal.outstanding },
-                      { year: priorYear, value: comparisonData.filteredPriorTotal.outstanding },
-                      { year: currentYear, value: comparisonData.filteredCurrentTotal.outstanding },
-                    ]}
-                  />
+                  {(() => {
+                    const filterByClient = (list: InvoiceRow[]) => clientFilter === 'all' ? list : list.filter(inv => inv.clientName === clientFilter);
+                    const filterByQuarter = (list: InvoiceRow[]) => list.filter(inv => selectedQuarters.includes(getQuarterNum(inv.invoiceDate)));
+                    const allComparisonInvoices = [
+                      ...filterByQuarter(filterByClient(oldestYearData?.invoices || [])),
+                      ...filterByQuarter(filterByClient(priorYearData?.invoices || [])),
+                      ...filterByQuarter(filterByClient(currentYearData?.invoices || [])),
+                    ];
+                    const qLabel = selectedQuarters.length === 4 ? 'Full Year' : selectedQuarters.map(q => `Q${q}`).join(', ');
+                    const desc = `${oldestYear}–${currentYear} ${qLabel}`;
+                    return (
+                      <>
+                        <ComparisonMetricCard
+                          label="Pre-Tax Amount"
+                          icon={DollarSign}
+                          years={[
+                            { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceAmount },
+                            { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceAmount },
+                            { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceAmount },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'invoiced', source: allComparisonInvoices, description: desc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Total (with Tax)"
+                          icon={FileText}
+                          years={[
+                            { year: oldestYear, value: comparisonData.filteredOldestTotal.invoiceTotal },
+                            { year: priorYear, value: comparisonData.filteredPriorTotal.invoiceTotal },
+                            { year: currentYear, value: comparisonData.filteredCurrentTotal.invoiceTotal },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'all', source: allComparisonInvoices, description: desc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Amount Paid"
+                          icon={CheckCircle}
+                          years={[
+                            { year: oldestYear, value: comparisonData.filteredOldestTotal.amountPaid },
+                            { year: priorYear, value: comparisonData.filteredPriorTotal.amountPaid },
+                            { year: currentYear, value: comparisonData.filteredCurrentTotal.amountPaid },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'paid', source: allComparisonInvoices, description: desc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Outstanding"
+                          icon={AlertCircle}
+                          years={[
+                            { year: oldestYear, value: comparisonData.filteredOldestTotal.outstanding },
+                            { year: priorYear, value: comparisonData.filteredPriorTotal.outstanding },
+                            { year: currentYear, value: comparisonData.filteredCurrentTotal.outstanding },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'outstanding', source: allComparisonInvoices, description: desc })}
+                        />
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <Card>
