@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -502,19 +503,21 @@ export default function Support() {
   };
 
   return (
-    <div className="flex-1 p-6 max-w-3xl mx-auto">
-      {activeView === "list" && (
-        <TicketList onSelectTicket={handleSelectTicket} onNewTicket={handleNewTicket} />
-      )}
-      {activeView === "new" && (
-        <NewTicketForm
-          onBack={handleBackToList}
-          initialDescription={searchParams.get("summary") || undefined}
-        />
-      )}
-      {activeView === "detail" && activeTicketId && (
-        <TicketDetail ticketId={activeTicketId} onBack={handleBackToList} />
-      )}
-    </div>
+    <Layout>
+      <div className="flex-1 p-6 max-w-3xl mx-auto">
+        {activeView === "list" && (
+          <TicketList onSelectTicket={handleSelectTicket} onNewTicket={handleNewTicket} />
+        )}
+        {activeView === "new" && (
+          <NewTicketForm
+            onBack={handleBackToList}
+            initialDescription={searchParams.get("summary") || undefined}
+          />
+        )}
+        {activeView === "detail" && activeTicketId && (
+          <TicketDetail ticketId={activeTicketId} onBack={handleBackToList} />
+        )}
+      </div>
+    </Layout>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -10,10 +10,22 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowLeft, Send, LifeBuoy, Clock, AlertCircle, CheckCircle2, MessageSquare, Eye, Settings, ExternalLink, Save, List } from "lucide-react";
+import { Loader2, ArrowLeft, Send, LifeBuoy, Clock, AlertCircle, CheckCircle2, MessageSquare, Eye, Settings, ExternalLink, Save, List, Unlink, RefreshCw } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
+import { SupportPlannerConnectionDialog } from "@/components/planner/SupportPlannerConnectionDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TicketListItem {
   id: string;
@@ -116,13 +128,13 @@ function getStatusIcon(status: string) {
 }
 
 interface SupportIntegrationSettings {
-  plannerEnabled?: boolean;
-  plannerPlanId?: string;
-  plannerPlanTitle?: string;
-  plannerPlanWebUrl?: string;
-  plannerGroupId?: string;
-  plannerGroupName?: string;
-  plannerBucketName?: string;
+  supportPlannerEnabled?: boolean;
+  supportPlannerPlanId?: string;
+  supportPlannerPlanTitle?: string;
+  supportPlannerPlanWebUrl?: string;
+  supportPlannerGroupId?: string;
+  supportPlannerGroupName?: string;
+  supportPlannerBucketName?: string;
 }
 
 export function AdminSupportTab() {
@@ -133,45 +145,33 @@ export function AdminSupportTab() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [integrationForm, setIntegrationForm] = useState<SupportIntegrationSettings>({
-    plannerEnabled: false,
-    plannerPlanId: "",
-    plannerPlanTitle: "",
-    plannerPlanWebUrl: "",
-    plannerGroupId: "",
-    plannerGroupName: "",
-    plannerBucketName: "Support Tickets",
-  });
+  const [showPlannerDialog, setShowPlannerDialog] = useState(false);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
 
   const { data: integrationSettings, isLoading: isLoadingIntegrations } = useQuery<SupportIntegrationSettings>({
     queryKey: ['/api/tenants', tenantId, 'support-integrations'],
     enabled: !!tenantId,
   });
 
-  useEffect(() => {
-    if (integrationSettings) {
-      setIntegrationForm({
-        plannerEnabled: integrationSettings.plannerEnabled ?? false,
-        plannerPlanId: integrationSettings.plannerPlanId ?? "",
-        plannerPlanTitle: integrationSettings.plannerPlanTitle ?? "",
-        plannerPlanWebUrl: integrationSettings.plannerPlanWebUrl ?? "",
-        plannerGroupId: integrationSettings.plannerGroupId ?? "",
-        plannerGroupName: integrationSettings.plannerGroupName ?? "",
-        plannerBucketName: integrationSettings.plannerBucketName ?? "Support Tickets",
-      });
-    }
-  }, [integrationSettings]);
-
-  const saveIntegrations = useMutation({
-    mutationFn: async (settings: SupportIntegrationSettings) => {
+  const disconnectPlanner = useMutation({
+    mutationFn: async () => {
       return await apiRequest(`/api/tenants/${tenantId}/support-integrations`, {
         method: "PATCH",
-        body: JSON.stringify(settings),
+        body: JSON.stringify({
+          supportPlannerEnabled: false,
+          supportPlannerPlanId: null,
+          supportPlannerPlanTitle: null,
+          supportPlannerPlanWebUrl: null,
+          supportPlannerGroupId: null,
+          supportPlannerGroupName: null,
+          supportPlannerBucketName: null,
+        }),
       });
     },
     onSuccess: () => {
-      toast({ title: "Integration settings saved" });
+      toast({ title: "Planner disconnected", description: "Support ticket Planner sync has been disabled." });
       queryClient.invalidateQueries({ queryKey: ['/api/tenants', tenantId, 'support-integrations'] });
+      setShowDisconnectDialog(false);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -250,101 +250,71 @@ export function AdminSupportTab() {
           ) : (
             <>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
+                <div className="flex items-center gap-3">
+                  <MicrosoftPlannerIcon className="h-5 w-5 shrink-0" />
+                  <div className="flex-1">
                     <Label className="text-sm font-medium">Microsoft Planner Sync</Label>
                     <p className="text-sm text-muted-foreground">
                       Automatically create tasks in Microsoft Planner for new support tickets
                     </p>
                   </div>
-                  <Switch
-                    checked={integrationForm.plannerEnabled ?? false}
-                    onCheckedChange={(checked) =>
-                      setIntegrationForm((prev) => ({ ...prev, plannerEnabled: checked }))
-                    }
-                  />
                 </div>
 
-                {integrationForm.plannerEnabled && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
-                    <div className="space-y-2">
-                      <Label className="text-sm">
-                        Plan ID <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        placeholder="Enter Plan ID"
-                        value={integrationForm.plannerPlanId ?? ""}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerPlanId: e.target.value }))
-                        }
-                      />
+                {integrationSettings?.supportPlannerEnabled && integrationSettings.supportPlannerPlanId ? (
+                  <div className="border rounded-lg p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      <span className="text-sm font-medium text-green-700 dark:text-green-300">Connected</span>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm">Plan Title</Label>
-                      <Input
-                        placeholder="Enter Plan Title (optional)"
-                        value={integrationForm.plannerPlanTitle ?? ""}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerPlanTitle: e.target.value }))
-                        }
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Team</span>
+                        <p className="font-medium">{integrationSettings.supportPlannerGroupName || "Unknown"}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Plan</span>
+                        <p className="font-medium">{integrationSettings.supportPlannerPlanTitle || "Unknown"}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Bucket</span>
+                        <p className="font-medium">{integrationSettings.supportPlannerBucketName || "Support Tickets"}</p>
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm flex items-center gap-1">
-                        Plan Web URL
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                      </Label>
-                      <Input
-                        placeholder="https://tasks.office.com/..."
-                        value={integrationForm.plannerPlanWebUrl ?? ""}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerPlanWebUrl: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm">
-                        Group ID <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        placeholder="Enter Group ID"
-                        value={integrationForm.plannerGroupId ?? ""}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerGroupId: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm">Group Name</Label>
-                      <Input
-                        placeholder="Enter Group Name (optional)"
-                        value={integrationForm.plannerGroupName ?? ""}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerGroupName: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-sm">Bucket Name</Label>
-                      <Input
-                        placeholder="Support Tickets"
-                        value={integrationForm.plannerBucketName ?? "Support Tickets"}
-                        onChange={(e) =>
-                          setIntegrationForm((prev) => ({ ...prev, plannerBucketName: e.target.value }))
-                        }
-                      />
-                    </div>
-                    <div className="md:col-span-2 flex justify-end">
+                    <div className="flex items-center gap-2 pt-1">
                       <Button
-                        onClick={() => saveIntegrations.mutate(integrationForm)}
-                        disabled={saveIntegrations.isPending}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowPlannerDialog(true)}
                       >
-                        {saveIntegrations.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <Save className="h-4 w-4 mr-2" />
-                        )}
-                        Save
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        Change Plan
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowDisconnectDialog(true)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Unlink className="h-3.5 w-3.5 mr-1.5" />
+                        Disconnect
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg p-4 border-dashed">
+                    <div className="flex flex-col items-center text-center gap-3 py-2">
+                      <MicrosoftPlannerIcon className="h-8 w-8 opacity-40" />
+                      <div>
+                        <p className="text-sm text-muted-foreground">
+                          Not connected to Microsoft Planner
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Connect a Planner plan to automatically create tasks for new support tickets
+                        </p>
+                      </div>
+                      <Button size="sm" onClick={() => setShowPlannerDialog(true)}>
+                        <MicrosoftPlannerIcon className="h-4 w-4 mr-2" />
+                        Connect to Planner
                       </Button>
                     </div>
                   </div>
@@ -476,6 +446,36 @@ export function AdminSupportTab() {
           ))}
         </div>
       )}
+
+      {tenantId && (
+        <SupportPlannerConnectionDialog
+          open={showPlannerDialog}
+          onOpenChange={setShowPlannerDialog}
+          tenantId={tenantId}
+          currentSettings={integrationSettings}
+        />
+      )}
+
+      <AlertDialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Planner?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will stop creating Planner tasks for new support tickets. Existing tasks in Planner will not be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => disconnectPlanner.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {disconnectPlanner.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
