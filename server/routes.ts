@@ -22107,21 +22107,33 @@ Provide a JSON response with:
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 4096,
+        maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
+
+      if (!result.content || result.content.trim().length === 0) {
+        return res.status(422).json({ message: "AI returned an empty response. Try again." });
+      }
 
       let parsed;
       try {
         parsed = JSON.parse(result.content);
       } catch {
-        parsed = { mitigationPlan: result.content, suggestedActions: [] };
+        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try { parsed = JSON.parse(jsonMatch[0]); } catch { parsed = { mitigationPlan: result.content, suggestedActions: [] }; }
+        } else {
+          parsed = { mitigationPlan: result.content, suggestedActions: [] };
+        }
       }
 
       res.json(parsed);
     } catch (error: any) {
       console.error("[AI] Suggest mitigation/resolution failed:", error);
+      if (error.message?.includes('finish_reason') || error.message?.includes('length')) {
+        return res.status(422).json({ message: "The input was too long for AI to process. Try with less context." });
+      }
       res.status(500).json({ message: error.message || "Failed to generate suggestion" });
     }
   });
@@ -22173,21 +22185,33 @@ Only include fields relevant to each item type. Be specific and actionable.`;
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.5,
-        maxTokens: 3072,
+        maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
+
+      if (!result.content || result.content.trim().length === 0) {
+        return res.status(422).json({ message: "AI returned an empty response. Try with shorter text or try again." });
+      }
 
       let parsed;
       try {
         parsed = JSON.parse(result.content);
       } catch {
-        parsed = { items: [] };
+        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try { parsed = JSON.parse(jsonMatch[0]); } catch { parsed = { items: [] }; }
+        } else {
+          parsed = { items: [] };
+        }
       }
 
       res.json(parsed);
     } catch (error: any) {
       console.error("[AI] Ingest text failed:", error);
+      if (error.message?.includes('finish_reason') || error.message?.includes('length')) {
+        return res.status(422).json({ message: "The text was too long for AI to process completely. Try splitting it into smaller sections." });
+      }
       res.status(500).json({ message: error.message || "Failed to analyze text" });
     }
   });
@@ -22236,21 +22260,33 @@ Extract decisions broadly — look for statements about choices, directions, agr
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.5,
-        maxTokens: 3072,
+        maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
+
+      if (!result.content || result.content.trim().length === 0) {
+        return res.status(422).json({ message: "AI returned an empty response. Try with shorter text or try again." });
+      }
 
       let parsed;
       try {
         parsed = JSON.parse(result.content);
       } catch {
-        parsed = { decisions: [] };
+        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try { parsed = JSON.parse(jsonMatch[0]); } catch { parsed = { decisions: [] }; }
+        } else {
+          parsed = { decisions: [] };
+        }
       }
 
       res.json(parsed);
     } catch (error: any) {
       console.error("[AI] Extract decisions failed:", error);
+      if (error.message?.includes('finish_reason') || error.message?.includes('length')) {
+        return res.status(422).json({ message: "The text was too long for AI to process completely. Try splitting it into smaller sections." });
+      }
       res.status(500).json({ message: error.message || "Failed to extract decisions" });
     }
   });
@@ -22300,16 +22336,25 @@ Return a JSON response:
 
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 4096,
+        maxTokens: 8192,
         responseFormat: 'json',
         groundingContext: groundingCtx,
       });
+
+      if (!result.content || result.content.trim().length === 0) {
+        return res.status(422).json({ message: "AI returned an empty response. Try again." });
+      }
 
       let parsed;
       try {
         parsed = JSON.parse(result.content);
       } catch {
-        parsed = { actions: [] };
+        const jsonMatch = result.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try { parsed = JSON.parse(jsonMatch[0]); } catch { parsed = { actions: [] }; }
+        } else {
+          parsed = { actions: [] };
+        }
       }
 
       res.json(parsed);
