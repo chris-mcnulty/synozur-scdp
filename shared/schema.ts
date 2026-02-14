@@ -203,7 +203,11 @@ export const tenantUsers = pgTable("tenant_users", {
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   
   // Tenant-specific role (existing Constellation roles)
-  role: varchar("role", { length: 50 }).notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  role: varchar("role", { length: 50 }).notNull().default("employee"), // admin, billing-admin, pm, employee, executive, client
+  
+  // Client association (for stakeholder/client role users)
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: 'cascade' }),
+  stakeholderTitle: varchar("stakeholder_title", { length: 100 }),
   
   // Status
   status: varchar("status", { length: 50 }).default("active"), // active, suspended, invited
@@ -215,9 +219,10 @@ export const tenantUsers = pgTable("tenant_users", {
   
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 }, (table) => ({
-  uniqueUserTenant: uniqueIndex("unique_user_tenant").on(table.userId, table.tenantId),
+  uniqueUserTenantClient: uniqueIndex("unique_user_tenant_client").on(table.userId, table.tenantId, table.clientId),
   tenantIdx: index("idx_tenant_users_tenant").on(table.tenantId),
   userIdx: index("idx_tenant_users_user").on(table.userId),
+  clientIdx: index("idx_tenant_users_client").on(table.clientId),
 }));
 
 // Consultant Access (for Synozur consultants accessing client tenants)

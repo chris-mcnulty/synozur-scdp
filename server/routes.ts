@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -9609,6 +9609,188 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         message: "Failed to update client",
         error: error.message 
       });
+    }
+  });
+
+  // Client Stakeholders (external users linked to a client via tenantUsers with role='client')
+  app.get("/api/clients/:clientId/stakeholders", requireAuth, async (req, res) => {
+    try {
+      const stakeholders = await db
+        .select({
+          id: tenantUsers.id,
+          userId: tenantUsers.userId,
+          tenantId: tenantUsers.tenantId,
+          clientId: tenantUsers.clientId,
+          role: tenantUsers.role,
+          stakeholderTitle: tenantUsers.stakeholderTitle,
+          status: tenantUsers.status,
+          createdAt: tenantUsers.createdAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(tenantUsers)
+        .innerJoin(users, eq(tenantUsers.userId, users.id))
+        .where(
+          and(
+            eq(tenantUsers.clientId, req.params.clientId),
+            eq(tenantUsers.role, 'client')
+          )
+        );
+      res.json(stakeholders);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to fetch stakeholders", error: error.message });
+    }
+  });
+
+  app.post("/api/clients/:clientId/stakeholders", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { email, name, stakeholderTitle } = req.body;
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+
+      const client = await storage.getClient(req.params.clientId);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+
+      let user = await storage.getUserByEmail(email.toLowerCase().trim());
+      if (!user) {
+        user = await storage.createUser({
+          email: email.toLowerCase().trim(),
+          name: name || email.split('@')[0],
+          role: 'employee',
+          password: '',
+        });
+      }
+
+      const tenantId = client.tenantId || (req as any).tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Could not determine tenant" });
+      }
+
+      const existing = await db
+        .select()
+        .from(tenantUsers)
+        .where(
+          and(
+            eq(tenantUsers.userId, user.id),
+            eq(tenantUsers.tenantId, tenantId),
+            eq(tenantUsers.clientId, req.params.clientId)
+          )
+        );
+
+      if (existing.length > 0) {
+        return res.status(409).json({ message: "This user is already a stakeholder for this client" });
+      }
+
+      const [stakeholder] = await db
+        .insert(tenantUsers)
+        .values({
+          userId: user.id,
+          tenantId,
+          role: 'client',
+          clientId: req.params.clientId,
+          stakeholderTitle: stakeholderTitle || null,
+          status: 'active',
+          invitedBy: (req as any).userId,
+          invitedAt: new Date(),
+        })
+        .returning();
+
+      res.json({
+        ...stakeholder,
+        userName: user.name,
+        userEmail: user.email,
+      });
+    } catch (error: any) {
+      if (error.code === '23505') {
+        return res.status(409).json({ message: "This user is already a stakeholder for this client" });
+      }
+      res.status(500).json({ message: "Failed to add stakeholder", error: error.message });
+    }
+  });
+
+  app.patch("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const { stakeholderTitle } = req.body;
+      const [updated] = await db
+        .update(tenantUsers)
+        .set({ stakeholderTitle })
+        .where(
+          and(
+            eq(tenantUsers.id, req.params.stakeholderId),
+            eq(tenantUsers.clientId, req.params.clientId),
+            eq(tenantUsers.role, 'client')
+          )
+        )
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ message: "Stakeholder not found" });
+      }
+
+      const user = await storage.getUser(updated.userId);
+      res.json({
+        ...updated,
+        userName: user?.name,
+        userEmail: user?.email,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to update stakeholder", error: error.message });
+    }
+  });
+
+  app.delete("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+    try {
+      const [deleted] = await db
+        .delete(tenantUsers)
+        .where(
+          and(
+            eq(tenantUsers.id, req.params.stakeholderId),
+            eq(tenantUsers.clientId, req.params.clientId),
+            eq(tenantUsers.role, 'client')
+          )
+        )
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ message: "Stakeholder not found" });
+      }
+      res.json({ message: "Stakeholder removed" });
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to remove stakeholder", error: error.message });
+    }
+  });
+
+  // Get stakeholders for a project (via project -> client -> tenantUsers with role='client')
+  app.get("/api/projects/:id/stakeholders", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const stakeholders = await db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          stakeholderTitle: tenantUsers.stakeholderTitle,
+        })
+        .from(tenantUsers)
+        .innerJoin(users, eq(tenantUsers.userId, users.id))
+        .where(
+          and(
+            eq(tenantUsers.clientId, project.clientId),
+            eq(tenantUsers.role, 'client'),
+            eq(tenantUsers.status, 'active')
+          )
+        );
+
+      res.json(stakeholders);
+    } catch (error: any) {
+      res.status(500).json({ message: "Failed to fetch project stakeholders", error: error.message });
     }
   });
 

@@ -195,6 +195,11 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
     enabled: !!projectId,
   });
 
+  const { data: clientStakeholders = [] } = useQuery<{ id: string; name: string; email: string; stakeholderTitle: string | null }[]>({
+    queryKey: [`/api/projects/${projectId}/stakeholders`],
+    enabled: !!projectId,
+  });
+
   const { data: entryDetail } = useQuery<RaiddEntryDetail>({
     queryKey: ["/api/raidd", expandedEntryId],
     enabled: !!expandedEntryId,
@@ -734,6 +739,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         isPending={createMutation.isPending}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
+        clientStakeholders={clientStakeholders}
         defaultType={createWithType}
         defaultParentId={createWithParent}
       />
@@ -746,6 +752,7 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
         entry={editingEntry}
         projectEntries={allEntries}
         teamMembers={projectTeamMembers}
+        clientStakeholders={clientStakeholders}
         isEdit
       />
 
@@ -1056,6 +1063,7 @@ function RaiddFormDialog({
   entry,
   projectEntries = [],
   teamMembers = [],
+  clientStakeholders = [],
   isEdit = false,
   defaultType,
   defaultParentId,
@@ -1067,6 +1075,7 @@ function RaiddFormDialog({
   entry?: RaiddEntry | null;
   projectEntries?: RaiddEntry[];
   teamMembers?: { id: string; name: string }[];
+  clientStakeholders?: { id: string; name: string; stakeholderTitle?: string | null }[];
   isEdit?: boolean;
   defaultType?: string | null;
   defaultParentId?: string | null;
@@ -1255,6 +1264,15 @@ function RaiddFormDialog({
                             ))}
                           </>
                         )}
+                        {clientStakeholders.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Stakeholders</div>
+                            {clientStakeholders.map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}{s.stakeholderTitle ? ` (${s.stakeholderTitle})` : ''}</SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -1282,6 +1300,15 @@ function RaiddFormDialog({
                             <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Team Members</div>
                             {teamMembers.map(m => (
                               <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                            ))}
+                          </>
+                        )}
+                        {clientStakeholders.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <div className="px-2 py-1 text-xs font-semibold text-gray-500 dark:text-gray-400">Client Stakeholders</div>
+                            {clientStakeholders.map(s => (
+                              <SelectItem key={s.id} value={s.id}>{s.name}{s.stakeholderTitle ? ` (${s.stakeholderTitle})` : ''}</SelectItem>
                             ))}
                           </>
                         )}

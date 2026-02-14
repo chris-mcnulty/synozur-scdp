@@ -4,6 +4,7 @@ export const ROLES = {
   PM: 'pm',
   EMPLOYEE: 'employee',
   EXECUTIVE: 'executive',
+  CLIENT: 'client',
 } as const;
 
 export type UserRole = typeof ROLES[keyof typeof ROLES];
@@ -20,6 +21,8 @@ export function getRoleDisplayName(role: string | UserRole): string {
       return 'Employee';
     case ROLES.EXECUTIVE:
       return 'Executive';
+    case ROLES.CLIENT:
+      return 'Client Stakeholder';
     default:
       return role;
   }

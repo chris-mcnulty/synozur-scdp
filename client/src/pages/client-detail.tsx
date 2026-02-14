@@ -56,7 +56,10 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Filter
+  Filter,
+  UserPlus,
+  Trash2,
+  UserCircle
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
@@ -102,6 +105,8 @@ export default function ClientDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<ClientEditForm>({});
   const [invoiceYearFilter, setInvoiceYearFilter] = useState<string>("all");
+  const [showAddStakeholder, setShowAddStakeholder] = useState(false);
+  const [stakeholderForm, setStakeholderForm] = useState({ email: '', name: '', stakeholderTitle: '' });
 
   const { toast } = useToast();
 
@@ -191,6 +196,44 @@ export default function ClientDetail() {
   const { data: clientBatches = [] } = useQuery<InvoiceBatchWithDetails[]>({
     queryKey: ["/api/clients", clientId, "invoice-batches"],
     enabled: !!clientId
+  });
+
+  const { data: stakeholders = [], isLoading: stakeholdersLoading } = useQuery<any[]>({
+    queryKey: ["/api/clients", clientId, "stakeholders"],
+    enabled: !!clientId
+  });
+
+  const addStakeholderMutation = useMutation({
+    mutationFn: async (data: { email: string; name: string; stakeholderTitle: string }) => {
+      return apiRequest(`/api/clients/${clientId}/stakeholders`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "stakeholders"] });
+      toast({ title: "Stakeholder added", description: "Client stakeholder has been added successfully" });
+      setShowAddStakeholder(false);
+      setStakeholderForm({ email: '', name: '', stakeholderTitle: '' });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const removeStakeholderMutation = useMutation({
+    mutationFn: async (stakeholderId: string) => {
+      return apiRequest(`/api/clients/${clientId}/stakeholders/${stakeholderId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "stakeholders"] });
+      toast({ title: "Stakeholder removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
   });
 
   const getEffectiveDate = (batch: InvoiceBatchWithDetails) => {
@@ -422,6 +465,7 @@ export default function ClientDetail() {
             <TabsTrigger value="sows">SOWs & Change Orders ({clientSows.length})</TabsTrigger>
             <TabsTrigger value="invoices">Invoices</TabsTrigger>
             <TabsTrigger value="rate-overrides">Rate Overrides</TabsTrigger>
+            <TabsTrigger value="stakeholders">Stakeholders ({stakeholders.length})</TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
@@ -1286,7 +1330,122 @@ export default function ClientDetail() {
           <TabsContent value="rate-overrides" className="space-y-6">
             <ClientRateOverridesSection clientId={clientId!} />
           </TabsContent>
+
+          {/* Stakeholders Tab */}
+          <TabsContent value="stakeholders" className="space-y-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <UserCircle className="h-5 w-5" />
+                  Client Stakeholders
+                </CardTitle>
+                <Button size="sm" onClick={() => setShowAddStakeholder(true)}>
+                  <UserPlus className="h-4 w-4 mr-1" /> Add Stakeholder
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  External client-side contacts who can be assigned as owners or assignees on project RAIDD items.
+                </p>
+                {stakeholdersLoading ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : stakeholders.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <UserCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>No stakeholders yet</p>
+                    <p className="text-sm">Add client-side contacts to assign them to RAIDD items</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Title / Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[80px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stakeholders.map((s: any) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">{s.userName}</TableCell>
+                          <TableCell>{s.userEmail}</TableCell>
+                          <TableCell>{s.stakeholderTitle || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant={s.status === 'active' ? 'default' : 'secondary'}>
+                              {s.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => removeStakeholderMutation.mutate(s.id)}
+                              disabled={removeStakeholderMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+
+        {/* Add Stakeholder Dialog */}
+        <Dialog open={showAddStakeholder} onOpenChange={setShowAddStakeholder}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Client Stakeholder</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="stakeholder-email">Email *</Label>
+                <Input
+                  id="stakeholder-email"
+                  type="email"
+                  placeholder="stakeholder@clientcompany.com"
+                  value={stakeholderForm.email}
+                  onChange={(e) => setStakeholderForm({ ...stakeholderForm, email: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">If the person already exists in the system, they will be linked. Otherwise, a new user will be created.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stakeholder-name">Name</Label>
+                <Input
+                  id="stakeholder-name"
+                  placeholder="Jane Smith"
+                  value={stakeholderForm.name}
+                  onChange={(e) => setStakeholderForm({ ...stakeholderForm, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stakeholder-title">Title / Role at Client</Label>
+                <Input
+                  id="stakeholder-title"
+                  placeholder="e.g., CTO, Project Sponsor, Technical Lead"
+                  value={stakeholderForm.stakeholderTitle}
+                  onChange={(e) => setStakeholderForm({ ...stakeholderForm, stakeholderTitle: e.target.value })}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddStakeholder(false)}>Cancel</Button>
+              <Button
+                onClick={() => addStakeholderMutation.mutate(stakeholderForm)}
+                disabled={!stakeholderForm.email || addStakeholderMutation.isPending}
+              >
+                {addStakeholderMutation.isPending ? "Adding..." : "Add Stakeholder"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

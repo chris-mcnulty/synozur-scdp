@@ -123,6 +123,19 @@ function Router() {
     }
   }, [user, setLocation]);
 
+  // Handle session errors - redirect to login
+  useEffect(() => {
+    if (error && !user && !isLoading && !processingSession && !isRecovering) {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/signup') {
+        if (currentPath !== '/' && currentPath !== '/login') {
+          sessionStorage.setItem('redirectAfterLogin', currentPath);
+        }
+        setLocation('/login');
+      }
+    }
+  }, [error, user, isLoading, processingSession, isRecovering, setLocation]);
+
   // Show a better loading state
   if (processingSession || isLoading || isRecovering) {
     return (
@@ -132,19 +145,6 @@ function Router() {
           <div className="text-lg text-muted-foreground">
             {isRecovering ? "Recovering session..." : "Loading..."}
           </div>
-        </div>
-      </div>
-    );
-  }
-  
-  // Handle session errors gracefully
-  if (error && !user && window.location.pathname !== '/login') {
-    // Session validation failed, the recovery hook will handle redirect
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <div className="text-lg text-muted-foreground">Redirecting to login...</div>
         </div>
       </div>
     );
