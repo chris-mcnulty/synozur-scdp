@@ -400,6 +400,98 @@ export async function runPlannerSyncJob(
   }
 }
 
+async function syncSupportTicketsFromPlanner(): Promise<{ ticketsClosed: number; errors: string[] }> {
+  const result = { ticketsClosed: 0, errors: [] as string[] };
+  
+  try {
+    const tenantsWithPlanner = await storage.getTenantsWithSupportPlannerEnabled();
+    if (tenantsWithPlanner.length === 0) return result;
+
+    const { plannerService } = await import('./planner-service.js');
+    if (!plannerService.isAppConfigured()) return result;
+
+    for (const tenant of tenantsWithPlanner) {
+      try {
+        if (!tenant.supportPlannerPlanId) continue;
+        
+        const openSyncs = await storage.getOpenSupportTicketSyncsByTenant(tenant.id);
+        if (openSyncs.length === 0) continue;
+
+        console.log(`[SUPPORT-PLANNER-SYNC] Checking ${openSyncs.length} open tickets for tenant ${tenant.name}`);
+
+        for (const sync of openSyncs) {
+          try {
+            const task = await plannerService.getTaskWithDetails(sync.taskId);
+            if (!task) {
+              await storage.updateSupportTicketPlannerSync(sync.id, { syncStatus: 'error', syncError: 'Task not found in Planner' });
+              continue;
+            }
+
+            if (task.percentComplete === 100 && sync.ticketStatus !== 'resolved') {
+              const ticket = await storage.getSupportTicketById(sync.ticketId);
+              if (ticket && ticket.status !== 'resolved') {
+                await storage.updateSupportTicket(ticket.id, {
+                  status: 'resolved',
+                  resolvedAt: new Date(),
+                  resolvedBy: null,
+                } as any);
+                await storage.updateSupportTicketPlannerSync(sync.id, {
+                  syncStatus: 'synced',
+                  remoteEtag: task['@odata.etag'] || null,
+                });
+
+                // Send closure email to requester
+                try {
+                  const requester = await storage.getUser(ticket.userId);
+                  if (requester?.email) {
+                    const { emailService } = await import('./email-notification.js');
+                    const APP_URL = process.env.REPLIT_DEV_DOMAIN
+                      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+                      : process.env.APP_URL || 'http://localhost:5000';
+                    const branding = { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl };
+                    await emailService.notifySupportTicketClosed(
+                      { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
+                      ticket.ticketNumber,
+                      ticket.subject,
+                      'Resolved via Microsoft Planner',
+                      branding,
+                      `${APP_URL}/support`
+                    );
+                  }
+                } catch (emailErr) {
+                  console.error('[SUPPORT-PLANNER-SYNC] Failed to send closure email:', emailErr);
+                }
+
+                result.ticketsClosed++;
+                console.log(`[SUPPORT-PLANNER-SYNC] Ticket #${ticket.ticketNumber} closed via Planner task completion`);
+              }
+            }
+
+            // Update etag for future conflict detection
+            if (task['@odata.etag'] && task['@odata.etag'] !== sync.remoteEtag) {
+              await storage.updateSupportTicketPlannerSync(sync.id, { remoteEtag: task['@odata.etag'] });
+            }
+          } catch (taskErr: any) {
+            result.errors.push(`Ticket sync ${sync.id}: ${taskErr.message}`);
+            console.error(`[SUPPORT-PLANNER-SYNC] Error checking task ${sync.taskId}:`, taskErr.message);
+          }
+        }
+      } catch (tenantErr: any) {
+        result.errors.push(`Tenant ${tenant.name}: ${tenantErr.message}`);
+        console.error(`[SUPPORT-PLANNER-SYNC] Error syncing tenant ${tenant.name}:`, tenantErr.message);
+      }
+    }
+  } catch (err: any) {
+    result.errors.push(err.message);
+    console.error('[SUPPORT-PLANNER-SYNC] Top-level error:', err.message);
+  }
+
+  if (result.ticketsClosed > 0 || result.errors.length > 0) {
+    console.log(`[SUPPORT-PLANNER-SYNC] Complete: ${result.ticketsClosed} tickets closed, ${result.errors.length} errors`);
+  }
+  return result;
+}
+
 export async function startPlannerSyncScheduler(): Promise<void> {
   console.log('[PLANNER-SYNC] Starting Planner sync scheduler...');
 
@@ -414,6 +506,11 @@ export async function startPlannerSyncScheduler(): Promise<void> {
       await runPlannerSyncJob('scheduled');
     } catch (err) {
       console.error('[PLANNER-SYNC] Scheduled sync failed:', err);
+    }
+    try {
+      await syncSupportTicketsFromPlanner();
+    } catch (err) {
+      console.error('[SUPPORT-PLANNER-SYNC] Scheduled sync failed:', err);
     }
   });
 

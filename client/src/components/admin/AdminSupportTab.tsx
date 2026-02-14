@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowLeft, Send, LifeBuoy, Clock, AlertCircle, CheckCircle2, MessageSquare, Eye } from "lucide-react";
+import { Loader2, ArrowLeft, Send, LifeBuoy, Clock, AlertCircle, CheckCircle2, MessageSquare, Eye, Settings, ExternalLink, Save, List } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -112,11 +115,68 @@ function getStatusIcon(status: string) {
   }
 }
 
+interface SupportIntegrationSettings {
+  plannerEnabled?: boolean;
+  plannerPlanId?: string;
+  plannerPlanTitle?: string;
+  plannerPlanWebUrl?: string;
+  plannerGroupId?: string;
+  plannerGroupName?: string;
+  plannerBucketName?: string;
+}
+
 export function AdminSupportTab() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const tenantId = user?.primaryTenantId;
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [integrationForm, setIntegrationForm] = useState<SupportIntegrationSettings>({
+    plannerEnabled: false,
+    plannerPlanId: "",
+    plannerPlanTitle: "",
+    plannerPlanWebUrl: "",
+    plannerGroupId: "",
+    plannerGroupName: "",
+    plannerBucketName: "Support Tickets",
+  });
+
+  const { data: integrationSettings, isLoading: isLoadingIntegrations } = useQuery<SupportIntegrationSettings>({
+    queryKey: ['/api/tenants', tenantId, 'support-integrations'],
+    enabled: !!tenantId,
+  });
+
+  useEffect(() => {
+    if (integrationSettings) {
+      setIntegrationForm({
+        plannerEnabled: integrationSettings.plannerEnabled ?? false,
+        plannerPlanId: integrationSettings.plannerPlanId ?? "",
+        plannerPlanTitle: integrationSettings.plannerPlanTitle ?? "",
+        plannerPlanWebUrl: integrationSettings.plannerPlanWebUrl ?? "",
+        plannerGroupId: integrationSettings.plannerGroupId ?? "",
+        plannerGroupName: integrationSettings.plannerGroupName ?? "",
+        plannerBucketName: integrationSettings.plannerBucketName ?? "Support Tickets",
+      });
+    }
+  }, [integrationSettings]);
+
+  const saveIntegrations = useMutation({
+    mutationFn: async (settings: SupportIntegrationSettings) => {
+      return await apiRequest(`/api/tenants/${tenantId}/support-integrations`, {
+        method: "PATCH",
+        body: JSON.stringify(settings),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Integration settings saved" });
+      queryClient.invalidateQueries({ queryKey: ['/api/tenants', tenantId, 'support-integrations'] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
 
   const filters: Record<string, string> = {};
   if (statusFilter !== "all") filters.status = statusFilter;
@@ -171,6 +231,144 @@ export function AdminSupportTab() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-lg">Support Ticket Integrations</CardTitle>
+              <CardDescription>Configure integrations for support ticket management</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {isLoadingIntegrations ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Microsoft Planner Sync</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Automatically create tasks in Microsoft Planner for new support tickets
+                    </p>
+                  </div>
+                  <Switch
+                    checked={integrationForm.plannerEnabled ?? false}
+                    onCheckedChange={(checked) =>
+                      setIntegrationForm((prev) => ({ ...prev, plannerEnabled: checked }))
+                    }
+                  />
+                </div>
+
+                {integrationForm.plannerEnabled && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-muted">
+                    <div className="space-y-2">
+                      <Label className="text-sm">
+                        Plan ID <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="Enter Plan ID"
+                        value={integrationForm.plannerPlanId ?? ""}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerPlanId: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Plan Title</Label>
+                      <Input
+                        placeholder="Enter Plan Title (optional)"
+                        value={integrationForm.plannerPlanTitle ?? ""}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerPlanTitle: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm flex items-center gap-1">
+                        Plan Web URL
+                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                      </Label>
+                      <Input
+                        placeholder="https://tasks.office.com/..."
+                        value={integrationForm.plannerPlanWebUrl ?? ""}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerPlanWebUrl: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">
+                        Group ID <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="Enter Group ID"
+                        value={integrationForm.plannerGroupId ?? ""}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerGroupId: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Group Name</Label>
+                      <Input
+                        placeholder="Enter Group Name (optional)"
+                        value={integrationForm.plannerGroupName ?? ""}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerGroupName: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Bucket Name</Label>
+                      <Input
+                        placeholder="Support Tickets"
+                        value={integrationForm.plannerBucketName ?? "Support Tickets"}
+                        onChange={(e) =>
+                          setIntegrationForm((prev) => ({ ...prev, plannerBucketName: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end">
+                      <Button
+                        onClick={() => saveIntegrations.mutate(integrationForm)}
+                        disabled={saveIntegrations.isPending}
+                      >
+                        {saveIntegrations.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Save className="h-4 w-4 mr-2" />
+                        )}
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-medium text-muted-foreground">Microsoft Lists</Label>
+                      <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Track and manage support tickets in Microsoft Lists
+                    </p>
+                  </div>
+                  <Switch disabled checked={false} className="opacity-50" />
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-4">

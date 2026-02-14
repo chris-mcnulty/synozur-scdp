@@ -247,6 +247,46 @@ export class EmailNotificationService {
   }
 
   /**
+   * Notify requester that their support ticket has been resolved/closed
+   */
+  async notifySupportTicketClosed(
+    requester: EmailRecipient,
+    ticketNumber: number,
+    subject: string,
+    resolutionNote?: string,
+    branding?: TenantBranding,
+    ticketUrl?: string
+  ): Promise<void> {
+    const emailSubject = `Support Ticket #${ticketNumber} Resolved: ${subject}`;
+    const header = getEmailHeader(branding);
+    const viewTicketButton = ticketUrl ? `
+      <p style="margin: 20px 0;">
+        <a href="${escapeHtml(ticketUrl)}" style="background-color: #22C55E; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Ticket</a>
+      </p>
+    ` : '';
+    const body = `
+      <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          ${header}
+          <h2 style="color: #22C55E;">Support Ticket Resolved</h2>
+          <p>Hi ${escapeHtml(requester.name)},</p>
+          <p>Your support ticket has been resolved:</p>
+          <div style="background-color: #f0fdf4; padding: 15px; border-left: 4px solid #22C55E; margin: 20px 0;">
+            <strong>Ticket #:</strong> ${ticketNumber}<br>
+            <strong>Subject:</strong> ${escapeHtml(subject)}
+            ${resolutionNote ? `<br><br><strong>Resolution:</strong><br>${escapeHtml(resolutionNote).replace(/\n/g, '<br>')}` : ''}
+          </div>
+          ${viewTicketButton}
+          <p>If you have any further questions or this issue persists, feel free to open a new ticket or reply.</p>
+          <p>Thank you,<br>${escapeHtml(branding?.companyName || 'Synozur Consulting Delivery Platform')}</p>
+        </body>
+      </html>
+    `;
+
+    await this.sendEmail({ to: requester, subject: emailSubject, body });
+  }
+
+  /**
    * Notify employee that their expenses have been included in a reimbursement batch
    */
   async notifyReimbursementBatchProcessed(

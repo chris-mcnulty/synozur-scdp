@@ -56,7 +56,8 @@ import {
   raiddEntries, type RaiddEntry, type InsertRaiddEntry,
   groundingDocuments, type GroundingDocument, type InsertGroundingDocument,
   supportTickets, type SupportTicket, type InsertSupportTicket,
-  supportTicketReplies, type SupportTicketReply, type InsertSupportTicketReply
+  supportTicketReplies, type SupportTicketReply, type InsertSupportTicketReply,
+  supportTicketPlannerSync, type SupportTicketPlannerSync, type InsertSupportTicketPlannerSync
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -11185,6 +11186,70 @@ export class DatabaseStorage implements IStorage {
       .set({ updatedAt: new Date() })
       .where(eq(supportTickets.id, reply.ticketId));
     return created;
+  }
+
+  // Support Ticket Planner Sync
+  async createSupportTicketPlannerSync(sync: InsertSupportTicketPlannerSync): Promise<SupportTicketPlannerSync> {
+    const [created] = await db.insert(supportTicketPlannerSync).values(sync).returning();
+    return created;
+  }
+
+  async getSupportTicketPlannerSyncByTicketId(ticketId: string): Promise<SupportTicketPlannerSync | undefined> {
+    const [record] = await db.select().from(supportTicketPlannerSync)
+      .where(eq(supportTicketPlannerSync.ticketId, ticketId));
+    return record;
+  }
+
+  async getSupportTicketPlannerSyncByTaskId(taskId: string): Promise<SupportTicketPlannerSync | undefined> {
+    const [record] = await db.select().from(supportTicketPlannerSync)
+      .where(eq(supportTicketPlannerSync.taskId, taskId));
+    return record;
+  }
+
+  async getSupportTicketPlannerSyncsByTenant(tenantId: string): Promise<SupportTicketPlannerSync[]> {
+    return await db.select().from(supportTicketPlannerSync)
+      .where(eq(supportTicketPlannerSync.tenantId, tenantId));
+  }
+
+  async updateSupportTicketPlannerSync(id: string, updates: Partial<InsertSupportTicketPlannerSync>): Promise<SupportTicketPlannerSync> {
+    const [updated] = await db.update(supportTicketPlannerSync)
+      .set({ ...updates, lastSyncedAt: new Date() })
+      .where(eq(supportTicketPlannerSync.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getTenantsWithSupportPlannerEnabled(): Promise<Tenant[]> {
+    return await db.select().from(tenants)
+      .where(and(
+        eq(tenants.supportPlannerEnabled, true),
+        isNotNull(tenants.supportPlannerPlanId)
+      ));
+  }
+
+  async getOpenSupportTicketSyncsByTenant(tenantId: string): Promise<(SupportTicketPlannerSync & { ticketStatus: string })[]> {
+    const results = await db.select({
+      id: supportTicketPlannerSync.id,
+      ticketId: supportTicketPlannerSync.ticketId,
+      tenantId: supportTicketPlannerSync.tenantId,
+      planId: supportTicketPlannerSync.planId,
+      taskId: supportTicketPlannerSync.taskId,
+      taskTitle: supportTicketPlannerSync.taskTitle,
+      bucketId: supportTicketPlannerSync.bucketId,
+      bucketName: supportTicketPlannerSync.bucketName,
+      lastSyncedAt: supportTicketPlannerSync.lastSyncedAt,
+      syncStatus: supportTicketPlannerSync.syncStatus,
+      syncError: supportTicketPlannerSync.syncError,
+      remoteEtag: supportTicketPlannerSync.remoteEtag,
+      createdAt: supportTicketPlannerSync.createdAt,
+      ticketStatus: supportTickets.status,
+    }).from(supportTicketPlannerSync)
+      .innerJoin(supportTickets, eq(supportTicketPlannerSync.ticketId, supportTickets.id))
+      .where(and(
+        eq(supportTicketPlannerSync.tenantId, tenantId),
+        ne(supportTickets.status, 'resolved')
+      ));
+    return results;
   }
 }
 

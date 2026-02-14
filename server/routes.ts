@@ -10378,6 +10378,60 @@ Return a JSON response:
         console.error("Failed to send ticket notification email:", emailErr);
       }
 
+      // Sync to Microsoft Planner if enabled for this tenant
+      try {
+        if (tenantId) {
+          const tenant = await storage.getTenant(tenantId);
+          if (tenant?.supportPlannerEnabled && tenant.supportPlannerPlanId) {
+            const { plannerService } = await import("./services/planner-service.js");
+            if (plannerService.isAppConfigured()) {
+              const bucketName = tenant.supportPlannerBucketName || 'Support Tickets';
+              const bucket = await plannerService.getOrCreateBucket(tenant.supportPlannerPlanId, bucketName);
+              
+              const APP_URL = process.env.REPLIT_DEV_DOMAIN
+                ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+                : process.env.APP_URL || 'http://localhost:5000';
+              const ticketUrl = `${APP_URL}/support`;
+              
+              const taskTitle = `[#${ticket.ticketNumber}] ${ticket.subject}`;
+              const taskDescription = `Priority: ${ticket.priority}\nCategory: ${ticket.category.replace('_', ' ')}\nRequester: ${user.firstName || ''} ${user.lastName || ''} (${user.email})\n\n${ticket.description}\n\nView in Constellation: ${ticketUrl}`;
+              
+              const plannerTask = await plannerService.createTask({
+                planId: tenant.supportPlannerPlanId,
+                bucketId: bucket.id,
+                title: taskTitle,
+              });
+
+              // Set the task description via task details
+              try {
+                const taskDetails = await plannerService.getTaskDetails(plannerTask.id);
+                if (taskDetails?.['@odata.etag']) {
+                  await plannerService.updateTaskDetails(plannerTask.id, taskDetails['@odata.etag'], taskDescription);
+                }
+              } catch (detailsErr) {
+                console.warn('[SUPPORT-PLANNER] Failed to set task details:', detailsErr);
+              }
+
+              await storage.createSupportTicketPlannerSync({
+                ticketId: ticket.id,
+                tenantId,
+                planId: tenant.supportPlannerPlanId,
+                taskId: plannerTask.id,
+                taskTitle: taskTitle,
+                bucketId: bucket.id,
+                bucketName: bucketName,
+                syncStatus: 'synced',
+                remoteEtag: plannerTask['@odata.etag'] || null,
+                lastSyncedAt: new Date(),
+              });
+              console.log(`[SUPPORT-PLANNER] Synced ticket #${ticket.ticketNumber} to Planner task ${plannerTask.id}`);
+            }
+          }
+        }
+      } catch (plannerErr) {
+        console.error('[SUPPORT-PLANNER] Failed to sync ticket to Planner:', plannerErr);
+      }
+
       return res.status(201).json(ticket);
     } catch (error) {
       console.error("Error creating support ticket:", error);
@@ -10510,6 +10564,7 @@ Return a JSON response:
       }
 
       const updates: any = { ...parsed.data };
+      const wasResolved = ticket.status === 'resolved';
 
       if (updates.status === "resolved") {
         updates.resolvedAt = new Date();
@@ -10517,10 +10572,130 @@ Return a JSON response:
       }
 
       const updated = await storage.updateSupportTicket(ticket.id, updates);
+
+      // On ticket closure: send email + update Planner task
+      if (updates.status === "resolved" && !wasResolved) {
+        // Send closure email to the ticket requester
+        try {
+          const requester = await storage.getUser(ticket.userId);
+          if (requester?.email) {
+            const { emailService } = await import("./services/email-notification.js");
+            const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
+            const APP_URL = process.env.REPLIT_DEV_DOMAIN
+              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+              : process.env.APP_URL || 'http://localhost:5000';
+            const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
+            await emailService.notifySupportTicketClosed(
+              { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
+              ticket.ticketNumber,
+              ticket.subject,
+              undefined,
+              branding,
+              `${APP_URL}/support`
+            );
+            console.log(`[SUPPORT] Sent closure email to ${requester.email} for ticket #${ticket.ticketNumber}`);
+          }
+        } catch (emailErr) {
+          console.error('[SUPPORT] Failed to send closure email:', emailErr);
+        }
+
+        // Mark Planner task as complete
+        try {
+          const syncRecord = await storage.getSupportTicketPlannerSyncByTicketId(ticket.id);
+          if (syncRecord) {
+            const { plannerService } = await import("./services/planner-service.js");
+            if (plannerService.isAppConfigured()) {
+              const taskDetails = await plannerService.getTaskWithDetails(syncRecord.taskId);
+              const etag = taskDetails?.['@odata.etag'];
+              if (etag) {
+                await plannerService.updateTask(syncRecord.taskId, etag, { percentComplete: 100 });
+                await storage.updateSupportTicketPlannerSync(syncRecord.id, { syncStatus: 'synced' });
+                console.log(`[SUPPORT-PLANNER] Marked Planner task ${syncRecord.taskId} as complete for ticket #${ticket.ticketNumber}`);
+              }
+            }
+          }
+        } catch (plannerErr) {
+          console.error('[SUPPORT-PLANNER] Failed to mark Planner task as complete:', plannerErr);
+        }
+      }
+
       return res.json(updated);
     } catch (error) {
       console.error("Error updating support ticket:", error);
       return res.status(500).json({ error: "Failed to update support ticket" });
+    }
+  });
+
+  // Tenant support ticket integration settings
+  app.get("/api/tenants/:tenantId/support-integrations", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && userTenantId !== tenant.id) {
+        const platformRole = (req as any).user?.platformRole;
+        if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+      return res.json({
+        supportPlannerEnabled: tenant.supportPlannerEnabled || false,
+        supportPlannerPlanId: tenant.supportPlannerPlanId,
+        supportPlannerPlanTitle: tenant.supportPlannerPlanTitle,
+        supportPlannerPlanWebUrl: tenant.supportPlannerPlanWebUrl,
+        supportPlannerGroupId: tenant.supportPlannerGroupId,
+        supportPlannerGroupName: tenant.supportPlannerGroupName,
+        supportPlannerBucketName: tenant.supportPlannerBucketName || 'Support Tickets',
+        supportListsEnabled: tenant.supportListsEnabled || false,
+        connectorPlanner: tenant.connectorPlanner || false,
+      });
+    } catch (error) {
+      console.error("Error fetching support integrations:", error);
+      return res.status(500).json({ error: "Failed to fetch support integrations" });
+    }
+  });
+
+  app.patch("/api/tenants/:tenantId/support-integrations", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && userTenantId !== tenant.id) {
+        const platformRole = (req as any).user?.platformRole;
+        if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      const updateSchema = z.object({
+        supportPlannerEnabled: z.boolean().optional(),
+        supportPlannerPlanId: z.string().nullable().optional(),
+        supportPlannerPlanTitle: z.string().nullable().optional(),
+        supportPlannerPlanWebUrl: z.string().nullable().optional(),
+        supportPlannerGroupId: z.string().nullable().optional(),
+        supportPlannerGroupName: z.string().nullable().optional(),
+        supportPlannerBucketName: z.string().nullable().optional(),
+      });
+
+      const parsed = updateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
+      }
+
+      const updated = await storage.updateTenant(tenant.id, parsed.data as any);
+      return res.json({
+        supportPlannerEnabled: updated.supportPlannerEnabled || false,
+        supportPlannerPlanId: updated.supportPlannerPlanId,
+        supportPlannerPlanTitle: updated.supportPlannerPlanTitle,
+        supportPlannerPlanWebUrl: updated.supportPlannerPlanWebUrl,
+        supportPlannerGroupId: updated.supportPlannerGroupId,
+        supportPlannerGroupName: updated.supportPlannerGroupName,
+        supportPlannerBucketName: updated.supportPlannerBucketName || 'Support Tickets',
+        supportListsEnabled: updated.supportListsEnabled || false,
+      });
+    } catch (error) {
+      console.error("Error updating support integrations:", error);
+      return res.status(500).json({ error: "Failed to update support integrations" });
     }
   });
 

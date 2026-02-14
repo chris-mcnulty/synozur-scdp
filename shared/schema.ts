@@ -136,9 +136,19 @@ export const tenants = pgTable("tenants", {
   showChangelogOnLogin: boolean("show_changelog_on_login").default(true), // Show "What's New" modal to users on login
 
   // Notification Settings
-  expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false), // Enable weekly expense submission reminders
-  expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"), // Time to send reminders (HH:MM)
-  expenseReminderDay: integer("expense_reminder_day").default(1), // Day of week (0=Sunday, 1=Monday, etc.)
+  expenseRemindersEnabled: boolean("expense_reminders_enabled").default(false),
+  expenseReminderTime: varchar("expense_reminder_time", { length: 5 }).default("08:00"),
+  expenseReminderDay: integer("expense_reminder_day").default(1),
+  
+  // Support Ticket Integrations
+  supportPlannerEnabled: boolean("support_planner_enabled").default(false),
+  supportPlannerPlanId: varchar("support_planner_plan_id", { length: 255 }),
+  supportPlannerPlanTitle: text("support_planner_plan_title"),
+  supportPlannerPlanWebUrl: text("support_planner_plan_web_url"),
+  supportPlannerGroupId: varchar("support_planner_group_id", { length: 255 }),
+  supportPlannerGroupName: text("support_planner_group_name"),
+  supportPlannerBucketName: text("support_planner_bucket_name"),
+  supportListsEnabled: boolean("support_lists_enabled").default(false),
   
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
@@ -2755,6 +2765,30 @@ export const insertSupportTicketReplySchema = createInsertSchema(supportTicketRe
 
 export type InsertSupportTicketReply = z.infer<typeof insertSupportTicketReplySchema>;
 export type SupportTicketReply = typeof supportTicketReplies.$inferSelect;
+
+// Support Ticket to Planner Task sync tracking
+export const supportTicketPlannerSync = pgTable("support_ticket_planner_sync", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id").notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  planId: varchar("plan_id", { length: 255 }).notNull(),
+  taskId: varchar("task_id", { length: 255 }).notNull(),
+  taskTitle: text("task_title"),
+  bucketId: varchar("bucket_id", { length: 255 }),
+  bucketName: text("bucket_name"),
+  lastSyncedAt: timestamp("last_synced_at").notNull().default(sql`now()`),
+  syncStatus: text("sync_status").notNull().default('synced'),
+  syncError: text("sync_error"),
+  remoteEtag: text("remote_etag"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+});
+
+export const insertSupportTicketPlannerSyncSchema = createInsertSchema(supportTicketPlannerSync).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertSupportTicketPlannerSync = z.infer<typeof insertSupportTicketPlannerSyncSchema>;
+export type SupportTicketPlannerSync = typeof supportTicketPlannerSync.$inferSelect;
 
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
