@@ -29,6 +29,7 @@ import MyProjectsDashboard from "@/pages/my-projects-dashboard";
 import ResourceManagement from "@/pages/resource-management";
 import CrossProjectResource from "@/pages/cross-project-resource";
 import SystemSettings from "@/pages/system-settings";
+import OrganizationSettings from "@/pages/organization-settings";
 import ScheduledJobs from "@/pages/scheduled-jobs";
 import { AdminSharePoint } from "@/pages/admin-sharepoint";
 import PlatformTenants from "@/pages/platform-tenants";
@@ -261,6 +262,9 @@ function Router() {
       </Route>
       <Route path="/system-settings">
         {user ? <SystemSettings /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/organization-settings">
+        {user ? <OrganizationSettings /> : <Redirect to="/login" />}
       </Route>
       <Route path="/admin/sharepoint">
         {user ? <AdminSharePoint /> : <Redirect to="/login" />}

@@ -118,7 +118,7 @@ const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
-  { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
+  { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
 ];
 
@@ -249,6 +249,7 @@ export function Sidebar() {
                 onToggle={handleToggle}
               >
                 <SidebarItem href="/users" icon={<Users />} label="User Management" />
+                <SidebarItem href="/organization-settings" icon={<Building2 />} label="Organization Settings" />
                 <SidebarItem href="/system-settings" icon={<Settings />} label="System Settings" />
                 <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
                 <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary" />

@@ -8981,7 +8981,41 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       let userGuideContent = '';
       try {
         const guidePath = path.join(process.cwd(), 'client', 'public', 'docs', 'USER_GUIDE.md');
-        userGuideContent = fs.readFileSync(guidePath, 'utf-8');
+        const fullGuide = fs.readFileSync(guidePath, 'utf-8');
+        const MAX_GUIDE_CHARS = 12000;
+        if (fullGuide.length > MAX_GUIDE_CHARS) {
+          const queryLower = validated.message.toLowerCase();
+          const sections = fullGuide.split(/^## /m);
+          const header = sections[0] || '';
+          const scoredSections = sections.slice(1).map(s => {
+            const title = s.split('\n')[0]?.toLowerCase() || '';
+            const body = s.toLowerCase();
+            let score = 0;
+            const words = queryLower.split(/\s+/).filter(w => w.length > 2);
+            for (const word of words) {
+              if (title.includes(word)) score += 3;
+              if (body.includes(word)) score += 1;
+            }
+            return { text: '## ' + s, score };
+          });
+          scoredSections.sort((a, b) => b.score - a.score);
+          let assembled = header;
+          const hasRelevant = scoredSections.some(s => s.score > 0);
+          const sectionsToUse = hasRelevant ? scoredSections : scoredSections;
+          for (const section of sectionsToUse) {
+            if (assembled.length + section.text.length > MAX_GUIDE_CHARS) {
+              if (assembled.length < 2000 && section.text.length > 0) {
+                assembled += '\n' + section.text.substring(0, MAX_GUIDE_CHARS - assembled.length);
+              }
+              break;
+            }
+            assembled += '\n' + section.text;
+          }
+          userGuideContent = assembled;
+          console.log(`[HELP-CHAT] Trimmed guide from ${fullGuide.length} to ${userGuideContent.length} chars (${scoredSections.filter(s => s.score > 0).length} relevant sections)`);
+        } else {
+          userGuideContent = fullGuide;
+        }
       } catch (e) {
         console.warn('[HELP-CHAT] Could not read User Guide, proceeding without it');
       }
@@ -9034,7 +9068,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const result = await aiService.customPrompt(
         systemPrompt,
         validated.message,
-        { temperature: 0.3, maxTokens: 1500, responseFormat: 'json' }
+        { temperature: 0.3, maxTokens: 2500, responseFormat: 'json' }
       );
 
       let parsed: any;
@@ -9087,7 +9121,11 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       });
     } catch (error: any) {
       console.error("[HELP-CHAT] Failed:", error);
-      res.status(500).json({ message: error.message || "Help chat request failed" });
+      const isAIOverload = error.message?.includes('empty response') || error.message?.includes('finish_reason') || error.message?.includes('too large');
+      const userMessage = isAIOverload
+        ? "I'm having trouble processing that question right now. Could you try rephrasing it or asking something more specific? For example, 'How do I submit expenses?' or 'Where do I manage projects?'"
+        : "Sorry, I'm unable to answer right now. Please try again in a moment.";
+      res.status(500).json({ message: userMessage });
     }
   });
 
