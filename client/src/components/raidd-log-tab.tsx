@@ -326,11 +326,10 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
 
   const ingestTextMutation = useMutation({
     mutationFn: async (data: { text: string; projectContext?: string }) => {
-      const res = await apiRequest("/api/raidd/ai/ingest-text", {
+      return await apiRequest("/api/raidd/ai/ingest-text", {
         method: "POST",
         body: JSON.stringify({ ...data, projectId }),
       });
-      return res.json();
     },
     onSuccess: (data: any) => {
       const items = data.items || data.entries || [];
@@ -346,11 +345,10 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
 
   const extractDecisionsMutation = useMutation({
     mutationFn: async (data: { text: string }) => {
-      const res = await apiRequest("/api/raidd/ai/extract-decisions", {
+      return await apiRequest("/api/raidd/ai/extract-decisions", {
         method: "POST",
         body: JSON.stringify({ ...data, projectId }),
       });
-      return res.json();
     },
     onSuccess: (data: any) => {
       const items = data.decisions || data.items || [];
@@ -366,11 +364,10 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
 
   const suggestMitigationMutation = useMutation({
     mutationFn: async (entry: RaiddEntry) => {
-      const res = await apiRequest("/api/raidd/ai/suggest-mitigation", {
+      return await apiRequest("/api/raidd/ai/suggest-mitigation", {
         method: "POST",
         body: JSON.stringify({ entryId: entry.id, type: entry.type, title: entry.title, description: entry.description, projectId }),
       });
-      return res.json();
     },
     onSuccess: (data: any) => {
       setAiSuggestionResult(data);
@@ -383,11 +380,10 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
 
   const suggestActionsMutation = useMutation({
     mutationFn: async (entry: RaiddEntry) => {
-      const res = await apiRequest("/api/raidd/ai/suggest-actions", {
+      return await apiRequest("/api/raidd/ai/suggest-actions", {
         method: "POST",
         body: JSON.stringify({ entryId: entry.id, type: entry.type, title: entry.title, description: entry.description, projectId }),
       });
-      return res.json();
     },
     onSuccess: (data: any) => {
       const actions = data.actions || data.actionItems || [];
