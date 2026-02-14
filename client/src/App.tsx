@@ -42,6 +42,7 @@ import About from "@/pages/about";
 import UserGuide from "@/pages/user-guide";
 import Changelog from "@/pages/changelog";
 import Roadmap from "@/pages/roadmap";
+import Support from "@/pages/support";
 import Login from "@/pages/login";
 import Signup from "@/pages/signup";
 import FileRepository from "@/pages/file-repository";
@@ -332,6 +333,9 @@ function Router() {
       </Route>
       <Route path="/roadmap">
         {user ? <Roadmap /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/support">
+        {user ? <Support /> : <Redirect to="/login" />}
       </Route>
       {/* Fallback to 404 */}
       <Route component={NotFound} />

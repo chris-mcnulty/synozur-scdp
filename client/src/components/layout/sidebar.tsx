@@ -34,6 +34,7 @@ import {
   HelpCircle,
   ShieldAlert,
   Brain,
+  LifeBuoy,
 } from "lucide-react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -277,6 +278,7 @@ export function Sidebar() {
       </ScrollArea>
 
       <div className="border-t border-border px-4 py-3 space-y-1">
+        <SidebarItem href="/support" icon={<LifeBuoy />} label="Support" />
         <SidebarItem href="/user-guide" icon={<BookOpen />} label="User Guide" />
         <SidebarItem href="/changelog" icon={<History />} label="Changelog" />
         <SidebarItem href="/roadmap" icon={<Map />} label="Roadmap" />

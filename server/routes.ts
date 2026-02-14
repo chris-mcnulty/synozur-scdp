@@ -2,7 +2,7 @@ import * as fsNode from "fs";
 import * as pathNode from "path";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
-import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, insertTicketCommentSchema, insertFeedbackSchema, ticketTypeEnum, ticketStatusEnum, ticketPriorityEnum, feedbackCategoryEnum, TICKET_TYPE_LABELS, TICKET_STATUS_LABELS, TICKET_PRIORITY_LABELS, FEEDBACK_CATEGORY_LABELS } from "@shared/schema";
+import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, insertContainerTypeSchema, insertClientContainerSchema, insertContainerPermissionSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies } from "@shared/schema";
 import { eq, sql, inArray, max, and, gte, lte, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
@@ -22202,245 +22202,207 @@ Return a JSON response:
   });
 
   // ============================================================================
-  // SUPPORT TICKETS & FEEDBACK
+  // SUPPORT TICKETS (Matches Vega pattern for future cross-app unification)
   // ============================================================================
 
-  app.get("/api/support/enums", requireAuth, (_req, res) => {
-    res.json({
-      ticketTypes: TICKET_TYPE_LABELS,
-      ticketStatuses: TICKET_STATUS_LABELS,
-      ticketPriorities: TICKET_PRIORITY_LABELS,
-      feedbackCategories: FEEDBACK_CATEGORY_LABELS,
-    });
+  const createTicketSchema = z.object({
+    category: z.enum(TICKET_CATEGORIES),
+    subject: z.string().min(3),
+    description: z.string().min(10),
+    priority: z.enum(TICKET_PRIORITIES).default("medium"),
+    metadata: z.record(z.any()).optional(),
+  });
+
+  const createReplySchema = z.object({
+    message: z.string().min(1),
+    isInternal: z.boolean().optional(),
+  });
+
+  const updateTicketSchema = z.object({
+    status: z.enum(TICKET_STATUSES).optional(),
+    priority: z.enum(TICKET_PRIORITIES).optional(),
+    assignedTo: z.string().optional(),
+    category: z.enum(TICKET_CATEGORIES).optional(),
+  });
+
+  const isConstellationAdmin = (role: string): boolean => {
+    return ['admin', 'billing-admin'].includes(role) || role === 'constellation_admin' || role === 'global_admin';
+  };
+
+  app.post("/api/support/tickets", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "Authentication required" });
+
+      const parsed = createTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
+      }
+
+      const { category, subject, description, priority, metadata } = parsed.data;
+      const tenantId = (req as any).tenantId || user.tenantId;
+
+      const ticket = await storage.createSupportTicket({
+        tenantId,
+        userId: user.id,
+        category,
+        subject,
+        description,
+        priority,
+        metadata: metadata || null,
+        applicationSource: 'Constellation',
+      });
+
+      try {
+        const { sendSupportTicketNotification } = await import("./email-support");
+        await sendSupportTicketNotification(ticket, user);
+      } catch (emailErr) {
+        console.error("Failed to send ticket notification email:", emailErr);
+      }
+
+      return res.status(201).json(ticket);
+    } catch (error) {
+      console.error("Error creating support ticket:", error);
+      return res.status(500).json({ error: "Failed to create support ticket" });
+    }
   });
 
   app.get("/api/support/tickets", requireAuth, async (req, res) => {
     try {
-      const tenantId = (req as any).tenantId;
-      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
-      const { status, type, priority, mine } = req.query;
-      const userId = (req as any).user?.id;
-      const userRole = (req as any).user?.role;
-      const isAdmin = ['admin', 'billing-admin'].includes(userRole);
-      const filters: any = { tenantId };
-      if (status) filters.status = status as string;
-      if (type) filters.type = type as string;
-      if (priority) filters.priority = priority as string;
-      if (mine === 'true' || !isAdmin) filters.submittedBy = userId;
-      const tickets = await storage.getSupportTickets(filters);
-      res.json(tickets);
-    } catch (error: any) {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "Authentication required" });
+
+      if (isConstellationAdmin(user.role)) {
+        const { status, priority, category, tenantId } = req.query as Record<string, string | undefined>;
+        const tickets = await storage.getAllSupportTickets({
+          status: status || undefined,
+          priority: priority || undefined,
+          category: category || undefined,
+          tenantId: tenantId || undefined,
+        });
+        return res.json(tickets);
+      }
+
+      const tickets = await storage.getSupportTicketsByUserId(user.id);
+      return res.json(tickets);
+    } catch (error) {
       console.error("Error fetching support tickets:", error);
-      res.status(500).json({ message: error.message || "Failed to fetch support tickets" });
+      return res.status(500).json({ error: "Failed to fetch support tickets" });
     }
   });
 
   app.get("/api/support/tickets/:id", requireAuth, async (req, res) => {
     try {
-      const ticket = await storage.getSupportTicket(req.params.id);
-      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      const tenantId = (req as any).tenantId;
-      if (ticket.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      const userId = (req as any).user?.id;
-      const userRole = (req as any).user?.role;
-      const isAdmin = ['admin', 'billing-admin'].includes(userRole);
-      if (!isAdmin && ticket.submittedBy !== userId) return res.status(403).json({ message: "Access denied" });
-      const comments = await storage.getTicketComments(ticket.id, isAdmin);
-      res.json({ ...ticket, comments });
-    } catch (error: any) {
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "Authentication required" });
+
+      const ticket = await storage.getSupportTicketById(req.params.id);
+      if (!ticket) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+
+      const isOwner = ticket.userId === user.id;
+      const isAdmin = isConstellationAdmin(user.role);
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const replies = await storage.getSupportTicketReplies(ticket.id, isAdmin);
+      const author = await storage.getUser(ticket.userId);
+      const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
+
+      const repliesWithUsers = await Promise.all(
+        replies.map(async (reply) => {
+          const replyUser = await storage.getUser(reply.userId);
+          return {
+            ...reply,
+            user: replyUser ? { id: replyUser.id, firstName: replyUser.firstName, lastName: replyUser.lastName, email: replyUser.email } : null,
+          };
+        })
+      );
+
+      return res.json({
+        ...ticket,
+        replies: repliesWithUsers,
+        author: author ? { id: author.id, email: author.email, firstName: author.firstName, lastName: author.lastName } : null,
+        tenant: tenant ? { id: tenant.id, name: tenant.name } : null,
+      });
+    } catch (error) {
       console.error("Error fetching support ticket:", error);
-      res.status(500).json({ message: error.message || "Failed to fetch support ticket" });
+      return res.status(500).json({ error: "Failed to fetch support ticket" });
     }
   });
 
-  app.post("/api/support/tickets", requireAuth, async (req, res) => {
+  app.post("/api/support/tickets/:id/replies", requireAuth, async (req, res) => {
     try {
-      const tenantId = (req as any).tenantId;
-      const userId = (req as any).user?.id;
-      if (!tenantId || !userId) return res.status(400).json({ message: "Tenant and user context required" });
-      const validated = insertSupportTicketSchema.parse({
-        ...req.body,
-        tenantId,
-        submittedBy: userId,
-        applicationSource: 'Constellation',
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "Authentication required" });
+
+      const parsed = createReplySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
+      }
+
+      const ticket = await storage.getSupportTicketById(req.params.id);
+      if (!ticket) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+
+      const isOwner = ticket.userId === user.id;
+      const isAdmin = isConstellationAdmin(user.role);
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { message, isInternal } = parsed.data;
+
+      const reply = await storage.createSupportTicketReply({
+        ticketId: ticket.id,
+        userId: user.id,
+        message,
+        isInternal: isAdmin && isInternal ? true : false,
       });
-      const ticket = await storage.createSupportTicket(validated);
-      res.status(201).json(ticket);
-    } catch (error: any) {
-      console.error("Error creating support ticket:", error);
-      res.status(400).json({ message: error.message || "Failed to create support ticket" });
+
+      return res.status(201).json(reply);
+    } catch (error) {
+      console.error("Error creating ticket reply:", error);
+      return res.status(500).json({ error: "Failed to create ticket reply" });
     }
   });
 
   app.patch("/api/support/tickets/:id", requireAuth, async (req, res) => {
     try {
-      const ticket = await storage.getSupportTicket(req.params.id);
-      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      const tenantId = (req as any).tenantId;
-      if (ticket.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      const userId = (req as any).user?.id;
-      const userRole = (req as any).user?.role;
-      const isAdmin = ['admin', 'billing-admin'].includes(userRole);
-      if (!isAdmin && ticket.submittedBy !== userId) return res.status(403).json({ message: "Access denied" });
+      const user = (req as any).user;
+      if (!user) return res.status(401).json({ error: "Authentication required" });
 
-      const updates: any = { ...req.body };
-      if (updates.status === 'resolved' && ticket.status !== 'resolved') {
+      if (!isConstellationAdmin(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const parsed = updateTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
+      }
+
+      const ticket = await storage.getSupportTicketById(req.params.id);
+      if (!ticket) {
+        return res.status(404).json({ error: "Ticket not found" });
+      }
+
+      const updates: any = { ...parsed.data };
+
+      if (updates.status === "resolved") {
         updates.resolvedAt = new Date();
+        updates.resolvedBy = user.id;
       }
-      if (updates.status === 'closed' && ticket.status !== 'closed') {
-        updates.closedAt = new Date();
-      }
-      delete updates.id;
-      delete updates.ticketNumber;
-      delete updates.applicationSource;
-      delete updates.createdAt;
 
-      const updated = await storage.updateSupportTicket(req.params.id, updates);
-      res.json(updated);
-    } catch (error: any) {
+      const updated = await storage.updateSupportTicket(ticket.id, updates);
+      return res.json(updated);
+    } catch (error) {
       console.error("Error updating support ticket:", error);
-      res.status(400).json({ message: error.message || "Failed to update support ticket" });
-    }
-  });
-
-  app.delete("/api/support/tickets/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      const ticket = await storage.getSupportTicket(req.params.id);
-      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      const tenantId = (req as any).tenantId;
-      if (ticket.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      await storage.deleteSupportTicket(req.params.id);
-      res.json({ message: "Ticket deleted" });
-    } catch (error: any) {
-      console.error("Error deleting support ticket:", error);
-      res.status(500).json({ message: error.message || "Failed to delete support ticket" });
-    }
-  });
-
-  app.post("/api/support/tickets/:id/comments", requireAuth, async (req, res) => {
-    try {
-      const ticket = await storage.getSupportTicket(req.params.id);
-      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
-      const tenantId = (req as any).tenantId;
-      if (ticket.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      const userId = (req as any).user?.id;
-      const userRole = (req as any).user?.role;
-      const isAdmin = ['admin', 'billing-admin'].includes(userRole);
-      if (!isAdmin && ticket.submittedBy !== userId) return res.status(403).json({ message: "Access denied" });
-
-      const validated = insertTicketCommentSchema.parse({
-        ticketId: req.params.id,
-        content: req.body.content,
-        isInternal: isAdmin ? (req.body.isInternal || false) : false,
-        createdBy: userId,
-      });
-      const comment = await storage.createTicketComment(validated);
-      res.status(201).json(comment);
-    } catch (error: any) {
-      console.error("Error creating ticket comment:", error);
-      res.status(400).json({ message: error.message || "Failed to create comment" });
-    }
-  });
-
-  app.get("/api/support/feedback", requireAuth, async (req, res) => {
-    try {
-      const tenantId = (req as any).tenantId;
-      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
-      const userId = (req as any).user?.id;
-      const userRole = (req as any).user?.role;
-      const isAdmin = ['admin', 'billing-admin'].includes(userRole);
-      const { category, isReviewed, mine } = req.query;
-      const filters: any = { tenantId };
-      if (category) filters.category = category as string;
-      if (isReviewed !== undefined) filters.isReviewed = isReviewed === 'true';
-      if (mine === 'true' || !isAdmin) filters.submittedBy = userId;
-      const items = await storage.getFeedback(filters);
-      res.json(items);
-    } catch (error: any) {
-      console.error("Error fetching feedback:", error);
-      res.status(500).json({ message: error.message || "Failed to fetch feedback" });
-    }
-  });
-
-  app.get("/api/support/feedback/stats", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
-    try {
-      const tenantId = (req as any).tenantId;
-      if (!tenantId) return res.status(400).json({ message: "Tenant context required" });
-      const stats = await storage.getFeedbackStats(tenantId);
-      res.json(stats);
-    } catch (error: any) {
-      console.error("Error fetching feedback stats:", error);
-      res.status(500).json({ message: error.message || "Failed to fetch feedback stats" });
-    }
-  });
-
-  app.get("/api/support/feedback/:id", requireAuth, async (req, res) => {
-    try {
-      const item = await storage.getFeedbackItem(req.params.id);
-      if (!item) return res.status(404).json({ message: "Feedback not found" });
-      const tenantId = (req as any).tenantId;
-      if (item.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      res.json(item);
-    } catch (error: any) {
-      console.error("Error fetching feedback item:", error);
-      res.status(500).json({ message: error.message || "Failed to fetch feedback" });
-    }
-  });
-
-  app.post("/api/support/feedback", requireAuth, async (req, res) => {
-    try {
-      const tenantId = (req as any).tenantId;
-      const userId = (req as any).user?.id;
-      if (!tenantId || !userId) return res.status(400).json({ message: "Tenant and user context required" });
-      const validated = insertFeedbackSchema.parse({
-        ...req.body,
-        tenantId,
-        submittedBy: userId,
-        applicationSource: 'Constellation',
-      });
-      const item = await storage.createFeedback(validated);
-      res.status(201).json(item);
-    } catch (error: any) {
-      console.error("Error creating feedback:", error);
-      res.status(400).json({ message: error.message || "Failed to create feedback" });
-    }
-  });
-
-  app.patch("/api/support/feedback/:id", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
-    try {
-      const item = await storage.getFeedbackItem(req.params.id);
-      if (!item) return res.status(404).json({ message: "Feedback not found" });
-      const tenantId = (req as any).tenantId;
-      if (item.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      const userId = (req as any).user?.id;
-      const updates: any = {};
-      if (req.body.adminResponse !== undefined) updates.adminResponse = req.body.adminResponse;
-      if (req.body.isReviewed !== undefined) {
-        updates.isReviewed = req.body.isReviewed;
-        if (req.body.isReviewed) {
-          updates.reviewedBy = userId;
-          updates.reviewedAt = new Date();
-        }
-      }
-      const updated = await storage.updateFeedback(req.params.id, updates);
-      res.json(updated);
-    } catch (error: any) {
-      console.error("Error updating feedback:", error);
-      res.status(400).json({ message: error.message || "Failed to update feedback" });
-    }
-  });
-
-  app.delete("/api/support/feedback/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      const item = await storage.getFeedbackItem(req.params.id);
-      if (!item) return res.status(404).json({ message: "Feedback not found" });
-      const tenantId = (req as any).tenantId;
-      if (item.tenantId !== tenantId) return res.status(403).json({ message: "Access denied" });
-      await storage.deleteFeedback(req.params.id);
-      res.json({ message: "Feedback deleted" });
-    } catch (error: any) {
-      console.error("Error deleting feedback:", error);
-      res.status(500).json({ message: error.message || "Failed to delete feedback" });
+      return res.status(500).json({ error: "Failed to update support ticket" });
     }
   });
 

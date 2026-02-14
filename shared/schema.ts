@@ -2692,78 +2692,35 @@ export type InsertGroundingDocument = z.infer<typeof insertGroundingDocumentSche
 export type GroundingDocument = typeof groundingDocuments.$inferSelect;
 
 // ============================================================================
-// SUPPORT TICKETS & FEEDBACK (Cross-Application Support System)
+// SUPPORT TICKETS (Matches Vega table structure for future cross-app unification)
 // ============================================================================
 
-export const ticketTypeEnum = z.enum(['bug', 'feature_request', 'question', 'improvement', 'other']);
-export type TicketType = z.infer<typeof ticketTypeEnum>;
+export const TICKET_CATEGORIES = ['bug', 'feature_request', 'question', 'feedback'] as const;
+export const TICKET_PRIORITIES = ['low', 'medium', 'high'] as const;
+export const TICKET_STATUSES = ['open', 'in_progress', 'resolved', 'closed'] as const;
 
-export const ticketStatusEnum = z.enum(['open', 'in_progress', 'waiting_on_user', 'resolved', 'closed']);
-export type TicketStatus = z.infer<typeof ticketStatusEnum>;
-
-export const ticketPriorityEnum = z.enum(['critical', 'high', 'medium', 'low']);
-export type TicketPriority = z.infer<typeof ticketPriorityEnum>;
-
-export const TICKET_TYPE_LABELS: Record<TicketType, string> = {
-  bug: "Bug Report",
-  feature_request: "Feature Request",
-  question: "Question",
-  improvement: "Improvement",
-  other: "Other",
-};
-
-export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
-  open: "Open",
-  in_progress: "In Progress",
-  waiting_on_user: "Waiting on User",
-  resolved: "Resolved",
-  closed: "Closed",
-};
-
-export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-};
+export type TicketCategory = typeof TICKET_CATEGORIES[number];
+export type TicketPriority = typeof TICKET_PRIORITIES[number];
+export type TicketStatus = typeof TICKET_STATUSES[number];
 
 export const supportTickets = pgTable("support_tickets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ticketNumber: integer("ticket_number").notNull(),
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  applicationSource: varchar("application_source", { length: 50 }).notNull().default('Constellation'),
-  ticketNumber: varchar("ticket_number", { length: 30 }).notNull().unique(),
-  type: varchar("type", { length: 30 }).notNull().default('bug'),
-  status: varchar("status", { length: 30 }).notNull().default('open'),
-  priority: varchar("priority", { length: 20 }).notNull().default('medium'),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  category: text("category").notNull(),
   subject: text("subject").notNull(),
   description: text("description").notNull(),
-  stepsToReproduce: text("steps_to_reproduce"),
-  expectedBehavior: text("expected_behavior"),
-  actualBehavior: text("actual_behavior"),
-  pageUrl: text("page_url"),
-  browserInfo: text("browser_info"),
-  tags: jsonb("tags").$type<string[]>(),
-  submittedBy: varchar("submitted_by").notNull().references(() => users.id),
-  assignedTo: varchar("assigned_to").references(() => users.id),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("open"),
+  assignedTo: varchar("assigned_to").references(() => users.id, { onDelete: 'set null' }),
+  metadata: jsonb("metadata"),
+  applicationSource: text("application_source").notNull().default("Constellation"),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+  updatedAt: timestamp("updated_at").default(sql`now()`).notNull(),
   resolvedAt: timestamp("resolved_at"),
-  closedAt: timestamp("closed_at"),
-  resolutionNotes: text("resolution_notes"),
-  adminNotes: text("admin_notes"),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
-}, (table) => ({
-  tenantIdx: index("idx_support_tickets_tenant").on(table.tenantId),
-  statusIdx: index("idx_support_tickets_status").on(table.status),
-  typeIdx: index("idx_support_tickets_type").on(table.type),
-  submittedByIdx: index("idx_support_tickets_submitted_by").on(table.submittedBy),
-  appSourceIdx: index("idx_support_tickets_app_source").on(table.applicationSource),
-}));
-
-export const supportTicketsRelations = relations(supportTickets, ({ one }) => ({
-  tenant: one(tenants, { fields: [supportTickets.tenantId], references: [tenants.id] }),
-  submitter: one(users, { fields: [supportTickets.submittedBy], references: [users.id] }),
-  assignee: one(users, { fields: [supportTickets.assignedTo], references: [users.id] }),
-}));
+  resolvedBy: varchar("resolved_by").references(() => users.id, { onDelete: 'set null' }),
+});
 
 export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
   id: true,
@@ -2771,86 +2728,28 @@ export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit
   createdAt: true,
   updatedAt: true,
   resolvedAt: true,
-  closedAt: true,
+  resolvedBy: true,
 });
+
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
 
-export const ticketComments = pgTable("ticket_comments", {
+export const supportTicketReplies = pgTable("support_ticket_replies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   ticketId: varchar("ticket_id").notNull().references(() => supportTickets.id, { onDelete: 'cascade' }),
-  content: text("content").notNull(),
-  isInternal: boolean("is_internal").notNull().default(false),
-  createdBy: varchar("created_by").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-}, (table) => ({
-  ticketIdx: index("idx_ticket_comments_ticket").on(table.ticketId),
-}));
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").default(false),
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+});
 
-export const ticketCommentsRelations = relations(ticketComments, ({ one }) => ({
-  ticket: one(supportTickets, { fields: [ticketComments.ticketId], references: [supportTickets.id] }),
-  author: one(users, { fields: [ticketComments.createdBy], references: [users.id] }),
-}));
-
-export const insertTicketCommentSchema = createInsertSchema(ticketComments).omit({
+export const insertSupportTicketReplySchema = createInsertSchema(supportTicketReplies).omit({
   id: true,
   createdAt: true,
 });
-export type InsertTicketComment = z.infer<typeof insertTicketCommentSchema>;
-export type TicketComment = typeof ticketComments.$inferSelect;
 
-export const feedbackRatingEnum = z.enum(['1', '2', '3', '4', '5']);
-export type FeedbackRating = z.infer<typeof feedbackRatingEnum>;
-
-export const feedbackCategoryEnum = z.enum(['general', 'usability', 'performance', 'feature', 'design', 'documentation']);
-export type FeedbackCategory = z.infer<typeof feedbackCategoryEnum>;
-
-export const FEEDBACK_CATEGORY_LABELS: Record<FeedbackCategory, string> = {
-  general: "General",
-  usability: "Usability",
-  performance: "Performance",
-  feature: "Feature",
-  design: "Design",
-  documentation: "Documentation",
-};
-
-export const feedback = pgTable("feedback", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
-  applicationSource: varchar("application_source", { length: 50 }).notNull().default('Constellation'),
-  category: varchar("category", { length: 30 }).notNull().default('general'),
-  rating: integer("rating").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  pageUrl: text("page_url"),
-  isReviewed: boolean("is_reviewed").notNull().default(false),
-  reviewedBy: varchar("reviewed_by").references(() => users.id),
-  reviewedAt: timestamp("reviewed_at"),
-  adminResponse: text("admin_response"),
-  submittedBy: varchar("submitted_by").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-}, (table) => ({
-  tenantIdx: index("idx_feedback_tenant").on(table.tenantId),
-  categoryIdx: index("idx_feedback_category").on(table.category),
-  appSourceIdx: index("idx_feedback_app_source").on(table.applicationSource),
-}));
-
-export const feedbackRelations = relations(feedback, ({ one }) => ({
-  tenant: one(tenants, { fields: [feedback.tenantId], references: [tenants.id] }),
-  submitter: one(users, { fields: [feedback.submittedBy], references: [users.id] }),
-  reviewer: one(users, { fields: [feedback.reviewedBy], references: [users.id] }),
-}));
-
-export const insertFeedbackSchema = createInsertSchema(feedback).omit({
-  id: true,
-  createdAt: true,
-  isReviewed: true,
-  reviewedBy: true,
-  reviewedAt: true,
-  adminResponse: true,
-});
-export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
-export type Feedback = typeof feedback.$inferSelect;
+export type InsertSupportTicketReply = z.infer<typeof insertSupportTicketReplySchema>;
+export type SupportTicketReply = typeof supportTicketReplies.$inferSelect;
 
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {

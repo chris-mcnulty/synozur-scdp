@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload } from "lucide-react";
+import { AlertCircle, Save, Settings, DollarSign, Info, Building, Image, Mail, Phone, Globe, FileText, Languages, Sparkles, BookOpen, Plus, Edit2, Trash2, ArrowUp, ArrowDown, Calculator, Clock, Bell, Play, Upload, LifeBuoy } from "lucide-react";
+import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -687,6 +688,10 @@ export default function SystemSettings() {
             <TabsTrigger value="reminders" className="flex items-center space-x-2">
               <Bell className="w-4 h-4" />
               <span>Time Reminders</span>
+            </TabsTrigger>
+            <TabsTrigger value="support" className="flex items-center space-x-2">
+              <LifeBuoy className="w-4 h-4" />
+              <span>Support Tickets</span>
             </TabsTrigger>
           </TabsList>
 
@@ -2016,6 +2021,10 @@ export default function SystemSettings() {
           </TabsContent>
 
           <TimeRemindersTab settings={settings} toast={toast} />
+
+          <TabsContent value="support" className="space-y-6">
+            <AdminSupportTab />
+          </TabsContent>
         </Tabs>
       </div>
     </Layout>

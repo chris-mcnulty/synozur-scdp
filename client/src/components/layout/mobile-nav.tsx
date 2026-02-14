@@ -34,6 +34,7 @@ import {
   Database,
   ShieldAlert,
   Brain,
+  LifeBuoy,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -321,6 +322,7 @@ export function MobileNav() {
           </ScrollArea>
 
           <div className="border-t border-border px-2 py-3 space-y-0.5">
+            <MobileNavItem href="/support" icon={<LifeBuoy />} label="Support" onClick={handleNavClick} />
             <MobileNavItem href="/user-guide" icon={<BookOpen />} label="User Guide" onClick={handleNavClick} />
             <MobileNavItem href="/changelog" icon={<History />} label="Changelog" onClick={handleNavClick} />
             <MobileNavItem href="/roadmap" icon={<Map />} label="Roadmap" onClick={handleNavClick} />
