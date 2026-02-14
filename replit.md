@@ -81,3 +81,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
+
+## Backlog
+
+1. **Extract Expenses routes module** -- Move expenses, expense reports, pending receipts, reimbursement batches, contractor invoices, and per diem endpoints (~53 endpoints, ~5,000-6,000 lines) from `server/routes.ts` into `server/routes/expenses.ts` as an Express Router. Clean domain boundary with one-directional dependency on projects/users. Second candidate after expenses: Containers/SharePoint Embedded (~3,600 lines).
