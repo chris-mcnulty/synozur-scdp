@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -687,105 +687,123 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedEntries.map(entry => (
-                  <TableRow
-                    key={entry.id}
-                    className={`cursor-pointer transition-colors ${expandedEntryId === entry.id ? "bg-gray-50 dark:bg-gray-800/50" : ""}`}
-                    onClick={() => setExpandedEntryId(expandedEntryId === entry.id ? null : entry.id)}
-                  >
-                    <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">{entry.refNumber || "-"}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 text-sm">
-                        {getTypeIcon(entry.type)}
-                        <span>{getTypeLabel(entry.type)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium text-gray-900 dark:text-gray-100 max-w-[250px] truncate">{entry.title}</TableCell>
-                    <TableCell>
-                      <Badge className={`text-xs ${priorityColors[entry.priority] || ""}`}>{formatLabel(entry.priority)}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={`text-xs ${statusColors[entry.status] || ""}`}>{formatLabel(entry.status)}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.ownerName || "-"}</TableCell>
-                    <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.dueDate ? formatBusinessDate(entry.dueDate, "MMM d") : "-"}</TableCell>
-                    <TableCell onClick={e => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setEditingEntry(entry)}>
-                            <Edit className="h-4 w-4 mr-2" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleAddActionItem(entry.id)}>
-                            <CheckSquare className="h-4 w-4 mr-2" /> Add Action Item
-                          </DropdownMenuItem>
-                          {entry.type === "risk" && (
-                            <DropdownMenuItem onClick={() => convertToIssueMutation.mutate(entry.id)}>
-                              <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Issue
-                            </DropdownMenuItem>
-                          )}
-                          {entry.type === "decision" && (
-                            <DropdownMenuItem onClick={() => setSupersedeEntryId(entry.id)}>
-                              <Replace className="h-4 w-4 mr-2" /> Supersede
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          {entry.type === "risk" && (
-                            <DropdownMenuItem
-                              disabled={suggestMitigationMutation.isPending}
-                              onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
-                            >
-                              {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
-                                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                : <Sparkles className="h-4 w-4 mr-2" />}
-                              AI: Suggest Mitigation
-                            </DropdownMenuItem>
-                          )}
-                          {entry.type === "issue" && (
-                            <DropdownMenuItem
-                              disabled={suggestMitigationMutation.isPending}
-                              onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
-                            >
-                              {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
-                                ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                : <Sparkles className="h-4 w-4 mr-2" />}
-                              AI: Suggest Resolution
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            disabled={suggestActionsMutation.isPending}
-                            onClick={() => { setSuggestActionsEntry(entry); suggestActionsMutation.mutate(entry); }}
-                          >
-                            {suggestActionsMutation.isPending && suggestActionsEntry?.id === entry.id
-                              ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              : <Brain className="h-4 w-4 mr-2" />}
-                            AI: Suggest Action Items
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-red-600 dark:text-red-400" onClick={() => setDeletingEntryId(entry.id)}>
-                            <Trash2 className="h-4 w-4 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {sortedEntries.map(entry => {
+                  const isExpanded = expandedEntryId === entry.id;
+                  return (
+                    <Fragment key={entry.id}>
+                      <TableRow
+                        className={`cursor-pointer transition-colors ${isExpanded ? "bg-primary/5 dark:bg-primary/10 border-b-0" : ""}`}
+                        onClick={() => setExpandedEntryId(isExpanded ? null : entry.id)}
+                      >
+                        <TableCell className="font-mono text-xs text-gray-500 dark:text-gray-400">
+                          <div className="flex items-center gap-1">
+                            <ChevronDown className={`h-3 w-3 transition-transform duration-200 text-muted-foreground ${isExpanded ? "rotate-0" : "-rotate-90"}`} />
+                            {entry.refNumber || "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 text-sm">
+                            {getTypeIcon(entry.type)}
+                            <span>{getTypeLabel(entry.type)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium text-gray-900 dark:text-gray-100 max-w-[250px] truncate">{entry.title}</TableCell>
+                        <TableCell>
+                          <Badge className={`text-xs ${priorityColors[entry.priority] || ""}`}>{formatLabel(entry.priority)}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`text-xs ${statusColors[entry.status] || ""}`}>{formatLabel(entry.status)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.ownerName || "-"}</TableCell>
+                        <TableCell className="text-sm text-gray-600 dark:text-gray-400">{entry.dueDate ? formatBusinessDate(entry.dueDate, "MMM d") : "-"}</TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setEditingEntry(entry)}>
+                                <Edit className="h-4 w-4 mr-2" /> Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleAddActionItem(entry.id)}>
+                                <CheckSquare className="h-4 w-4 mr-2" /> Add Action Item
+                              </DropdownMenuItem>
+                              {entry.type === "risk" && (
+                                <DropdownMenuItem onClick={() => convertToIssueMutation.mutate(entry.id)}>
+                                  <ArrowRightLeft className="h-4 w-4 mr-2" /> Convert to Issue
+                                </DropdownMenuItem>
+                              )}
+                              {entry.type === "decision" && (
+                                <DropdownMenuItem onClick={() => setSupersedeEntryId(entry.id)}>
+                                  <Replace className="h-4 w-4 mr-2" /> Supersede
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              {entry.type === "risk" && (
+                                <DropdownMenuItem
+                                  disabled={suggestMitigationMutation.isPending}
+                                  onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
+                                >
+                                  {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
+                                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    : <Sparkles className="h-4 w-4 mr-2" />}
+                                  AI: Suggest Mitigation
+                                </DropdownMenuItem>
+                              )}
+                              {entry.type === "issue" && (
+                                <DropdownMenuItem
+                                  disabled={suggestMitigationMutation.isPending}
+                                  onClick={() => { setSuggestMitigationEntry(entry); suggestMitigationMutation.mutate(entry); }}
+                                >
+                                  {suggestMitigationMutation.isPending && suggestMitigationEntry?.id === entry.id
+                                    ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    : <Sparkles className="h-4 w-4 mr-2" />}
+                                  AI: Suggest Resolution
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                disabled={suggestActionsMutation.isPending}
+                                onClick={() => { setSuggestActionsEntry(entry); suggestActionsMutation.mutate(entry); }}
+                              >
+                                {suggestActionsMutation.isPending && suggestActionsEntry?.id === entry.id
+                                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  : <Brain className="h-4 w-4 mr-2" />}
+                                AI: Suggest Action Items
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem className="text-red-600 dark:text-red-400" onClick={() => setDeletingEntryId(entry.id)}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                      {isExpanded && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={8} className="p-0 border-t-0">
+                            {entryDetail ? (
+                              <DetailPanel
+                                entry={entryDetail}
+                                onClose={() => setExpandedEntryId(null)}
+                                onEdit={() => setEditingEntry(entryDetail)}
+                                onAddAction={() => handleAddActionItem(entryDetail.id)}
+                              />
+                            ) : (
+                              <div className="px-6 py-4 flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading details...
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
-        )}
-
-        {expandedEntryId && entryDetail && (
-          <DetailPanel
-            entry={entryDetail}
-            onClose={() => setExpandedEntryId(null)}
-            onEdit={() => setEditingEntry(entryDetail)}
-            onAddAction={() => handleAddActionItem(entryDetail.id)}
-          />
         )}
       </CardContent>
 
@@ -985,18 +1003,18 @@ function DetailPanel({
   onAddAction: () => void;
 }) {
   return (
-    <div className="mt-4 border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800/30">
+    <div className="px-6 py-4 bg-primary/5 dark:bg-primary/10 border-t border-border/50">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           {getTypeIcon(entry.type)}
-          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{entry.title}</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{entry.title}</h3>
           {entry.refNumber && (
             <Badge variant="outline" className="text-xs">{entry.refNumber}</Badge>
           )}
         </div>
         <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={onEdit}><Edit className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="sm" onClick={onClose}><X className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={(e) => { e.stopPropagation(); onEdit(); }}><Edit className="h-3.5 w-3.5 mr-1" /> Edit</Button>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={(e) => { e.stopPropagation(); onClose(); }} aria-label="Close details"><X className="h-3.5 w-3.5" /></Button>
         </div>
       </div>
 
