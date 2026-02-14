@@ -84,4 +84,4 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 
 ## Backlog
 
-1. **Extract Expenses routes module** -- Move expenses, expense reports, pending receipts, reimbursement batches, contractor invoices, and per diem endpoints (~53 endpoints, ~5,000-6,000 lines) from `server/routes.ts` into `server/routes/expenses.ts` as an Express Router. Clean domain boundary with one-directional dependency on projects/users. Second candidate after expenses: Containers/SharePoint Embedded (~3,600 lines).
+1. **Continue routes.ts modularization** -- Next candidates for extraction: Estimates (~3,000 lines), Invoices (~2,000 lines), Time Entries (~1,500 lines). Current routes.ts is ~17,500 lines after extracting SharePoint/Containers (1,700 lines → `server/routes/sharepoint-containers.ts`) and Expenses (3,100 lines → `server/routes/expenses.ts`, ~51 endpoints including per diem, expense reports, reimbursement batches, pending receipts, contractor invoices, bulk operations).
