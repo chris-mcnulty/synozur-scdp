@@ -12395,6 +12395,29 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
+  const normalizeEstimateLineItemPayload = (data: any): any => {
+    const normalized = { ...data };
+
+    const decimalFields = ['baseHours', 'factor', 'rate', 'costRate', 'totalAmount', 'totalCost', 'margin', 'marginPercent', 'adjustedHours'];
+
+    for (const field of decimalFields) {
+      if (normalized[field] !== undefined && normalized[field] !== null && normalized[field] !== '') {
+        const value = String(normalized[field]).trim();
+        if (!isNaN(parseFloat(value))) {
+          normalized[field] = value;
+        } else {
+          normalized[field] = null;
+        }
+      }
+    }
+
+    if (normalized.week !== undefined && normalized.week !== null && normalized.week !== '') {
+      normalized.week = parseInt(normalized.week, 10);
+    }
+
+    return normalized;
+  };
+
   // ============================================================================
   // Airport Code Endpoints (System-wide reference data)
   // ============================================================================
