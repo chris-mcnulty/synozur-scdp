@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Download, DollarSign, FileText, TrendingUp, TrendingDown, Minus, ArrowLeftRight, Users, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 import * as XLSX from "xlsx";
 
 interface ClientRevenueRow {
@@ -125,7 +126,7 @@ function ClientRevenueReport() {
   const queryParams = new URLSearchParams({ startDate, endDate, batchTypeFilter, groupBy }).toString();
   const { data, isLoading } = useQuery<ClientRevenueData>({
     queryKey: ['/api/reports/client-revenue', queryParams],
-    queryFn: () => fetch(`/api/reports/client-revenue?${queryParams}`, { credentials: 'include' }).then(r => r.json()),
+    queryFn: () => apiRequest(`/api/reports/client-revenue?${queryParams}`),
   });
 
   const makeYearParams = (year: number) => new URLSearchParams({
@@ -137,19 +138,19 @@ function ClientRevenueReport() {
 
   const { data: currentYearData, isLoading: currentYearLoading } = useQuery<ClientRevenueData>({
     queryKey: ['/api/reports/client-revenue', makeYearParams(currentYear)],
-    queryFn: () => fetch(`/api/reports/client-revenue?${makeYearParams(currentYear)}`, { credentials: 'include' }).then(r => r.json()),
+    queryFn: () => apiRequest(`/api/reports/client-revenue?${makeYearParams(currentYear)}`),
     enabled: viewMode === 'comparison',
   });
 
   const { data: priorYearData, isLoading: priorYearLoading } = useQuery<ClientRevenueData>({
     queryKey: ['/api/reports/client-revenue', makeYearParams(priorYear)],
-    queryFn: () => fetch(`/api/reports/client-revenue?${makeYearParams(priorYear)}`, { credentials: 'include' }).then(r => r.json()),
+    queryFn: () => apiRequest(`/api/reports/client-revenue?${makeYearParams(priorYear)}`),
     enabled: viewMode === 'comparison',
   });
 
   const { data: oldestYearData, isLoading: oldestYearLoading } = useQuery<ClientRevenueData>({
     queryKey: ['/api/reports/client-revenue', makeYearParams(oldestYear)],
-    queryFn: () => fetch(`/api/reports/client-revenue?${makeYearParams(oldestYear)}`, { credentials: 'include' }).then(r => r.json()),
+    queryFn: () => apiRequest(`/api/reports/client-revenue?${makeYearParams(oldestYear)}`),
     enabled: viewMode === 'comparison',
   });
 

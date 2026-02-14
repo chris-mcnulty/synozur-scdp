@@ -17,6 +17,7 @@ import {
 import { formatBusinessDate } from "@/lib/date-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 import * as XLSX from "xlsx";
 
 interface RaiddEntry {
@@ -124,9 +125,7 @@ export default function PortfolioRaidd() {
     queryKey: ["/api/reports/raidd", statusFilter],
     queryFn: async () => {
       const url = `/api/reports/raidd${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      return apiRequest(url);
     },
   });
 

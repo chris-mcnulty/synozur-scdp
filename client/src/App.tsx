@@ -123,13 +123,21 @@ function Router() {
     }
   }, [user, setLocation]);
 
-  // Handle session errors - redirect to login
+  // Handle session errors - redirect to login (with loop protection)
   useEffect(() => {
     if (error && !user && !isLoading && !processingSession && !isRecovering) {
       const currentPath = window.location.pathname;
       if (currentPath !== '/login' && currentPath !== '/signup') {
-        if (currentPath !== '/' && currentPath !== '/login') {
-          sessionStorage.setItem('redirectAfterLogin', currentPath);
+        const lastRedirect = sessionStorage.getItem('redirectAfterLogin');
+        const redirectCount = parseInt(sessionStorage.getItem('redirectLoopCount') || '0', 10);
+        if (lastRedirect === currentPath && redirectCount >= 2) {
+          sessionStorage.removeItem('redirectAfterLogin');
+          sessionStorage.removeItem('redirectLoopCount');
+        } else {
+          if (currentPath !== '/' && currentPath !== '/login') {
+            sessionStorage.setItem('redirectAfterLogin', currentPath);
+            sessionStorage.setItem('redirectLoopCount', String(lastRedirect === currentPath ? redirectCount + 1 : 1));
+          }
         }
         setLocation('/login');
       }

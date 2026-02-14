@@ -86,6 +86,21 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
   - **Category Labels**: `{ company_os: "Company Operating System Overview", methodology: "Methodology & Framework", best_practices: "Best Practices", terminology: "Key Terminology", examples: "Examples & Templates" }`.
 - **Key Design Principle**: Vega stores extracted text content directly in the DB record (not file references). Documents are parsed client-side via parse endpoints, then content is saved. This eliminates runtime file I/O during AI calls and keeps the system simpler.
 
+## Critical Development Rules
+
+### API Calls: ALWAYS Use `apiRequest` or Include Session Header
+- **NEVER use raw `fetch()` for API calls** without including the `x-session-id` header. In production (Azure AD SSO), authentication depends on this header. Raw `fetch` with only `credentials: "include"` will return 401 in production, causing redirect loops.
+- **For queries**: Use `apiRequest(url)` from `@/lib/queryClient` as the `queryFn`. Do NOT rely on the default `queryFn` for URLs with query parameters (it joins array queryKey segments with `/`).
+- **For file uploads** (FormData): Use raw `fetch` but add the session header via `getSessionId()` from `@/lib/queryClient`.
+- **Pattern**: `const sid = getSessionId(); if (sid) headers['x-session-id'] = sid;`
+- **Known affected files fixed (Feb 2026)**: `portfolio-raidd.tsx`, `client-revenue-report.tsx`, `tenant-grounding-docs.tsx`, `platform-grounding-docs.tsx`. Other files in `client/src/pages/` and `client/src/components/` still use raw `fetch` and may need fixing.
+
+### React Hooks: Never Place After Early Returns
+- All `useEffect`, `useState`, `useMemo` etc. must be called BEFORE any conditional `return` statements in a component. Placing hooks after early returns causes "Rendered more hooks than during the previous render" errors and infinite redirect loops.
+
+### Redirect Loop Protection
+- The redirect-after-login system (`sessionStorage.redirectAfterLogin`) has built-in loop protection: if it detects the same page redirect failing 2+ times, it clears the saved path and sends the user to the dashboard instead of looping.
+
 ## Backlog
 
 - **Report Summary Drill-Down**: On both the Invoice Report and the Client Revenue Report, clicking any summary card number (e.g., Total Invoiced, Amount Paid, Outstanding) should open a popup/modal showing the individual line items that comprise that total — including client name, invoice number, invoice date, amount, and payment date(s). Applies to both the Report tab summary cards and the 3-Year Comparison tab metric cards.

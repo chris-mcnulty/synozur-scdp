@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, getSessionId } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout/layout";
@@ -146,7 +146,10 @@ export default function TenantGroundingDocs() {
       const formData = new FormData();
       formData.append("file", file);
       const endpoint = file.name.endsWith(".pdf") ? "/api/ai/parse-pdf" : "/api/ai/parse-docx";
-      const response = await fetch(endpoint, { method: "POST", body: formData, credentials: "include" });
+      const headers: Record<string, string> = {};
+      const sid = getSessionId();
+      if (sid) headers['x-session-id'] = sid;
+      const response = await fetch(endpoint, { method: "POST", body: formData, credentials: "include", headers });
       const data = await response.json();
       if (data.text) {
         form.setValue("content", data.text);
