@@ -105,7 +105,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 
 ## Backlog
 
-- **Report Summary Drill-Down**: On both the Invoice Report and the Client Revenue Report, clicking any summary card number (e.g., Total Invoiced, Amount Paid, Outstanding) should open a popup/modal showing the individual line items that comprise that total — including client name, invoice number, invoice date, amount, and payment date(s). Applies to both the Report tab summary cards and the 3-Year Comparison tab metric cards.
+(No outstanding items)
 
 ## External Dependencies
 

@@ -6,12 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, DollarSign, FileText, TrendingUp, TrendingDown, Minus, ArrowLeftRight, Users, Building2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Download, DollarSign, FileText, TrendingUp, TrendingDown, Minus, ArrowLeftRight, Users, Building2, CheckCircle, AlertCircle, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { Link } from "wouter";
 import * as XLSX from "xlsx";
 
 interface ClientRevenueRow {
@@ -43,6 +46,130 @@ interface ClientRevenueData {
     batchTypeFilter: string;
     groupBy: string;
   };
+}
+
+interface InvoiceRow {
+  batchId: string;
+  invoiceDate: string;
+  clientName: string;
+  glInvoiceNumber: string | null;
+  invoiceAmount: number;
+  taxAmount: number;
+  invoiceTotal: number;
+  paymentStatus: string;
+  paymentDate: string | null;
+  amountPaid: number;
+  outstanding: number;
+}
+
+type DrillDownFilter = 'all' | 'invoiced' | 'paid' | 'outstanding';
+
+function PaymentStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'paid':
+      return <Badge variant="default" className="bg-green-600"><CheckCircle className="w-3 h-3 mr-1" /> Paid</Badge>;
+    case 'partial':
+      return <Badge variant="default" className="bg-amber-500"><Clock className="w-3 h-3 mr-1" /> Partial</Badge>;
+    default:
+      return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1" /> Unpaid</Badge>;
+  }
+}
+
+function filterInvoicesForDrillDown(invoices: InvoiceRow[], filter: DrillDownFilter): InvoiceRow[] {
+  switch (filter) {
+    case 'paid': return invoices.filter(i => i.amountPaid > 0);
+    case 'outstanding': return invoices.filter(i => i.outstanding > 0);
+    default: return invoices;
+  }
+}
+
+function getDrillDownTitle(filter: DrillDownFilter): string {
+  switch (filter) {
+    case 'all': return 'All Invoices';
+    case 'invoiced': return 'Total Invoiced';
+    case 'paid': return 'Amount Paid';
+    case 'outstanding': return 'Outstanding Invoices';
+    default: return 'Invoice Details';
+  }
+}
+
+function RevenueDrillDownDialog({ open, onClose, title, description, invoices, isLoading }: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  description: string;
+  invoices: InvoiceRow[];
+  isLoading: boolean;
+}) {
+  const total = invoices.reduce((s, i) => s + i.invoiceTotal, 0);
+  const totalPaid = invoices.reduce((s, i) => s + i.amountPaid, 0);
+  const totalOutstanding = invoices.reduce((s, i) => s + i.outstanding, 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description} — {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}</DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="space-y-3 py-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-4 text-sm mb-2">
+              <span className="text-muted-foreground">Total: <span className="font-semibold text-foreground">{fmt(total)}</span></span>
+              <span className="text-muted-foreground">Paid: <span className="font-semibold text-green-600">{fmt(totalPaid)}</span></span>
+              <span className="text-muted-foreground">Outstanding: <span className="font-semibold text-amber-600">{fmt(totalOutstanding)}</span></span>
+            </div>
+            <div className="overflow-auto flex-1">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice #</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead>Date Paid</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoices.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No invoices match this filter</TableCell>
+                    </TableRow>
+                  ) : invoices.map(inv => (
+                    <TableRow key={inv.batchId}>
+                      <TableCell className="font-mono text-sm">
+                        <Link href={`/billing/batches/${inv.batchId}`} className="text-primary hover:underline">
+                          {inv.glInvoiceNumber || inv.batchId.substring(0, 12)}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{inv.invoiceDate}</TableCell>
+                      <TableCell className="max-w-[180px] truncate" title={inv.clientName}>{inv.clientName}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmt(inv.invoiceTotal)}</TableCell>
+                      <TableCell className="text-center"><PaymentStatusBadge status={inv.paymentStatus} /></TableCell>
+                      <TableCell className="whitespace-nowrap">{inv.paymentDate || '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{inv.amountPaid > 0 ? fmt(inv.amountPaid) : '—'}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {inv.outstanding > 0 ? <span className="text-amber-600">{fmt(inv.outstanding)}</span> : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function fmt(n: number): string {
@@ -77,16 +204,17 @@ function VarianceIndicator({ current, prior }: { current: number; prior: number 
   );
 }
 
-function ComparisonMetricCard({ label, icon, years }: {
+function ComparisonMetricCard({ label, icon, years, onClick }: {
   label: string;
   icon: any;
   years: { year: number; value: number }[];
+  onClick?: () => void;
 }) {
   const Icon = icon;
   const latest = years[years.length - 1];
   const prior = years.length >= 2 ? years[years.length - 2] : null;
   return (
-    <Card>
+    <Card className={onClick ? "cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" : ""} onClick={onClick}>
       <CardContent className="pt-4 pb-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
           <Icon className="w-4 h-4" /> {label}
@@ -120,8 +248,20 @@ function ClientRevenueReport() {
   const [viewMode, setViewMode] = useState<'report' | 'comparison'>('report');
   const [comparisonBatchType, setComparisonBatchType] = useState('services');
   const [comparisonGroupBy, setComparisonGroupBy] = useState<'client' | 'client-project'>('client');
+  const [drillDown, setDrillDown] = useState<{ filter: DrillDownFilter; dateRange: { start: string; end: string; batchType: string }; description: string } | null>(null);
 
   const { hasAnyRole } = useAuth();
+
+  const drillDownParams = drillDown ? new URLSearchParams({
+    startDate: drillDown.dateRange.start,
+    endDate: drillDown.dateRange.end,
+    batchTypeFilter: drillDown.dateRange.batchType,
+  }).toString() : '';
+  const { data: drillDownInvoices, isLoading: drillDownLoading } = useQuery<{ invoices: InvoiceRow[] }>({
+    queryKey: ['/api/reports/invoices', drillDownParams],
+    queryFn: () => apiRequest(`/api/reports/invoices?${drillDownParams}`),
+    enabled: !!drillDown,
+  });
 
   const queryParams = new URLSearchParams({ startDate, endDate, batchTypeFilter, groupBy }).toString();
   const { data, isLoading } = useQuery<ClientRevenueData>({
@@ -328,37 +468,48 @@ function ClientRevenueReport() {
             ) : (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  <Card>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><Users className="w-4 h-4" /> Clients</div>
-                      <div className="text-2xl font-bold">{new Set(data?.rows.map(r => r.clientId) || []).size}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{data?.totals.invoiceCount || 0} invoices total</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><DollarSign className="w-4 h-4" /> Pre-Tax Revenue</div>
-                      <div className="text-2xl font-bold">{fmt(data?.totals.invoiceAmount || 0)}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><FileText className="w-4 h-4" /> Total Invoiced</div>
-                      <div className="text-2xl font-bold">{fmt(data?.totals.invoiceTotal || 0)}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingUp className="w-4 h-4" /> Amount Paid</div>
-                      <div className="text-2xl font-bold text-green-600">{fmt(data?.totals.amountPaid || 0)}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingDown className="w-4 h-4" /> Outstanding</div>
-                      <div className="text-2xl font-bold text-amber-600">{fmt(data?.totals.outstanding || 0)}</div>
-                    </CardContent>
-                  </Card>
+                  {(() => {
+                    const openDrillDown = (filter: DrillDownFilter) => setDrillDown({
+                      filter,
+                      dateRange: { start: startDate, end: endDate, batchType: batchTypeFilter },
+                      description: `${startDate} to ${endDate}`,
+                    });
+                    return (
+                      <>
+                        <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('all')}>
+                          <CardContent className="pt-4 pb-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><Users className="w-4 h-4" /> Clients</div>
+                            <div className="text-2xl font-bold">{new Set(data?.rows.map(r => r.clientId) || []).size}</div>
+                            <div className="text-xs text-muted-foreground mt-1">{data?.totals.invoiceCount || 0} invoices total</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('invoiced')}>
+                          <CardContent className="pt-4 pb-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><DollarSign className="w-4 h-4" /> Pre-Tax Revenue</div>
+                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceAmount || 0)}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('invoiced')}>
+                          <CardContent className="pt-4 pb-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><FileText className="w-4 h-4" /> Total Invoiced</div>
+                            <div className="text-2xl font-bold">{fmt(data?.totals.invoiceTotal || 0)}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('paid')}>
+                          <CardContent className="pt-4 pb-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingUp className="w-4 h-4" /> Amount Paid</div>
+                            <div className="text-2xl font-bold text-green-600">{fmt(data?.totals.amountPaid || 0)}</div>
+                          </CardContent>
+                        </Card>
+                        <Card className="cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => openDrillDown('outstanding')}>
+                          <CardContent className="pt-4 pb-3">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1"><TrendingDown className="w-4 h-4" /> Outstanding</div>
+                            <div className="text-2xl font-bold text-amber-600">{fmt(data?.totals.outstanding || 0)}</div>
+                          </CardContent>
+                        </Card>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <Card>
@@ -462,42 +613,54 @@ function ClientRevenueReport() {
             ) : comparisonTotals && comparisonRows ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <ComparisonMetricCard
-                    label="Pre-Tax Revenue"
-                    icon={DollarSign}
-                    years={[
-                      { year: oldestYear, value: comparisonTotals.oldest.invoiceAmount },
-                      { year: priorYear, value: comparisonTotals.prior.invoiceAmount },
-                      { year: currentYear, value: comparisonTotals.current.invoiceAmount },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Total Invoiced"
-                    icon={FileText}
-                    years={[
-                      { year: oldestYear, value: comparisonTotals.oldest.invoiceTotal },
-                      { year: priorYear, value: comparisonTotals.prior.invoiceTotal },
-                      { year: currentYear, value: comparisonTotals.current.invoiceTotal },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Amount Paid"
-                    icon={TrendingUp}
-                    years={[
-                      { year: oldestYear, value: comparisonTotals.oldest.amountPaid },
-                      { year: priorYear, value: comparisonTotals.prior.amountPaid },
-                      { year: currentYear, value: comparisonTotals.current.amountPaid },
-                    ]}
-                  />
-                  <ComparisonMetricCard
-                    label="Outstanding"
-                    icon={TrendingDown}
-                    years={[
-                      { year: oldestYear, value: comparisonTotals.oldest.outstanding },
-                      { year: priorYear, value: comparisonTotals.prior.outstanding },
-                      { year: currentYear, value: comparisonTotals.current.outstanding },
-                    ]}
-                  />
+                  {(() => {
+                    const compDesc = `${oldestYear}–${currentYear}`;
+                    const compDateRange = { start: `${oldestYear}-01-01`, end: `${currentYear}-12-31`, batchType: comparisonBatchType };
+                    return (
+                      <>
+                        <ComparisonMetricCard
+                          label="Pre-Tax Revenue"
+                          icon={DollarSign}
+                          years={[
+                            { year: oldestYear, value: comparisonTotals.oldest.invoiceAmount },
+                            { year: priorYear, value: comparisonTotals.prior.invoiceAmount },
+                            { year: currentYear, value: comparisonTotals.current.invoiceAmount },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'invoiced', dateRange: compDateRange, description: compDesc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Total Invoiced"
+                          icon={FileText}
+                          years={[
+                            { year: oldestYear, value: comparisonTotals.oldest.invoiceTotal },
+                            { year: priorYear, value: comparisonTotals.prior.invoiceTotal },
+                            { year: currentYear, value: comparisonTotals.current.invoiceTotal },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'all', dateRange: compDateRange, description: compDesc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Amount Paid"
+                          icon={TrendingUp}
+                          years={[
+                            { year: oldestYear, value: comparisonTotals.oldest.amountPaid },
+                            { year: priorYear, value: comparisonTotals.prior.amountPaid },
+                            { year: currentYear, value: comparisonTotals.current.amountPaid },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'paid', dateRange: compDateRange, description: compDesc })}
+                        />
+                        <ComparisonMetricCard
+                          label="Outstanding"
+                          icon={TrendingDown}
+                          years={[
+                            { year: oldestYear, value: comparisonTotals.oldest.outstanding },
+                            { year: priorYear, value: comparisonTotals.prior.outstanding },
+                            { year: currentYear, value: comparisonTotals.current.outstanding },
+                          ]}
+                          onClick={() => setDrillDown({ filter: 'outstanding', dateRange: compDateRange, description: compDesc })}
+                        />
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <Card>
@@ -602,6 +765,17 @@ function ClientRevenueReport() {
             )}
           </TabsContent>
         </Tabs>
+
+        {drillDown && (
+          <RevenueDrillDownDialog
+            open={!!drillDown}
+            onClose={() => setDrillDown(null)}
+            title={getDrillDownTitle(drillDown.filter)}
+            description={drillDown.description}
+            invoices={filterInvoicesForDrillDown(drillDownInvoices?.invoices || [], drillDown.filter)}
+            isLoading={drillDownLoading}
+          />
+        )}
       </div>
     </Layout>
   );

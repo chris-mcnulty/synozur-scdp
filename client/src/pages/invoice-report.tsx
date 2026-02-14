@@ -1017,6 +1017,16 @@ function InvoiceReport() {
             )}
           </TabsContent>
         </Tabs>
+
+        {drillDown && (
+          <InvoiceDrillDownDialog
+            open={!!drillDown}
+            onClose={() => setDrillDown(null)}
+            title={getDrillDownTitle(drillDown.filter)}
+            description={drillDown.description}
+            invoices={filterInvoicesForDrillDown(drillDown.source, drillDown.filter)}
+          />
+        )}
       </div>
     </Layout>
   );
