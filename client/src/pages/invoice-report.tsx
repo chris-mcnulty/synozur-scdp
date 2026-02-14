@@ -391,6 +391,9 @@ function InvoiceReport() {
       current: aggregateInvoices(currentByQ[q]),
       prior: aggregateInvoices(priorByQ[q]),
       oldest: aggregateInvoices(oldestByQ[q]),
+      currentInvoices: currentByQ[q],
+      priorInvoices: priorByQ[q],
+      oldestInvoices: oldestByQ[q],
     }));
 
     const filteredCurrent = currentInvoices.filter(inv => selectedQuarters.includes(getQuarterNum(inv.invoiceDate)));
@@ -402,9 +405,15 @@ function InvoiceReport() {
       filteredCurrentTotal: aggregateInvoices(filteredCurrent),
       filteredPriorTotal: aggregateInvoices(filteredPrior),
       filteredOldestTotal: aggregateInvoices(filteredOldest),
+      filteredCurrentInvoices: filteredCurrent,
+      filteredPriorInvoices: filteredPrior,
+      filteredOldestInvoices: filteredOldest,
       fullCurrentTotal: aggregateInvoices(currentInvoices),
       fullPriorTotal: aggregateInvoices(priorInvoices),
       fullOldestTotal: aggregateInvoices(oldestInvoices),
+      fullCurrentInvoices: currentInvoices,
+      fullPriorInvoices: priorInvoices,
+      fullOldestInvoices: oldestInvoices,
     };
   }, [currentYearData, priorYearData, oldestYearData, selectedQuarters, clientFilter]);
 
@@ -898,18 +907,22 @@ function InvoiceReport() {
                             .map(qc => {
                               const delta = qc.current.invoiceAmount - qc.prior.invoiceAmount;
                               const pct = pctChange(qc.current.invoiceAmount, qc.prior.invoiceAmount);
+                              const qDrill = (invoices: InvoiceRow[], year: number) => {
+                                if (invoices.length === 0) return;
+                                setDrillDown({ filter: 'all', source: invoices, description: `Q${qc.quarter} ${year}` });
+                              };
                               return (
                                 <TableRow key={qc.quarter}>
                                   <TableCell className="font-semibold border-r">Q{qc.quarter}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{qc.oldest.count}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(qc.oldest.invoiceAmount)}</TableCell>
-                                  <TableCell className="text-right tabular-nums border-r">{fmt(qc.oldest.amountPaid)}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{qc.prior.count}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(qc.prior.invoiceAmount)}</TableCell>
-                                  <TableCell className="text-right tabular-nums border-r">{fmt(qc.prior.amountPaid)}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{qc.current.count}</TableCell>
-                                  <TableCell className="text-right tabular-nums">{fmt(qc.current.invoiceAmount)}</TableCell>
-                                  <TableCell className="text-right tabular-nums border-r">{fmt(qc.current.amountPaid)}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.oldestInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.oldestInvoices, oldestYear)}>{qc.oldest.count}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.oldestInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.oldestInvoices, oldestYear)}>{fmt(qc.oldest.invoiceAmount)}</TableCell>
+                                  <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(qc.oldest.amountPaid)}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.priorInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.priorInvoices, priorYear)}>{qc.prior.count}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.priorInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.priorInvoices, priorYear)}>{fmt(qc.prior.invoiceAmount)}</TableCell>
+                                  <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(qc.prior.amountPaid)}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.currentInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.currentInvoices, currentYear)}>{qc.current.count}</TableCell>
+                                  <TableCell className={`text-right tabular-nums ${qc.currentInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => qDrill(qc.currentInvoices, currentYear)}>{fmt(qc.current.invoiceAmount)}</TableCell>
+                                  <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(qc.current.amountPaid)}</TableCell>
                                   <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                     {delta > 0 ? '+' : ''}{fmt(delta)}
                                   </TableCell>
@@ -925,20 +938,25 @@ function InvoiceReport() {
                             const fo = comparisonData.filteredOldestTotal;
                             const delta = ft.invoiceAmount - fp.invoiceAmount;
                             const pct = pctChange(ft.invoiceAmount, fp.invoiceAmount);
+                            const totalLabel = selectedQuarters.length === 4 ? 'Full Year' : 'Selected Quarters';
+                            const drillTotal = (invoices: InvoiceRow[], year: number) => {
+                              if (invoices.length === 0) return;
+                              setDrillDown({ filter: 'all', source: invoices, description: `${totalLabel} ${year}` });
+                            };
                             return (
                               <TableRow className="bg-primary/5 font-bold border-t-2 border-primary/20">
                                 <TableCell className="border-r">
                                   {selectedQuarters.length === 4 ? 'Full Year' : 'Selected Total'}
                                 </TableCell>
-                                <TableCell className="text-right tabular-nums">{fo.count}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(fo.invoiceAmount)}</TableCell>
-                                <TableCell className="text-right tabular-nums border-r">{fmt(fo.amountPaid)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fp.count}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(fp.invoiceAmount)}</TableCell>
-                                <TableCell className="text-right tabular-nums border-r">{fmt(fp.amountPaid)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{ft.count}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmt(ft.invoiceAmount)}</TableCell>
-                                <TableCell className="text-right tabular-nums border-r">{fmt(ft.amountPaid)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredOldestInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredOldestInvoices, oldestYear)}>{fo.count}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredOldestInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredOldestInvoices, oldestYear)}>{fmt(fo.invoiceAmount)}</TableCell>
+                                <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(fo.amountPaid)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredPriorInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredPriorInvoices, priorYear)}>{fp.count}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredPriorInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredPriorInvoices, priorYear)}>{fmt(fp.invoiceAmount)}</TableCell>
+                                <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(fp.amountPaid)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredCurrentInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredCurrentInvoices, currentYear)}>{ft.count}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${comparisonData.filteredCurrentInvoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : ''}`} onClick={() => drillTotal(comparisonData.filteredCurrentInvoices, currentYear)}>{fmt(ft.invoiceAmount)}</TableCell>
+                                <TableCell className="text-right tabular-nums border-r text-muted-foreground">{fmt(ft.amountPaid)}</TableCell>
                                 <TableCell className={`text-right tabular-nums ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                   {delta > 0 ? '+' : ''}{fmt(delta)}
                                 </TableCell>
@@ -974,25 +992,31 @@ function InvoiceReport() {
                         </TableHeader>
                         <TableBody>
                           {[
-                            { label: 'Invoice Count', key: 'count', isCurrency: false },
-                            { label: 'Pre-Tax Amount', key: 'invoiceAmount', isCurrency: true },
-                            { label: 'Tax Amount', key: 'taxAmount', isCurrency: true },
-                            { label: 'Total Invoiced', key: 'invoiceTotal', isCurrency: true },
-                            { label: 'Amount Paid', key: 'amountPaid', isCurrency: true },
-                            { label: 'Outstanding', key: 'outstanding', isCurrency: true },
-                          ].map(({ label, key, isCurrency }) => {
+                            { label: 'Invoice Count', key: 'count', isCurrency: false, clickable: true },
+                            { label: 'Pre-Tax Amount', key: 'invoiceAmount', isCurrency: true, clickable: true },
+                            { label: 'Tax Amount', key: 'taxAmount', isCurrency: true, clickable: false },
+                            { label: 'Total Invoiced', key: 'invoiceTotal', isCurrency: true, clickable: true },
+                            { label: 'Amount Paid', key: 'amountPaid', isCurrency: true, clickable: false },
+                            { label: 'Outstanding', key: 'outstanding', isCurrency: true, clickable: true },
+                          ].map(({ label, key, isCurrency, clickable }) => {
                             const oldestVal = comparisonData.fullOldestTotal[key as keyof QuarterAggregates] as number;
                             const priorVal = comparisonData.fullPriorTotal[key as keyof QuarterAggregates] as number;
                             const currentVal = comparisonData.fullCurrentTotal[key as keyof QuarterAggregates] as number;
                             const delta = currentVal - priorVal;
                             const pct = pctChange(currentVal, priorVal);
                             const fmtVal = (v: number) => isCurrency ? fmt(v) : v;
+                            const drillFilter: DrillDownFilter = key === 'outstanding' ? 'outstanding' : key === 'amountPaid' ? 'paid' : key === 'invoiceAmount' ? 'invoiced' : 'all';
+                            const yoyDrill = (invoices: InvoiceRow[], year: number) => {
+                              if (!clickable || invoices.length === 0) return;
+                              setDrillDown({ filter: drillFilter, source: invoices, description: `${label} — Full Year ${year}` });
+                            };
+                            const clickClass = (invoices: InvoiceRow[]) => clickable && invoices.length > 0 ? 'cursor-pointer text-primary hover:underline' : '';
                             return (
                               <TableRow key={key}>
                                 <TableCell className="font-medium">{label}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmtVal(oldestVal)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmtVal(priorVal)}</TableCell>
-                                <TableCell className="text-right tabular-nums">{fmtVal(currentVal)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${clickClass(comparisonData.fullOldestInvoices)}`} onClick={() => yoyDrill(comparisonData.fullOldestInvoices, oldestYear)}>{fmtVal(oldestVal)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${clickClass(comparisonData.fullPriorInvoices)}`} onClick={() => yoyDrill(comparisonData.fullPriorInvoices, priorYear)}>{fmtVal(priorVal)}</TableCell>
+                                <TableCell className={`text-right tabular-nums ${clickClass(comparisonData.fullCurrentInvoices)}`} onClick={() => yoyDrill(comparisonData.fullCurrentInvoices, currentYear)}>{fmtVal(currentVal)}</TableCell>
                                 <TableCell className={`text-right tabular-nums font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : ''}`}>
                                   {isCurrency ? `${delta > 0 ? '+' : ''}${fmt(delta)}` : `${delta > 0 ? '+' : ''}${delta}`}
                                 </TableCell>
