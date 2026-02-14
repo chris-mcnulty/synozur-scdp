@@ -10,8 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, CheckCircle, AlertCircle, Users, Plus, Search, Hash, Pin } from "lucide-react";
-import teamsLogo from "@assets/Teams_512_1768138765687.png";
-import plannerLogo from "@assets/IMG_7112_1768138938013.png";
+import { SiMicrosoftteams } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -361,7 +360,7 @@ export function PlannerConnectionDialog({
       <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <img src={plannerLogo} alt="Planner" className="h-5 w-5" />
+            <SiMicrosoftteams className="h-5 w-5 text-[#6264A7]" />
             Connect to Microsoft Planner
           </DialogTitle>
           <DialogDescription>
@@ -445,7 +444,7 @@ export function PlannerConnectionDialog({
                     <RadioGroupItem value="create-new-team" id="new-team" />
                     <div className="flex-1">
                       <Label htmlFor="new-team" className="font-medium cursor-pointer flex items-center gap-2">
-                        <img src={teamsLogo} alt="Teams" className="h-4 w-4" />
+                        <SiMicrosoftteams className="h-4 w-4 text-[#6264A7]" />
                         Create new Team {clientName && `for "${clientName}"`}
                       </Label>
                       <p className="text-sm text-muted-foreground">
@@ -577,7 +576,7 @@ export function PlannerConnectionDialog({
                       data-testid={`plan-option-${plan.id}`}
                     >
                       <CardContent className="p-4 flex items-center gap-3">
-                        <img src={plannerLogo} alt="Planner" className="h-5 w-5 opacity-50" />
+                        <SiMicrosoftteams className="h-5 w-5 text-[#6264A7] opacity-50" />
                         <div>
                           <p className="font-medium">{plan.title}</p>
                         </div>
@@ -674,7 +673,7 @@ export function PlannerConnectionDialog({
                     </>
                   ) : (
                     <>
-                      <img src={teamsLogo} alt="Teams" className="mr-2 h-4 w-4" />
+                      <SiMicrosoftteams className="mr-2 h-4 w-4 text-[#6264A7]" />
                       Create Team
                     </>
                   )}
