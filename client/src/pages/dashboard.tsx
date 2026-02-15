@@ -16,10 +16,22 @@ import {
   PieChart, 
   DollarSign, 
   Clock,
-  FileText 
+  FileText,
+  Building2
 } from "lucide-react";
 import type { DashboardMetrics, ProjectWithClient } from "@/lib/types";
 
+
+interface TenantInfo {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+interface TenantsResponse {
+  activeTenantId: string;
+  tenants: TenantInfo[];
+}
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
@@ -31,6 +43,11 @@ export default function Dashboard() {
   const { data: projects, isLoading: projectsLoading } = useQuery<ProjectWithClient[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: tenantsData } = useQuery<TenantsResponse>({
+    queryKey: ["/api/auth/tenants"],
+  });
+  const activeTenant = tenantsData?.tenants?.find(t => t.isActive);
 
   const handleViewProject = (projectId: string) => {
     navigate(`/projects/${projectId}`);
@@ -46,6 +63,12 @@ export default function Dashboard() {
         {/* Dashboard Header */}
         <div className="flex items-center justify-between">
           <div>
+            {activeTenant && (
+              <div className="flex items-center gap-2 mb-1">
+                <Building2 className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium text-primary">{activeTenant.name}</span>
+              </div>
+            )}
             <h2 className="text-3xl font-bold" data-testid="dashboard-title">Portfolio Dashboard</h2>
             <p className="text-muted-foreground" data-testid="dashboard-subtitle">
               Overview of active projects and team utilization

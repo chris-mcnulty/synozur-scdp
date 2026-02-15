@@ -28,6 +28,17 @@ type EnvironmentInfo = {
   replitDeployment: string;
 };
 
+interface TenantInfo {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
+
+interface TenantsResponse {
+  activeTenantId: string;
+  tenants: TenantInfo[];
+}
+
 export default function About() {
   // Fetch system settings for version information
   const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
@@ -38,6 +49,11 @@ export default function About() {
   const { data: environmentInfo } = useQuery<EnvironmentInfo>({
     queryKey: ["/api/environment"]
   });
+
+  const { data: tenantsData } = useQuery<TenantsResponse>({
+    queryKey: ["/api/auth/tenants"],
+  });
+  const activeTenant = tenantsData?.tenants?.find(t => t.isActive);
 
   // Get version and company settings
   const majorVersion = systemSettings.find((s: SystemSetting) => s.settingKey === 'VERSION_MAJOR')?.settingValue || '0';
@@ -68,6 +84,9 @@ export default function About() {
             <Building className="h-8 w-8 text-primary" />
           </div>
           <div>
+            {activeTenant && (
+              <p className="text-lg font-semibold text-primary mb-1">{activeTenant.name}</p>
+            )}
             <p className="text-lg text-muted-foreground font-medium">{companyName}</p>
             <h1 className="text-3xl font-bold tracking-tight">Constellation</h1>
             <p className="text-xl text-muted-foreground">
