@@ -116,7 +116,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects", "/my-raidd"] },
-  { sectionId: "portfolio", paths: ["/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
+  { sectionId: "portfolio", paths: ["/", "/dashboard", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
@@ -212,7 +212,7 @@ export function Sidebar() {
                 isOpen={!!openSections["portfolio"]}
                 onToggle={handleToggle}
               >
-                <SidebarItem href="/dashboard" icon={<ChartLine />} label="Dashboard" />
+                <SidebarItem href="/" icon={<ChartLine />} label="Dashboard" />
                 <SidebarItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" />
                 {hasAnyRole(["admin", "pm", "executive"]) && (
                   <SidebarItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" />
