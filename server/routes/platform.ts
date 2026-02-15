@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "../storage";
-import { servicePlans, tenants, users } from "@shared/schema";
-import { eq, sql, desc } from "drizzle-orm";
+import { servicePlans, tenants, users, tenantUsers } from "@shared/schema";
+import { eq, sql, desc, and } from "drizzle-orm";
 import { z } from "zod";
 
 const servicePlanSchema = z.object({
@@ -27,7 +27,6 @@ const tenantSchema = z.object({
   defaultTimezone: z.string().optional().nullable(),
 });
 
-// Tenant settings schema (for tenant admins to update their own org settings)
 const tenantSettingsSchema = z.object({
   name: z.string().min(1).optional(),
   logoUrl: z.string().url().optional().nullable().or(z.literal("")),
@@ -36,6 +35,12 @@ const tenantSettingsSchema = z.object({
   companyEmail: z.string().email().optional().nullable().or(z.literal("")),
   companyWebsite: z.string().url().optional().nullable().or(z.literal("")),
   paymentTerms: z.string().optional().nullable(),
+  defaultBillingRate: z.string().optional().nullable(),
+  defaultCostRate: z.string().optional().nullable(),
+  mileageRate: z.string().optional().nullable(),
+  defaultTaxRate: z.string().optional().nullable(),
+  invoiceDefaultDiscountType: z.string().optional().nullable(),
+  invoiceDefaultDiscountValue: z.string().optional().nullable(),
 });
 
 function isPlatformAdmin(req: Request): boolean {
@@ -318,6 +323,15 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         paymentTerms: tenant.paymentTerms,
         color: tenant.color,
         faviconUrl: tenant.faviconUrl,
+        showConstellationFooter: tenant.showConstellationFooter,
+        showChangelogOnLogin: tenant.showChangelogOnLogin,
+        emailHeaderUrl: tenant.emailHeaderUrl,
+        defaultBillingRate: tenant.defaultBillingRate,
+        defaultCostRate: tenant.defaultCostRate,
+        mileageRate: tenant.mileageRate,
+        defaultTaxRate: tenant.defaultTaxRate,
+        invoiceDefaultDiscountType: tenant.invoiceDefaultDiscountType,
+        invoiceDefaultDiscountValue: tenant.invoiceDefaultDiscountValue,
       });
     } catch (error) {
       console.error("Error fetching tenant settings:", error);
@@ -369,6 +383,12 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         companyEmail: tenant.companyEmail,
         companyWebsite: tenant.companyWebsite,
         paymentTerms: tenant.paymentTerms,
+        defaultBillingRate: tenant.defaultBillingRate,
+        defaultCostRate: tenant.defaultCostRate,
+        mileageRate: tenant.mileageRate,
+        defaultTaxRate: tenant.defaultTaxRate,
+        invoiceDefaultDiscountType: tenant.invoiceDefaultDiscountType,
+        invoiceDefaultDiscountValue: tenant.invoiceDefaultDiscountValue,
       });
     } catch (error) {
       console.error("Error updating tenant settings:", error);
@@ -498,6 +518,155 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
     } catch (error) {
       console.error("Error updating user tenant:", error);
       res.status(500).json({ error: "Failed to update user tenant" });
+    }
+  });
+
+  // ============================================================================
+  // TENANT MEMBERSHIP MANAGEMENT (for platform admins to manage user-tenant memberships)
+  // ============================================================================
+
+  app.get("/api/platform/users/:id/memberships", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const memberships = await db
+        .select({
+          id: tenantUsers.id,
+          tenantId: tenantUsers.tenantId,
+          role: tenantUsers.role,
+          status: tenantUsers.status,
+          clientId: tenantUsers.clientId,
+          createdAt: tenantUsers.createdAt,
+          tenantName: tenants.name,
+          tenantSlug: tenants.slug,
+        })
+        .from(tenantUsers)
+        .innerJoin(tenants, eq(tenantUsers.tenantId, tenants.id))
+        .where(eq(tenantUsers.userId, id))
+        .orderBy(tenants.name);
+
+      res.json(memberships);
+    } catch (error) {
+      console.error("Error fetching user memberships:", error);
+      res.status(500).json({ error: "Failed to fetch memberships" });
+    }
+  });
+
+  app.post("/api/platform/users/:id/memberships", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { id: userId } = req.params;
+      const { tenantId, role } = req.body;
+
+      if (!tenantId || !role) {
+        return res.status(400).json({ error: "tenantId and role are required" });
+      }
+
+      const validRoles = ["admin", "billing-admin", "pm", "employee", "executive", "client"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role. Valid roles: " + validRoles.join(", ") });
+      }
+
+      const [userExists] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
+      if (!userExists) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const [tenantExists] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.id, tenantId));
+      if (!tenantExists) {
+        return res.status(404).json({ error: "Tenant not found" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(tenantUsers)
+        .where(and(
+          eq(tenantUsers.userId, userId),
+          eq(tenantUsers.tenantId, tenantId)
+        ));
+
+      if (existing) {
+        return res.status(409).json({ error: "User already has a membership in this tenant" });
+      }
+
+      const [membership] = await db.insert(tenantUsers).values({
+        userId,
+        tenantId,
+        role,
+        status: "active",
+        joinedAt: new Date(),
+      }).returning();
+
+      const [tenantInfo] = await db.select({ name: tenants.name, slug: tenants.slug }).from(tenants).where(eq(tenants.id, tenantId));
+
+      res.status(201).json({
+        ...membership,
+        tenantName: tenantInfo?.name || "Unknown",
+        tenantSlug: tenantInfo?.slug || "",
+      });
+    } catch (error) {
+      console.error("Error adding tenant membership:", error);
+      res.status(500).json({ error: "Failed to add membership" });
+    }
+  });
+
+  app.patch("/api/platform/users/:userId/memberships/:membershipId", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { membershipId } = req.params;
+      const { role, status } = req.body;
+
+      const updates: any = {};
+      if (role) {
+        const validRoles = ["admin", "billing-admin", "pm", "employee", "executive", "client"];
+        if (!validRoles.includes(role)) {
+          return res.status(400).json({ error: "Invalid role" });
+        }
+        updates.role = role;
+      }
+      if (status) {
+        const validStatuses = ["active", "suspended"];
+        if (!validStatuses.includes(status)) {
+          return res.status(400).json({ error: "Invalid status" });
+        }
+        updates.status = status;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No updates provided" });
+      }
+
+      const [updated] = await db
+        .update(tenantUsers)
+        .set(updates)
+        .where(eq(tenantUsers.id, membershipId))
+        .returning();
+
+      if (!updated) {
+        return res.status(404).json({ error: "Membership not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating membership:", error);
+      res.status(500).json({ error: "Failed to update membership" });
+    }
+  });
+
+  app.delete("/api/platform/users/:userId/memberships/:membershipId", requireAuth, requirePlatformAdmin, async (req, res) => {
+    try {
+      const { membershipId } = req.params;
+
+      const [deleted] = await db
+        .delete(tenantUsers)
+        .where(eq(tenantUsers.id, membershipId))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Membership not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing membership:", error);
+      res.status(500).json({ error: "Failed to remove membership" });
     }
   });
 }

@@ -12,7 +12,17 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Shield, Users, Search, Crown, Briefcase, User, Building } from "lucide-react";
+import { Shield, Users, Search, Crown, Briefcase, User, Building, Plus, Trash2, UserPlus } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface PlatformUser {
   id: string;
@@ -35,11 +45,31 @@ interface Tenant {
   slug: string;
 }
 
+interface TenantMembership {
+  id: string;
+  tenantId: string;
+  role: string;
+  status: string;
+  clientId: string | null;
+  createdAt: string;
+  tenantName: string;
+  tenantSlug: string;
+}
+
 const PLATFORM_ROLES = [
   { value: "user", label: "User", description: "Regular tenant-scoped user" },
   { value: "constellation_consultant", label: "Consultant", description: "Cross-tenant consultant access" },
   { value: "constellation_admin", label: "Platform Admin", description: "Manage tenants and service plans" },
   { value: "global_admin", label: "Global Admin", description: "Full platform control" },
+];
+
+const TENANT_ROLES = [
+  { value: "admin", label: "Admin" },
+  { value: "billing-admin", label: "Billing Admin" },
+  { value: "pm", label: "Project Manager" },
+  { value: "employee", label: "Employee" },
+  { value: "executive", label: "Executive" },
+  { value: "client", label: "Client" },
 ];
 
 function getPlatformRoleBadge(role: string | null) {
@@ -63,13 +93,22 @@ export default function PlatformUsers() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [selectedTenant, setSelectedTenant] = useState<string>("");
+  const [addMembershipOpen, setAddMembershipOpen] = useState(false);
+  const [newMembershipTenantId, setNewMembershipTenantId] = useState("");
+  const [newMembershipRole, setNewMembershipRole] = useState("employee");
+  const [removeMembershipId, setRemoveMembershipId] = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery<PlatformUser[]>({
     queryKey: ["/api/platform/users"],
   });
 
-  const { data: tenants = [] } = useQuery<Tenant[]>({
+  const { data: allTenants = [] } = useQuery<Tenant[]>({
     queryKey: ["/api/platform/tenants"],
+  });
+
+  const { data: memberships = [], isLoading: membershipsLoading } = useQuery<TenantMembership[]>({
+    queryKey: ["/api/platform/users", selectedUser?.id, "memberships"],
+    enabled: !!selectedUser && editDialogOpen,
   });
 
   const updateRoleMutation = useMutation({
@@ -82,7 +121,6 @@ export default function PlatformUsers() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
       toast({ title: "Platform role updated", description: "User's platform role has been changed." });
-      setEditDialogOpen(false);
     },
     onError: (error: any) => {
       toast({ 
@@ -102,12 +140,74 @@ export default function PlatformUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
-      toast({ title: "Tenant updated", description: "User's primary tenant has been changed." });
-      setEditDialogOpen(false);
+      toast({ title: "Primary tenant updated", description: "User's primary tenant has been changed." });
     },
     onError: (error: any) => {
       toast({ 
         title: "Failed to update tenant", 
+        description: error.message || "Please try again.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const addMembershipMutation = useMutation({
+    mutationFn: async ({ userId, tenantId, role }: { userId: string; tenantId: string; role: string }) => {
+      return apiRequest(`/api/platform/users/${userId}/memberships`, {
+        method: "POST",
+        body: JSON.stringify({ tenantId, role }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users", selectedUser?.id, "memberships"] });
+      toast({ title: "Membership added", description: "User has been added to the organization." });
+      setAddMembershipOpen(false);
+      setNewMembershipTenantId("");
+      setNewMembershipRole("employee");
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to add membership", 
+        description: error.message || "Please try again.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const removeMembershipMutation = useMutation({
+    mutationFn: async ({ userId, membershipId }: { userId: string; membershipId: string }) => {
+      return apiRequest(`/api/platform/users/${userId}/memberships/${membershipId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users", selectedUser?.id, "memberships"] });
+      toast({ title: "Membership removed", description: "User has been removed from the organization." });
+      setRemoveMembershipId(null);
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to remove membership", 
+        description: error.message || "Please try again.", 
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const updateMembershipRoleMutation = useMutation({
+    mutationFn: async ({ userId, membershipId, role }: { userId: string; membershipId: string; role: string }) => {
+      return apiRequest(`/api/platform/users/${userId}/memberships/${membershipId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users", selectedUser?.id, "memberships"] });
+      toast({ title: "Role updated", description: "Membership role has been changed." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update role", 
         description: error.message || "Please try again.", 
         variant: "destructive" 
       });
@@ -133,8 +233,10 @@ export default function PlatformUsers() {
   const handleSaveChanges = () => {
     if (!selectedUser) return;
 
+    let changed = false;
     if (selectedRole !== (selectedUser.platformRole || "user")) {
       updateRoleMutation.mutate({ userId: selectedUser.id, platformRole: selectedRole });
+      changed = true;
     }
     
     if (selectedTenant !== (selectedUser.primaryTenantId || "")) {
@@ -142,13 +244,17 @@ export default function PlatformUsers() {
         userId: selectedUser.id, 
         primaryTenantId: selectedTenant || null 
       });
+      changed = true;
     }
 
-    if (selectedRole === (selectedUser.platformRole || "user") && 
-        selectedTenant === (selectedUser.primaryTenantId || "")) {
+    if (!changed) {
       setEditDialogOpen(false);
     }
   };
+
+  const availableTenants = allTenants.filter(
+    t => !memberships.some(m => m.tenantId === t.id)
+  );
 
   return (
     <Layout>
@@ -194,7 +300,7 @@ export default function PlatformUsers() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Tenant</TableHead>
+                    <TableHead>Primary Tenant</TableHead>
                     <TableHead>Tenant Role</TableHead>
                     <TableHead>Platform Role</TableHead>
                     <TableHead>Status</TableHead>
@@ -241,59 +347,147 @@ export default function PlatformUsers() {
           </CardContent>
         </Card>
 
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent>
+        <Dialog open={editDialogOpen} onOpenChange={(open) => { setEditDialogOpen(open); if (!open) setSelectedUser(null); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit User</DialogTitle>
               <DialogDescription>
-                Update platform role and tenant assignment for {selectedUser?.name}
+                Manage platform role, primary tenant, and organization memberships for {selectedUser?.name}
               </DialogDescription>
             </DialogHeader>
             
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label>Platform Role</Label>
-                <Select value={selectedRole} onValueChange={setSelectedRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PLATFORM_ROLES.map((role) => (
-                      <SelectItem 
-                        key={role.value} 
-                        value={role.value}
-                        disabled={role.value === "global_admin" && !isGlobalAdmin}
-                      >
-                        <div className="flex flex-col">
-                          <span>{role.label}</span>
-                          <span className="text-xs text-muted-foreground">{role.description}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!isGlobalAdmin && (
-                  <p className="text-xs text-muted-foreground">
-                    Only Global Admins can assign the Global Admin role
-                  </p>
-                )}
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Platform Role</Label>
+                  <Select value={selectedRole} onValueChange={setSelectedRole}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLATFORM_ROLES.map((role) => (
+                        <SelectItem 
+                          key={role.value} 
+                          value={role.value}
+                          disabled={role.value === "global_admin" && !isGlobalAdmin}
+                        >
+                          <div className="flex flex-col">
+                            <span>{role.label}</span>
+                            <span className="text-xs text-muted-foreground">{role.description}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!isGlobalAdmin && (
+                    <p className="text-xs text-muted-foreground">
+                      Only Global Admins can assign the Global Admin role
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Primary Tenant</Label>
+                  <Select value={selectedTenant || "__no_tenant__"} onValueChange={(v) => setSelectedTenant(v === "__no_tenant__" ? "" : v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a tenant" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__no_tenant__">No Tenant</SelectItem>
+                      {allTenants.map((tenant) => (
+                        <SelectItem key={tenant.id} value={tenant.id}>
+                          {tenant.name} ({tenant.slug})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Primary Tenant</Label>
-                <Select value={selectedTenant || "__no_tenant__"} onValueChange={(v) => setSelectedTenant(v === "__no_tenant__" ? "" : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a tenant" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__no_tenant__">No Tenant</SelectItem>
-                    {tenants.map((tenant) => (
-                      <SelectItem key={tenant.id} value={tenant.id}>
-                        {tenant.name} ({tenant.slug})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="font-semibold text-sm">Organization Memberships</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Manage which organizations this user belongs to and their role in each
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => setAddMembershipOpen(true)}
+                    disabled={availableTenants.length === 0}
+                  >
+                    <UserPlus className="w-4 h-4 mr-1" />
+                    Add to Organization
+                  </Button>
+                </div>
+
+                {membershipsLoading ? (
+                  <div className="text-center py-4 text-muted-foreground text-sm">Loading memberships...</div>
+                ) : memberships.length === 0 ? (
+                  <div className="text-center py-4 text-muted-foreground text-sm border rounded-md">
+                    No organization memberships. Add this user to an organization to get started.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Organization</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {memberships.map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Building className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span className="font-medium text-sm">{m.tenantName}</span>
+                              <span className="text-xs text-muted-foreground">({m.tenantSlug})</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Select
+                              value={m.role}
+                              onValueChange={(role) => {
+                                if (selectedUser) {
+                                  updateMembershipRoleMutation.mutate({ userId: selectedUser.id, membershipId: m.id, role });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-[140px] h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TENANT_ROLES.map((r) => (
+                                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={m.status === 'active' ? 'outline' : 'secondary'} className={m.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' : ''}>
+                              {m.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => setRemoveMembershipId(m.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </div>
             </div>
 
@@ -310,6 +504,90 @@ export default function PlatformUsers() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={addMembershipOpen} onOpenChange={setAddMembershipOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add to Organization</DialogTitle>
+              <DialogDescription>
+                Add {selectedUser?.name} to an organization with a specific role
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Organization</Label>
+                <Select value={newMembershipTenantId} onValueChange={setNewMembershipTenantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTenants.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} ({t.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={newMembershipRole} onValueChange={setNewMembershipRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TENANT_ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddMembershipOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedUser && newMembershipTenantId) {
+                    addMembershipMutation.mutate({
+                      userId: selectedUser.id,
+                      tenantId: newMembershipTenantId,
+                      role: newMembershipRole,
+                    });
+                  }
+                }}
+                disabled={!newMembershipTenantId || addMembershipMutation.isPending}
+              >
+                {addMembershipMutation.isPending ? "Adding..." : "Add Membership"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog open={!!removeMembershipId} onOpenChange={(open) => { if (!open) setRemoveMembershipId(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove Membership</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to remove this user from this organization? They will lose access to all data in that organization.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (selectedUser && removeMembershipId) {
+                    removeMembershipMutation.mutate({ userId: selectedUser.id, membershipId: removeMembershipId });
+                  }
+                }}
+              >
+                Remove
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </Layout>
   );

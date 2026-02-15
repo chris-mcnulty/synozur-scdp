@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign } from "lucide-react";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
 interface TenantInfo {
@@ -47,6 +47,12 @@ interface TenantSettings {
   showConstellationFooter: boolean;
   showChangelogOnLogin: boolean;
   emailHeaderUrl: string | null;
+  defaultBillingRate: string | null;
+  defaultCostRate: string | null;
+  mileageRate: string | null;
+  defaultTaxRate: string | null;
+  invoiceDefaultDiscountType: string | null;
+  invoiceDefaultDiscountValue: string | null;
 }
 
 const brandingSchema = z.object({
@@ -63,6 +69,32 @@ const brandingSchema = z.object({
 });
 
 type BrandingFormData = z.infer<typeof brandingSchema>;
+
+const financialSchema = z.object({
+  defaultBillingRate: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Must be a valid number 0 or greater"),
+  defaultCostRate: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Must be a valid number 0 or greater"),
+  mileageRate: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Must be a valid number 0 or greater"),
+  defaultTaxRate: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0 && num <= 100;
+  }, "Must be between 0 and 100"),
+  invoiceDefaultDiscountType: z.string(),
+  invoiceDefaultDiscountValue: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0;
+  }, "Must be a valid number 0 or greater"),
+});
+
+type FinancialFormData = z.infer<typeof financialSchema>;
 
 function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string) => void }) {
   const { toast } = useToast();
@@ -185,6 +217,53 @@ export default function OrganizationSettings() {
     updateBrandingMutation.mutate(data);
   };
 
+  const financialForm = useForm<FinancialFormData>({
+    resolver: zodResolver(financialSchema),
+    defaultValues: {
+      defaultBillingRate: "0",
+      defaultCostRate: "0",
+      mileageRate: "0.70",
+      defaultTaxRate: "0",
+      invoiceDefaultDiscountType: "percent",
+      invoiceDefaultDiscountValue: "0",
+    },
+    values: {
+      defaultBillingRate: tenantSettings?.defaultBillingRate || "0",
+      defaultCostRate: tenantSettings?.defaultCostRate || "0",
+      mileageRate: tenantSettings?.mileageRate || "0.70",
+      defaultTaxRate: tenantSettings?.defaultTaxRate || "0",
+      invoiceDefaultDiscountType: tenantSettings?.invoiceDefaultDiscountType || "percent",
+      invoiceDefaultDiscountValue: tenantSettings?.invoiceDefaultDiscountValue || "0",
+    },
+  });
+
+  const updateFinancialMutation = useMutation({
+    mutationFn: async (data: FinancialFormData) => {
+      await apiRequest("/api/tenant/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          defaultBillingRate: data.defaultBillingRate,
+          defaultCostRate: data.defaultCostRate,
+          mileageRate: data.mileageRate,
+          defaultTaxRate: data.defaultTaxRate,
+          invoiceDefaultDiscountType: data.invoiceDefaultDiscountType,
+          invoiceDefaultDiscountValue: data.invoiceDefaultDiscountValue,
+        }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/settings"] });
+      toast({ title: "Settings saved", description: "Financial defaults have been updated for this organization." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save financial settings.", variant: "destructive" });
+    },
+  });
+
+  const handleFinancialSubmit = (data: FinancialFormData) => {
+    updateFinancialMutation.mutate(data);
+  };
+
   return (
     <Layout>
       <div className="container mx-auto py-8 px-4 max-w-5xl">
@@ -222,6 +301,10 @@ export default function OrganizationSettings() {
               <TabsTrigger value="branding" className="flex items-center gap-2">
                 <Palette className="w-4 h-4" />
                 <span>Branding</span>
+              </TabsTrigger>
+              <TabsTrigger value="financial" className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                <span>Financial</span>
               </TabsTrigger>
               <TabsTrigger value="integrations" className="flex items-center gap-2">
                 <Link2 className="w-4 h-4" />
@@ -483,6 +566,152 @@ export default function OrganizationSettings() {
                     <Button type="submit" disabled={updateBrandingMutation.isPending}>
                       <Save className="w-4 h-4 mr-2" />
                       {updateBrandingMutation.isPending ? "Saving..." : "Save Branding Settings"}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </TabsContent>
+
+            <TabsContent value="financial" className="space-y-6">
+              <Form {...financialForm}>
+                <form onSubmit={financialForm.handleSubmit(handleFinancialSubmit)} className="space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <DollarSign className="h-5 w-5" />
+                        Default Rates
+                      </CardTitle>
+                      <CardDescription>
+                        Default billing and cost rates for this organization. These are used when a user or project doesn't have specific rates set.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={financialForm.control}
+                          name="defaultBillingRate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Default Billing Rate ($/hr)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" step="0.01" min="0" placeholder="0.00" />
+                              </FormControl>
+                              <FormDescription>
+                                Fallback billing rate when no user or project rate is defined
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={financialForm.control}
+                          name="defaultCostRate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Default Cost Rate ($/hr)</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" step="0.01" min="0" placeholder="0.00" />
+                              </FormControl>
+                              <FormDescription>
+                                Fallback internal cost rate for margin calculations
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={financialForm.control}
+                        name="mileageRate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Mileage Reimbursement Rate ($/mile)</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" step="0.01" min="0" placeholder="0.70" />
+                            </FormControl>
+                            <FormDescription>
+                              Rate per mile for mileage expense reimbursement (e.g., IRS standard rate)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileText className="h-5 w-5" />
+                        Invoice Defaults
+                      </CardTitle>
+                      <CardDescription>
+                        Default values applied when creating new invoice batches for this organization
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <FormField
+                        control={financialForm.control}
+                        name="defaultTaxRate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Default Tax Rate (%)</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" step="0.01" min="0" max="100" placeholder="0.00" />
+                            </FormControl>
+                            <FormDescription>
+                              Default tax percentage applied to new invoice batches
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={financialForm.control}
+                          name="invoiceDefaultDiscountType"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Default Discount Type</FormLabel>
+                              <FormControl>
+                                <select
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                >
+                                  <option value="percent">Percentage (%)</option>
+                                  <option value="amount">Fixed Amount ($)</option>
+                                </select>
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={financialForm.control}
+                          name="invoiceDefaultDiscountValue"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Default Discount Value</FormLabel>
+                              <FormControl>
+                                <Input {...field} type="number" step="0.01" min="0" placeholder="0.00" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={updateFinancialMutation.isPending}>
+                      <Save className="w-4 h-4 mr-2" />
+                      {updateFinancialMutation.isPending ? "Saving..." : "Save Financial Settings"}
                     </Button>
                   </div>
                 </form>

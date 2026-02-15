@@ -696,6 +696,14 @@ export default function SystemSettings() {
           </TabsList>
 
           <TabsContent value="company" className="space-y-6">
+            <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <AlertDescription>
+                Company branding is now managed per-organization. Go to{" "}
+                <a href="/organization-settings" className="font-medium underline text-blue-600 dark:text-blue-400">Organization Settings</a>{" "}
+                to configure branding for your current organization. Changes here apply as system-wide defaults.
+              </AlertDescription>
+            </Alert>
             <Form {...companyForm}>
               <form name="company-information-form" onSubmit={companyForm.handleSubmit(handleCompanySubmit)} className="space-y-6">
                 {/* Basic Information */}
@@ -990,6 +998,14 @@ export default function SystemSettings() {
           </TabsContent>
 
           <TabsContent value="rates" className="space-y-6">
+            <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <AlertDescription>
+                Default rates are now managed per-organization. Go to{" "}
+                <a href="/organization-settings" className="font-medium underline text-blue-600 dark:text-blue-400">Organization Settings &gt; Financial</a>{" "}
+                to configure rates for your current organization. Organization-level rates take priority over these system-wide defaults.
+              </AlertDescription>
+            </Alert>
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
@@ -997,15 +1013,14 @@ export default function SystemSettings() {
                   <span>System Default Rates</span>
                 </CardTitle>
                 <CardDescription>
-                  Configure fallback rates used when no other rate settings are available. 
-                  These are applied as the final step in the rate resolution hierarchy.
+                  System-wide fallback rates. Organization-level rates (in Organization Settings) take priority over these values.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>Rate Hierarchy:</strong> Project Overrides → User Rate Schedules → User Defaults → System Defaults (these settings)
+                    <strong>Rate Hierarchy:</strong> Project Overrides → User Rate Schedules → User Defaults → Organization Defaults → System Defaults (these settings)
                   </AlertDescription>
                 </Alert>
 

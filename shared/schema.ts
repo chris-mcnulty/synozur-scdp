@@ -132,6 +132,14 @@ export const tenants = pgTable("tenants", {
   // Email branding
   emailHeaderUrl: text("email_header_url"), // Optional email header image for outgoing emails
   
+  // Financial Defaults (tenant-scoped, not system-wide)
+  defaultBillingRate: decimal("default_billing_rate", { precision: 10, scale: 2 }).default('0'),
+  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }).default('0'),
+  mileageRate: decimal("mileage_rate", { precision: 10, scale: 4 }).default('0.70'),
+  defaultTaxRate: decimal("default_tax_rate", { precision: 5, scale: 2 }).default('0'),
+  invoiceDefaultDiscountType: text("invoice_default_discount_type").default('percent'),
+  invoiceDefaultDiscountValue: decimal("invoice_default_discount_value", { precision: 10, scale: 2 }).default('0'),
+
   // Feature Settings
   showChangelogOnLogin: boolean("show_changelog_on_login").default(true), // Show "What's New" modal to users on login
 

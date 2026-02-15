@@ -963,8 +963,10 @@ export interface IStorage {
     };
     timezone?: string;
   }): Promise<Buffer>;
-  getDefaultBillingRate(): Promise<number>;
-  getDefaultCostRate(): Promise<number>;
+  getDefaultBillingRate(tenantId?: string): Promise<number>;
+  getDefaultCostRate(tenantId?: string): Promise<number>;
+  getMileageRate(tenantId?: string): Promise<number>;
+  getDefaultTaxRate(tenantId?: string): Promise<number>;
   
   // Planner Integration Methods
   getProjectPlannerConnection(projectId: string): Promise<ProjectPlannerConnection | undefined>;
@@ -2340,8 +2342,12 @@ export class DatabaseStorage implements IStorage {
       // Calculate rates for the time entry using shared helper
       const { personId, projectId, date, billable } = insertTimeEntry;
       
+      // Look up project's tenantId for tenant-scoped rate fallback
+      const [proj] = await db.select({ tenantId: projects.tenantId }).from(projects).where(eq(projects.id, projectId));
+      const projectTenantId = proj?.tenantId ?? undefined;
+      
       console.log("[STORAGE] Resolving rates using shared helper...");
-      const { billingRate, costRate } = await resolveRatesForTimeEntry(this, personId, projectId, date);
+      const { billingRate, costRate } = await resolveRatesForTimeEntry(this, personId, projectId, date, projectTenantId);
       console.log("[STORAGE] Resolved rates - Billing:", billingRate, "Cost:", costRate);
       
       // Get user info for better error messages
@@ -9195,14 +9201,58 @@ export class DatabaseStorage implements IStorage {
     console.log(`Seeded ${defaultTerms.length} default vocabulary terms`);
   }
 
-  async getDefaultBillingRate(): Promise<number> {
+  async getDefaultBillingRate(tenantId?: string): Promise<number> {
+    if (tenantId) {
+      try {
+        const [tenant] = await db.select({ defaultBillingRate: tenants.defaultBillingRate }).from(tenants).where(eq(tenants.id, tenantId));
+        if (tenant?.defaultBillingRate) {
+          const rate = parseFloat(tenant.defaultBillingRate);
+          if (rate > 0) return rate;
+        }
+      } catch (e) { /* fall through to system setting */ }
+    }
     const value = await this.getSystemSettingValue('DEFAULT_BILLING_RATE', '0');
     return parseFloat(value) || 0;
   }
 
-  async getDefaultCostRate(): Promise<number> {
+  async getDefaultCostRate(tenantId?: string): Promise<number> {
+    if (tenantId) {
+      try {
+        const [tenant] = await db.select({ defaultCostRate: tenants.defaultCostRate }).from(tenants).where(eq(tenants.id, tenantId));
+        if (tenant?.defaultCostRate) {
+          const rate = parseFloat(tenant.defaultCostRate);
+          if (rate > 0) return rate;
+        }
+      } catch (e) { /* fall through to system setting */ }
+    }
     const value = await this.getSystemSettingValue('DEFAULT_COST_RATE', '0');
     return parseFloat(value) || 0;
+  }
+
+  async getMileageRate(tenantId?: string): Promise<number> {
+    if (tenantId) {
+      try {
+        const [tenant] = await db.select({ mileageRate: tenants.mileageRate }).from(tenants).where(eq(tenants.id, tenantId));
+        if (tenant?.mileageRate) {
+          const rate = parseFloat(tenant.mileageRate);
+          if (rate > 0) return rate;
+        }
+      } catch (e) { /* fall through to system setting */ }
+    }
+    const value = await this.getSystemSettingValue('MILEAGE_RATE', '0.70');
+    return parseFloat(value) || 0.70;
+  }
+
+  async getDefaultTaxRate(tenantId?: string): Promise<number> {
+    if (tenantId) {
+      try {
+        const [tenant] = await db.select({ defaultTaxRate: tenants.defaultTaxRate }).from(tenants).where(eq(tenants.id, tenantId));
+        if (tenant?.defaultTaxRate) {
+          return parseFloat(tenant.defaultTaxRate);
+        }
+      } catch (e) { /* fall through */ }
+    }
+    return 0;
   }
 
   async getComplianceData(clientId?: string): Promise<{
@@ -11303,7 +11353,8 @@ export async function resolveRatesForTimeEntry(
   storage: IStorage,
   personId: string,
   projectId: string,
-  date: string
+  date: string,
+  tenantId?: string
 ): Promise<{ billingRate: number; costRate: number }> {
   let billingRate: number | null = null;
   let costRate: number | null = null;
@@ -11348,19 +11399,17 @@ export async function resolveRatesForTimeEntry(
     }
   }
   
-  // 4. Fallback to system defaults for any remaining null rates
+  // 4. Fallback to tenant defaults then system defaults for any remaining null rates
   if (billingRate === null) {
-    billingRate = await storage.getDefaultBillingRate();
-    // If system default is 0, this indicates system settings aren't configured
+    billingRate = await storage.getDefaultBillingRate(tenantId);
     if (billingRate === 0) {
-      console.warn(`Warning: System billing rate default is 0. Please configure DEFAULT_BILLING_RATE in system settings.`);
+      console.warn(`Warning: Default billing rate is 0. Configure in Organization Settings > Financial.`);
     }
   }
   if (costRate === null) {
-    costRate = await storage.getDefaultCostRate();
-    // If system default is 0, this indicates system settings aren't configured  
+    costRate = await storage.getDefaultCostRate(tenantId);
     if (costRate === 0) {
-      console.warn(`Warning: System cost rate default is 0. Please configure DEFAULT_COST_RATE in system settings.`);
+      console.warn(`Warning: Default cost rate is 0. Configure in Organization Settings > Financial.`);
     }
   }
   

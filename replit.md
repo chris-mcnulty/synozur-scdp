@@ -60,7 +60,8 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login via `primaryTenantId`, Azure AD tenant ID mapping, email domain matching, or default tenant fallback.
 - **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
 - **Platform Admin UI**: Available for managing tenants, service plans, user assignments, airport codes, and OCONUS per diem rates.
-- **Settings Separation**: Tenant-specific settings in Organization Settings (`/organization-settings`), platform-wide settings in System Settings (`/system-settings`).
+- **Settings Separation**: Tenant-specific settings (financial rates, tax, invoice defaults, branding) stored in `tenants` table columns and managed in Organization Settings (`/organization-settings`). Platform-wide settings (estimation factors, vocabulary, reminders) in System Settings (`/system-settings`). Rate resolution hierarchy: Project Overrides → User Rate Schedules → User Defaults → Organization Defaults → System Defaults.
+- **Platform User Management**: Platform admins can manage user tenant memberships (add/remove users to/from tenants with role assignment) via Platform Users page.
 - **Invoice Footer & Email Branding**: Configurable tenant-level branding.
 - **Vocabulary Multi-tenancy**: `organizationVocabulary` is tenant-scoped with strict tenant isolation.
 - **Multi-Tenant Identity & Stakeholder Model**: Uses `users` table for global identity and `tenant_users` table for tenant-specific access and roles, allowing a single person to have multiple roles across different tenants and clients. Security boundaries ensure tenant and stakeholder data isolation.

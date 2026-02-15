@@ -60,8 +60,10 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
   app.get("/api/expenses/mileage-rate", deps.requireAuth, async (req, res) => {
     try {
-      const mileageRate = await storage.getSystemSettingValue('MILEAGE_RATE', '0.70');
-      res.json({ rate: parseFloat(mileageRate) });
+      const user = (req as any).user;
+      const tenantId = user?.tenantId;
+      const rate = await storage.getMileageRate(tenantId);
+      res.json({ rate });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch mileage rate" });
     }
