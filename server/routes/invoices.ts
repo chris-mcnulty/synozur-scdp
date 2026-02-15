@@ -11,6 +11,31 @@ interface InvoiceRouteDeps {
   requireRole: (roles: string[]) => any;
 }
 
+function getUserTenantId(req: Request): string | undefined {
+  return (req as any).user?.tenantId;
+}
+
+function isPlatformAdmin(req: Request): boolean {
+  const platformRole = (req as any).user?.platformRole;
+  return platformRole === 'global_admin' || platformRole === 'constellation_admin';
+}
+
+async function checkBatchTenantAccess(batchId: string, req: Request, res: Response): Promise<boolean> {
+  const tenantId = getUserTenantId(req);
+  if (!tenantId || isPlatformAdmin(req)) return true;
+  
+  const [batch] = await db.select({ tenantId: invoiceBatches.tenantId })
+    .from(invoiceBatches)
+    .where(eq(invoiceBatches.batchId, batchId));
+  
+  if (!batch) return true;
+  if (batch.tenantId !== tenantId) {
+    res.status(403).json({ message: "Access denied" });
+    return false;
+  }
+  return true;
+}
+
 export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   // Invoice batch endpoints
@@ -180,10 +205,14 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      console.log("[INVOICE-BATCHES] Fetching invoice batches...");
+      const tenantId = getUserTenantId(req);
+      console.log("[INVOICE-BATCHES] Fetching invoice batches for tenant:", tenantId);
       const batches = await storage.getInvoiceBatches();
-      console.log(`[INVOICE-BATCHES] Successfully fetched ${batches.length} batches`);
-      res.json(batches);
+      const filteredBatches = tenantId && !isPlatformAdmin(req)
+        ? batches.filter(b => b.tenantId === tenantId)
+        : batches;
+      console.log(`[INVOICE-BATCHES] Returning ${filteredBatches.length} of ${batches.length} batches`);
+      res.json(filteredBatches);
     } catch (error) {
       console.error("[INVOICE-BATCHES] Error fetching invoice batches:", error);
       res.status(500).json({ message: "Failed to fetch invoice batches" });
@@ -193,8 +222,12 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
   app.get("/api/clients/:clientId/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { clientId } = req.params;
+      const tenantId = getUserTenantId(req);
       const batches = await storage.getInvoiceBatchesForClient(clientId);
-      res.json(batches);
+      const filtered = tenantId && !isPlatformAdmin(req)
+        ? batches.filter(b => b.tenantId === tenantId)
+        : batches;
+      res.json(filtered);
     } catch (error) {
       console.error("Failed to fetch client invoice batches:", error);
       res.status(500).json({ message: "Failed to fetch client invoice batches" });
@@ -203,6 +236,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/details", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const batchDetails = await storage.getInvoiceBatchDetails(req.params.batchId);
 
       if (!batchDetails) {
@@ -218,6 +253,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/lines", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const lines = await storage.getInvoiceLinesForBatch(req.params.batchId);
 
       const groupedLines = lines.reduce((acc: any, line) => {
@@ -265,6 +302,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/lines/export-csv", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { type } = req.query;
       
@@ -392,6 +431,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/generate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { clientIds, projectIds, invoicingMode } = req.body;
 
       console.log("[DEBUG] Generating invoices for batch:", { batchId: req.params.batchId, clientIds, projectIds, invoicingMode });
@@ -442,6 +483,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/finalize", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const userId = req.user?.id;
 
@@ -469,6 +512,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/review", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { notes } = req.body;
 
@@ -490,6 +535,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/unfinalize", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       console.log('[API] Unfinalizing batch ' + batchId);
@@ -510,6 +557,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.patch("/api/invoice-batches/:batchId/as-of-date", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { asOfDate } = req.body;
       const userId = req.user?.id;
@@ -555,6 +604,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/status", deps.requireAuth, async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const status = await storage.getBatchStatus(batchId);
@@ -621,6 +672,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/pdf", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const batch = await storage.getInvoiceBatchDetails(batchId);
@@ -743,6 +796,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/pdf/view", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const batch = await storage.getInvoiceBatchDetails(batchId);
@@ -776,6 +831,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/pdf/exists", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const batch = await storage.getInvoiceBatchDetails(batchId);
@@ -799,9 +856,10 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/receipts-bundle", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const archiver = await import('archiver');
-      const userTenantId = req.user?.primaryTenantId;
 
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
@@ -809,13 +867,6 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       }
 
       const batchTenantId = (batch as any).tenantId;
-      
-      if (batchTenantId && userTenantId && batchTenantId !== userTenantId) {
-        const userRole = req.user?.role;
-        if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
-          return res.status(403).json({ message: "Access denied: batch belongs to a different tenant" });
-        }
-      }
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
       const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
@@ -958,8 +1009,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/receipts-bundle/check", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
-      const userTenantId = req.user?.primaryTenantId;
 
       const batch = await storage.getInvoiceBatchDetails(batchId);
       if (!batch) {
@@ -967,13 +1019,6 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       }
 
       const batchTenantId = (batch as any).tenantId;
-      
-      if (batchTenantId && userTenantId && batchTenantId !== userTenantId) {
-        const userRole = req.user?.role;
-        if (userRole !== 'global_admin' && userRole !== 'constellation_admin') {
-          return res.json({ available: false, count: 0 });
-        }
-      }
 
       const lines = await storage.getInvoiceLinesForBatch(batchId);
       const projectIds = Array.from(new Set(lines.map(l => l.projectId)));
@@ -1053,6 +1098,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/bulk-update", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { updates } = req.body;
 
@@ -1075,6 +1122,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/aggregate-adjustment", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { targetAmount, allocationMethod, sowId, adjustmentReason, lineAdjustments } = req.body;
       const userId = req.user?.id;
@@ -1129,6 +1178,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/adjustments/history", deps.requireAuth, async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const adjustments = await storage.getInvoiceAdjustments(batchId);
@@ -1191,6 +1242,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/adjustments/summary", deps.requireAuth, async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const adjustments = await storage.getInvoiceAdjustments(batchId);
@@ -1241,6 +1294,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/adjustments", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const userId = req.user!.id;
 
@@ -1314,6 +1369,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/adjustments", deps.requireAuth, async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const adjustments = await storage.getInvoiceAdjustments(batchId);
@@ -1328,6 +1385,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.patch("/api/invoice-batches/:batchId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
 
       const updateSchema = z.object({
@@ -1371,6 +1430,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.patch("/api/invoice-batches/:batchId/payment-status", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const userId = req.user?.id;
 
@@ -1437,6 +1498,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/export", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       
       const batchDetails = await storage.getInvoiceBatchDetails(batchId);
@@ -1462,6 +1525,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches/:batchId/export-qbo-csv", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       
       const csvField = (value: any): string => {
@@ -1641,6 +1706,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.delete("/api/invoice-batches/:batchId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const force = req.query.force === 'true';
 
@@ -1665,6 +1732,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/repair", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const dryRun = req.query.dryRun === 'true';
       
@@ -1807,6 +1876,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/repair-from-json", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const { timeEntries: jsonTimeEntries } = req.body;
       const dryRun = req.query.dryRun === 'true';
@@ -1957,6 +2028,8 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.post("/api/invoice-batches/:batchId/repair-expenses", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
     try {
+      if (!(await checkBatchTenantAccess(req.params.batchId, req, res))) return;
+
       const { batchId } = req.params;
       const dryRun = req.query.dryRun === 'true';
 

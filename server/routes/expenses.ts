@@ -561,6 +561,13 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       const filters: any = {};
 
+      const userTenantId = (req as any).user?.tenantId;
+      const platformRole = (req as any).user?.platformRole;
+      const isPlAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      if (userTenantId && !isPlAdmin) {
+        filters.tenantId = userTenantId;
+      }
+
       if (clientId) filters.clientId = clientId;
       if (projectId) filters.projectId = projectId;
       if (personId) filters.personId = personId;
@@ -2549,6 +2556,14 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const { format = 'csv', ...filterParams } = req.query as Record<string, string>;
 
       const filters: any = {};
+      
+      const userTenantId = (req as any).user?.tenantId;
+      const platformRole = (req as any).user?.platformRole;
+      const isPlAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      if (userTenantId && !isPlAdmin) {
+        filters.tenantId = userTenantId;
+      }
+      
       const { 
         personId, 
         projectId, 

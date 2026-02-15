@@ -414,6 +414,24 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.patch("/api/users/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
+      const currentUser = (req as any).user;
+      const platformRole = currentUser?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && currentUser?.tenantId) {
+        const [membership] = await db.select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, req.params.id),
+            eq(tenantUsers.tenantId, currentUser.tenantId),
+            eq(tenantUsers.status, 'active')
+          ));
+        
+        if (!membership) {
+          return res.status(403).json({ message: "You can only edit users within your organization" });
+        }
+      }
+      
       const user = await storage.updateUser(req.params.id, req.body);
       res.json(user);
     } catch (error) {
@@ -423,6 +441,24 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete("/api/users/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
+      const currentUser = (req as any).user;
+      const platformRole = currentUser?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && currentUser?.tenantId) {
+        const [membership] = await db.select({ id: tenantUsers.id })
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, req.params.id),
+            eq(tenantUsers.tenantId, currentUser.tenantId),
+            eq(tenantUsers.status, 'active')
+          ));
+        
+        if (!membership) {
+          return res.status(403).json({ message: "You can only delete users within your organization" });
+        }
+      }
+      
       await storage.deleteUser(req.params.id);
       res.status(204).send();
     } catch (error) {

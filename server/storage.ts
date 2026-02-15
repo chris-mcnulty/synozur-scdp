@@ -3121,6 +3121,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string; 
     endDate?: string;
     pendingOnly?: boolean; // If true, exclude expenses in approved expense reports
+    tenantId?: string;
   }): Promise<(Expense & { 
     person: User; 
     project: Project & { client: Client }; 
@@ -3136,6 +3137,7 @@ export class DatabaseStorage implements IStorage {
 
     // Apply filters with proper conditions
     const conditions = [];
+    if (filters.tenantId) conditions.push(eq(expenses.tenantId, filters.tenantId));
     if (filters.personId) conditions.push(eq(expenses.personId, filters.personId));
     if (filters.projectId) conditions.push(eq(expenses.projectId, filters.projectId));
     if (filters.projectResourceId) conditions.push(eq(expenses.projectResourceId, filters.projectResourceId));
@@ -3403,6 +3405,9 @@ export class DatabaseStorage implements IStorage {
   async getExpensesAdmin(filters: any): Promise<any[]> {
     const conditions: any[] = [];
     
+    if (filters.tenantId) {
+      conditions.push(eq(expenses.tenantId, filters.tenantId));
+    }
     if (filters.clientId) {
       conditions.push(eq(projects.clientId, filters.clientId));
     }
