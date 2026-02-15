@@ -340,14 +340,42 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         .from(users)
         .orderBy(desc(users.createdAt));
       
-      // Get tenant names for display
       const tenantList = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
       const tenantMap = Object.fromEntries(tenantList.map(t => [t.id, t.name]));
       
-      const usersWithTenant = allUsers.map(u => ({
-        ...u,
-        tenantName: u.primaryTenantId ? tenantMap[u.primaryTenantId] || "Unknown" : "No Tenant",
-      }));
+      const allMemberships = await db
+        .select({
+          userId: tenantUsers.userId,
+          tenantId: tenantUsers.tenantId,
+          role: tenantUsers.role,
+          status: tenantUsers.status,
+        })
+        .from(tenantUsers)
+        .where(eq(tenantUsers.status, 'active'));
+      
+      const membershipsByUser = new Map<string, typeof allMemberships>();
+      for (const m of allMemberships) {
+        const existing = membershipsByUser.get(m.userId) || [];
+        existing.push(m);
+        membershipsByUser.set(m.userId, existing);
+      }
+      
+      const usersWithTenant = allUsers.map(u => {
+        const userMemberships = membershipsByUser.get(u.id) || [];
+        const primaryMembership = u.primaryTenantId 
+          ? userMemberships.find(m => m.tenantId === u.primaryTenantId)
+          : null;
+        const anyMembership = userMemberships[0];
+        
+        const tenantRole = primaryMembership?.role || anyMembership?.role || u.role;
+        
+        return {
+          ...u,
+          role: tenantRole,
+          tenantName: u.primaryTenantId ? tenantMap[u.primaryTenantId] || "Unknown" : "No Tenant",
+          membershipCount: userMemberships.length,
+        };
+      });
       
       res.json(usersWithTenant);
     } catch (error) {
@@ -408,11 +436,33 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
       const { id } = req.params;
       const { primaryTenantId } = req.body;
       
-      // Validate tenant exists if provided
       if (primaryTenantId) {
         const [tenant] = await db.select().from(tenants).where(eq(tenants.id, primaryTenantId));
         if (!tenant) {
           return res.status(400).json({ error: "Tenant not found" });
+        }
+        
+        const [existingMembership] = await db
+          .select()
+          .from(tenantUsers)
+          .where(and(
+            eq(tenantUsers.userId, id),
+            eq(tenantUsers.tenantId, primaryTenantId)
+          ));
+        
+        if (!existingMembership) {
+          const [userRecord] = await db.select({ platformRole: users.platformRole }).from(users).where(eq(users.id, id));
+          const isPlatformAdminUser = userRecord?.platformRole === 'global_admin' || userRecord?.platformRole === 'constellation_admin';
+          const defaultRole = isPlatformAdminUser ? "admin" : "employee";
+          
+          await db.insert(tenantUsers).values({
+            userId: id,
+            tenantId: primaryTenantId,
+            role: defaultRole,
+            status: "active",
+            joinedAt: new Date(),
+          });
+          console.log(`[PLATFORM] Auto-created membership for user ${id} in tenant ${primaryTenantId} with role ${defaultRole}`);
         }
       }
       

@@ -37,6 +37,7 @@ interface PlatformUser {
   canLogin: boolean;
   isActive: boolean;
   createdAt: string;
+  membershipCount: number;
 }
 
 interface Tenant {
@@ -315,7 +316,12 @@ export default function PlatformUsers() {
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Building className="w-3 h-3 text-muted-foreground" />
-                          {user.tenantName}
+                          <span>{user.tenantName}</span>
+                          {user.membershipCount > 1 && (
+                            <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                              +{user.membershipCount - 1}
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
