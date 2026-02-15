@@ -84,9 +84,18 @@ function getStatusBadge(status: string) {
   }
 }
 
+function ensureUtcDate(dateStr: string): Date {
+  if (!dateStr) return new Date();
+  const str = String(dateStr);
+  if (str.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(str)) {
+    return new Date(str);
+  }
+  return new Date(str + 'Z');
+}
+
 function isJobStuck(run: ScheduledJobRun): boolean {
   if (run.status !== 'running') return false;
-  const startTime = new Date(run.startedAt).getTime();
+  const startTime = ensureUtcDate(run.startedAt).getTime();
   const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
   return startTime < thirtyMinutesAgo;
 }
@@ -344,7 +353,7 @@ export default function ScheduledJobsPage() {
                           <span className="text-muted-foreground">Last run:</span>
                           <div className="flex items-center gap-2">
                             {stats.lastStatus && getStatusBadge(stats.lastStatus)}
-                            <span>{formatDistanceToNow(new Date(stats.lastRun), { addSuffix: true })}</span>
+                            <span>{formatDistanceToNow(ensureUtcDate(stats.lastRun), { addSuffix: true })}</span>
                           </div>
                         </div>
                       )}
@@ -417,7 +426,7 @@ export default function ScheduledJobsPage() {
                       {jobRuns.map((run) => {
                         const jobInfo = JOB_TYPES.find(j => j.id === run.jobType);
                         const duration = run.completedAt 
-                          ? Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+                          ? Math.round((ensureUtcDate(run.completedAt).getTime() - ensureUtcDate(run.startedAt).getTime()) / 1000)
                           : null;
                         const stuck = isJobStuck(run);
 
@@ -439,16 +448,16 @@ export default function ScheduledJobsPage() {
                             <TableCell>{getTriggerBadge(run.triggeredBy)}</TableCell>
                             <TableCell>
                               <div className="text-sm">
-                                {format(new Date(run.startedAt), 'MMM d, yyyy')}
+                                {format(ensureUtcDate(run.startedAt), 'MMM d, yyyy')}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {format(new Date(run.startedAt), 'h:mm a')}
+                                {format(ensureUtcDate(run.startedAt), 'h:mm a')}
                               </div>
                             </TableCell>
                             <TableCell>
                               {duration !== null ? `${duration}s` : run.status === 'running' ? (
                                 <span className="text-muted-foreground">
-                                  {formatDistanceToNow(new Date(run.startedAt))}
+                                  {formatDistanceToNow(ensureUtcDate(run.startedAt))}
                                 </span>
                               ) : '-'}
                             </TableCell>
