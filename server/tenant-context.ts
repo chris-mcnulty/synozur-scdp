@@ -73,13 +73,14 @@ export async function autoAssignTenantToUser(
     .limit(1);
 
   if (user?.primaryTenantId) {
-    // User already has a tenant, return it
+    // User already has a tenant — ensure they also have a tenant_users membership
     const [tenant] = await db.select()
       .from(tenants)
       .where(eq(tenants.id, user.primaryTenantId))
       .limit(1);
     
     if (tenant) {
+      await ensureTenantMembership(userId, tenant.id, user.role || 'employee');
       return {
         tenantId: tenant.id,
         tenantSlug: tenant.slug,
