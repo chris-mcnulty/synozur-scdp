@@ -49,6 +49,7 @@ import Signup from "@/pages/signup";
 import FileRepository from "@/pages/file-repository";
 import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import PortfolioRaidd from "@/pages/portfolio-raidd";
+import MyRaidd from "@/pages/my-raidd";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -175,6 +176,9 @@ function Router() {
       </Route>
       <Route path="/my-projects">
         {user ? <MyProjectsDashboard /> : <Redirect to="/login" />}
+      </Route>
+      <Route path="/my-raidd">
+        {user ? <MyRaidd /> : <Redirect to="/login" />}
       </Route>
       <Route path="/portfolio/timeline">
         {user ? <PortfolioTimelinePage /> : <Redirect to="/login" />}

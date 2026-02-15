@@ -9450,6 +9450,49 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
+  app.get("/api/my/raidd", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user?.primaryTenantId || req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+      const userId = req.user!.id;
+
+      const { type, status, priority, projectId } = req.query;
+      const filters: { type?: string; status?: string; priority?: string; projectId?: string } = {};
+      if (type && typeof type === 'string') filters.type = type;
+      if (status && typeof status === 'string') filters.status = status;
+      if (priority && typeof priority === 'string') filters.priority = priority;
+      if (projectId && typeof projectId === 'string') filters.projectId = projectId;
+
+      const entries = await storage.getMyRaiddEntries(userId, tenantId, filters);
+
+      const openStatuses = ["open", "in_progress"];
+      const openEntries = entries.filter(e => openStatuses.includes(e.status));
+      const summary = {
+        totalEntries: entries.length,
+        ownedByMe: entries.filter(e => e.ownerId === userId).length,
+        assignedToMe: entries.filter(e => e.assigneeId === userId).length,
+        openRisks: openEntries.filter(e => e.type === "risk").length,
+        openIssues: openEntries.filter(e => e.type === "issue").length,
+        openActionItems: openEntries.filter(e => e.type === "action_item").length,
+        overdueItems: openEntries.filter(e => e.dueDate && new Date(e.dueDate) < new Date()).length,
+        criticalItems: openEntries.filter(e => e.priority === "critical").length,
+        highPriorityItems: openEntries.filter(e => e.priority === "high").length,
+      };
+
+      const projectList = Array.from(
+        new Set(entries.map(e => JSON.stringify({ id: e.projectId, name: e.projectName })))
+      ).map(s => JSON.parse(s));
+
+      res.json({ entries, summary, projectList });
+    } catch (error: any) {
+      console.error("Error fetching my RAIDD entries:", error);
+      res.status(500).json({ message: error.message || "Failed to fetch my RAIDD entries" });
+    }
+  });
+
   // ============================================================================
   // RAIDD Log Routes
   // ============================================================================

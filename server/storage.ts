@@ -1017,6 +1017,7 @@ export interface IStorage {
   supersedeDecision(decisionId: string, newEntry: InsertRaiddEntry): Promise<RaiddEntry>;
   getNextRaiddRefNumber(projectId: string, type: string): Promise<string>;
   getPortfolioRaiddEntries(tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string; activeProjectsOnly?: boolean }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
+  getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]>;
 
   // Grounding Documents
   getGroundingDocuments(filters?: { tenantId?: string | null; category?: string; isActive?: boolean }): Promise<GroundingDocument[]>;
@@ -11005,6 +11006,43 @@ export class DatabaseStorage implements IStorage {
     if (filters?.activeProjectsOnly !== false) {
       conditions.push(eq(projects.status, 'active'));
     }
+
+    const rows = await db.select({
+      entry: raiddEntries,
+      ownerName: this.raiddOwnerAlias.name,
+      assigneeName: this.raiddAssigneeAlias.name,
+      createdByName: this.raiddCreatedByAlias.name,
+      projectName: projects.name,
+      clientName: clients.name,
+    })
+    .from(raiddEntries)
+    .innerJoin(projects, eq(raiddEntries.projectId, projects.id))
+    .innerJoin(clients, eq(projects.clientId, clients.id))
+    .leftJoin(this.raiddOwnerAlias, eq(raiddEntries.ownerId, this.raiddOwnerAlias.id))
+    .leftJoin(this.raiddAssigneeAlias, eq(raiddEntries.assigneeId, this.raiddAssigneeAlias.id))
+    .leftJoin(this.raiddCreatedByAlias, eq(raiddEntries.createdBy, this.raiddCreatedByAlias.id))
+    .where(and(...conditions))
+    .orderBy(desc(raiddEntries.createdAt));
+
+    return rows.map(r => ({
+      ...r.entry,
+      ownerName: r.ownerName ?? undefined,
+      assigneeName: r.assigneeName ?? undefined,
+      createdByName: r.createdByName ?? undefined,
+      projectName: r.projectName ?? undefined,
+      clientName: r.clientName ?? undefined,
+    }));
+  }
+
+  async getMyRaiddEntries(userId: string, tenantId: string, filters?: { type?: string; status?: string; priority?: string; projectId?: string }): Promise<(RaiddEntry & { ownerName?: string; assigneeName?: string; createdByName?: string; projectName?: string; clientName?: string })[]> {
+    const conditions: SQL[] = [
+      eq(raiddEntries.tenantId, tenantId),
+      or(eq(raiddEntries.ownerId, userId), eq(raiddEntries.assigneeId, userId))!,
+    ];
+    if (filters?.type) conditions.push(eq(raiddEntries.type, filters.type));
+    if (filters?.status) conditions.push(eq(raiddEntries.status, filters.status));
+    if (filters?.priority) conditions.push(eq(raiddEntries.priority, filters.priority));
+    if (filters?.projectId) conditions.push(eq(raiddEntries.projectId, filters.projectId));
 
     const rows = await db.select({
       entry: raiddEntries,

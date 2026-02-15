@@ -115,7 +115,7 @@ interface SectionRoute {
 }
 
 const sectionRoutes: SectionRoute[] = [
-  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
+  { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects", "/my-raidd"] },
   { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/organization-settings", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
@@ -202,6 +202,7 @@ export function Sidebar() {
               <SidebarItem href="/expense-reports" icon={<FileText />} label="Expense Reports" />
               <SidebarItem href="/my-reimbursements" icon={<Banknote />} label="Reimbursements" />
               <SidebarItem href="/my-projects" icon={<FolderOpen />} label="Projects" />
+              <SidebarItem href="/my-raidd" icon={<Shield />} label="RAIDD" />
             </CollapsibleSection>
             
             {isManager && (
