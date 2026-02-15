@@ -121,9 +121,45 @@ export async function autoAssignTenantToUser(
       .set({ primaryTenantId: resolvedTenant.tenantId })
       .where(eq(users.id, userId));
     console.log(`[TENANT] Assigned user ${userId} to tenant ${resolvedTenant.tenantSlug}`);
+
+    await ensureTenantMembership(userId, resolvedTenant.tenantId, user?.role || 'employee');
   }
 
   return resolvedTenant;
+}
+
+/**
+ * Ensure a user has an active tenant_users membership record.
+ * Creates one if missing, reactivates if suspended.
+ */
+export async function ensureTenantMembership(
+  userId: string,
+  tenantId: string,
+  role: string = 'employee'
+): Promise<void> {
+  const existing = await db.select()
+    .from(tenantUsers)
+    .where(and(
+      eq(tenantUsers.userId, userId),
+      eq(tenantUsers.tenantId, tenantId)
+    ))
+    .limit(1);
+
+  if (existing.length === 0) {
+    await db.insert(tenantUsers).values({
+      userId,
+      tenantId,
+      role: role || 'employee',
+      status: 'active',
+      joinedAt: new Date(),
+    });
+    console.log(`[TENANT] Created tenant_users membership for user ${userId} in tenant ${tenantId} (role: ${role})`);
+  } else if (existing[0].status !== 'active') {
+    await db.update(tenantUsers)
+      .set({ status: 'active' })
+      .where(eq(tenantUsers.id, existing[0].id));
+    console.log(`[TENANT] Reactivated tenant_users membership for user ${userId} in tenant ${tenantId}`);
+  }
 }
 
 export async function getDefaultTenant(): Promise<TenantContext | null> {
