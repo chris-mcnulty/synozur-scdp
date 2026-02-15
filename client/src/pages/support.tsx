@@ -10,7 +10,19 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Clock } from "lucide-react";
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Clock, Pencil, X, Check, XCircle } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
@@ -322,11 +334,20 @@ function NewTicketForm({ onBack, initialDescription }: { onBack: () => void; ini
 
 function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => void }) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [replyText, setReplyText] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editSubject, setEditSubject] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editPriority, setEditPriority] = useState("");
+  const [editCategory, setEditCategory] = useState("");
 
   const { data: ticket, isLoading } = useQuery<Ticket>({
     queryKey: ["/api/support/tickets", ticketId],
   });
+
+  const isOwner = ticket && user && ticket.author?.id === user.id;
+  const canEdit = isOwner && ticket.status !== 'resolved' && ticket.status !== 'closed';
 
   const sendReply = useMutation({
     mutationFn: async (message: string) => {
@@ -344,6 +365,64 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const updateTicket = useMutation({
+    mutationFn: async (updates: Record<string, string>) => {
+      return await apiRequest(`/api/support/tickets/${ticketId}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      setIsEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
+      toast({ title: "Ticket updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const closeTicket = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/support/tickets/${ticketId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "closed" }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
+      toast({ title: "Ticket closed", description: "Your ticket has been closed." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const startEditing = () => {
+    if (!ticket) return;
+    setEditSubject(ticket.subject);
+    setEditDescription(ticket.description);
+    setEditPriority(ticket.priority);
+    setEditCategory(ticket.category);
+    setIsEditing(true);
+  };
+
+  const saveEdits = () => {
+    if (!ticket) return;
+    const updates: Record<string, string> = {};
+    if (editSubject !== ticket.subject) updates.subject = editSubject;
+    if (editDescription !== ticket.description) updates.description = editDescription;
+    if (editPriority !== ticket.priority) updates.priority = editPriority;
+    if (editCategory !== ticket.category) updates.category = editCategory;
+    if (Object.keys(updates).length === 0) {
+      setIsEditing(false);
+      return;
+    }
+    updateTicket.mutate(updates);
+  };
 
   if (isLoading) {
     return (
@@ -371,24 +450,107 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
           <ArrowLeft />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold truncate" data-testid="text-detail-subject">
-            {ticket.subject}
-          </h1>
+          {isEditing ? (
+            <Input
+              value={editSubject}
+              onChange={(e) => setEditSubject(e.target.value)}
+              className="text-xl font-semibold"
+              data-testid="input-edit-subject"
+            />
+          ) : (
+            <h1 className="text-2xl font-semibold truncate" data-testid="text-detail-subject">
+              {ticket.subject}
+            </h1>
+          )}
           <p className="text-sm text-muted-foreground font-mono" data-testid="text-detail-ticket-number">
             #{ticket.ticketNumber}
           </p>
         </div>
+        {canEdit && !isEditing && (
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={startEditing} data-testid="button-edit-ticket">
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />
+              Edit
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" data-testid="button-close-ticket">
+                  <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                  Close Ticket
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Close this ticket?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will close ticket #{ticket.ticketNumber}. You won't be able to edit it after closing. Are you sure?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => closeTicket.mutate()}
+                    disabled={closeTicket.isPending}
+                  >
+                    {closeTicket.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Close Ticket
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
+        {isEditing && (
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
+              <X className="h-3.5 w-3.5 mr-1.5" />
+              Cancel
+            </Button>
+            <Button size="sm" onClick={saveEdits} disabled={updateTicket.isPending} data-testid="button-save-edit">
+              {updateTicket.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Check className="h-3.5 w-3.5 mr-1.5" />}
+              Save
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" data-testid="badge-detail-category">
-              {formatLabel(ticket.category)}
-            </Badge>
-            <Badge className={getPriorityBadgeClass(ticket.priority)} data-testid="badge-detail-priority">
-              {formatLabel(ticket.priority)}
-            </Badge>
+            {isEditing ? (
+              <>
+                <Select value={editCategory} onValueChange={setEditCategory}>
+                  <SelectTrigger className="w-[160px]" data-testid="select-edit-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bug">Bug</SelectItem>
+                    <SelectItem value="feature_request">Feature Request</SelectItem>
+                    <SelectItem value="question">Question</SelectItem>
+                    <SelectItem value="feedback">Feedback</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={editPriority} onValueChange={setEditPriority}>
+                  <SelectTrigger className="w-[120px]" data-testid="select-edit-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            ) : (
+              <>
+                <Badge variant="outline" data-testid="badge-detail-category">
+                  {formatLabel(ticket.category)}
+                </Badge>
+                <Badge className={getPriorityBadgeClass(ticket.priority)} data-testid="badge-detail-priority">
+                  {formatLabel(ticket.priority)}
+                </Badge>
+              </>
+            )}
             <Badge className={getStatusBadgeClass(ticket.status)} data-testid="badge-detail-status">
               {formatLabel(ticket.status)}
             </Badge>
@@ -397,11 +559,18 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
               {formatDate(ticket.createdAt)}
             </span>
           </div>
-          {ticket.description && (
+          {isEditing ? (
+            <Textarea
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              className="mt-4 min-h-[100px]"
+              data-testid="input-edit-description"
+            />
+          ) : ticket.description ? (
             <p className="mt-4 text-sm whitespace-pre-wrap" data-testid="text-detail-description">
               {ticket.description}
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
@@ -451,23 +620,25 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
           </div>
         )}
 
-        <div className="flex items-start gap-3">
-          <Textarea
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            placeholder="Write a reply..."
-            className="flex-1 min-h-[80px]"
-            data-testid="input-reply"
-          />
-          <Button
-            size="icon"
-            disabled={!replyText.trim() || sendReply.isPending}
-            onClick={() => sendReply.mutate(replyText.trim())}
-            data-testid="button-send-reply"
-          >
-            {sendReply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send />}
-          </Button>
-        </div>
+        {ticket.status !== 'resolved' && ticket.status !== 'closed' && (
+          <div className="flex items-start gap-3">
+            <Textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder="Write a reply..."
+              className="flex-1 min-h-[80px]"
+              data-testid="input-reply"
+            />
+            <Button
+              size="icon"
+              disabled={!replyText.trim() || sendReply.isPending}
+              onClick={() => sendReply.mutate(replyText.trim())}
+              data-testid="button-send-reply"
+            >
+              {sendReply.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send />}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -10528,6 +10528,8 @@ Return a JSON response:
     priority: z.enum(TICKET_PRIORITIES).optional(),
     assignedTo: z.string().optional(),
     category: z.enum(TICKET_CATEGORIES).optional(),
+    subject: z.string().min(3).max(200).optional(),
+    description: z.string().min(10).optional(),
   });
 
   const isConstellationAdmin = (role: string): boolean => {
@@ -10559,8 +10561,9 @@ Return a JSON response:
       });
 
       try {
-        const { sendSupportTicketNotification } = await import("./email-support");
+        const { sendSupportTicketNotification, sendTicketConfirmationToSubmitter } = await import("./email-support");
         await sendSupportTicketNotification(ticket, user);
+        await sendTicketConfirmationToSubmitter(ticket, user);
       } catch (emailErr) {
         console.error("Failed to send ticket notification email:", emailErr);
       }
@@ -10734,10 +10737,6 @@ Return a JSON response:
       const user = (req as any).user;
       if (!user) return res.status(401).json({ error: "Authentication required" });
 
-      if (!isConstellationAdmin(user.role)) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
-
       const parsed = updateTicketSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
@@ -10748,7 +10747,30 @@ Return a JSON response:
         return res.status(404).json({ error: "Ticket not found" });
       }
 
+      const isOwner = ticket.userId === user.id;
+      const isAdmin = isConstellationAdmin(user.role);
+
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
       const updates: any = { ...parsed.data };
+
+      if (isOwner && !isAdmin) {
+        if (ticket.status === 'resolved' || ticket.status === 'closed') {
+          return res.status(400).json({ error: "Cannot edit a resolved or closed ticket" });
+        }
+        const allowedOwnerFields = ['subject', 'description', 'priority', 'category', 'status'];
+        for (const key of Object.keys(updates)) {
+          if (!allowedOwnerFields.includes(key)) {
+            delete updates[key];
+          }
+        }
+        if (updates.status && updates.status !== 'closed') {
+          return res.status(400).json({ error: "You can only close your own ticket" });
+        }
+      }
+
       const wasResolved = ticket.status === 'resolved';
 
       if (updates.status === "resolved") {
@@ -10758,28 +10780,54 @@ Return a JSON response:
 
       const updated = await storage.updateSupportTicket(ticket.id, updates);
 
-      // On ticket closure: send email + update Planner task
-      if (updates.status === "resolved" && !wasResolved) {
-        // Send closure email to the ticket requester
-        try {
-          const requester = await storage.getUser(ticket.userId);
-          if (requester?.email) {
-            const { emailService } = await import("./services/email-notification.js");
-            const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
-            const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
-            const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
-            await emailService.notifySupportTicketClosed(
-              { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
-              ticket.ticketNumber,
-              ticket.subject,
-              undefined,
-              branding,
-              `${APP_URL}/support`
-            );
-            console.log(`[SUPPORT] Sent closure email to ${requester.email} for ticket #${ticket.ticketNumber}`);
+      // On ticket closure/resolution: send emails + update Planner task
+      const isBeingClosed = (updates.status === "resolved" || updates.status === "closed") 
+        && ticket.status !== 'resolved' && ticket.status !== 'closed';
+      
+      if (isBeingClosed) {
+        const closedByOwner = isOwner && !isAdmin;
+        
+        if (closedByOwner) {
+          // Owner closed their own ticket - notify support team
+          try {
+            const { sendSupportTicketNotification } = await import("./email-support");
+            const ownerUser = await storage.getUser(ticket.userId);
+            if (ownerUser) {
+              const { getUncachableSendGridClient } = await import("./services/sendgrid-client");
+              const { client: sgClient, fromEmail } = await getUncachableSendGridClient();
+              await sgClient.send({
+                to: "Constellation@synozur.com",
+                from: fromEmail,
+                subject: `[Constellation Support] Ticket #${ticket.ticketNumber} closed by submitter`,
+                html: `<p>Ticket #${ticket.ticketNumber} "<strong>${ticket.subject}</strong>" was closed by the submitter: ${ownerUser.firstName || ''} ${ownerUser.lastName || ''} (${ownerUser.email}).</p>`,
+              });
+              console.log(`[SUPPORT] Notified support team that ticket #${ticket.ticketNumber} was closed by submitter`);
+            }
+          } catch (emailErr) {
+            console.error('[SUPPORT] Failed to send owner-closure notification:', emailErr);
           }
-        } catch (emailErr) {
-          console.error('[SUPPORT] Failed to send closure email:', emailErr);
+        } else {
+          // Admin resolved/closed - send closure email to the ticket requester
+          try {
+            const requester = await storage.getUser(ticket.userId);
+            if (requester?.email) {
+              const { emailService } = await import("./services/email-notification.js");
+              const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
+              const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+              const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
+              await emailService.notifySupportTicketClosed(
+                { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
+                ticket.ticketNumber,
+                ticket.subject,
+                undefined,
+                branding,
+                `${APP_URL}/support`
+              );
+              console.log(`[SUPPORT] Sent closure email to ${requester.email} for ticket #${ticket.ticketNumber}`);
+            }
+          } catch (emailErr) {
+            console.error('[SUPPORT] Failed to send closure email:', emailErr);
+          }
         }
 
         // Mark Planner task as complete
