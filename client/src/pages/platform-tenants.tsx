@@ -34,6 +34,8 @@ const US_TIMEZONES = [
   { value: "UTC", label: "UTC" },
 ];
 
+const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York";
+
 const tenantFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   slug: z.string().min(1, "Slug is required").regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only"),
@@ -42,7 +44,7 @@ const tenantFormSchema = z.object({
   servicePlanId: z.string().optional(),
   enforceSso: z.boolean().default(false),
   allowLocalAuth: z.boolean().default(true),
-  defaultTimezone: z.string().default("America/New_York"),
+  defaultTimezone: z.string().default(browserTimezone),
 });
 
 type TenantFormData = z.infer<typeof tenantFormSchema>;
@@ -71,7 +73,7 @@ export default function PlatformTenants() {
       servicePlanId: "",
       enforceSso: false,
       allowLocalAuth: true,
-      defaultTimezone: "America/New_York",
+      defaultTimezone: browserTimezone,
     },
   });
 
@@ -136,7 +138,7 @@ export default function PlatformTenants() {
       servicePlanId: tenant.servicePlanId || "",
       enforceSso: tenant.enforceSso || false,
       allowLocalAuth: tenant.allowLocalAuth ?? true,
-      defaultTimezone: tenant.defaultTimezone || "America/New_York",
+      defaultTimezone: tenant.defaultTimezone || browserTimezone,
     });
   };
 
@@ -274,7 +276,7 @@ export default function PlatformTenants() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Timezone</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || "America/New_York"}>
+                        <Select onValueChange={field.onChange} value={field.value || browserTimezone}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select timezone" />
@@ -507,7 +509,7 @@ export default function PlatformTenants() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormLabel>Timezone</FormLabel>
-                                      <Select onValueChange={field.onChange} value={field.value || "America/New_York"}>
+                                      <Select onValueChange={field.onChange} value={field.value || browserTimezone}>
                                         <FormControl>
                                           <SelectTrigger>
                                             <SelectValue placeholder="Select timezone" />

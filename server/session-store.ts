@@ -192,19 +192,46 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   };
   
   // Resolve tenant context for the user
+  // Use the session's primaryTenantId (which includes activeTenantId from tenant switching)
+  // rather than re-resolving from the users table which would ignore tenant switching
   try {
-    const { resolveTenantForUser, getDefaultTenant } = await getTenantContextModule();
-    const tenantContext = await resolveTenantForUser(req.user.id);
-    
-    if (tenantContext) {
-      req.tenantContext = tenantContext;
-      req.user.tenantId = tenantContext.tenantId;
+    const sessionTenantId = session.primaryTenantId;
+    if (sessionTenantId) {
+      req.user.tenantId = sessionTenantId;
+      // Build tenant context from the session's tenant
+      const { db: dbImport } = await import('./db.js');
+      const { tenants: tenantsTable } = await import('../shared/schema.js');
+      const { eq: eqOp } = await import('drizzle-orm');
+      const [tenant] = await dbImport.select().from(tenantsTable).where(eqOp(tenantsTable.id, sessionTenantId)).limit(1);
+      if (tenant) {
+        req.tenantContext = {
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          tenantName: tenant.name,
+        };
+      } else {
+        // Session references a tenant that no longer exists - fall back to resolving
+        console.warn("[AUTH] Session tenant not found:", sessionTenantId);
+        const { resolveTenantForUser, getDefaultTenant } = await getTenantContextModule();
+        const fallback = await resolveTenantForUser(req.user.id) || await getDefaultTenant();
+        if (fallback) {
+          req.tenantContext = fallback;
+          req.user.tenantId = fallback.tenantId;
+        }
+      }
     } else {
-      // Fall back to default tenant for development/transition
-      const defaultTenant = await getDefaultTenant();
-      if (defaultTenant) {
-        req.tenantContext = defaultTenant;
-        req.user.tenantId = defaultTenant.tenantId;
+      // No session tenant - resolve from user record or fallback to default
+      const { resolveTenantForUser, getDefaultTenant } = await getTenantContextModule();
+      const tenantContext = await resolveTenantForUser(req.user.id);
+      if (tenantContext) {
+        req.tenantContext = tenantContext;
+        req.user.tenantId = tenantContext.tenantId;
+      } else {
+        const defaultTenant = await getDefaultTenant();
+        if (defaultTenant) {
+          req.tenantContext = defaultTenant;
+          req.user.tenantId = defaultTenant.tenantId;
+        }
       }
     }
   } catch (error) {

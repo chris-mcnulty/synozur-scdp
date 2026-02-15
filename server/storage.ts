@@ -480,7 +480,7 @@ export interface IStorage {
   recalculateProjectBudget(projectId: string, userId: string): Promise<{ project: Project; history: ProjectBudgetHistory[] }>;
   
   // Dashboard metrics
-  getDashboardMetrics(): Promise<{
+  getDashboardMetrics(tenantId?: string): Promise<{
     activeProjects: number;
     utilizationRate: number;
     monthlyRevenue: number;
@@ -5033,20 +5033,26 @@ export class DatabaseStorage implements IStorage {
     return { project: currentProject, history: historyEntries };
   }
 
-  async getDashboardMetrics(): Promise<{
+  async getDashboardMetrics(tenantId?: string): Promise<{
     activeProjects: number;
     utilizationRate: number;
     monthlyRevenue: number;
     unbilledHours: number;
   }> {
+    const tenantFilter = tenantId ? eq(projects.tenantId, tenantId) : undefined;
+    const timeEntryTenantFilter = tenantId ? eq(timeEntries.tenantId, tenantId) : undefined;
+
     // Get active projects count (only those with approved SOWs)
+    const activeProjectsConditions = [
+      eq(projects.status, 'active'),
+      eq(sows.status, 'approved'),
+    ];
+    if (tenantFilter) activeProjectsConditions.push(tenantFilter);
+
     const activeProjects = await db.select({ projectId: projects.id })
       .from(projects)
       .innerJoin(sows, eq(projects.id, sows.projectId))
-      .where(and(
-        eq(projects.status, 'active'),
-        eq(sows.status, 'approved')
-      ))
+      .where(and(...activeProjectsConditions))
       .groupBy(projects.id);
     
     const projectCount = { count: activeProjects.length };
@@ -5059,21 +5065,31 @@ export class DatabaseStorage implements IStorage {
     const monthEndStr = monthEnd.toISOString().split('T')[0];
 
     // Calculate utilization rate: (billable hours / total hours) * 100
+    const utilizationConditions = [
+      gte(timeEntries.date, monthStartStr),
+      lte(timeEntries.date, monthEndStr),
+    ];
+    if (timeEntryTenantFilter) utilizationConditions.push(timeEntryTenantFilter);
+
     const [utilizationData] = await db.select({
       billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} = true THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)`,
       totalHours: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)`
     })
       .from(timeEntries)
-      .where(and(
-        gte(timeEntries.date, monthStartStr),
-        lte(timeEntries.date, monthEndStr)
-      ));
+      .where(and(...utilizationConditions));
 
     const utilizationRate = utilizationData.totalHours > 0 
       ? Math.round((utilizationData.billableHours / utilizationData.totalHours) * 100)
       : 0;
 
     // Calculate monthly revenue from billable time entries using actual billing rates with fallback to user default
+    const revenueConditions = [
+      eq(timeEntries.billable, true),
+      gte(timeEntries.date, monthStartStr),
+      lte(timeEntries.date, monthEndStr),
+    ];
+    if (timeEntryTenantFilter) revenueConditions.push(timeEntryTenantFilter);
+
     const [monthlyRevenueData] = await db.select({
       totalRevenue: sql<number>`COALESCE(SUM(
         CAST(${timeEntries.hours} AS NUMERIC) * 
@@ -5086,23 +5102,22 @@ export class DatabaseStorage implements IStorage {
     })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
-      .where(and(
-        eq(timeEntries.billable, true),
-        gte(timeEntries.date, monthStartStr),
-        lte(timeEntries.date, monthEndStr)
-      ));
+      .where(and(...revenueConditions));
 
     const monthlyRevenue = Number(monthlyRevenueData?.totalRevenue || 0);
 
     // Get unbilled hours (cast to numeric for proper calculation)
+    const unbilledConditions = [
+      eq(timeEntries.billable, true), 
+      eq(timeEntries.billedFlag, false),
+    ];
+    if (timeEntryTenantFilter) unbilledConditions.push(timeEntryTenantFilter);
+
     const [unbilledHours] = await db.select({ 
       total: sql<number>`COALESCE(SUM(CAST(${timeEntries.hours} AS NUMERIC)), 0)` 
     })
       .from(timeEntries)
-      .where(and(
-        eq(timeEntries.billable, true), 
-        eq(timeEntries.billedFlag, false)
-      ));
+      .where(and(...unbilledConditions));
 
     return {
       activeProjects: Number(projectCount.count) || 0,

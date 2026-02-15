@@ -202,7 +202,7 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         servicePlanId: data.servicePlanId,
         enforceSso: data.enforceSso,
         allowLocalAuth: data.allowLocalAuth ?? true,
-        defaultTimezone: data.defaultTimezone || 'America/New_York',
+        defaultTimezone: data.defaultTimezone || 'UTC',
         defaultBillingRate: defaultBilling,
         defaultCostRate: defaultCost,
         mileageRate: defaultMileage,
