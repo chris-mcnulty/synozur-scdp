@@ -7226,6 +7226,11 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       // Build filters based on user role and query params
       const filters: any = {};
 
+      // TENANT ISOLATION: Always scope time entries to the user's active tenant
+      if (req.user?.tenantId) {
+        filters.tenantId = req.user.tenantId;
+      }
+
       // SPECIAL CASE: If projectId is provided and user has appropriate permissions,
       // return ALL entries for that project (for project reporting/analytics)
       if (projectId && ['admin', 'billing-admin', 'pm', 'executive'].includes(req.user!.role)) {

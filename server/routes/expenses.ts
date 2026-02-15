@@ -306,6 +306,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         personId: req.user!.id,
       };
 
+      // TENANT ISOLATION: Always scope expenses to the user's active tenant
+      if (req.user?.tenantId) {
+        filters.tenantId = req.user.tenantId;
+      }
+
       if (projectId) filters.projectId = projectId;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
@@ -2506,6 +2511,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(400).json({ message: "expenseIds must be a non-empty array" });
       }
 
+      const userTenantId = (req as any).user?.tenantId;
       const results: { expenseId: string; success: boolean; previousStatus?: string }[] = [];
       const errors: { expenseId: string; error: string }[] = [];
 
@@ -2515,6 +2521,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
           
           if (!expense) {
             errors.push({ expenseId, error: "Expense not found" });
+            continue;
+          }
+
+          if (userTenantId && expense.tenantId && expense.tenantId !== userTenantId) {
+            errors.push({ expenseId, error: "Access denied" });
             continue;
           }
 

@@ -2255,13 +2255,14 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
+  async getTimeEntries(filters: { personId?: string; projectId?: string; clientId?: string; startDate?: string; endDate?: string; tenantId?: string }): Promise<(TimeEntry & { person: User; project: Project & { client: Client } })[]> {
     const baseQuery = db.select().from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
       .leftJoin(projects, eq(timeEntries.projectId, projects.id))
       .leftJoin(clients, eq(projects.clientId, clients.id));
 
     const conditions = [];
+    if (filters.tenantId) conditions.push(eq(timeEntries.tenantId, filters.tenantId));
     if (filters.personId) conditions.push(eq(timeEntries.personId, filters.personId));
     if (filters.projectId) conditions.push(eq(timeEntries.projectId, filters.projectId));
     if (filters.clientId) conditions.push(eq(projects.clientId, filters.clientId));
