@@ -307,8 +307,8 @@ export function registerAuthRoutes(app: Express): void {
         name: session.name,
         role: session.role,
         platformRole: session.platformRole || null,
-        tenantId: session.tenantId || null,
-        primaryTenantId: session.tenantId || null,
+        tenantId: session.primaryTenantId || null,
+        primaryTenantId: session.primaryTenantId || null,
       });
     } catch (error) {
       console.error("Get user error:", error);
@@ -356,7 +356,7 @@ export function registerAuthRoutes(app: Express): void {
           eq(tenantUsers.status, 'active')
         ));
 
-      const activeTenantId = session.primaryTenantId || session.tenantId;
+      const activeTenantId = session.primaryTenantId;
 
       res.json({
         activeTenantId,
