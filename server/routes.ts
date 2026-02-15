@@ -391,8 +391,11 @@ export async function registerRoutes(app: Express): Promise<void> {
   // User management
   app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const tenantId = req.user?.tenantId;
-      const users = await storage.getUsers(tenantId || undefined);
+      const currentUser = (req as any).user;
+      const platformRole = currentUser?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      const tenantId = isPlatformAdmin ? undefined : (currentUser?.tenantId || undefined);
+      const users = await storage.getUsers(tenantId);
       res.json(users);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });

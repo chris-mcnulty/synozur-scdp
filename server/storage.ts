@@ -1036,12 +1036,26 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   async getUsers(tenantId?: string): Promise<User[]> {
     if (tenantId) {
-      const results = await db.select({ user: users })
+      const membershipResults = await db.select({ user: users })
         .from(users)
         .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
-        .where(eq(tenantUsers.tenantId, tenantId))
+        .where(and(
+          eq(tenantUsers.tenantId, tenantId),
+          eq(tenantUsers.status, 'active')
+        ))
         .orderBy(users.name);
-      return results.map(r => r.user);
+      
+      if (membershipResults.length > 0) {
+        return membershipResults.map(r => r.user);
+      }
+      
+      return await db.select()
+        .from(users)
+        .where(or(
+          eq(users.primaryTenantId, tenantId),
+          isNull(users.primaryTenantId)
+        ))
+        .orderBy(users.name);
     }
     return await db.select()
       .from(users)
