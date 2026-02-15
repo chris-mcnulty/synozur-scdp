@@ -16,7 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight } from "lucide-react";
+import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
 interface TenantInfo {
@@ -726,24 +727,117 @@ export default function OrganizationSettings() {
                     Organization Integrations
                   </CardTitle>
                   <CardDescription>
-                    Manage third-party service connections for this organization. Integration settings are specific to each organization and will change when you switch organizations.
+                    Microsoft 365 service connections for this organization. Integration settings are specific to each organization and will change when you switch organizations.
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="rounded-lg border p-4 bg-muted/30">
-                      <div className="flex items-start gap-3">
-                        <Settings className="h-5 w-5 text-muted-foreground mt-0.5" />
-                        <div>
-                          <p className="font-medium">Coming Soon</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Additional integration settings (SharePoint, Email, Microsoft Planner for projects, etc.) will be consolidated here. 
-                            For now, use the Support tab for support ticket Planner integration, and System Settings for other configurations.
+                <CardContent className="space-y-6">
+                  <Card className="border-2">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <MicrosoftPlannerIcon className="h-5 w-5" />
+                          Microsoft Planner — Project Assignments
+                        </CardTitle>
+                        <Badge variant="outline" className="text-green-600 border-green-600">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Available
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Synchronize project resource assignments with Microsoft Planner tasks for collaborative task management. Each project connects to its own Planner plan.
+                      </p>
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                        <div className="flex items-start gap-2">
+                          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                            Planner connectivity is configured <strong>per project</strong>. Open any project, go to the <strong>Planner</strong> tab, and click <strong>"Connect to Planner"</strong> to link it to an existing plan or create a new one.
                           </p>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button variant="outline" size="sm" asChild>
+                          <a href="/projects">
+                            <ArrowRight className="h-4 w-4 mr-1" />
+                            Go to Projects
+                          </a>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-2">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <MicrosoftPlannerIcon className="h-5 w-5" />
+                          Microsoft Planner — Support Tickets
+                        </CardTitle>
+                        <Badge variant="outline" className="text-green-600 border-green-600">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Available
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <p className="text-sm text-muted-foreground">
+                        Automatically create Planner tasks from support tickets and close tickets when their Planner tasks are completed.
+                      </p>
+                      <div className="rounded-lg border p-3 bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                        <div className="flex items-start gap-2">
+                          <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                            Support ticket Planner integration is configured on the <strong>Support</strong> tab of this page. Connect a Planner plan and enable bidirectional sync there.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const tabsEl = document.querySelector('[data-state="active"][role="tabpanel"]');
+                          const supportTrigger = document.querySelector('[value="support"]') as HTMLElement;
+                          supportTrigger?.click();
+                        }}>
+                          <ArrowRight className="h-4 w-4 mr-1" />
+                          Go to Support Tab
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-dashed">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Mail className="h-5 w-5" />
+                          Email (Microsoft 365)
+                        </CardTitle>
+                        <Badge variant="secondary">Platform-managed</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        Email notifications (expense reminders, time reminders, invoice delivery) are handled through the platform's Microsoft 365 connection.
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-dashed">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <FileText className="h-5 w-5" />
+                          SharePoint Document Storage
+                        </CardTitle>
+                        <Badge variant="secondary">Platform-managed</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        Document storage for invoices, expense receipts, and project files is managed through the platform's SharePoint Embedded connection.
+                      </p>
+                    </CardContent>
+                  </Card>
                 </CardContent>
               </Card>
             </TabsContent>
