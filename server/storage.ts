@@ -4,7 +4,7 @@ import {
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
-  vocabularyCatalog, organizationVocabulary, tenants,
+  vocabularyCatalog, organizationVocabulary, tenants, tenantUsers,
   containerTypes, clientContainers, containerPermissions, containerColumns, metadataTemplates, documentMetadata,
   expenseReports, expenseReportItems, reimbursementBatches, reimbursementLineItems,
   projectPlannerConnections, plannerTaskSync, userAzureMappings,
@@ -231,7 +231,7 @@ function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T
 
 export interface IStorage {
   // Users
-  getUsers(): Promise<User[]>;
+  getUsers(tenantId?: string): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
   getUsersByIds(ids: string[]): Promise<Map<string, User>>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -1034,7 +1034,15 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUsers(): Promise<User[]> {
+  async getUsers(tenantId?: string): Promise<User[]> {
+    if (tenantId) {
+      const results = await db.select({ user: users })
+        .from(users)
+        .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+        .where(eq(tenantUsers.tenantId, tenantId))
+        .orderBy(users.name);
+      return results.map(r => r.user);
+    }
     return await db.select()
       .from(users)
       .orderBy(users.name);

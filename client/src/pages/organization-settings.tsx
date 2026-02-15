@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,7 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -96,6 +98,35 @@ const financialSchema = z.object({
 });
 
 type FinancialFormData = z.infer<typeof financialSchema>;
+
+interface VocabularyCatalogTerm {
+  id: string;
+  termType: string;
+  termValue: string;
+  description: string | null;
+  isSystemDefault: boolean;
+  displayOrder: number;
+}
+
+interface OrganizationVocabularySelection {
+  id: string;
+  tenantId: string | null;
+  epicTermId: string | null;
+  stageTermId: string | null;
+  workstreamTermId: string | null;
+  milestoneTermId: string | null;
+  activityTermId: string | null;
+}
+
+const vocabularySelectionsSchema = z.object({
+  epicTermId: z.string().nullable().optional(),
+  stageTermId: z.string().nullable().optional(),
+  workstreamTermId: z.string().nullable().optional(),
+  milestoneTermId: z.string().nullable().optional(),
+  activityTermId: z.string().nullable().optional(),
+});
+
+type VocabularySelectionsData = z.infer<typeof vocabularySelectionsSchema>;
 
 function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string) => void }) {
   const { toast } = useToast();
@@ -265,6 +296,66 @@ export default function OrganizationSettings() {
     updateFinancialMutation.mutate(data);
   };
 
+  const { data: catalogTerms = [], isLoading: isLoadingCatalog } = useQuery<VocabularyCatalogTerm[]>({
+    queryKey: ["/api/vocabulary/catalog"],
+  });
+
+  const { data: orgSelections, isLoading: isLoadingSelections } = useQuery<OrganizationVocabularySelection>({
+    queryKey: ["/api/vocabulary/organization/selections"],
+  });
+
+  const epicTerms = catalogTerms.filter(t => t.termType === 'epic').sort((a, b) => a.displayOrder - b.displayOrder);
+  const stageTerms = catalogTerms.filter(t => t.termType === 'stage').sort((a, b) => a.displayOrder - b.displayOrder);
+  const workstreamTerms = catalogTerms.filter(t => t.termType === 'workstream').sort((a, b) => a.displayOrder - b.displayOrder);
+  const milestoneTerms = catalogTerms.filter(t => t.termType === 'milestone').sort((a, b) => a.displayOrder - b.displayOrder);
+  const activityTerms = catalogTerms.filter(t => t.termType === 'activity').sort((a, b) => a.displayOrder - b.displayOrder);
+
+  const vocabularyForm = useForm<VocabularySelectionsData>({
+    resolver: zodResolver(vocabularySelectionsSchema),
+    defaultValues: {
+      epicTermId: null,
+      stageTermId: null,
+      workstreamTermId: null,
+      milestoneTermId: null,
+      activityTermId: null,
+    },
+  });
+
+  useEffect(() => {
+    if (orgSelections && !vocabularyForm.formState.isDirty) {
+      vocabularyForm.reset({
+        epicTermId: orgSelections.epicTermId,
+        stageTermId: orgSelections.stageTermId,
+        workstreamTermId: orgSelections.workstreamTermId,
+        milestoneTermId: orgSelections.milestoneTermId,
+        activityTermId: orgSelections.activityTermId,
+      });
+    }
+  }, [orgSelections, vocabularyForm]);
+
+  const updateVocabularyMutation = useMutation({
+    mutationFn: async (data: VocabularySelectionsData) => {
+      await apiRequest("/api/vocabulary/organization/selections", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/organization/selections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vocabulary/context"] });
+      vocabularyForm.reset(data);
+      toast({ title: "Terminology updated", description: "Organization terminology defaults have been updated." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save terminology settings.", variant: "destructive" });
+    },
+  });
+
+  const handleVocabularySubmit = (data: VocabularySelectionsData) => {
+    updateVocabularyMutation.mutate(data);
+  };
+
   return (
     <Layout>
       <div className="container mx-auto py-8 px-4 max-w-5xl">
@@ -279,7 +370,11 @@ export default function OrganizationSettings() {
                 <p className="text-muted-foreground">
                   Configure settings for
                 </p>
-                {activeTenant ? (
+                {tenantSettings?.name ? (
+                  <Badge variant="secondary" className="font-medium">
+                    {tenantSettings.name}
+                  </Badge>
+                ) : activeTenant ? (
                   <Badge variant="secondary" className="font-medium">
                     {activeTenant.name}
                   </Badge>
@@ -310,6 +405,10 @@ export default function OrganizationSettings() {
               <TabsTrigger value="integrations" className="flex items-center gap-2">
                 <Link2 className="w-4 h-4" />
                 <span>Integrations</span>
+              </TabsTrigger>
+              <TabsTrigger value="vocabulary" className="flex items-center gap-2">
+                <Languages className="w-4 h-4" />
+                <span>Vocabulary</span>
               </TabsTrigger>
               <TabsTrigger value="support" className="flex items-center gap-2">
                 <LifeBuoy className="w-4 h-4" />
@@ -838,6 +937,277 @@ export default function OrganizationSettings() {
                       </p>
                     </CardContent>
                   </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="vocabulary" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Sparkles className="w-5 h-5" />
+                    <span>Organization Terminology</span>
+                  </CardTitle>
+                  <CardDescription>
+                    Select preferred terminology for this organization. These defaults apply to all new projects and can be overridden at the client or project level.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {isLoadingCatalog || isLoadingSelections ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="text-lg">Loading terminology options...</div>
+                    </div>
+                  ) : catalogTerms.length === 0 ? (
+                    <Alert>
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        No vocabulary terms have been configured yet. A platform administrator needs to set up the vocabulary catalog in System Settings first.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <>
+                      <Alert>
+                        <Info className="h-4 w-4" />
+                        <AlertDescription>
+                          <div className="space-y-2">
+                            <div><strong>Cascading Priority:</strong> Project Overrides → Client Overrides → Organization Defaults (these settings)</div>
+                            <div className="text-sm">
+                              These organization-level defaults are automatically applied when you create new projects. You can override them for specific clients or individual projects as needed.
+                            </div>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+
+                      <Card className="border-2 border-dashed">
+                        <CardHeader>
+                          <CardTitle className="text-base">Industry Presets</CardTitle>
+                          <CardDescription>
+                            Quickly apply common terminology sets for your industry
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex flex-wrap gap-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              const epic = epicTerms.find(t => t.termValue === 'Epic');
+                              const stage = stageTerms.find(t => t.termValue === 'Sprint');
+                              const workstream = workstreamTerms.find(t => t.termValue === 'Feature');
+                              const milestone = milestoneTerms.find(t => t.termValue === 'Milestone');
+                              const activity = activityTerms.find(t => t.termValue === 'Task');
+                              vocabularyForm.setValue('epicTermId', epic?.id || null);
+                              vocabularyForm.setValue('stageTermId', stage?.id || null);
+                              vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                              vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                              vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            }}
+                          >
+                            Software Development
+                            <Badge variant="secondary" className="ml-2 text-xs">Epic / Sprint / Feature / Milestone / Task</Badge>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              const epic = epicTerms.find(t => t.termValue === 'Program');
+                              const stage = stageTerms.find(t => t.termValue === 'Phase');
+                              const workstream = workstreamTerms.find(t => t.termValue === 'Category');
+                              const milestone = milestoneTerms.find(t => t.termValue === 'Target');
+                              const activity = activityTerms.find(t => t.termValue === 'Deliverable');
+                              vocabularyForm.setValue('epicTermId', epic?.id || null);
+                              vocabularyForm.setValue('stageTermId', stage?.id || null);
+                              vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                              vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                              vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            }}
+                          >
+                            Consulting
+                            <Badge variant="secondary" className="ml-2 text-xs">Program / Phase / Category / Target / Deliverable</Badge>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              const epic = epicTerms.find(t => t.termValue === 'Epic');
+                              const stage = stageTerms.find(t => t.termValue === 'Stage');
+                              const workstream = workstreamTerms.find(t => t.termValue === 'Workstream');
+                              const milestone = milestoneTerms.find(t => t.termValue === 'Milestone');
+                              const activity = activityTerms.find(t => t.termValue === 'Activity');
+                              vocabularyForm.setValue('epicTermId', epic?.id || null);
+                              vocabularyForm.setValue('stageTermId', stage?.id || null);
+                              vocabularyForm.setValue('workstreamTermId', workstream?.id || null);
+                              vocabularyForm.setValue('milestoneTermId', milestone?.id || null);
+                              vocabularyForm.setValue('activityTermId', activity?.id || null);
+                            }}
+                          >
+                            Default
+                            <Badge variant="secondary" className="ml-2 text-xs">Epic / Stage / Workstream / Milestone / Activity</Badge>
+                          </Button>
+                        </CardContent>
+                      </Card>
+
+                      <Form {...vocabularyForm}>
+                        <form onSubmit={vocabularyForm.handleSubmit(handleVocabularySubmit)} className="space-y-6">
+                          <div className="grid grid-cols-2 gap-6">
+                            <FormField
+                              control={vocabularyForm.control}
+                              name="epicTermId"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Epic Term</FormLabel>
+                                  <Select
+                                    onValueChange={(value) => field.onChange(value || null)}
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select epic term" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {epicTerms.map(term => (
+                                        <SelectItem key={term.id} value={term.id}>
+                                          {term.termValue}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>Top-level project grouping</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={vocabularyForm.control}
+                              name="stageTermId"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Stage Term</FormLabel>
+                                  <Select
+                                    onValueChange={(value) => field.onChange(value || null)}
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select stage term" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {stageTerms.map(term => (
+                                        <SelectItem key={term.id} value={term.id}>
+                                          {term.termValue}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>Mid-level project phase</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={vocabularyForm.control}
+                              name="activityTermId"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Activity Term</FormLabel>
+                                  <Select
+                                    onValueChange={(value) => field.onChange(value || null)}
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select activity term" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {activityTerms.map(term => (
+                                        <SelectItem key={term.id} value={term.id}>
+                                          {term.termValue}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>Individual task or work item level</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={vocabularyForm.control}
+                              name="workstreamTermId"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Workstream Term</FormLabel>
+                                  <Select
+                                    onValueChange={(value) => field.onChange(value || null)}
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select workstream term" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {workstreamTerms.map(term => (
+                                        <SelectItem key={term.id} value={term.id}>
+                                          {term.termValue}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>Parallel work track (optional)</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={vocabularyForm.control}
+                              name="milestoneTermId"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Milestone Term</FormLabel>
+                                  <Select
+                                    onValueChange={(value) => field.onChange(value || null)}
+                                    value={field.value || undefined}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select milestone term" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {milestoneTerms.map(term => (
+                                        <SelectItem key={term.id} value={term.id}>
+                                          {term.termValue}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>Checkpoint or target (optional)</FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+
+                          <div className="flex justify-end">
+                            <Button
+                              type="submit"
+                              disabled={updateVocabularyMutation.isPending}
+                            >
+                              <Save className="w-4 h-4 mr-2" />
+                              {updateVocabularyMutation.isPending ? "Saving..." : "Save Terminology Settings"}
+                            </Button>
+                          </div>
+                        </form>
+                      </Form>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

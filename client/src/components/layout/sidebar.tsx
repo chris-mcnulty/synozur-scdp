@@ -257,7 +257,9 @@ export function Sidebar() {
                 {isPlatformAdmin && (
                   <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
                 )}
-                <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary" />
+                {isPlatformAdmin && (
+                  <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" />
+                )}
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />
                 <SidebarItem href="/ai-grounding" icon={<Brain />} label="AI Grounding" />

@@ -391,7 +391,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   // User management
   app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const users = await storage.getUsers();
+      const tenantId = req.user?.tenantId;
+      const users = await storage.getUsers(tenantId || undefined);
       res.json(users);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });

@@ -323,7 +323,11 @@ function Router() {
         ) : <Redirect to="/login" />}
       </Route>
       <Route path="/vocabulary">
-        {user ? <SystemSettings /> : <Redirect to="/login" />}
+        {user ? (
+          <PlatformAdminGuard>
+            <SystemSettings />
+          </PlatformAdminGuard>
+        ) : <Redirect to="/login" />}
       </Route>
       <Route path="/file-repository">
         {user ? <FileRepository /> : <Redirect to="/login" />}
