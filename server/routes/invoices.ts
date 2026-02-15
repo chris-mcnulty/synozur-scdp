@@ -15,14 +15,17 @@ function getUserTenantId(req: Request): string | undefined {
   return (req as any).user?.tenantId;
 }
 
-function isPlatformAdmin(req: Request): boolean {
-  const platformRole = (req as any).user?.platformRole;
-  return platformRole === 'global_admin' || platformRole === 'constellation_admin';
+function shouldFilterByTenant(req: Request): { filter: boolean; tenantId?: string } {
+  const tenantId = getUserTenantId(req);
+  if (tenantId) {
+    return { filter: true, tenantId };
+  }
+  return { filter: false };
 }
 
 async function checkBatchTenantAccess(batchId: string, req: Request, res: Response): Promise<boolean> {
   const tenantId = getUserTenantId(req);
-  if (!tenantId || isPlatformAdmin(req)) return true;
+  if (!tenantId) return true;
   
   const [batch] = await db.select({ tenantId: invoiceBatches.tenantId })
     .from(invoiceBatches)
@@ -205,10 +208,10 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
 
   app.get("/api/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
-      const tenantId = getUserTenantId(req);
-      console.log("[INVOICE-BATCHES] Fetching invoice batches for tenant:", tenantId);
+      const { filter, tenantId } = shouldFilterByTenant(req);
+      console.log("[INVOICE-BATCHES] Fetching invoice batches for tenant:", tenantId, "filter:", filter);
       const batches = await storage.getInvoiceBatches();
-      const filteredBatches = tenantId && !isPlatformAdmin(req)
+      const filteredBatches = filter
         ? batches.filter(b => b.tenantId === tenantId)
         : batches;
       console.log(`[INVOICE-BATCHES] Returning ${filteredBatches.length} of ${batches.length} batches`);
@@ -222,9 +225,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
   app.get("/api/clients/:clientId/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { clientId } = req.params;
-      const tenantId = getUserTenantId(req);
+      const { filter, tenantId } = shouldFilterByTenant(req);
       const batches = await storage.getInvoiceBatchesForClient(clientId);
-      const filtered = tenantId && !isPlatformAdmin(req)
+      const filtered = filter
         ? batches.filter(b => b.tenantId === tenantId)
         : batches;
       res.json(filtered);
