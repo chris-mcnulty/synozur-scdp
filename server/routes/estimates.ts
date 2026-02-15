@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
-import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates } from "@shared/schema";
+import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules } from "@shared/schema";
 import { eq, sql, inArray, max, and } from "drizzle-orm";
 
 // Helper: Check if a line item represents a salaried resource
@@ -1303,8 +1303,9 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // Roles (admin only)
   app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const roles = await storage.getRoles();
-      res.json(roles);
+      const tenantId = req.user?.tenantId;
+      const fetchedRoles = await storage.getRoles(tenantId);
+      res.json(fetchedRoles);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch roles" });
     }
@@ -1313,7 +1314,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.post("/api/roles", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
       const validatedData = insertRoleSchema.parse(req.body);
-      const role = await storage.createRole(validatedData);
+      const tenantId = req.user?.tenantId;
+      const role = await storage.createRole({ ...validatedData, tenantId: tenantId || null });
       res.status(201).json(role);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -1325,6 +1327,17 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.patch("/api/roles/:id", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
+      const tenantId = req.user?.tenantId;
+      const platformRole = req.user?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && tenantId) {
+        const existingRole = await storage.getRole(req.params.id);
+        if (!existingRole || existingRole.tenantId !== tenantId) {
+          return res.status(403).json({ message: "You can only edit roles within your organization" });
+        }
+      }
+      
       const role = await storage.updateRole(req.params.id, req.body);
       res.json(role);
     } catch (error) {
@@ -1334,9 +1347,19 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.delete("/api/roles/:id", requireAuth, requireRole(["admin", "executive"]), async (req, res) => {
     try {
-      // Check if role is being used in users or estimate line items
-      const users = await storage.getUsers();
-      const roleInUse = users.some(u => u.roleId === req.params.id);
+      const tenantId = req.user?.tenantId;
+      const platformRole = req.user?.platformRole;
+      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      
+      if (!isPlatformAdmin && tenantId) {
+        const existingRole = await storage.getRole(req.params.id);
+        if (!existingRole || existingRole.tenantId !== tenantId) {
+          return res.status(403).json({ message: "You can only delete roles within your organization" });
+        }
+      }
+      
+      const allUsers = await storage.getUsers(tenantId || undefined);
+      const roleInUse = allUsers.some(u => u.roleId === req.params.id);
 
       if (roleInUse) {
         return res.status(400).json({ 
@@ -1344,7 +1367,6 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         });
       }
 
-      // Delete the role
       await storage.deleteRole(req.params.id);
       res.status(204).send();
     } catch (error) {
@@ -1354,11 +1376,34 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
 
   // Rate Management Endpoints
+  // Helper to check if target user belongs to current admin's tenant
+  async function checkUserTenantAccess(targetUserId: string, currentUser: any): Promise<boolean> {
+    const platformRole = currentUser?.platformRole;
+    const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+    if (isPlatformAdmin) return true;
+    
+    const tenantId = currentUser?.tenantId;
+    if (!tenantId) return false;
+    
+    const [membership] = await db.select({ id: tenantUsers.id })
+      .from(tenantUsers)
+      .where(and(
+        eq(tenantUsers.userId, targetUserId),
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.status, 'active')
+      ));
+    return !!membership;
+  }
+
   app.get("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { userId } = req.query;
       if (!userId || typeof userId !== 'string') {
         return res.status(400).json({ message: "userId query parameter is required" });
+      }
+
+      if (!await checkUserTenantAccess(userId, req.user)) {
+        return res.status(403).json({ message: "You can only view rate schedules for users in your organization" });
       }
 
       const schedules = await storage.getUserRateSchedules(userId);
@@ -1372,6 +1417,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
       const validatedData = insertUserRateScheduleSchema.parse(req.body);
+      
+      if (!await checkUserTenantAccess(validatedData.userId, req.user)) {
+        return res.status(403).json({ message: "You can only create rate schedules for users in your organization" });
+      }
+
       const schedule = await storage.createUserRateSchedule(validatedData);
       res.status(201).json(schedule);
     } catch (error) {
@@ -1385,6 +1435,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
+      const [existingSchedule] = await db.select().from(userRateSchedules).where(eq(userRateSchedules.id, req.params.id));
+      if (!existingSchedule) {
+        return res.status(404).json({ message: "Rate schedule not found" });
+      }
+      
+      if (!await checkUserTenantAccess(existingSchedule.userId, req.user)) {
+        return res.status(403).json({ message: "You can only edit rate schedules for users in your organization" });
+      }
+
       const schedule = await storage.updateUserRateSchedule(req.params.id, req.body);
       res.json(schedule);
     } catch (error) {
@@ -1895,7 +1954,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       }
       // If resourceName is being changed and no assignedUserId, look up role's default rates
       else if ('resourceName' in validatedData && validatedData.resourceName && !validatedData.assignedUserId) {
-        const roles = await storage.getRoles();
+        const roles = await storage.getRoles(req.user?.tenantId);
         const matchedRole = roles.find(r => r.name.toLowerCase().trim() === validatedData.resourceName!.toLowerCase().trim());
         
         if (matchedRole) {
@@ -2043,7 +2102,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      const roles = await storage.getRoles();
+      const roles = await storage.getRoles(req.user?.tenantId);
       
       const epicMap = new Map(epics.map(e => [e.id, e.name]));
       const stageMap = new Map(stages.map(s => [s.id, s.name]));
@@ -2317,7 +2376,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const userMap = new Map(users.map(u => [u.id, u]));
 
       // Get all roles to lookup default rates for role-based estimates
-      const roles = await storage.getRoles();
+      const roles = await storage.getRoles(req.user?.tenantId);
       const roleMap = new Map(roles.map(r => [r.id, r]));
       // Create role name map for looking up by resourceName (case-insensitive)
       const roleNameMap = new Map(roles.map(r => [r.name.toLowerCase().trim(), r]));
@@ -2999,7 +3058,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const lineItems = await storage.getEstimateLineItems(estimateId);
       
       // Get PM role ID
-      const roles = await storage.getRoles();
+      const roles = await storage.getRoles(req.user?.tenantId);
       const pmRole = roles.find(r => r.name.toLowerCase() === 'pm' || r.name.toLowerCase() === 'project manager');
       
       // Find existing PM line items
@@ -3681,8 +3740,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       }
 
       // Get existing roles and users
-      const roles = await storage.getRoles();
-      const users = await storage.getUsers();
+      const roles = await storage.getRoles(req.user?.tenantId);
+      const users = await storage.getUsers(req.user?.tenantId);
       
       const roleNameSet = new Set(roles.map(r => r.name.toLowerCase().trim()));
       const userNameSet = new Set(users.map(u => u.name.toLowerCase().trim()));
@@ -3727,6 +3786,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.post("/api/roles/bulk", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const { roles: rolesToCreate } = req.body;
+      const tenantId = req.user?.tenantId;
       
       if (!Array.isArray(rolesToCreate) || rolesToCreate.length === 0) {
         return res.status(400).json({ message: "No roles provided" });
@@ -3737,7 +3797,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         const role = await storage.createRole({
           name: roleData.name,
           defaultRackRate: roleData.defaultRackRate?.toString() || "175",
-          defaultCostRate: roleData.defaultCostRate?.toString() || "131.25"
+          defaultCostRate: roleData.defaultCostRate?.toString() || "131.25",
+          tenantId: tenantId || null
         });
         createdRoles.push(role);
       }

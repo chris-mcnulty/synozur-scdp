@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, date, jsonb, uuid, uniqueIndex, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -314,12 +314,15 @@ export const clients = pgTable("clients", {
 // Roles (for rate management)
 export const roles = pgTable("roles", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
+  tenantId: varchar("tenant_id").references(() => tenants.id),
   defaultRackRate: decimal("default_rack_rate", { precision: 10, scale: 2 }).notNull(),
-  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }), // Default cost rate for margin calculations
-  isAlwaysSalaried: boolean("is_always_salaried").notNull().default(false), // Roles like "principal" are always salaried
+  defaultCostRate: decimal("default_cost_rate", { precision: 10, scale: 2 }),
+  isAlwaysSalaried: boolean("is_always_salaried").notNull().default(false),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
+}, (table) => [
+  unique().on(table.name, table.tenantId),
+]);
 
 // System Settings (configurable default values)
 export const systemSettings = pgTable("system_settings", {

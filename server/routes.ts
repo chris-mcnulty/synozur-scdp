@@ -4279,7 +4279,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             errors.push('Project not found for task import');
           } else {
             // Pre-validate: ensure we have a fallback role for imported tasks (only used if person has no role)
-            const roles = await storage.getRoles();
+            const roles = await storage.getRoles(req.user?.tenantId);
             // Prefer common consulting roles in order of preference
             const fallbackRole = roles.find(r => r.name === 'Consultant') || 
                                  roles.find(r => r.name === 'Senior Consultant') ||
@@ -4896,8 +4896,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       }
       
       // Get lookup data
-      const users = await storage.getUsers();
-      const roles = await storage.getRoles();
+      const users = await storage.getUsers(req.user?.tenantId);
+      const roles = await storage.getRoles(req.user?.tenantId);
       const workstreams = await storage.getProjectWorkStreams(projectId);
       const epics = await storage.getProjectEpics(projectId);
       // Get all stages for all epics in this project
@@ -9296,7 +9296,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const epics = await storage.getEstimateEpics(estimateId);
       const stages = await storage.getEstimateStages(estimateId);
       const milestones = await storage.getEstimateMilestones(estimateId);
-      const allRoles = await storage.getRoles();
+      const allRoles = await storage.getRoles(req.user?.tenantId);
 
       // Create role lookup map
       const roleMap = new Map(allRoles.map(r => [r.id, r.name]));

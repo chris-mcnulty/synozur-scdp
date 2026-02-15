@@ -278,7 +278,7 @@ export interface IStorage {
   checkUserHasActiveAllocations(projectId: string, userId: string): Promise<boolean>;
   
   // Roles
-  getRoles(): Promise<Role[]>;
+  getRoles(tenantId?: string | null): Promise<Role[]>;
   getRole(id: string): Promise<Role | undefined>;
   createRole(role: InsertRole): Promise<Role>;
   updateRole(id: string, role: Partial<InsertRole>): Promise<Role>;
@@ -1425,7 +1425,12 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getRoles(): Promise<Role[]> {
+  async getRoles(tenantId?: string | null): Promise<Role[]> {
+    if (tenantId) {
+      return await db.select().from(roles)
+        .where(eq(roles.tenantId, tenantId))
+        .orderBy(roles.name);
+    }
     return await db.select().from(roles).orderBy(roles.name);
   }
 
