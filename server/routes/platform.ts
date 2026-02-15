@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { db } from "../storage";
+import { db, storage } from "../storage";
 import { servicePlans, tenants, users, tenantUsers } from "@shared/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { z } from "zod";
@@ -180,6 +180,20 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
   app.post("/api/platform/tenants", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       const data = tenantSchema.parse(req.body);
+
+      const getDefault = async (key: string): Promise<string | null> => {
+        const setting = await storage.getSystemSetting(key);
+        return setting?.settingValue ?? null;
+      };
+      const [defaultBilling, defaultCost, defaultMileage, defaultTax, defaultDiscType, defaultDiscValue] = await Promise.all([
+        getDefault('DEFAULT_BILLING_RATE'),
+        getDefault('DEFAULT_COST_RATE'),
+        getDefault('MILEAGE_RATE'),
+        getDefault('DEFAULT_TAX_RATE'),
+        getDefault('DEFAULT_INVOICE_DISCOUNT_TYPE'),
+        getDefault('DEFAULT_INVOICE_DISCOUNT_VALUE'),
+      ]);
+
       const [tenant] = await db.insert(tenants).values({
         name: data.name,
         slug: data.slug,
@@ -189,6 +203,12 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
         enforceSso: data.enforceSso,
         allowLocalAuth: data.allowLocalAuth ?? true,
         defaultTimezone: data.defaultTimezone || 'America/New_York',
+        defaultBillingRate: defaultBilling,
+        defaultCostRate: defaultCost,
+        mileageRate: defaultMileage,
+        defaultTaxRate: defaultTax,
+        invoiceDefaultDiscountType: defaultDiscType,
+        invoiceDefaultDiscountValue: defaultDiscValue,
       }).returning();
       res.status(201).json(tenant);
     } catch (error) {
@@ -292,112 +312,9 @@ export function registerPlatformRoutes(app: Express, requireAuth: any) {
   });
 
   // ============================================================================
-  // TENANT SETTINGS ROUTES (for tenant admins to manage their own org)
+  // NOTE: Tenant settings routes (/api/tenant/settings) are defined in server/routes.ts
+  // to avoid duplication. They use session.primaryTenantId for active tenant context.
   // ============================================================================
-
-  // Get current tenant settings (for logged-in user's tenant)
-  app.get("/api/tenant/settings", requireAuth, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const tenantId = user?.tenantId;
-      
-      if (!tenantId) {
-        return res.status(400).json({ error: "No tenant context available" });
-      }
-      
-      const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId));
-      
-      if (!tenant) {
-        return res.status(404).json({ error: "Tenant not found" });
-      }
-      
-      res.json({
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        logoUrl: tenant.logoUrl,
-        companyAddress: tenant.companyAddress,
-        companyPhone: tenant.companyPhone,
-        companyEmail: tenant.companyEmail,
-        companyWebsite: tenant.companyWebsite,
-        paymentTerms: tenant.paymentTerms,
-        color: tenant.color,
-        faviconUrl: tenant.faviconUrl,
-        showConstellationFooter: tenant.showConstellationFooter,
-        showChangelogOnLogin: tenant.showChangelogOnLogin,
-        emailHeaderUrl: tenant.emailHeaderUrl,
-        defaultBillingRate: tenant.defaultBillingRate,
-        defaultCostRate: tenant.defaultCostRate,
-        mileageRate: tenant.mileageRate,
-        defaultTaxRate: tenant.defaultTaxRate,
-        invoiceDefaultDiscountType: tenant.invoiceDefaultDiscountType,
-        invoiceDefaultDiscountValue: tenant.invoiceDefaultDiscountValue,
-      });
-    } catch (error) {
-      console.error("Error fetching tenant settings:", error);
-      res.status(500).json({ error: "Failed to fetch tenant settings" });
-    }
-  });
-
-  // Update current tenant settings (for tenant admins only)
-  app.patch("/api/tenant/settings", requireAuth, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const tenantId = user?.tenantId;
-      
-      // Check if user is admin within their tenant
-      if (user?.role !== "admin") {
-        return res.status(403).json({ error: "Admin access required to update tenant settings" });
-      }
-      
-      if (!tenantId) {
-        return res.status(400).json({ error: "No tenant context available" });
-      }
-      
-      const data = tenantSettingsSchema.parse(req.body);
-      
-      // Clean up empty strings to nulls
-      const cleanData = {
-        ...data,
-        logoUrl: data.logoUrl === "" ? null : data.logoUrl,
-        companyEmail: data.companyEmail === "" ? null : data.companyEmail,
-        companyWebsite: data.companyWebsite === "" ? null : data.companyWebsite,
-      };
-      
-      const [tenant] = await db.update(tenants)
-        .set(cleanData)
-        .where(eq(tenants.id, tenantId))
-        .returning();
-      
-      if (!tenant) {
-        return res.status(404).json({ error: "Tenant not found" });
-      }
-      
-      res.json({
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        logoUrl: tenant.logoUrl,
-        companyAddress: tenant.companyAddress,
-        companyPhone: tenant.companyPhone,
-        companyEmail: tenant.companyEmail,
-        companyWebsite: tenant.companyWebsite,
-        paymentTerms: tenant.paymentTerms,
-        defaultBillingRate: tenant.defaultBillingRate,
-        defaultCostRate: tenant.defaultCostRate,
-        mileageRate: tenant.mileageRate,
-        defaultTaxRate: tenant.defaultTaxRate,
-        invoiceDefaultDiscountType: tenant.invoiceDefaultDiscountType,
-        invoiceDefaultDiscountValue: tenant.invoiceDefaultDiscountValue,
-      });
-    } catch (error) {
-      console.error("Error updating tenant settings:", error);
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Validation error", details: error.errors });
-      }
-      res.status(500).json({ error: "Failed to update tenant settings" });
-    }
-  });
 
   // ============================================================================
   // PLATFORM USERS ROUTES (for platform admins to manage users across tenants)

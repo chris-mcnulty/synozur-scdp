@@ -251,8 +251,12 @@ export function Sidebar() {
               >
                 <SidebarItem href="/users" icon={<Users />} label="User Management" />
                 <SidebarItem href="/organization-settings" icon={<Building2 />} label="Organization Settings" />
-                <SidebarItem href="/system-settings" icon={<Settings />} label="System Settings" />
-                <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
+                {isPlatformAdmin && (
+                  <SidebarItem href="/system-settings" icon={<Settings />} label="System Settings" />
+                )}
+                {isPlatformAdmin && (
+                  <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
+                )}
                 <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary" />
                 <SidebarItem href="/file-repository" icon={<Database />} label="File Repository" />
                 <SidebarItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" />

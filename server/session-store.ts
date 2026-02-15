@@ -248,6 +248,19 @@ export const requireRole = (roles: string[]) => (req: Request, res: Response, ne
   next();
 };
 
+// Platform admin-only middleware (global_admin or constellation_admin)
+export const requirePlatformAdmin = (req: Request, res: Response, next: NextFunction) => {
+  const user = req.user;
+  if (!user) {
+    return res.status(403).json({ message: "Insufficient permissions" });
+  }
+  const platformRole = user.platformRole;
+  if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+    return res.status(403).json({ message: "Platform admin access required" });
+  }
+  next();
+};
+
 // Run cleanup every hour
 setInterval(() => {
   cleanupExpiredSessions().catch(console.error);

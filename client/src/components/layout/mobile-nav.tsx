@@ -290,8 +290,13 @@ export function MobileNav() {
                     onToggle={handleToggle}
                   >
                     <MobileNavItem href="/users" icon={<Users />} label="User Management" onClick={handleNavClick} />
-                    <MobileNavItem href="/system-settings" icon={<Settings />} label="System Settings" onClick={handleNavClick} />
-                    <MobileNavItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" onClick={handleNavClick} />
+                    <MobileNavItem href="/organization-settings" icon={<Building2 />} label="Organization Settings" onClick={handleNavClick} />
+                    {isPlatformAdmin && (
+                      <MobileNavItem href="/system-settings" icon={<Settings />} label="System Settings" onClick={handleNavClick} />
+                    )}
+                    {isPlatformAdmin && (
+                      <MobileNavItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" onClick={handleNavClick} />
+                    )}
                     <MobileNavItem href="/vocabulary" icon={<Languages />} label="Vocabulary" onClick={handleNavClick} />
                     <MobileNavItem href="/file-repository" icon={<Database />} label="File Repository" onClick={handleNavClick} />
                     <MobileNavItem href="/admin/sharepoint" icon={<Settings />} label="SharePoint Diagnostics" onClick={handleNavClick} />

@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import type { VocabularyTerms } from "@shared/schema";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -310,6 +311,7 @@ function TestEmailButton() {
 
 export default function SystemSettings() {
   const { toast } = useToast();
+  const { isPlatformAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState("company");
 
   // Fetch system settings (platform-wide defaults)
@@ -633,6 +635,20 @@ export default function SystemSettings() {
     updateEstimationFactorsMutation.mutate(data);
   };
 
+  if (!isPlatformAdmin) {
+    return (
+      <Layout>
+        <div className="flex flex-col items-center justify-center h-64 space-y-4">
+          <AlertCircle className="h-12 w-12 text-muted-foreground" />
+          <h2 className="text-xl font-semibold">Platform Admin Access Required</h2>
+          <p className="text-muted-foreground text-center max-w-md">
+            System Settings are reserved for platform administrators. For organization-specific settings like rates, branding, and tax configuration, visit <a href="/organization-settings" className="text-blue-600 underline dark:text-blue-400">Organization Settings</a>.
+          </p>
+        </div>
+      </Layout>
+    );
+  }
+
   if (isLoading) {
     return (
       <Layout>
@@ -650,12 +666,12 @@ export default function SystemSettings() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">System Settings</h1>
             <p className="text-muted-foreground">
-              Configure system-wide defaults and settings for your organization
+              Platform-wide defaults and configuration (affects all tenants)
             </p>
           </div>
           <Badge variant="outline" className="text-xs">
             <Settings className="w-3 h-3 mr-1" />
-            Admin Only
+            Platform Admin Only
           </Badge>
         </div>
 
@@ -998,22 +1014,20 @@ export default function SystemSettings() {
           </TabsContent>
 
           <TabsContent value="rates" className="space-y-6">
-            <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800">
-              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <Alert className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+              <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
               <AlertDescription>
-                Default rates are now managed per-organization. Go to{" "}
-                <a href="/organization-settings" className="font-medium underline text-blue-600 dark:text-blue-400">Organization Settings &gt; Financial</a>{" "}
-                to configure rates for your current organization. Organization-level rates take priority over these system-wide defaults.
+                <strong>These values serve two purposes:</strong> (1) They are the <strong>fallback defaults</strong> when a tenant has no organization-level rates configured, and (2) they are <strong>copied into new tenants</strong> when created. Each tenant can then override them in their own <a href="/organization-settings" className="font-medium underline text-amber-700 dark:text-amber-400">Organization Settings &gt; Financial</a> tab.
               </AlertDescription>
             </Alert>
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <DollarSign className="w-5 h-5" />
-                  <span>System Default Rates</span>
+                  <span>System Default Rates &amp; New Tenant Defaults</span>
                 </CardTitle>
                 <CardDescription>
-                  System-wide fallback rates. Organization-level rates (in Organization Settings) take priority over these values.
+                  Platform-wide fallback rates and defaults copied into newly created tenants. Tenants can override these in their Organization Settings.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">

@@ -64,7 +64,7 @@ import { invoicePDFStorage } from "./services/invoice-pdf-storage.js";
 
 // Import auth module and shared session store
 import { registerAuthRoutes } from "./auth-routes";
-import { requireAuth, requireRole, getAllSessions } from "./session-store";
+import { requireAuth, requireRole, requirePlatformAdmin, getAllSessions } from "./session-store";
 import { checkAndRefreshToken, handleTokenRefresh, startTokenRefreshScheduler } from "./auth/sso-token-refresh";
 
 export async function registerRoutes(app: Express): Promise<void> {
@@ -813,6 +813,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({
         id: tenant.id,
         name: tenant.name,
+        slug: (tenant as any).slug,
         logoUrl: tenant.logoUrl,
         logoUrlDark: tenant.logoUrlDark,
         companyAddress: tenant.companyAddress,
@@ -820,6 +821,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         companyEmail: tenant.companyEmail,
         companyWebsite: tenant.companyWebsite,
         paymentTerms: tenant.paymentTerms,
+        color: (tenant as any).color,
+        faviconUrl: (tenant as any).faviconUrl,
         showConstellationFooter: tenant.showConstellationFooter ?? true,
         emailHeaderUrl: tenant.emailHeaderUrl,
         expenseRemindersEnabled: tenant.expenseRemindersEnabled ?? false,
@@ -827,6 +830,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderDay: tenant.expenseReminderDay ?? 1,
         defaultTimezone: tenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: tenant.showChangelogOnLogin ?? true,
+        defaultBillingRate: (tenant as any).defaultBillingRate,
+        defaultCostRate: (tenant as any).defaultCostRate,
+        mileageRate: (tenant as any).mileageRate,
+        defaultTaxRate: (tenant as any).defaultTaxRate,
+        invoiceDefaultDiscountType: (tenant as any).invoiceDefaultDiscountType,
+        invoiceDefaultDiscountValue: (tenant as any).invoiceDefaultDiscountValue,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -851,6 +860,12 @@ export async function registerRoutes(app: Express): Promise<void> {
     expenseReminderDay: z.number().int().min(0).max(6).optional(),
     defaultTimezone: z.string().max(50).optional(),
     showChangelogOnLogin: z.boolean().optional(),
+    defaultBillingRate: z.string().optional().nullable(),
+    defaultCostRate: z.string().optional().nullable(),
+    mileageRate: z.string().optional().nullable(),
+    defaultTaxRate: z.string().optional().nullable(),
+    invoiceDefaultDiscountType: z.string().optional().nullable(),
+    invoiceDefaultDiscountValue: z.string().optional().nullable(),
   });
 
   app.patch("/api/tenant/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
@@ -871,9 +886,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
 
-      const updatedTenant = await storage.updateTenant(tenantId, {
+      const updateData: any = {
         name,
         logoUrl,
         logoUrlDark,
@@ -889,7 +904,16 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderDay,
         defaultTimezone,
         showChangelogOnLogin,
-      });
+      };
+
+      if (defaultBillingRate !== undefined) updateData.defaultBillingRate = defaultBillingRate;
+      if (defaultCostRate !== undefined) updateData.defaultCostRate = defaultCostRate;
+      if (mileageRate !== undefined) updateData.mileageRate = mileageRate;
+      if (defaultTaxRate !== undefined) updateData.defaultTaxRate = defaultTaxRate;
+      if (invoiceDefaultDiscountType !== undefined) updateData.invoiceDefaultDiscountType = invoiceDefaultDiscountType;
+      if (invoiceDefaultDiscountValue !== undefined) updateData.invoiceDefaultDiscountValue = invoiceDefaultDiscountValue;
+
+      const updatedTenant = await storage.updateTenant(tenantId, updateData);
 
       // Update the expense reminder scheduler if settings changed
       if (expenseRemindersEnabled !== undefined || expenseReminderTime !== undefined || expenseReminderDay !== undefined) {
@@ -900,6 +924,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.json({
         id: updatedTenant.id,
         name: updatedTenant.name,
+        slug: (updatedTenant as any).slug,
         logoUrl: updatedTenant.logoUrl,
         logoUrlDark: updatedTenant.logoUrlDark,
         companyAddress: updatedTenant.companyAddress,
@@ -914,6 +939,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         expenseReminderDay: updatedTenant.expenseReminderDay ?? 1,
         defaultTimezone: updatedTenant.defaultTimezone ?? "America/New_York",
         showChangelogOnLogin: updatedTenant.showChangelogOnLogin ?? true,
+        defaultBillingRate: (updatedTenant as any).defaultBillingRate,
+        defaultCostRate: (updatedTenant as any).defaultCostRate,
+        mileageRate: (updatedTenant as any).mileageRate,
+        defaultTaxRate: (updatedTenant as any).defaultTaxRate,
+        invoiceDefaultDiscountType: (updatedTenant as any).invoiceDefaultDiscountType,
+        invoiceDefaultDiscountValue: (updatedTenant as any).invoiceDefaultDiscountValue,
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
@@ -1099,7 +1130,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // System Settings (admin only)
+  // System Settings (read: admin, write: platform admin only)
   app.get("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const settings = await storage.getSystemSettings();
@@ -1121,7 +1152,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/settings", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.post("/api/settings", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       const validatedData = insertSystemSettingSchema.parse(req.body);
       const setting = await storage.setSystemSetting(
@@ -1139,7 +1170,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.put("/api/settings/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.put("/api/settings/:id", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       const validatedData = insertSystemSettingSchema.parse(req.body);
       const setting = await storage.updateSystemSetting(req.params.id, validatedData);
@@ -1152,7 +1183,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/settings/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+  app.delete("/api/settings/:id", requireAuth, requirePlatformAdmin, async (req, res) => {
     try {
       await storage.deleteSystemSetting(req.params.id);
       res.status(204).send();
