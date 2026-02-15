@@ -281,22 +281,28 @@ export function AdminSupportTab() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 pt-1 flex-wrap">
-                      {integrationSettings.supportPlannerPlanWebUrl && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild
-                        >
-                          <a
-                            href={integrationSettings.supportPlannerPlanWebUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                      {(() => {
+                        const planUrl = integrationSettings.supportPlannerPlanWebUrl ||
+                          (integrationSettings.supportPlannerGroupId && integrationSettings.supportPlannerPlanId
+                            ? `https://tasks.office.com/home/planner/#/plantaskboard?groupId=${integrationSettings.supportPlannerGroupId}&planId=${integrationSettings.supportPlannerPlanId}`
+                            : null);
+                        return planUrl ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
                           >
-                            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                            Open in Planner
-                          </a>
-                        </Button>
-                      )}
+                            <a
+                              href={planUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                              Open in Planner
+                            </a>
+                          </Button>
+                        ) : null;
+                      })()}
                       <Button
                         variant="outline"
                         size="sm"
