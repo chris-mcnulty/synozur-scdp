@@ -567,9 +567,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const filters: any = {};
 
       const userTenantId = (req as any).user?.tenantId;
-      const platformRole = (req as any).user?.platformRole;
-      const isPlAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
-      if (userTenantId && !isPlAdmin) {
+      if (userTenantId) {
         filters.tenantId = userTenantId;
       }
 
@@ -1084,6 +1082,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         filters.submitterId = submitterId;
       }
 
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId) {
+        filters.tenantId = userTenantId;
+      }
+
       if (status) filters.status = status;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
@@ -1111,6 +1114,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
       if (report.submitterId !== req.user!.id && !isAdmin) {
         return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && report.tenantId && report.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       res.json(report);
@@ -2569,9 +2577,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const filters: any = {};
       
       const userTenantId = (req as any).user?.tenantId;
-      const platformRole = (req as any).user?.platformRole;
-      const isPlAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
-      if (userTenantId && !isPlAdmin) {
+      if (userTenantId) {
         filters.tenantId = userTenantId;
       }
       

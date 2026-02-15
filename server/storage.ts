@@ -418,6 +418,7 @@ export interface IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
+    tenantId?: string;
   }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string } }[] })[]>;
   getExpenseReport(id: string): Promise<(ExpenseReport & { 
     submitter: User; 
@@ -4109,9 +4110,13 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     startDate?: string;
     endDate?: string;
+    tenantId?: string;
   }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string } }[] })[]> {
     const conditions = [];
     
+    if (filters.tenantId) {
+      conditions.push(eq(expenseReports.tenantId, filters.tenantId));
+    }
     if (filters.submitterId) {
       conditions.push(eq(expenseReports.submitterId, filters.submitterId));
     }
