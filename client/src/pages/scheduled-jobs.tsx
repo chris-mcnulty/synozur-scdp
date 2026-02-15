@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Layout } from "@/components/layout/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { format, formatDistanceToNow } from "date-fns";
 interface ScheduledJobRun {
   id: string;
   tenantId: string | null;
+  tenantName?: string;
   jobType: string;
   status: string;
   startedAt: string;
@@ -113,6 +115,7 @@ function getTriggerBadge(triggeredBy: string) {
 
 export default function ScheduledJobsPage() {
   const { toast } = useToast();
+  const { isPlatformAdmin } = useAuth();
   const [selectedJobType, setSelectedJobType] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -414,6 +417,7 @@ export default function ScheduledJobsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Job Type</TableHead>
+                        {isPlatformAdmin && <TableHead>Tenant</TableHead>}
                         <TableHead>Status</TableHead>
                         <TableHead>Trigger</TableHead>
                         <TableHead>Started</TableHead>
@@ -435,6 +439,13 @@ export default function ScheduledJobsPage() {
                             <TableCell className="font-medium">
                               {jobInfo?.name || run.jobType}
                             </TableCell>
+                            {isPlatformAdmin && (
+                              <TableCell>
+                                <span className="text-sm text-muted-foreground">
+                                  {run.tenantName || (run.tenantId ? run.tenantId.substring(0, 8) : 'System')}
+                                </span>
+                              </TableCell>
+                            )}
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 {getStatusBadge(run.status)}

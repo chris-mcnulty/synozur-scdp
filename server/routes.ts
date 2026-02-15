@@ -603,13 +603,30 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { jobType, limit } = req.query;
       const platformRole = user.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      const activeTenantId = user.tenantId || user.primaryTenantId;
       
-      // Platform admins see all jobs, regular admins see their tenant only
+      // Platform admins see all jobs, regular admins see their active tenant only
       const runs = await storage.getScheduledJobRuns({
-        tenantId: isPlatformAdmin ? undefined : user.primaryTenantId,
+        tenantId: isPlatformAdmin ? undefined : activeTenantId,
         jobType: jobType as string,
         limit: limit ? parseInt(limit as string) : 50,
       });
+      
+      // For platform admins, enrich runs with tenant names
+      if (isPlatformAdmin && runs.length > 0) {
+        const tenantIds = [...new Set(runs.map(r => r.tenantId).filter(Boolean))] as string[];
+        if (tenantIds.length > 0) {
+          const tenantRecords = await db.select({ id: tenants.id, name: tenants.name })
+            .from(tenants)
+            .where(inArray(tenants.id, tenantIds));
+          const tenantMap = new Map(tenantRecords.map(t => [t.id, t.name]));
+          const enrichedRuns = runs.map(run => ({
+            ...run,
+            tenantName: run.tenantId ? tenantMap.get(run.tenantId) || 'Unknown' : 'System',
+          }));
+          return res.json(enrichedRuns);
+        }
+      }
       res.json(runs);
     } catch (error) {
       console.error("Error fetching scheduled job runs:", error);
@@ -624,9 +641,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const user = req.user as any;
       const platformRole = user.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
+      const activeTenantId = user.tenantId || user.primaryTenantId;
       
-      // Platform admins see all tenant stats, regular admins see their tenant only
-      const stats = await storage.getScheduledJobStats(isPlatformAdmin ? undefined : user.primaryTenantId);
+      // Platform admins see all tenant stats, regular admins see their active tenant only
+      const stats = await storage.getScheduledJobStats(isPlatformAdmin ? undefined : activeTenantId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching scheduled job stats:", error);
@@ -672,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const { jobId } = req.params;
       const user = req.user as any;
-      const userTenantId = user.primaryTenantId;
+      const userTenantId = user.tenantId || user.primaryTenantId;
       const platformRole = user.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       
@@ -704,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/admin/scheduled-jobs/cleanup-stuck", requireAuth, requireRole(["admin"]), async (req, res) => {
     try {
       const user = req.user as any;
-      const userTenantId = user.primaryTenantId;
+      const userTenantId = user.tenantId || user.primaryTenantId;
       const platformRole = user.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);

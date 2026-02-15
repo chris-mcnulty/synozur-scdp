@@ -254,9 +254,7 @@ export function Sidebar() {
                 {isPlatformAdmin && (
                   <SidebarItem href="/system-settings" icon={<Settings />} label="System Settings" />
                 )}
-                {isPlatformAdmin && (
-                  <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
-                )}
+                <SidebarItem href="/admin/scheduled-jobs" icon={<CalendarClock />} label="Scheduled Jobs" />
                 {isPlatformAdmin && (
                   <SidebarItem href="/vocabulary" icon={<Languages />} label="Vocabulary Catalog" />
                 )}
