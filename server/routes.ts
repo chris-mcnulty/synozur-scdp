@@ -395,8 +395,19 @@ export async function registerRoutes(app: Express): Promise<void> {
       const platformRole = currentUser?.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       const tenantId = isPlatformAdmin ? undefined : (currentUser?.tenantId || undefined);
-      const users = await storage.getUsers(tenantId);
-      res.json(users);
+      const usersList = await storage.getUsers(tenantId);
+      
+      if (isPlatformAdmin) {
+        const allTenants = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
+        const tenantMap = new Map(allTenants.map(t => [t.id, t.name]));
+        const enriched = usersList.map(u => ({
+          ...u,
+          primaryTenantName: u.primaryTenantId ? tenantMap.get(u.primaryTenantId) || null : null,
+        }));
+        return res.json(enriched);
+      }
+      
+      res.json(usersList);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
     }

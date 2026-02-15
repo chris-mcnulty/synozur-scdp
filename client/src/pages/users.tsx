@@ -11,17 +11,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Search, UserPlus, Edit, Shield, Trash2 } from "lucide-react";
+import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Users() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [tenantFilter, setTenantFilter] = useState("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<any>(null);
   const { toast } = useToast();
+  const { isPlatformAdmin } = useAuth();
 
   const { data: users = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/users"],
@@ -93,10 +96,17 @@ export default function Users() {
     },
   });
 
-  const filteredUsers = users.filter(user => 
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const tenantNames = isPlatformAdmin
+    ? Array.from(new Set(users.map((u: any) => u.primaryTenantName).filter(Boolean)))
+    : [];
+
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesTenant = !isPlatformAdmin || tenantFilter === "all" ||
+      (tenantFilter === "unassigned" ? !user.primaryTenantName : user.primaryTenantName === tenantFilter);
+    return matchesSearch && matchesTenant;
+  });
 
   const getRoleBadgeColor = (role: string) => {
     switch(role) {
@@ -137,6 +147,21 @@ export default function Users() {
                   data-testid="input-search-users"
                 />
               </div>
+              {isPlatformAdmin && tenantNames.length > 0 && (
+                <Select value={tenantFilter} onValueChange={setTenantFilter}>
+                  <SelectTrigger className="w-[200px]">
+                    <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                    <SelectValue placeholder="All Tenants" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Tenants</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {tenantNames.map((name: string) => (
+                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -152,6 +177,7 @@ export default function Users() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
+                    {isPlatformAdmin && <TableHead>Primary Tenant</TableHead>}
                     <TableHead>System Role</TableHead>
                     <TableHead>Can Login</TableHead>
                     <TableHead>Assignable</TableHead>
@@ -165,6 +191,18 @@ export default function Users() {
                     <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email || <span className="text-muted-foreground">-</span>}</TableCell>
+                      {isPlatformAdmin && (
+                        <TableCell>
+                          {user.primaryTenantName ? (
+                            <Badge variant="outline" className="font-normal">
+                              <Building2 className="w-3 h-3 mr-1" />
+                              {user.primaryTenantName}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">Unassigned</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Badge variant={getRoleBadgeColor(user.role)}>
                           <Shield className="w-3 h-3 mr-1" />
