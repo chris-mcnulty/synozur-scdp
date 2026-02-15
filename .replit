@@ -106,3 +106,6 @@ AZURE_REDIRECT_URI = "https://scdp.synozur.com/api/auth/callback"
 
 [userenv.development]
 AZURE_REDIRECT_URI = "https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t1dp.spock.replit.dev/api/auth/callback"
+
+[userenv.shared]
+APP_PUBLIC_URL = "https://scdp.synozur.com"

@@ -153,6 +153,23 @@ export function AdminSupportTab() {
     enabled: !!tenantId,
   });
 
+  const syncExistingTickets = useMutation({
+    mutationFn: async () => {
+      return await apiRequest(`/api/tenants/${tenantId}/support-integrations/sync-existing`, {
+        method: "POST",
+      });
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "Sync complete",
+        description: data.message || `Synced ${data.synced} ticket(s) to Planner`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const disconnectPlanner = useMutation({
     mutationFn: async () => {
       return await apiRequest(`/api/tenants/${tenantId}/support-integrations`, {
@@ -306,9 +323,22 @@ export function AdminSupportTab() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => syncExistingTickets.mutate()}
+                        disabled={syncExistingTickets.isPending}
+                      >
+                        {syncExistingTickets.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        )}
+                        Sync Existing Tickets
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => setShowPlannerDialog(true)}
                       >
-                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        <Settings className="h-3.5 w-3.5 mr-1.5" />
                         Change Plan
                       </Button>
                       <Button

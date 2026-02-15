@@ -445,9 +445,7 @@ async function syncSupportTicketsFromPlanner(): Promise<{ ticketsClosed: number;
                   const requester = await storage.getUser(ticket.userId);
                   if (requester?.email) {
                     const { emailService } = await import('./email-notification.js');
-                    const APP_URL = process.env.REPLIT_DEV_DOMAIN
-                      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-                      : process.env.APP_URL || 'http://localhost:5000';
+                    const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
                     const branding = { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl };
                     await emailService.notifySupportTicketClosed(
                       { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },

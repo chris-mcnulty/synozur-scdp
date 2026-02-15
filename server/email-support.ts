@@ -1,9 +1,7 @@
 import { getUncachableSendGridClient } from "./services/sendgrid-client";
 import type { SupportTicket } from "@shared/schema";
 
-const APP_URL = process.env.REPLIT_DEV_DOMAIN
-  ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-  : process.env.APP_URL || "http://localhost:5000";
+const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
 
 const SUPPORT_NOTIFICATION_EMAIL = "Constellation@synozur.com";
 

@@ -10557,9 +10557,7 @@ Return a JSON response:
               const bucketName = tenant.supportPlannerBucketName || 'Support Tickets';
               const bucket = await plannerService.getOrCreateBucket(tenant.supportPlannerPlanId, bucketName);
               
-              const APP_URL = process.env.REPLIT_DEV_DOMAIN
-                ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-                : process.env.APP_URL || 'http://localhost:5000';
+              const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
               const ticketUrl = `${APP_URL}/support`;
               
               const taskTitle = `[#${ticket.ticketNumber}] ${ticket.subject}`;
@@ -10750,9 +10748,7 @@ Return a JSON response:
           if (requester?.email) {
             const { emailService } = await import("./services/email-notification.js");
             const tenant = ticket.tenantId ? await storage.getTenant(ticket.tenantId) : null;
-            const APP_URL = process.env.REPLIT_DEV_DOMAIN
-              ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-              : process.env.APP_URL || 'http://localhost:5000';
+            const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
             const branding = tenant ? { companyName: tenant.name, emailHeaderUrl: tenant.emailHeaderUrl } : undefined;
             await emailService.notifySupportTicketClosed(
               { email: requester.email, name: `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email },
@@ -10865,6 +10861,107 @@ Return a JSON response:
     } catch (error) {
       console.error("Error updating support integrations:", error);
       return res.status(500).json({ error: "Failed to update support integrations" });
+    }
+  });
+
+  app.post("/api/tenants/:tenantId/support-integrations/sync-existing", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const tenant = await storage.getTenant(req.params.tenantId);
+      if (!tenant) return res.status(404).json({ error: "Tenant not found" });
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && userTenantId !== tenant.id) {
+        const platformRole = (req as any).user?.platformRole;
+        if (platformRole !== 'global_admin' && platformRole !== 'constellation_admin') {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      if (!tenant.supportPlannerEnabled || !tenant.supportPlannerPlanId) {
+        return res.status(400).json({ error: "Planner integration is not configured for this tenant" });
+      }
+
+      const { plannerService } = await import("./services/planner-service.js");
+      if (!plannerService.isAppConfigured()) {
+        return res.status(500).json({ error: "Planner service is not configured" });
+      }
+
+      const openTickets = await storage.getSupportTicketsByTenantId(tenant.id, 'open');
+      const inProgressTickets = await storage.getSupportTicketsByTenantId(tenant.id, 'in_progress');
+      const allUnresolvedTickets = [...openTickets, ...inProgressTickets];
+
+      const existingSyncs = await storage.getSupportTicketPlannerSyncsByTenant(tenant.id);
+      const syncedTicketIds = new Set(existingSyncs.map(s => s.ticketId));
+      const unsyncedTickets = allUnresolvedTickets.filter(t => !syncedTicketIds.has(t.id));
+
+      if (unsyncedTickets.length === 0) {
+        return res.json({ synced: 0, errors: 0, message: "All open tickets are already synced to Planner" });
+      }
+
+      const bucketName = tenant.supportPlannerBucketName || 'Support Tickets';
+      const bucket = await plannerService.getOrCreateBucket(tenant.supportPlannerPlanId, bucketName);
+      const APP_URL = process.env.APP_PUBLIC_URL || 'https://scdp.synozur.com';
+      const ticketUrl = `${APP_URL}/support`;
+
+      let synced = 0;
+      let errors = 0;
+      const errorDetails: string[] = [];
+
+      for (const ticket of unsyncedTickets) {
+        try {
+          const requester = await storage.getUser(ticket.userId);
+          const requesterName = requester ? `${requester.firstName || ''} ${requester.lastName || ''}`.trim() || requester.email : 'Unknown';
+          const requesterEmail = requester?.email || 'unknown';
+
+          const taskTitle = `[#${ticket.ticketNumber}] ${ticket.subject}`;
+          const taskDescription = `Priority: ${ticket.priority}\nCategory: ${ticket.category.replace('_', ' ')}\nRequester: ${requesterName} (${requesterEmail})\n\n${ticket.description}\n\nView in Constellation: ${ticketUrl}`;
+
+          const plannerTask = await plannerService.createTask({
+            planId: tenant.supportPlannerPlanId,
+            bucketId: bucket.id,
+            title: taskTitle,
+          });
+
+          try {
+            const taskDetails = await plannerService.getTaskDetails(plannerTask.id);
+            if (taskDetails?.['@odata.etag']) {
+              await plannerService.updateTaskDetails(plannerTask.id, taskDetails['@odata.etag'], taskDescription);
+            }
+          } catch (detailsErr) {
+            console.warn('[SUPPORT-PLANNER-SYNC-EXISTING] Failed to set task details:', detailsErr);
+          }
+
+          await storage.createSupportTicketPlannerSync({
+            ticketId: ticket.id,
+            tenantId: tenant.id,
+            planId: tenant.supportPlannerPlanId,
+            taskId: plannerTask.id,
+            taskTitle: taskTitle,
+            bucketId: bucket.id,
+            bucketName: bucketName,
+            syncStatus: 'synced',
+            remoteEtag: plannerTask['@odata.etag'] || null,
+            lastSyncedAt: new Date(),
+          });
+
+          synced++;
+          console.log(`[SUPPORT-PLANNER-SYNC-EXISTING] Synced ticket #${ticket.ticketNumber} to Planner`);
+        } catch (ticketErr: any) {
+          errors++;
+          errorDetails.push(`Ticket #${ticket.ticketNumber}: ${ticketErr.message}`);
+          console.error(`[SUPPORT-PLANNER-SYNC-EXISTING] Failed to sync ticket #${ticket.ticketNumber}:`, ticketErr.message);
+        }
+      }
+
+      return res.json({
+        synced,
+        errors,
+        total: unsyncedTickets.length,
+        message: `Synced ${synced} of ${unsyncedTickets.length} existing tickets to Planner`,
+        ...(errorDetails.length > 0 && { errorDetails }),
+      });
+    } catch (error: any) {
+      console.error("Error syncing existing tickets:", error);
+      return res.status(500).json({ error: "Failed to sync existing tickets", message: error?.message });
     }
   });
 
