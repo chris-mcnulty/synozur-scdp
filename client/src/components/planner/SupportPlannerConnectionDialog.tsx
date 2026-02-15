@@ -137,12 +137,16 @@ export function SupportPlannerConnectionDialog({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const planWebUrl = selectedPlan?.id && selectedGroup?.id
+        ? `https://tasks.office.com/home/planner/#/plantaskboard?groupId=${selectedGroup.id}&planId=${selectedPlan.id}`
+        : null;
       return await apiRequest(`/api/tenants/${tenantId}/support-integrations`, {
         method: "PATCH",
         body: JSON.stringify({
           supportPlannerEnabled: true,
           supportPlannerPlanId: selectedPlan?.id,
           supportPlannerPlanTitle: selectedPlan?.title,
+          supportPlannerPlanWebUrl: planWebUrl,
           supportPlannerGroupId: selectedGroup?.id,
           supportPlannerGroupName: selectedGroup?.displayName,
           supportPlannerBucketName: bucketName || "Support Tickets",
@@ -219,7 +223,7 @@ export function SupportPlannerConnectionDialog({
             Connect Support Tickets to Planner
           </DialogTitle>
           <DialogDescription>
-            Automatically create Planner tasks when new support tickets are submitted.
+            Enable bidirectional sync between support tickets and Microsoft Planner tasks.
           </DialogDescription>
         </DialogHeader>
 
@@ -489,11 +493,13 @@ export function SupportPlannerConnectionDialog({
                   </div>
                 </div>
 
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                  <p className="text-sm text-blue-800 dark:text-blue-200">
-                    When new support tickets are submitted, a Planner task will be automatically created in the selected plan.
-                    Completing a Planner task will automatically close the corresponding ticket.
-                  </p>
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Bidirectional Auto-Sync Enabled</p>
+                  <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1 list-disc list-inside">
+                    <li>New support tickets automatically create Planner tasks</li>
+                    <li>Completing a Planner task automatically closes the ticket</li>
+                    <li>Sync runs every 30 minutes to keep everything in sync</li>
+                  </ul>
                 </div>
 
                 <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="w-full">

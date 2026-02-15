@@ -255,7 +255,7 @@ export function AdminSupportTab() {
                   <div className="flex-1">
                     <Label className="text-sm font-medium">Microsoft Planner Sync</Label>
                     <p className="text-sm text-muted-foreground">
-                      Automatically create tasks in Microsoft Planner for new support tickets
+                      Bidirectional auto-sync between support tickets and Microsoft Planner tasks
                     </p>
                   </div>
                 </div>
@@ -280,7 +280,23 @@ export function AdminSupportTab() {
                         <p className="font-medium">{integrationSettings.supportPlannerBucketName || "Support Tickets"}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 pt-1">
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      {integrationSettings.supportPlannerPlanWebUrl && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                        >
+                          <a
+                            href={integrationSettings.supportPlannerPlanWebUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                            Open in Planner
+                          </a>
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -309,7 +325,7 @@ export function AdminSupportTab() {
                           Not connected to Microsoft Planner
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Connect a Planner plan to automatically create tasks for new support tickets
+                          Connect a Planner plan to enable bidirectional auto-sync with support tickets
                         </p>
                       </div>
                       <Button size="sm" onClick={() => setShowPlannerDialog(true)}>
