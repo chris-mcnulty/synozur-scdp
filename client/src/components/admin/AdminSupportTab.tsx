@@ -140,7 +140,7 @@ interface SupportIntegrationSettings {
 export function AdminSupportTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const tenantId = user?.primaryTenantId;
+  const tenantId = user?.primaryTenantId || (user as any)?.tenantId;
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");

@@ -307,7 +307,8 @@ export function registerAuthRoutes(app: Express): void {
         name: session.name,
         role: session.role,
         platformRole: session.platformRole || null,
-        tenantId: session.tenantId || null
+        tenantId: session.tenantId || null,
+        primaryTenantId: session.tenantId || null,
       });
     } catch (error) {
       console.error("Get user error:", error);
