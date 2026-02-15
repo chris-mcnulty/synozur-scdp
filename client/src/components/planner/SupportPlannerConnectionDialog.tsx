@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, CheckCircle, AlertCircle, Users, Plus, Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, CheckCircle, AlertCircle, Users, Plus, Search, Pin, Hash } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -25,7 +26,7 @@ interface SupportPlannerConnectionDialogProps {
   };
 }
 
-type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "configure-bucket" | "confirm";
+type ConnectionStep = "choose-method" | "select-team" | "select-plan" | "create-plan" | "configure-bucket" | "select-channel" | "confirm";
 type ConnectionMethod = "existing-plan" | "create-in-team";
 
 interface PlannerGroup {
@@ -40,6 +41,13 @@ interface PlannerPlan {
   owner: string;
 }
 
+interface TeamChannel {
+  id: string;
+  displayName: string;
+  description?: string;
+  membershipType?: string;
+}
+
 export function SupportPlannerConnectionDialog({
   open,
   onOpenChange,
@@ -51,6 +59,8 @@ export function SupportPlannerConnectionDialog({
   const [method, setMethod] = useState<ConnectionMethod | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<PlannerGroup | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<PlannerPlan | null>(null);
+  const [selectedChannel, setSelectedChannel] = useState<TeamChannel | null>(null);
+  const [pinToChannel, setPinToChannel] = useState(true);
   const [newPlanName, setNewPlanName] = useState("Support Tickets");
   const [bucketName, setBucketName] = useState("Support Tickets");
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
@@ -118,6 +128,12 @@ export function SupportPlannerConnectionDialog({
     retry: false,
   });
 
+  const { data: channels, isLoading: loadingChannels } = useQuery<TeamChannel[]>({
+    queryKey: ["/api/planner/teams", selectedGroup?.id, "channels"],
+    enabled: open && selectedGroup !== null && step === "select-channel",
+    retry: false,
+  });
+
   const createPlanMutation = useMutation({
     mutationFn: async ({ groupId, title }: { groupId: string; title: string }) => {
       return await apiRequest(`/api/planner/groups/${groupId}/plans`, {
@@ -132,6 +148,25 @@ export function SupportPlannerConnectionDialog({
     },
     onError: (error: any) => {
       toast({ title: "Failed to create plan", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const createTabMutation = useMutation({
+    mutationFn: async ({ teamId, channelId, planId, planTitle }: { teamId: string; channelId: string; planId: string; planTitle: string }) => {
+      return await apiRequest(`/api/planner/teams/${teamId}/channels/${channelId}/tabs`, {
+        method: "POST",
+        body: JSON.stringify({ planId, planTitle }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Plan pinned to channel", description: "The Planner tab has been added to the selected channel." });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Could not pin plan to channel",
+        description: error.message || "The plan was connected but the tab was not created. You can manually add it in Teams.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -156,6 +191,14 @@ export function SupportPlannerConnectionDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenants", tenantId, "support-integrations"] });
       toast({ title: "Planner integration connected", description: "New support tickets will create tasks in the selected plan." });
+      if (pinToChannel && selectedChannel && selectedGroup && selectedPlan) {
+        createTabMutation.mutate({
+          teamId: selectedGroup.id,
+          channelId: selectedChannel.id,
+          planId: selectedPlan.id,
+          planTitle: selectedPlan.title,
+        });
+      }
       onOpenChange(false);
       resetState();
     },
@@ -169,6 +212,8 @@ export function SupportPlannerConnectionDialog({
     setMethod(null);
     setSelectedGroup(null);
     setSelectedPlan(null);
+    setSelectedChannel(null);
+    setPinToChannel(true);
     setNewPlanName("Support Tickets");
     setBucketName("Support Tickets");
     setGroupSearchQuery("");
@@ -463,7 +508,84 @@ export function SupportPlannerConnectionDialog({
                   </p>
                 </div>
 
-                <Button onClick={() => setStep("confirm")} className="w-full">
+                <Button onClick={() => setStep("select-channel")} className="w-full">
+                  Continue
+                </Button>
+              </div>
+            )}
+
+            {step === "select-channel" && selectedGroup && selectedPlan && (
+              <div className="space-y-4">
+                <Button variant="ghost" size="sm" onClick={() => setStep("configure-bucket")}>
+                  ← Back
+                </Button>
+
+                <div className="flex items-start space-x-3 p-4 border rounded-lg bg-muted/50">
+                  <Checkbox
+                    id="support-pin-to-channel"
+                    checked={pinToChannel}
+                    onCheckedChange={(checked) => setPinToChannel(checked === true)}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor="support-pin-to-channel" className="font-medium cursor-pointer flex items-center gap-2">
+                      <Pin className="h-4 w-4" />
+                      Pin plan as a tab in Teams
+                    </Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Add this plan as a tab in a Teams channel for easy access
+                    </p>
+                  </div>
+                </div>
+
+                {pinToChannel && (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Select a channel in <strong>{selectedGroup.displayName}</strong> to pin the plan to:
+                    </p>
+
+                    {loadingChannels && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    )}
+
+                    {!loadingChannels && channels && channels.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-4">
+                        No channels found. The plan will be connected without a tab.
+                      </p>
+                    )}
+
+                    {!loadingChannels && channels && channels.length > 0 && (
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {channels.map((channel) => (
+                          <Card
+                            key={channel.id}
+                            className={`cursor-pointer hover:bg-accent transition-colors ${
+                              selectedChannel?.id === channel.id ? "ring-2 ring-primary" : ""
+                            }`}
+                            onClick={() => setSelectedChannel(channel)}
+                          >
+                            <CardContent className="p-3 flex items-center gap-3">
+                              <Hash className="h-4 w-4 text-muted-foreground" />
+                              <div>
+                                <p className="font-medium">{channel.displayName}</p>
+                                {channel.membershipType === "private" && (
+                                  <span className="text-xs text-muted-foreground">Private</span>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <Button
+                  onClick={() => setStep("confirm")}
+                  disabled={pinToChannel && !selectedChannel && channels && channels.length > 0}
+                  className="w-full"
+                >
                   Continue
                 </Button>
               </div>
@@ -471,7 +593,7 @@ export function SupportPlannerConnectionDialog({
 
             {step === "confirm" && (
               <div className="space-y-4">
-                <Button variant="ghost" size="sm" onClick={() => setStep("configure-bucket")}>
+                <Button variant="ghost" size="sm" onClick={() => setStep("select-channel")}>
                   ← Back
                 </Button>
 
@@ -490,6 +612,15 @@ export function SupportPlannerConnectionDialog({
                       <span className="text-muted-foreground">Bucket</span>
                       <span className="font-medium">{bucketName || "Support Tickets"}</span>
                     </div>
+                    {pinToChannel && selectedChannel && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Pin to channel</span>
+                        <span className="font-medium flex items-center gap-1">
+                          <Hash className="h-3 w-3" />
+                          {selectedChannel.displayName}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -502,8 +633,8 @@ export function SupportPlannerConnectionDialog({
                   </ul>
                 </div>
 
-                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="w-full">
-                  {saveMutation.isPending ? (
+                <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || createTabMutation.isPending} className="w-full">
+                  {(saveMutation.isPending || createTabMutation.isPending) ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : (
                     <CheckCircle className="h-4 w-4 mr-2" />
