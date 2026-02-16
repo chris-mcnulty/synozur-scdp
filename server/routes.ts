@@ -3681,9 +3681,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         : await storage.getActiveGroundingDocuments();
       const srGroundingCtx = buildGroundingContext(srGroundingDocs, 'status_report');
 
+      const maxTokensByStyle: Record<string, number> = {
+        executive_brief: 4096,
+        detailed_update: 8192,
+        client_facing: 4096,
+      };
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         temperature: 0.6,
-        maxTokens: 3072,
+        maxTokens: maxTokensByStyle[reportStyle] || 4096,
         groundingContext: srGroundingCtx,
       });
 
