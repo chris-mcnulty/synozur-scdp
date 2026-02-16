@@ -550,6 +550,7 @@ export interface IStorage {
     clientId?: string;
     startDate?: string;
     endDate?: string;
+    tenantId?: string;
   }): Promise<{
     timeEntries: (TimeEntry & { person: User; project: Project & { client: Client }; calculatedAmount: number; rateIssues?: string[] })[];
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];
@@ -9473,6 +9474,7 @@ export class DatabaseStorage implements IStorage {
     clientId?: string;
     startDate?: string;
     endDate?: string;
+    tenantId?: string;
   }): Promise<{
     timeEntries: (TimeEntry & { person: User; project: Project & { client: Client }; calculatedAmount: number; rateIssues?: string[] })[];
     expenses: (Expense & { person: User; project: Project & { client: Client } })[];

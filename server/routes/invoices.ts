@@ -385,6 +385,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       const { personId, projectId, clientId, startDate, endDate } = req.query as Record<string, string>;
 
       const filters: any = {};
+      if (req.user?.tenantId) filters.tenantId = req.user.tenantId;
       if (personId) filters.personId = personId;
       if (projectId) filters.projectId = projectId;
       if (clientId) filters.clientId = clientId;
