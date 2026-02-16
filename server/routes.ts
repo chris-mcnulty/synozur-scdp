@@ -3621,14 +3621,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       };
 
       const styleInstructions: Record<string, string> = {
-        executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, issues, and next steps. Use bullet points for highlights. Keep it to roughly 300-400 words. This is for senior leadership who want a quick overview. Highlight any critical or high-priority risks and issues prominently.",
-        detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Risks & Issues (RAIDD), Expenses, Milestones, and Next Steps. Include specific details about what was accomplished and any active risks, issues, action items, decisions, and dependencies. This is for project managers and internal stakeholders. Target 500-800 words.",
-        client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. Mention key risks and decisions that affect the client, but keep the tone positive and confident. Include sections for Progress Summary, Key Accomplishments, Key Risks & Decisions, and Upcoming Activities. Target 400-500 words.",
+        executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, issues, and next steps. Use bullet points for highlights. Keep it to roughly 400-600 words. This is for senior leadership who want a quick overview. You MUST include a dedicated 'RAIDD Summary' section that lists all active Risks, Issues, open Action Items, active Dependencies, and recent Decisions from the RAIDD log data provided. Highlight any critical or high-priority items prominently. Do not omit or summarize away individual RAIDD entries — list each one.",
+        detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Expenses, Milestones, and Next Steps. You MUST include a dedicated 'RAIDD Log' section with subsections for each category: Risks, Issues, Action Items, Dependencies, and Decisions. List every active entry from the RAIDD log data provided — include its reference number, title, priority, status, owner, and due date where available. Include mitigation plans for risks and resolution notes for issues. Do not omit or summarize away any RAIDD entries. This is for project managers and internal stakeholders. Target 600-1000 words.",
+        client_facing: "Write a professional, polished status update suitable for sharing directly with the client. Focus on deliverables, progress, and value delivered. Avoid internal metrics like cost rates or margins. You MUST include a 'Risks, Issues & Key Decisions' section that covers all active Risks, Issues, and recent Decisions from the RAIDD log data provided. List each item with its title, priority, and status. Also include open Action Items and Dependencies that affect the client. Keep the tone positive and confident but do not omit RAIDD entries. Include sections for Progress Summary, Key Accomplishments, Risks Issues & Key Decisions, and Upcoming Activities. Target 500-700 words.",
       };
 
       const systemPrompt = `You are a professional consulting project manager writing a status report. ${styleInstructions[reportStyle]}
 
-Format the output as clean markdown with headers (##), bullet points, and bold text for emphasis. Do not include a title header — the system will add the project name and period.`;
+Format the output as clean markdown with headers (##), bullet points, and bold text for emphasis. Do not include a title header — the system will add the project name and period.
+
+CRITICAL: The RAIDD log (Risks, Action Items, Issues, Decisions, Dependencies) section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items even if the rest of the report is brief.`;
 
       const userMessage = `Generate a status report for the following project activity:
 
