@@ -343,8 +343,10 @@ export default function ProjectDetail() {
   // Export report state
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportDateRange, setExportDateRange] = useState<'all' | 'month' | 'custom'>('all');
+  const [exportFormat, setExportFormat] = useState<'text' | 'pptx'>('pptx');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
+  const [isExportingPptx, setIsExportingPptx] = useState(false);
   
   // Engagement completion confirmation state
   const [engagementToComplete, setEngagementToComplete] = useState<{
@@ -1506,14 +1508,16 @@ export default function ProjectDetail() {
     }
   });
 
-  const handleExportText = async (startDate?: string, endDate?: string) => {
+  const handleExportFile = async (format: 'text' | 'pptx', startDate?: string, endDate?: string) => {
     try {
+      if (format === 'pptx') setIsExportingPptx(true);
       const params = new URLSearchParams();
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
       
       const queryString = params.toString();
-      const url = `/api/projects/${id}/export-text${queryString ? `?${queryString}` : ''}`;
+      const endpoint = format === 'pptx' ? 'export-pptx' : 'export-text';
+      const url = `/api/projects/${id}/${endpoint}${queryString ? `?${queryString}` : ''}`;
       
       const sessionId = localStorage.getItem('sessionId');
       const response = await fetch(url, {
@@ -1529,15 +1533,18 @@ export default function ProjectDetail() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'project-report.txt';
+      const defaultName = format === 'pptx' ? 'status-report.pptx' : 'project-report.txt';
+      a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || defaultName;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       document.body.removeChild(a);
       
-      toast({ title: "Report exported successfully" });
+      toast({ title: format === 'pptx' ? "PowerPoint report downloaded" : "Report exported successfully" });
     } catch (error) {
       toast({ title: "Failed to export report", variant: "destructive" });
+    } finally {
+      setIsExportingPptx(false);
     }
   };
 
@@ -6168,10 +6175,27 @@ export default function ProjectDetail() {
             <DialogHeader>
               <DialogTitle>Export Project Report</DialogTitle>
               <DialogDescription>
-                Generate a text summary of project data for copy/paste into other systems
+                Export project data as a branded PowerPoint presentation or a plain text summary
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Export Format</Label>
+                <RadioGroup value={exportFormat} onValueChange={(value: any) => setExportFormat(value)}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="pptx" id="format-pptx" data-testid="radio-format-pptx" />
+                    <Label htmlFor="format-pptx" className="font-normal cursor-pointer">
+                      PowerPoint Status Report (.pptx)
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="text" id="format-text" data-testid="radio-format-text" />
+                    <Label htmlFor="format-text" className="font-normal cursor-pointer">
+                      Plain Text Summary (.txt)
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
               <div className="space-y-2">
                 <Label>Date Range</Label>
                 <RadioGroup value={exportDateRange} onValueChange={(value: any) => setExportDateRange(value)}>
@@ -6219,24 +6243,26 @@ export default function ProjectDetail() {
               <Button variant="outline" onClick={() => setShowExportDialog(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => {
-                let startDate: string | undefined;
-                let endDate: string | undefined;
+              <Button 
+                disabled={isExportingPptx}
+                onClick={() => {
+                  let startDate: string | undefined;
+                  let endDate: string | undefined;
 
-                if (exportDateRange === 'month') {
-                  const now = new Date();
-                  startDate = startOfMonth(now).toISOString().split('T')[0];
-                  endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                } else if (exportDateRange === 'custom') {
-                  startDate = exportStartDate || undefined;
-                  endDate = exportEndDate || undefined;
-                }
+                  if (exportDateRange === 'month') {
+                    const now = new Date();
+                    startDate = startOfMonth(now).toISOString().split('T')[0];
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+                  } else if (exportDateRange === 'custom') {
+                    startDate = exportStartDate || undefined;
+                    endDate = exportEndDate || undefined;
+                  }
 
-                handleExportText(startDate, endDate);
-                setShowExportDialog(false);
-              }} data-testid="button-confirm-export">
+                  handleExportFile(exportFormat, startDate, endDate);
+                  setShowExportDialog(false);
+                }} data-testid="button-confirm-export">
                 <Download className="w-4 h-4 mr-2" />
-                Export Report
+                {isExportingPptx ? 'Generating...' : exportFormat === 'pptx' ? 'Download PowerPoint' : 'Export Report'}
               </Button>
             </DialogFooter>
           </DialogContent>

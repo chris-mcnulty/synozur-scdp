@@ -929,6 +929,15 @@ export async function registerRoutes(app: Express): Promise<void> {
     expenseReminderDay: z.number().int().min(0).max(6).optional(),
     defaultTimezone: z.string().max(50).optional(),
     showChangelogOnLogin: z.boolean().optional(),
+    branding: z.object({
+      primaryColor: z.string().optional(),
+      secondaryColor: z.string().optional(),
+      accentColor: z.string().optional(),
+      fontFamily: z.string().optional(),
+      tagline: z.string().optional(),
+      reportHeaderText: z.string().optional(),
+      reportFooterText: z.string().optional(),
+    }).optional().nullable(),
     defaultBillingRate: z.string().optional().nullable(),
     defaultCostRate: z.string().optional().nullable(),
     mileageRate: z.string().optional().nullable(),
@@ -955,7 +964,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         });
       }
 
-      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
+      const { name, logoUrl, logoUrlDark, companyAddress, companyPhone, companyEmail, companyWebsite, paymentTerms, showConstellationFooter, emailHeaderUrl, expenseRemindersEnabled, expenseReminderTime, expenseReminderDay, defaultTimezone, showChangelogOnLogin, branding, defaultBillingRate, defaultCostRate, mileageRate, defaultTaxRate, invoiceDefaultDiscountType, invoiceDefaultDiscountValue } = validationResult.data;
 
       const updateData: any = {
         name,
@@ -968,6 +977,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         paymentTerms,
         showConstellationFooter,
         emailHeaderUrl,
+        branding,
         expenseRemindersEnabled,
         expenseReminderTime,
         expenseReminderDay,
@@ -7020,6 +7030,214 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     } catch (error) {
       console.error("Project text export error:", error);
       res.status(500).json({ message: "Failed to export project summary" });
+    }
+  });
+
+  // PowerPoint status report export
+  app.get("/api/projects/:id/export-pptx", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.id);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      const canViewProject = 
+        req.user!.role === 'admin' ||
+        req.user!.role === 'billing-admin' ||
+        req.user!.role === 'executive' ||
+        (req.user!.role === 'pm' && project.pm === req.user!.id) ||
+        req.user!.role === 'global_admin' ||
+        req.user!.role === 'constellation_admin';
+
+      if (!canViewProject) {
+        return res.status(403).json({ message: "You can only export projects you manage" });
+      }
+
+      const { startDate, endDate } = req.query;
+
+      const tenantId = req.user!.tenantId || (project as any).tenantId;
+      const [milestones, raiddEntries, allocations, tenant] = await Promise.all([
+        storage.getProjectMilestones(req.params.id),
+        storage.getRaiddEntries(req.params.id, {}),
+        storage.getProjectAllocations(req.params.id),
+        tenantId ? storage.getTenant(tenantId) : Promise.resolve(null),
+      ]);
+
+      const timeFilters: any = { projectId: req.params.id };
+      if (startDate) timeFilters.startDate = startDate as string;
+      if (endDate) timeFilters.endDate = endDate as string;
+      const timeEntries = await storage.getTimeEntries(timeFilters);
+
+      const pmUser = project.pm ? await storage.getUser(project.pm) : null;
+
+      const branding = (tenant as any)?.branding || {};
+      const primaryColor = branding.primaryColor || '#810FFB';
+      const secondaryColor = branding.secondaryColor || '#E60CB3';
+
+      const now = new Date();
+      const reportDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+      const accomplished: string[] = [];
+      const upcoming: string[] = [];
+
+      const completedMilestones = milestones.filter((m: any) => m.status === 'completed');
+      const inProgressMilestones = milestones.filter((m: any) => m.status === 'in-progress');
+
+      completedMilestones.forEach((m: any) => {
+        accomplished.push(`${m.name} milestone completed`);
+      });
+
+      if (timeEntries.length > 0) {
+        const totalHours = timeEntries.reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
+        accomplished.push(`${totalHours.toFixed(1)} hours logged across ${timeEntries.length} entries`);
+      }
+
+      inProgressMilestones.forEach((m: any) => {
+        upcoming.push(`Continue work on ${m.name}`);
+      });
+
+      const notStarted = milestones.filter((m: any) => m.status === 'not-started');
+      if (notStarted.length > 0) {
+        upcoming.push(`${notStarted.length} milestone(s) pending start`);
+      }
+
+      const openActions = raiddEntries.filter((r: any) => r.type === 'action_item' && ['open', 'in_progress'].includes(r.status));
+      if (openActions.length > 0) {
+        upcoming.push(`${openActions.length} open action item(s) to address`);
+      }
+
+      const milestonePosture: Record<string, string[]> = {
+        'Completed': completedMilestones.map((m: any) => m.name),
+        'In Progress': inProgressMilestones.map((m: any) => m.name),
+        'Not Yet Started': notStarted.map((m: any) => m.name),
+      };
+
+      const executiveSummaryLines: string[] = [];
+      if (project.description) {
+        executiveSummaryLines.push(project.description);
+        executiveSummaryLines.push('');
+      }
+      accomplished.forEach(item => executiveSummaryLines.push(`- ${item}`));
+
+      const openStatuses = ['open', 'in_progress'];
+      const raiddData = {
+        risks: raiddEntries.filter((r: any) => r.type === 'risk').map((r: any) => ({
+          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+          status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
+          dueDate: r.dueDate || '',
+        })),
+        issues: raiddEntries.filter((r: any) => r.type === 'issue').map((r: any) => ({
+          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+          status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
+          dueDate: r.dueDate || '',
+        })),
+        actionItems: raiddEntries.filter((r: any) => r.type === 'action_item').map((r: any) => ({
+          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+          status: r.status, ownerName: r.ownerName || r.assigneeName || '',
+          mitigationPlan: r.description || '', dueDate: r.dueDate || '',
+        })),
+        decisions: raiddEntries.filter((r: any) => r.type === 'decision').map((r: any) => ({
+          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+          status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.description || '',
+          dueDate: r.dueDate || '',
+        })),
+        dependencies: raiddEntries.filter((r: any) => r.type === 'dependency').map((r: any) => ({
+          refNumber: r.refNumber || '', title: r.title, priority: r.priority,
+          status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
+          dueDate: r.dueDate || '',
+        })),
+        tableEntries: raiddEntries
+          .filter((r: any) => ['risk', 'issue'].includes(r.type) && openStatuses.includes(r.status))
+          .map((r: any) => ({
+            refNumber: r.refNumber || '', title: r.title, status: r.status,
+            ownerName: r.ownerName || '', dueDate: r.dueDate || '',
+            mitigationPlan: r.mitigationPlan || '',
+          })),
+      };
+
+      let logoPath: string | null = null;
+      const logoUrl = (tenant as any)?.logoUrl;
+      if (logoUrl) {
+        const path = require('path');
+        const possiblePaths = [
+          path.join(process.cwd(), 'client', 'public', logoUrl.replace(/^\//, '')),
+          path.join(process.cwd(), logoUrl.replace(/^\//, '')),
+          path.join(process.cwd(), 'client', 'src', 'assets', logoUrl.replace(/^.*\/assets\//, '')),
+        ];
+        for (const p of possiblePaths) {
+          if (require('fs').existsSync(p)) {
+            logoPath = p;
+            break;
+          }
+        }
+      }
+
+      const pptxData = {
+        projectName: project.name,
+        clientName: (project as any).client?.name || '',
+        reportDate,
+        pmName: pmUser?.name || '',
+        projectStatus: project.status || 'active',
+        projectDescription: project.description || '',
+        primaryColor,
+        secondaryColor,
+        logoPath,
+        accomplished,
+        upcoming,
+        executiveSummary: executiveSummaryLines.join('\n'),
+        milestonePosture,
+        milestones: milestones.map((m: any) => ({
+          name: m.name,
+          targetDate: m.targetDate || '',
+          status: m.status || '',
+          startDate: m.startDate || '',
+          endDate: m.endDate || '',
+        })),
+        raidd: raiddData,
+      };
+
+      const { execSync } = require('child_process');
+      const path = require('path');
+      const fs = require('fs');
+      const os = require('os');
+
+      const tmpFile = path.join(os.tmpdir(), `status-report-${Date.now()}.pptx`);
+      const scriptPath = path.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
+
+      try {
+        execSync(`python3 "${scriptPath}" "${tmpFile}"`, {
+          input: JSON.stringify(pptxData),
+          timeout: 30000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+
+        if (!fs.existsSync(tmpFile)) {
+          throw new Error('PPTX file was not generated');
+        }
+
+        const filename = `${project.name.replace(/[^a-z0-9]/gi, '_')}-Status_Report-${now.toISOString().split('T')[0]}.pptx`;
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+        const fileStream = fs.createReadStream(tmpFile);
+        fileStream.pipe(res);
+        fileStream.on('end', () => {
+          fs.unlink(tmpFile, () => {});
+        });
+        fileStream.on('error', () => {
+          fs.unlink(tmpFile, () => {});
+          if (!res.headersSent) {
+            res.status(500).json({ message: "Failed to stream PPTX" });
+          }
+        });
+      } catch (scriptError: any) {
+        console.error("PPTX generation script error:", scriptError.message);
+        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+        res.status(500).json({ message: "Failed to generate PowerPoint report" });
+      }
+    } catch (error) {
+      console.error("PPTX export error:", error);
+      res.status(500).json({ message: "Failed to export PowerPoint report" });
     }
   });
 
