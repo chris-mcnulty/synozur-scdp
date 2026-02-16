@@ -1122,6 +1122,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       }
 
       res.json(report);
+
     } catch (error) {
       console.error("[EXPENSE_REPORTS] Failed to fetch expense report:", error);
       res.status(500).json({ message: "Failed to fetch expense report" });
@@ -1154,9 +1155,11 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         console.log(`[EXPENSE_REPORTS] Admin ${req.user!.id} creating report on behalf of user ${submitterId}`);
       }
       
+      const activeTenantId = (req as any).user?.tenantId;
       const validatedData = insertExpenseReportSchema.parse({
         ...reportData,
         submitterId,
+        tenantId: activeTenantId || undefined,
       });
 
       const report = await storage.createExpenseReport(validatedData, expenseIds || []);

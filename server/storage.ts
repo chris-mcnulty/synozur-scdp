@@ -4115,7 +4115,12 @@ export class DatabaseStorage implements IStorage {
     const conditions = [];
     
     if (filters.tenantId) {
-      conditions.push(eq(expenseReports.tenantId, filters.tenantId));
+      conditions.push(
+        or(
+          eq(expenseReports.tenantId, filters.tenantId),
+          isNull(expenseReports.tenantId)
+        )!
+      );
     }
     if (filters.submitterId) {
       conditions.push(eq(expenseReports.submitterId, filters.submitterId));
