@@ -1757,7 +1757,8 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (status) filters.status = status;
       if (startDate) filters.startDate = startDate;
       if (endDate) filters.endDate = endDate;
-      if (user.primaryTenantId) filters.tenantId = user.primaryTenantId;
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId) filters.tenantId = userTenantId;
       if (!isPrivileged || mine === 'true') {
         filters.requestedForUserId = user.id;
       }
@@ -1781,6 +1782,10 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (!isPrivileged && batch.requestedForUserId !== user.id) {
         return res.status(403).json({ message: "Access denied" });
       }
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && batch.tenantId && batch.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       res.json(batch);
     } catch (error) {
       console.error("[REIMBURSEMENT_BATCHES] Failed to fetch batch:", error);
@@ -1798,9 +1803,18 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
         return res.status(400).json({ message: "At least one expense is required" });
       }
 
+      const activeTenantId = (req as any).user?.tenantId;
+
       const selectedExpenses = await db.select().from(expenses).where(inArray(expenses.id, expenseIds));
       if (selectedExpenses.length === 0) {
         return res.status(400).json({ message: "No valid expenses found for the given IDs" });
+      }
+
+      if (activeTenantId) {
+        const crossTenantExpenses = selectedExpenses.filter(e => e.tenantId && e.tenantId !== activeTenantId);
+        if (crossTenantExpenses.length > 0) {
+          return res.status(403).json({ message: "Cannot include expenses from another organization" });
+        }
       }
 
       const expenseIncurrerIds = [...new Set(selectedExpenses.map(e => e.projectResourceId || e.personId))];
@@ -1818,10 +1832,9 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (targetUserId !== user.id && !isPrivileged) {
         return res.status(403).json({ message: "Only admin or billing-admin can create reimbursement requests for other users" });
       }
-
       const batch = await storage.createReimbursementBatch({
         ...batchData,
-        tenantId: user.primaryTenantId,
+        tenantId: activeTenantId || user.primaryTenantId,
         requestedBy: user.id,
         requestedForUserId: targetUserId,
         currency: batchData.currency || 'USD',
@@ -1838,6 +1851,14 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
   app.patch("/api/reimbursement-batches/:id", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
+      const batch = await storage.getReimbursementBatch(req.params.id);
+      if (!batch) {
+        return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && batch.tenantId && batch.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const updated = await storage.updateReimbursementBatch(req.params.id, req.body);
       res.json(updated);
     } catch (error: any) {
@@ -1857,6 +1878,10 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (!isPrivileged && batch.requestedForUserId !== user.id) {
         return res.status(403).json({ message: "Access denied" });
       }
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && batch.tenantId && batch.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       await storage.deleteReimbursementBatch(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -1867,9 +1892,20 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
   app.post("/api/reimbursement-batches/:id/review-line-item", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
+      const batch = await storage.getReimbursementBatch(req.params.id);
+      if (!batch) {
+        return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && batch.tenantId && batch.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const { lineItemId, status, reviewNote } = req.body;
       if (!lineItemId || !['approved', 'declined'].includes(status)) {
         return res.status(400).json({ message: "lineItemId and valid status (approved/declined) are required" });
+      }
+      if (batch.lineItems && !batch.lineItems.some((li: any) => li.id === lineItemId)) {
+        return res.status(400).json({ message: "Line item does not belong to this batch" });
       }
       const updated = await storage.reviewReimbursementLineItem(lineItemId, status, req.user!.id, reviewNote);
       res.json(updated);
@@ -1881,6 +1917,14 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
 
   app.post("/api/reimbursement-batches/:id/process", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
     try {
+      const existingBatch = await storage.getReimbursementBatch(req.params.id);
+      if (!existingBatch) {
+        return res.status(404).json({ message: "Reimbursement batch not found" });
+      }
+      const userTenantId = (req as any).user?.tenantId;
+      if (userTenantId && existingBatch.tenantId && existingBatch.tenantId !== userTenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
       const { paymentReferenceNumber } = req.body;
       if (!paymentReferenceNumber || typeof paymentReferenceNumber !== 'string' || !paymentReferenceNumber.trim()) {
         return res.status(400).json({ message: "Payment reference number is required" });
