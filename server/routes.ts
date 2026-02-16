@@ -10761,11 +10761,15 @@ Return a JSON response:
 
       if (isConstellationAdmin(user.role)) {
         const { status, priority, category, tenantId } = req.query as Record<string, string | undefined>;
+        const isPlatformRole = user.role === 'global_admin' || user.role === 'constellation_admin';
+        const effectiveTenantId = isPlatformRole
+          ? (tenantId || user.tenantId || undefined)
+          : user.tenantId;
         const tickets = await storage.getAllSupportTickets({
           status: status || undefined,
           priority: priority || undefined,
           category: category || undefined,
-          tenantId: tenantId || undefined,
+          tenantId: effectiveTenantId,
         });
         return res.json(tickets);
       }
