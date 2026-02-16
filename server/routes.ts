@@ -6526,7 +6526,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const { startDate, endDate } = req.query;
       
       // Get project structure and data
-      const [epics, milestones, workstreams, allocations, vocabulary] = await Promise.all([
+      const [epics, milestones, workstreams, allocations, vocabulary, raiddEntries] = await Promise.all([
         storage.getProjectEpics(req.params.id),
         storage.getProjectMilestones(req.params.id),
         storage.getProjectWorkStreams(req.params.id),
@@ -6535,7 +6535,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           projectId: req.params.id,
           clientId: project.clientId,
           estimateId: undefined
-        })
+        }),
+        storage.getRaiddEntries(req.params.id, {}),
       ]);
 
       // Get all stages for all epics in a single batch query
@@ -6752,6 +6753,125 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             textOutput += `\n`;
           });
         
+        textOutput += `${"=".repeat(80)}\n\n`;
+      }
+
+      // RAIDD Log
+      if (raiddEntries && raiddEntries.length > 0) {
+        textOutput += `RAIDD LOG (Risks, Action Items, Issues, Decisions, Dependencies)\n\n`;
+
+        const openStatuses = ["open", "in_progress"];
+        const raiddByType = {
+          risks: raiddEntries.filter((r: any) => r.type === "risk"),
+          issues: raiddEntries.filter((r: any) => r.type === "issue"),
+          actionItems: raiddEntries.filter((r: any) => r.type === "action_item"),
+          decisions: raiddEntries.filter((r: any) => r.type === "decision"),
+          dependencies: raiddEntries.filter((r: any) => r.type === "dependency"),
+        };
+
+        const formatRaiddEntry = (entry: any) => {
+          let line = `  ${entry.refNumber || "-"} ${entry.title}`;
+          if (entry.priority) line += ` [${entry.priority.toUpperCase()}]`;
+          line += ` (${entry.status})`;
+          if (entry.ownerName) line += ` — Owner: ${entry.ownerName}`;
+          if (entry.assigneeName && entry.assigneeName !== entry.ownerName) line += ` | Assignee: ${entry.assigneeName}`;
+          if (entry.dueDate) line += ` | Due: ${entry.dueDate}`;
+          if (entry.impact) line += ` | Impact: ${entry.impact}`;
+          if (entry.likelihood) line += ` | Likelihood: ${entry.likelihood}`;
+          line += `\n`;
+          if (entry.description) line += `    Description: ${entry.description}\n`;
+          if (entry.mitigationPlan) line += `    Mitigation: ${entry.mitigationPlan}\n`;
+          if (entry.resolutionNotes) line += `    Resolution: ${entry.resolutionNotes}\n`;
+          return line;
+        };
+
+        // Risks
+        const activeRisks = raiddByType.risks.filter((r: any) => openStatuses.includes(r.status));
+        const closedRisks = raiddByType.risks.filter((r: any) => !openStatuses.includes(r.status));
+        textOutput += `RISKS (${activeRisks.length} active, ${closedRisks.length} closed)\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        if (activeRisks.length > 0) {
+          activeRisks.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        } else {
+          textOutput += `  No active risks.\n`;
+        }
+        if (closedRisks.length > 0) {
+          textOutput += `\n  Closed/Mitigated:\n`;
+          closedRisks.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        }
+        textOutput += `\n`;
+
+        // Issues
+        const activeIssues = raiddByType.issues.filter((r: any) => openStatuses.includes(r.status));
+        const closedIssues = raiddByType.issues.filter((r: any) => !openStatuses.includes(r.status));
+        textOutput += `ISSUES (${activeIssues.length} active, ${closedIssues.length} closed)\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        if (activeIssues.length > 0) {
+          activeIssues.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        } else {
+          textOutput += `  No active issues.\n`;
+        }
+        if (closedIssues.length > 0) {
+          textOutput += `\n  Resolved/Closed:\n`;
+          closedIssues.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        }
+        textOutput += `\n`;
+
+        // Action Items
+        const openActions = raiddByType.actionItems.filter((r: any) => openStatuses.includes(r.status));
+        const closedActions = raiddByType.actionItems.filter((r: any) => !openStatuses.includes(r.status));
+        const overdueActions = openActions.filter((r: any) => r.dueDate && new Date(r.dueDate) < new Date());
+        textOutput += `ACTION ITEMS (${openActions.length} open, ${closedActions.length} closed`;
+        if (overdueActions.length > 0) textOutput += `, ${overdueActions.length} OVERDUE`;
+        textOutput += `)\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        if (openActions.length > 0) {
+          openActions.forEach((r: any) => {
+            const isOverdue = r.dueDate && new Date(r.dueDate) < new Date();
+            textOutput += isOverdue ? `  ⚠️ OVERDUE: ` : `  `;
+            textOutput += `${r.refNumber || "-"} ${r.title}`;
+            if (r.priority) textOutput += ` [${r.priority.toUpperCase()}]`;
+            textOutput += ` (${r.status})`;
+            if (r.assigneeName || r.ownerName) textOutput += ` — Assigned: ${r.assigneeName || r.ownerName}`;
+            if (r.dueDate) textOutput += ` | Due: ${r.dueDate}`;
+            textOutput += `\n`;
+            if (r.description) textOutput += `    Description: ${r.description}\n`;
+          });
+        } else {
+          textOutput += `  No open action items.\n`;
+        }
+        if (closedActions.length > 0) {
+          textOutput += `\n  Completed:\n`;
+          closedActions.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        }
+        textOutput += `\n`;
+
+        // Decisions
+        textOutput += `DECISIONS (${raiddByType.decisions.length} total)\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        if (raiddByType.decisions.length > 0) {
+          raiddByType.decisions.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        } else {
+          textOutput += `  No decisions recorded.\n`;
+        }
+        textOutput += `\n`;
+
+        // Dependencies
+        const activeDeps = raiddByType.dependencies.filter((r: any) => openStatuses.includes(r.status));
+        const closedDeps = raiddByType.dependencies.filter((r: any) => !openStatuses.includes(r.status));
+        textOutput += `DEPENDENCIES (${activeDeps.length} active, ${closedDeps.length} closed)\n`;
+        textOutput += `${"-".repeat(80)}\n`;
+        if (activeDeps.length > 0) {
+          activeDeps.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        } else {
+          textOutput += `  No active dependencies.\n`;
+        }
+        if (closedDeps.length > 0) {
+          textOutput += `\n  Resolved/Closed:\n`;
+          closedDeps.forEach((r: any) => { textOutput += formatRaiddEntry(r); });
+        }
+        textOutput += `\n`;
+
         textOutput += `${"=".repeat(80)}\n\n`;
       }
 
