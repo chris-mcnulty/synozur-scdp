@@ -1,5 +1,7 @@
 import * as fsNode from "fs";
 import * as pathNode from "path";
+import * as osNode from "os";
+import { execSync } from "child_process";
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage, db, generateSubSOWPdf } from "./storage";
 import { insertUserSchema, insertClientSchema, insertProjectSchema, insertRoleSchema, insertEstimateSchema, insertTimeEntrySchema, insertExpenseSchema, insertChangeOrderSchema, insertSowSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, insertSystemSettingSchema, insertInvoiceAdjustmentSchema, insertProjectMilestoneSchema, insertProjectAllocationSchema, updateInvoicePaymentSchema, vocabularyTermsSchema, updateOrganizationVocabularySchema, insertExpenseReportSchema, insertReimbursementBatchSchema, sows, timeEntries, expenses, users, projects, clients, projectMilestones, invoiceBatches, invoiceLines, projectAllocations, projectWorkstreams, projectEpics, projectStages, roles, estimateLineItems, estimateEpics, estimateStages, estimateActivities, expenseReports, reimbursementBatches, pendingReceipts, estimates, tenants, airportCodes, expenseAttachments, insertRaiddEntrySchema, raiddEntries, insertGroundingDocumentSchema, groundingDocCategoryEnum, GROUNDING_DOC_CATEGORY_LABELS, insertSupportTicketSchema, TICKET_CATEGORIES, TICKET_PRIORITIES, TICKET_STATUSES, supportTickets, supportTicketReplies, tenantUsers } from "@shared/schema";
@@ -905,6 +907,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         defaultTaxRate: (tenant as any).defaultTaxRate,
         invoiceDefaultDiscountType: (tenant as any).invoiceDefaultDiscountType,
         invoiceDefaultDiscountValue: (tenant as any).invoiceDefaultDiscountValue,
+        branding: (tenant as any).branding || {},
       });
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to fetch tenant settings:", error);
@@ -7158,14 +7161,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       let logoPath: string | null = null;
       const logoUrl = (tenant as any)?.logoUrl;
       if (logoUrl) {
-        const path = require('path');
         const possiblePaths = [
-          path.join(process.cwd(), 'client', 'public', logoUrl.replace(/^\//, '')),
-          path.join(process.cwd(), logoUrl.replace(/^\//, '')),
-          path.join(process.cwd(), 'client', 'src', 'assets', logoUrl.replace(/^.*\/assets\//, '')),
+          pathNode.join(process.cwd(), 'client', 'public', logoUrl.replace(/^\//, '')),
+          pathNode.join(process.cwd(), logoUrl.replace(/^\//, '')),
+          pathNode.join(process.cwd(), 'client', 'src', 'assets', logoUrl.replace(/^.*\/assets\//, '')),
         ];
         for (const p of possiblePaths) {
-          if (require('fs').existsSync(p)) {
+          if (fsNode.existsSync(p)) {
             logoPath = p;
             break;
           }
@@ -7196,13 +7198,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         raidd: raiddData,
       };
 
-      const { execSync } = require('child_process');
-      const path = require('path');
-      const fs = require('fs');
-      const os = require('os');
-
-      const tmpFile = path.join(os.tmpdir(), `status-report-${Date.now()}.pptx`);
-      const scriptPath = path.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
+      const tmpFile = pathNode.join(osNode.tmpdir(), `status-report-${Date.now()}.pptx`);
+      const scriptPath = pathNode.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
 
       try {
         execSync(`python3 "${scriptPath}" "${tmpFile}"`, {
@@ -7211,7 +7208,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           maxBuffer: 10 * 1024 * 1024,
         });
 
-        if (!fs.existsSync(tmpFile)) {
+        if (!fsNode.existsSync(tmpFile)) {
           throw new Error('PPTX file was not generated');
         }
 
@@ -7219,20 +7216,20 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-        const fileStream = fs.createReadStream(tmpFile);
+        const fileStream = fsNode.createReadStream(tmpFile);
         fileStream.pipe(res);
         fileStream.on('end', () => {
-          fs.unlink(tmpFile, () => {});
+          fsNode.unlink(tmpFile, () => {});
         });
         fileStream.on('error', () => {
-          fs.unlink(tmpFile, () => {});
+          fsNode.unlink(tmpFile, () => {});
           if (!res.headersSent) {
             res.status(500).json({ message: "Failed to stream PPTX" });
           }
         });
       } catch (scriptError: any) {
         console.error("PPTX generation script error:", scriptError.message);
-        if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+        if (fsNode.existsSync(tmpFile)) fsNode.unlinkSync(tmpFile);
         res.status(500).json({ message: "Failed to generate PowerPoint report" });
       }
     } catch (error) {

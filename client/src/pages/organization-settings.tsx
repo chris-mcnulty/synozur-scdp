@@ -69,6 +69,8 @@ const brandingSchema = z.object({
   showConstellationFooter: z.boolean().default(true),
   showChangelogOnLogin: z.boolean().default(true),
   emailHeaderUrl: z.string().optional().default(""),
+  primaryColor: z.string().optional().default("#810FFB"),
+  secondaryColor: z.string().optional().default("#E60CB3"),
 });
 
 type BrandingFormData = z.infer<typeof brandingSchema>;
@@ -202,6 +204,8 @@ export default function OrganizationSettings() {
       showConstellationFooter: true,
       showChangelogOnLogin: true,
       emailHeaderUrl: "",
+      primaryColor: "#810FFB",
+      secondaryColor: "#E60CB3",
     },
     values: {
       companyName: tenantSettings?.name || "",
@@ -214,6 +218,8 @@ export default function OrganizationSettings() {
       showConstellationFooter: tenantSettings?.showConstellationFooter ?? true,
       showChangelogOnLogin: tenantSettings?.showChangelogOnLogin ?? true,
       emailHeaderUrl: tenantSettings?.emailHeaderUrl || "",
+      primaryColor: (tenantSettings as any)?.branding?.primaryColor || "#810FFB",
+      secondaryColor: (tenantSettings as any)?.branding?.secondaryColor || "#E60CB3",
     },
   });
 
@@ -232,6 +238,10 @@ export default function OrganizationSettings() {
           showConstellationFooter: data.showConstellationFooter,
           showChangelogOnLogin: data.showChangelogOnLogin,
           emailHeaderUrl: data.emailHeaderUrl || null,
+          branding: {
+            primaryColor: data.primaryColor || "#810FFB",
+            secondaryColor: data.secondaryColor || "#E60CB3",
+          },
         }),
       });
     },
@@ -512,6 +522,94 @@ export default function OrganizationSettings() {
                           </FormItem>
                         )}
                       />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Report Branding Colors</CardTitle>
+                      <CardDescription>
+                        Colors used in exported PowerPoint status reports and branded documents
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={brandingForm.control}
+                          name="primaryColor"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Primary Color</FormLabel>
+                              <div className="flex items-center gap-3">
+                                <FormControl>
+                                  <Input
+                                    type="color"
+                                    {...field}
+                                    className="w-12 h-10 p-1 cursor-pointer"
+                                  />
+                                </FormControl>
+                                <Input
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder="#810FFB"
+                                  className="flex-1 font-mono text-sm"
+                                />
+                                <div
+                                  className="w-10 h-10 rounded border"
+                                  style={{ backgroundColor: field.value || '#810FFB' }}
+                                />
+                              </div>
+                              <FormDescription>
+                                Used for slide headers, title bars, and primary accents in reports
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={brandingForm.control}
+                          name="secondaryColor"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Secondary Color</FormLabel>
+                              <div className="flex items-center gap-3">
+                                <FormControl>
+                                  <Input
+                                    type="color"
+                                    {...field}
+                                    className="w-12 h-10 p-1 cursor-pointer"
+                                  />
+                                </FormControl>
+                                <Input
+                                  value={field.value}
+                                  onChange={field.onChange}
+                                  placeholder="#E60CB3"
+                                  className="flex-1 font-mono text-sm"
+                                />
+                                <div
+                                  className="w-10 h-10 rounded border"
+                                  style={{ backgroundColor: field.value || '#E60CB3' }}
+                                />
+                              </div>
+                              <FormDescription>
+                                Used for gradient accents, highlights, and secondary elements
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="flex gap-3 p-3 border rounded-lg bg-muted/30">
+                        <div className="flex-1">
+                          <p className="text-xs text-muted-foreground mb-2">Preview gradient:</p>
+                          <div
+                            className="h-8 rounded"
+                            style={{
+                              background: `linear-gradient(135deg, ${brandingForm.watch('primaryColor') || '#810FFB'}, ${brandingForm.watch('secondaryColor') || '#E60CB3'})`,
+                            }}
+                          />
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
 
