@@ -7072,10 +7072,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         storage.getExpenses({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
         storage.getProjectEpics(req.params.id),
       ]);
-      const stagesArrays = await Promise.all(epics.map(epic => storage.getProjectStages(epic.id)));
-      const allStages = stagesArrays.flatMap((stages, index) =>
-        stages.map(stage => ({ ...stage, epicId: epics[index].id }))
-      );
+      const epicIds = epics.map(e => e.id);
+      const stagesMap = epicIds.length > 0 ? await storage.getProjectStagesByEpicIds(epicIds) : new Map();
+      const allStages: Array<any> = [];
+      for (const epic of epics) {
+        const stages = stagesMap.get(epic.id) || [];
+        for (const stage of stages) {
+          allStages.push({ ...stage, epicId: epic.id });
+        }
+      }
 
       const pmUser = project.pm ? await storage.getUser(project.pm) : null;
       const branding = (tenant as any)?.branding || {};
