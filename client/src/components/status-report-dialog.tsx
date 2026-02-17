@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { 
   FileText, Copy, Download, Mail, Sparkles, Calendar, 
-  Edit, Eye, Loader2, Check, Send, X
+  Edit, Eye, Loader2, Check, Send, X, Presentation
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 
@@ -74,6 +74,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [emailRecipient, setEmailRecipient] = useState("");
   const [emailName, setEmailName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
+  const [isDownloadingPptx, setIsDownloadingPptx] = useState(false);
 
   const getDateRange = useCallback(() => {
     switch (periodPreset) {
@@ -177,6 +178,42 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     setShowEmailForm(false);
   };
 
+  const handleDownloadPptx = useCallback(async () => {
+    try {
+      setIsDownloadingPptx(true);
+      const { start, end } = getDateRange();
+      const sessionId = localStorage.getItem('sessionId');
+      const response = await fetch(`/api/projects/${projectId}/export-pptx`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-Id': sessionId || ''
+        },
+        body: JSON.stringify({
+          startDate: start,
+          endDate: end,
+          style,
+        }),
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'status-report.pptx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(a);
+      toast({ title: "PowerPoint report downloaded" });
+    } catch {
+      toast({ title: "Failed to generate PowerPoint report", variant: "destructive" });
+    } finally {
+      setIsDownloadingPptx(false);
+    }
+  }, [projectId, style, getDateRange, toast]);
+
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${format(new Date(displayStart), "MMM d")} - ${format(new Date(displayEnd), "MMM d, yyyy")}`;
 
@@ -248,23 +285,43 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                 </div>
               </div>
 
-              <Button 
-                className="w-full" 
-                onClick={() => generateMutation.mutate()} 
-                disabled={generateMutation.isPending}
-              >
-                {generateMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Generating report...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Generate Status Report
-                  </>
-                )}
-              </Button>
+              <div className="grid grid-cols-2 gap-3">
+                <Button 
+                  className="w-full" 
+                  onClick={() => generateMutation.mutate()} 
+                  disabled={generateMutation.isPending || isDownloadingPptx}
+                >
+                  {generateMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Generate Text Report
+                    </>
+                  )}
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="w-full" 
+                  onClick={handleDownloadPptx} 
+                  disabled={isDownloadingPptx || generateMutation.isPending}
+                >
+                  {isDownloadingPptx ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Presentation className="h-4 w-4 mr-2" />
+                      Download PowerPoint
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -293,6 +350,9 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                   </Button>
                   <Button variant="ghost" size="sm" onClick={handleDownload} title="Download as markdown">
                     <Download className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={handleDownloadPptx} disabled={isDownloadingPptx} title="Download as PowerPoint">
+                    {isDownloadingPptx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Presentation className="h-4 w-4" />}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setShowEmailForm(!showEmailForm)} title="Email report">
                     <Mail className="h-4 w-4" />
