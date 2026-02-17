@@ -344,6 +344,7 @@ export default function ProjectDetail() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportDateRange, setExportDateRange] = useState<'all' | 'month' | 'custom'>('all');
   const [exportFormat, setExportFormat] = useState<'text' | 'pptx'>('pptx');
+  const [exportStyle, setExportStyle] = useState<'executive_brief' | 'detailed_update' | 'client_facing'>('client_facing');
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
   const [isExportingPptx, setIsExportingPptx] = useState(false);
@@ -1508,24 +1509,39 @@ export default function ProjectDetail() {
     }
   });
 
-  const handleExportFile = async (format: 'text' | 'pptx', startDate?: string, endDate?: string) => {
+  const handleExportFile = async (format: 'text' | 'pptx', reportStyle: string, startDate?: string, endDate?: string) => {
     try {
       if (format === 'pptx') setIsExportingPptx(true);
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-      
-      const queryString = params.toString();
-      const endpoint = format === 'pptx' ? 'export-pptx' : 'export-text';
-      const url = `/api/projects/${id}/${endpoint}${queryString ? `?${queryString}` : ''}`;
       
       const sessionId = localStorage.getItem('sessionId');
-      const response = await fetch(url, {
-        credentials: 'include',
-        headers: {
-          'X-Session-Id': sessionId || ''
-        }
-      });
+      let response: Response;
+      
+      if (format === 'pptx') {
+        response = await fetch(`/api/projects/${id}/export-pptx`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Id': sessionId || ''
+          },
+          body: JSON.stringify({
+            startDate: startDate || undefined,
+            endDate: endDate || undefined,
+            style: reportStyle,
+          }),
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        const queryString = params.toString();
+        response = await fetch(`/api/projects/${id}/export-text${queryString ? `?${queryString}` : ''}`, {
+          credentials: 'include',
+          headers: {
+            'X-Session-Id': sessionId || ''
+          }
+        });
+      }
       
       if (!response.ok) throw new Error('Export failed');
       
@@ -6196,6 +6212,31 @@ export default function ProjectDetail() {
                   </div>
                 </RadioGroup>
               </div>
+              {exportFormat === 'pptx' && (
+                <div className="space-y-2">
+                  <Label>Report Style</Label>
+                  <RadioGroup value={exportStyle} onValueChange={(value: any) => setExportStyle(value)}>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="client_facing" id="style-client" data-testid="radio-style-client" />
+                      <Label htmlFor="style-client" className="font-normal cursor-pointer">
+                        Client-Facing — Professional update for stakeholders
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="detailed_update" id="style-detailed" data-testid="radio-style-detailed" />
+                      <Label htmlFor="style-detailed" className="font-normal cursor-pointer">
+                        Detailed Update — Comprehensive report with full breakdown
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="executive_brief" id="style-executive" data-testid="radio-style-executive" />
+                      <Label htmlFor="style-executive" className="font-normal cursor-pointer">
+                        Executive Brief — Concise summary for leadership
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Date Range</Label>
                 <RadioGroup value={exportDateRange} onValueChange={(value: any) => setExportDateRange(value)}>
@@ -6238,6 +6279,12 @@ export default function ProjectDetail() {
                   </div>
                 </div>
               )}
+
+              {exportFormat === 'pptx' && (
+                <div className="p-3 bg-muted/50 rounded-lg text-sm text-muted-foreground">
+                  AI will generate rich narrative content for the presentation including progress summary, key accomplishments, RAIDD analysis, and upcoming activities.
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowExportDialog(false)}>
@@ -6258,11 +6305,11 @@ export default function ProjectDetail() {
                     endDate = exportEndDate || undefined;
                   }
 
-                  handleExportFile(exportFormat, startDate, endDate);
+                  handleExportFile(exportFormat, exportStyle, startDate, endDate);
                   setShowExportDialog(false);
                 }} data-testid="button-confirm-export">
                 <Download className="w-4 h-4 mr-2" />
-                {isExportingPptx ? 'Generating...' : exportFormat === 'pptx' ? 'Download PowerPoint' : 'Export Report'}
+                {isExportingPptx ? 'Generating AI Report...' : exportFormat === 'pptx' ? 'Generate & Download' : 'Export Report'}
               </Button>
             </DialogFooter>
           </DialogContent>

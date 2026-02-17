@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate a branded PowerPoint status report from project data.
+Generate a branded PowerPoint status report from AI-generated narrative content.
 Reads JSON data from stdin, outputs PPTX to the path specified as first argument.
 """
 
 import sys
 import json
 import os
+import re
 from datetime import datetime
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -15,10 +16,6 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
 FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'client', 'public', 'fonts')
-FONT_REGULAR = os.path.join(FONT_DIR, 'AvenirNextLTPro-Regular.ttf')
-FONT_BOLD = os.path.join(FONT_DIR, 'AvenirNextLTPro-Bold.ttf')
-FONT_DEMI = os.path.join(FONT_DIR, 'AvenirNextLTPro-Demi.ttf')
-FONT_LIGHT = os.path.join(FONT_DIR, 'AvenirNextLTPro-Light.ttf')
 FONT_NAME = 'Avenir Next LT Pro'
 
 SLIDE_WIDTH = Inches(13.333)
@@ -28,27 +25,13 @@ def hex_to_rgb(hex_str):
     hex_str = hex_str.lstrip('#')
     return RGBColor(int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16))
 
-def set_font(run, size=10, bold=False, color=None, name=FONT_NAME):
+def set_font(run, size=10, bold=False, color=None, name=FONT_NAME, italic=False):
     run.font.name = name
     run.font.size = Pt(size)
     run.font.bold = bold
+    run.font.italic = italic
     if color:
         run.font.color.rgb = color if isinstance(color, RGBColor) else hex_to_rgb(color)
-
-def add_text(tf, text, size=10, bold=False, color=None, alignment=PP_ALIGN.LEFT, space_before=0, space_after=0, level=0):
-    p = tf.add_paragraph() if len(tf.paragraphs) > 0 and tf.paragraphs[0].text != '' else tf.paragraphs[0]
-    if len(tf.paragraphs) > 1 or tf.paragraphs[0].text != '':
-        p = tf.add_paragraph()
-    p.alignment = alignment
-    p.level = level
-    if space_before:
-        p.space_before = Pt(space_before)
-    if space_after:
-        p.space_after = Pt(space_after)
-    run = p.add_run()
-    run.text = text
-    set_font(run, size=size, bold=bold, color=color)
-    return p
 
 def set_cell_text(cell, text, size=9, bold=False, color=None, bg_color=None, alignment=PP_ALIGN.LEFT, valign=MSO_ANCHOR.MIDDLE):
     cell.text = ""
@@ -65,31 +48,6 @@ def set_cell_text(cell, text, size=9, bold=False, color=None, bg_color=None, ali
         cell.fill.solid()
         cell.fill.fore_color.rgb = bg_color if isinstance(bg_color, RGBColor) else hex_to_rgb(bg_color)
 
-def add_multi_text_cell(cell, lines, size=8, color=None, bg_color=None, valign=MSO_ANCHOR.TOP):
-    cell.text = ""
-    tf = cell.text_frame
-    tf.word_wrap = True
-    tf.auto_size = None
-    cell.vertical_anchor = valign
-    if bg_color:
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = bg_color if isinstance(bg_color, RGBColor) else hex_to_rgb(bg_color)
-    for i, line in enumerate(lines):
-        if i == 0:
-            p = tf.paragraphs[0]
-        else:
-            p = tf.add_paragraph()
-        text = line.get('text', '') if isinstance(line, dict) else str(line)
-        bold = line.get('bold', False) if isinstance(line, dict) else False
-        line_size = line.get('size', size) if isinstance(line, dict) else size
-        line_color = line.get('color', color) if isinstance(line, dict) else color
-        p.alignment = PP_ALIGN.LEFT
-        p.space_before = Pt(1)
-        p.space_after = Pt(1)
-        run = p.add_run()
-        run.text = text
-        set_font(run, size=line_size, bold=bold, color=line_color)
-
 def add_accent_bar(slide, primary_color, left=0, top=0, width=None, height=Inches(0.08)):
     if width is None:
         width = SLIDE_WIDTH
@@ -98,6 +56,114 @@ def add_accent_bar(slide, primary_color, left=0, top=0, width=None, height=Inche
     shape.fill.fore_color.rgb = hex_to_rgb(primary_color)
     shape.line.fill.background()
     return shape
+
+def parse_markdown_sections(md_text):
+    """Parse AI-generated markdown into structured sections."""
+    sections = {}
+    current_section = None
+    current_content = []
+
+    for line in md_text.split('\n'):
+        if line.startswith('## '):
+            if current_section:
+                sections[current_section] = '\n'.join(current_content).strip()
+            current_section = line[3:].strip()
+            current_content = []
+        else:
+            current_content.append(line)
+
+    if current_section:
+        sections[current_section] = '\n'.join(current_content).strip()
+
+    return sections
+
+def parse_bullet_items(text):
+    """Parse markdown bullet items into structured data with bold titles and descriptions."""
+    items = []
+    current_item = None
+
+    for line in text.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if stripped.startswith('- ') or stripped.startswith('* ') or stripped.startswith('• '):
+            if current_item:
+                items.append(current_item)
+            content = stripped[2:].strip()
+            bold_match = re.match(r'\*\*(.+?)\*\*\s*[-–—:]?\s*(.*)', content)
+            if bold_match:
+                current_item = {
+                    'title': bold_match.group(1).strip(),
+                    'description': bold_match.group(2).strip(),
+                    'sub_items': []
+                }
+            else:
+                current_item = {
+                    'title': content,
+                    'description': '',
+                    'sub_items': []
+                }
+        elif stripped.startswith('  - ') or stripped.startswith('  * ') or stripped.startswith('  • '):
+            if current_item:
+                sub_content = stripped.lstrip(' -•*').strip()
+                current_item['sub_items'].append(sub_content)
+        elif current_item:
+            if current_item['description']:
+                current_item['description'] += ' ' + stripped
+            else:
+                current_item['description'] = stripped
+
+    if current_item:
+        items.append(current_item)
+
+    return items
+
+def render_markdown_text(tf, text, primary_color, size=10, start_fresh=True):
+    """Render markdown text with bold formatting into a text frame."""
+    if start_fresh and tf.paragraphs[0].text == '':
+        started = False
+    else:
+        started = True
+
+    lines = text.split('\n')
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if started:
+            p = tf.add_paragraph()
+        else:
+            p = tf.paragraphs[0]
+            started = True
+
+        p.space_after = Pt(3)
+        p.space_before = Pt(2)
+
+        if stripped.startswith('- ') or stripped.startswith('• ') or stripped.startswith('* '):
+            content = stripped[2:].strip()
+            render_inline_bold(p, f"• {content}", size=size, primary_color=primary_color)
+        elif stripped.startswith('  - ') or stripped.startswith('  • '):
+            content = stripped.lstrip(' -•*').strip()
+            p.level = 1
+            render_inline_bold(p, f"  – {content}", size=size - 1, primary_color=primary_color)
+        else:
+            render_inline_bold(p, stripped, size=size, primary_color=primary_color)
+
+def render_inline_bold(p, text, size=10, primary_color=None):
+    """Render text with **bold** markdown formatting into a paragraph."""
+    parts = re.split(r'(\*\*[^*]+\*\*)', text)
+    for part in parts:
+        if part.startswith('**') and part.endswith('**'):
+            run = p.add_run()
+            run.text = part[2:-2]
+            set_font(run, size=size, bold=True, color=primary_color)
+        else:
+            if part:
+                run = p.add_run()
+                run.text = part
+                set_font(run, size=size)
 
 def create_title_slide(prs, data, primary_color, secondary_color):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -112,26 +178,43 @@ def create_title_slide(prs, data, primary_color, secondary_color):
     accent.fill.fore_color.rgb = hex_to_rgb(secondary_color)
     accent.line.fill.background()
 
-    txBox = slide.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11), Inches(1.5))
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(2.0), Inches(11), Inches(2.0))
     tf = txBox.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
     run = p.add_run()
-    run.text = "STATUS REPORT"
-    set_font(run, size=40, bold=True, color=RGBColor(255, 255, 255))
+    run.text = data.get('projectName', 'Project Status Report')
+    set_font(run, size=36, bold=True, color=RGBColor(255, 255, 255))
 
-    txBox2 = slide.shapes.add_textbox(Inches(1), Inches(4.2), Inches(8), Inches(0.8))
+    p2 = tf.add_paragraph()
+    run2 = p2.add_run()
+    run2.text = "STATUS REPORT"
+    set_font(run2, size=20, color=RGBColor(220, 220, 220))
+
+    txBox2 = slide.shapes.add_textbox(Inches(1), Inches(4.2), Inches(8), Inches(1.2))
     tf2 = txBox2.text_frame
     tf2.word_wrap = True
     p = tf2.paragraphs[0]
     run = p.add_run()
     run.text = data.get('clientName', '')
     set_font(run, size=16, bold=True, color=RGBColor(255, 255, 255))
+
+    period_start = data.get('periodStart', '')
+    period_end = data.get('periodEnd', '')
+    report_date = data.get('reportDate', datetime.now().strftime('%B %d, %Y'))
+    period_text = f"Period: {period_start} to {period_end}" if period_start and period_end else report_date
+
     p2 = tf2.add_paragraph()
     run2 = p2.add_run()
-    run2.text = data.get('reportDate', datetime.now().strftime('%B %d, %Y'))
+    run2.text = period_text
     set_font(run2, size=14, color=RGBColor(230, 230, 230))
+
+    p3 = tf2.add_paragraph()
+    run3 = p3.add_run()
+    pm_name = data.get('pmName', '')
+    run3.text = f"Project Manager: {pm_name}" if pm_name else report_date
+    set_font(run3, size=12, color=RGBColor(200, 200, 200))
 
     logo_path = data.get('logoPath')
     if logo_path and os.path.exists(logo_path):
@@ -142,75 +225,8 @@ def create_title_slide(prs, data, primary_color, secondary_color):
 
     return slide
 
-def create_dashboard_slide(prs, data, primary_color, secondary_color):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_accent_bar(slide, primary_color, top=0)
-
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(8), Inches(0.5))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = data.get('projectName', 'Project Status')
-    set_font(run, size=20, bold=True, color=primary_color)
-
-    info_table = slide.shapes.add_table(4, 2, Inches(0.4), Inches(0.8), Inches(4), Inches(1.3)).table
-    info_table.columns[0].width = Inches(1.5)
-    info_table.columns[1].width = Inches(2.5)
-    for row in info_table.rows:
-        row.height = Inches(0.3)
-
-    labels = ['Project Name', 'Project Manager', 'Status Date', 'Status']
-    values = [
-        data.get('projectName', ''),
-        data.get('pmName', ''),
-        data.get('reportDate', ''),
-        data.get('projectStatus', 'Active').upper(),
-    ]
-    for i, (label, value) in enumerate(zip(labels, values)):
-        set_cell_text(info_table.cell(i, 0), label, size=9, bold=True, bg_color=primary_color, color=RGBColor(255, 255, 255))
-        set_cell_text(info_table.cell(i, 1), value, size=9)
-
-    summary_box = slide.shapes.add_textbox(Inches(4.8), Inches(0.8), Inches(8), Inches(1.3))
-    tf = summary_box.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "Project Summary"
-    set_font(run, size=12, bold=True, color=primary_color)
-    p2 = tf.add_paragraph()
-    run2 = p2.add_run()
-    run2.text = data.get('projectDescription', 'No project description available.')
-    set_font(run2, size=9)
-
-    accomplished = data.get('accomplished', [])
-    upcoming = data.get('upcoming', [])
-
-    cols_table = slide.shapes.add_table(2, 2, Inches(0.4), Inches(2.3), Inches(12.4), Inches(4.8)).table
-    cols_table.columns[0].width = Inches(6.2)
-    cols_table.columns[1].width = Inches(6.2)
-    cols_table.rows[0].height = Inches(0.4)
-    cols_table.rows[1].height = Inches(4.4)
-
-    set_cell_text(cols_table.cell(0, 0), 'Accomplished This Period', size=11, bold=True, bg_color=primary_color, color=RGBColor(255, 255, 255))
-    set_cell_text(cols_table.cell(0, 1), 'Upcoming Activities', size=11, bold=True, bg_color=secondary_color, color=RGBColor(255, 255, 255))
-
-    acc_lines = []
-    for item in accomplished:
-        acc_lines.append({'text': f"• {item}", 'size': 9})
-    if not acc_lines:
-        acc_lines = [{'text': 'No activities recorded for this period.', 'size': 9, 'color': '#666666'}]
-    add_multi_text_cell(cols_table.cell(1, 0), acc_lines, size=9)
-
-    up_lines = []
-    for item in upcoming:
-        up_lines.append({'text': f"• {item}", 'size': 9})
-    if not up_lines:
-        up_lines = [{'text': 'No upcoming activities planned.', 'size': 9, 'color': '#666666'}]
-    add_multi_text_cell(cols_table.cell(1, 1), up_lines, size=9)
-
-    return slide
-
-def create_executive_summary_slide(prs, data, primary_color, secondary_color):
+def create_progress_summary_slide(prs, data, sections, primary_color, secondary_color):
+    """Slide 2: Progress Summary with AI-generated narrative."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_accent_bar(slide, primary_color, top=0)
 
@@ -218,54 +234,265 @@ def create_executive_summary_slide(prs, data, primary_color, secondary_color):
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     run = p.add_run()
-    run.text = "Executive Summary"
+    run.text = "Progress Summary"
     set_font(run, size=24, bold=True, color=primary_color)
 
-    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.2), Inches(11.5), Inches(5.8))
+    metrics = data.get('metrics', {})
+    if metrics:
+        metrics_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.0), Inches(11.5), Inches(0.5))
+        tf_m = metrics_box.text_frame
+        p = tf_m.paragraphs[0]
+        items = []
+        if metrics.get('totalHours', '0') != '0':
+            items.append(f"Hours: {metrics['totalHours']} ({metrics.get('billableHours', '0')} billable)")
+        if metrics.get('teamMembers', 0) > 0:
+            items.append(f"Team: {metrics['teamMembers']} members")
+        if metrics.get('totalExpenses', '0.00') != '0.00':
+            items.append(f"Expenses: ${metrics['totalExpenses']}")
+        if items:
+            run = p.add_run()
+            run.text = "  |  ".join(items)
+            set_font(run, size=9, color='#666666')
+
+    content_top = Inches(1.6) if metrics else Inches(1.2)
+    content_box = slide.shapes.add_textbox(Inches(0.8), content_top, Inches(11.5), Inches(5.5))
     tf = content_box.text_frame
     tf.word_wrap = True
 
-    summary_text = data.get('executiveSummary', '')
+    summary_text = sections.get('Progress Summary', '')
     if summary_text:
-        lines = summary_text.split('\n')
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if not line:
-                continue
-            if i == 0:
-                p = tf.paragraphs[0]
-            else:
-                p = tf.add_paragraph()
-            p.space_after = Pt(4)
-            
-            if line.startswith('- ') or line.startswith('• '):
-                line = line[2:]
-                run = p.add_run()
-                run.text = f"• {line}"
-                set_font(run, size=11)
-            else:
-                run = p.add_run()
-                run.text = line
-                set_font(run, size=11, bold=line.endswith(':'))
+        render_markdown_text(tf, summary_text, primary_color, size=11)
+    else:
+        desc = data.get('projectDescription', '')
+        if desc:
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = desc
+            set_font(run, size=11)
 
     milestones = data.get('milestonePosture', {})
-    if milestones:
+    if milestones and any(milestones.values()):
         p = tf.add_paragraph()
-        p.space_before = Pt(12)
+        p.space_before = Pt(14)
         run = p.add_run()
-        run.text = "Milestone Posture:"
-        set_font(run, size=11, bold=True, color=primary_color)
+        run.text = "Milestone Posture"
+        set_font(run, size=12, bold=True, color=primary_color)
 
         for status_label, items in milestones.items():
             if items:
                 p = tf.add_paragraph()
+                p.space_before = Pt(2)
                 run = p.add_run()
-                run.text = f"• {status_label}: {', '.join(items)}"
-                set_font(run, size=10)
+                run.text = f"• {status_label}: "
+                set_font(run, size=10, bold=True)
+                run2 = p.add_run()
+                run2.text = ', '.join(items)
+                set_font(run2, size=10)
+
+    return slide
+
+def create_accomplishments_slide(prs, data, sections, primary_color, secondary_color):
+    """Slide 3: Key Accomplishments with rich AI narrative."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Key Accomplishments"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.1), Inches(11.5), Inches(6.0))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    accomplishments_text = sections.get('Key Accomplishments', '')
+    if accomplishments_text:
+        items = parse_bullet_items(accomplishments_text)
+        first = True
+        for item in items:
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+
+            p.space_before = Pt(6)
+            p.space_after = Pt(2)
+
+            run = p.add_run()
+            run.text = f"• {item['title']}"
+            set_font(run, size=11, bold=True, color=primary_color)
+
+            if item.get('description'):
+                p2 = tf.add_paragraph()
+                p2.space_before = Pt(1)
+                p2.space_after = Pt(4)
+                run2 = p2.add_run()
+                run2.text = f"  {item['description']}"
+                set_font(run2, size=10)
+
+            for sub in item.get('sub_items', []):
+                p3 = tf.add_paragraph()
+                p3.space_before = Pt(1)
+                run3 = p3.add_run()
+                run3.text = f"    – {sub}"
+                set_font(run3, size=9, color='#444444')
+    else:
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        run.text = "No accomplishments data available for this period."
+        set_font(run, size=11, color='#888888')
+
+    return slide
+
+def create_raidd_slide(prs, data, sections, primary_color, secondary_color):
+    """Slide 4: RAIDD Log with AI narrative and structured data."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Risks, Issues & Key Decisions (RAIDD)"
+    set_font(run, size=22, bold=True, color=primary_color)
+
+    raidd_section_text = ''
+    for key in sections:
+        if 'raidd' in key.lower() or 'risk' in key.lower():
+            raidd_section_text = sections[key]
+            break
+
+    content_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.0), Inches(12.3), Inches(6.0))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    if raidd_section_text:
+        render_markdown_text(tf, raidd_section_text, primary_color, size=9)
+    else:
+        raidd = data.get('raidd', {})
+        categories = [
+            ('Risks', raidd.get('risks', [])),
+            ('Issues', raidd.get('issues', [])),
+            ('Action Items', raidd.get('actionItems', [])),
+            ('Decisions', raidd.get('decisions', [])),
+            ('Dependencies', raidd.get('dependencies', [])),
+        ]
+
+        first = True
+        for cat_name, entries in categories:
+            active_entries = [e for e in entries if e.get('status', '') in ('open', 'in_progress')]
+            display = active_entries if active_entries else entries
+
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+                p.space_before = Pt(8)
+
+            run = p.add_run()
+            run.text = cat_name
+            set_font(run, size=11, bold=True, color=primary_color)
+
+            if not display:
+                p2 = tf.add_paragraph()
+                run2 = p2.add_run()
+                run2.text = f"  No active {cat_name.lower()} at this time."
+                set_font(run2, size=9, color='#888888')
+            else:
+                for entry in display:
+                    p2 = tf.add_paragraph()
+                    p2.space_before = Pt(2)
+                    ref = entry.get('refNumber', '')
+                    title = entry.get('title', '')
+                    priority = entry.get('priority', '')
+                    status = entry.get('status', '')
+                    owner = entry.get('ownerName', '')
+                    due = entry.get('dueDate', '')
+                    priority_tag = f" [{priority.upper()}]" if priority else ''
+
+                    run2 = p2.add_run()
+                    run2.text = f"  {ref} {title}{priority_tag} ({status})"
+                    set_font(run2, size=9, bold=True)
+
+                    details = []
+                    if owner:
+                        details.append(f"Owner: {owner}")
+                    if due:
+                        details.append(f"Due: {due}")
+                    mitigation = entry.get('mitigationPlan', '')
+                    if mitigation:
+                        details.append(f"Mitigation: {mitigation}")
+
+                    if details:
+                        p3 = tf.add_paragraph()
+                        run3 = p3.add_run()
+                        run3.text = f"    {'; '.join(details)}"
+                        set_font(run3, size=8, color='#555555')
+
+    return slide
+
+def create_upcoming_slide(prs, data, sections, primary_color, secondary_color):
+    """Slide 5: Upcoming Activities with AI narrative."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Upcoming Activities"
+    set_font(run, size=24, bold=True, color=primary_color)
+
+    content_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.1), Inches(11.5), Inches(6.0))
+    tf = content_box.text_frame
+    tf.word_wrap = True
+
+    upcoming_text = sections.get('Upcoming Activities', '')
+    if upcoming_text:
+        items = parse_bullet_items(upcoming_text)
+        first = True
+        for item in items:
+            if first:
+                p = tf.paragraphs[0]
+                first = False
+            else:
+                p = tf.add_paragraph()
+
+            p.space_before = Pt(6)
+            p.space_after = Pt(2)
+
+            run = p.add_run()
+            run.text = f"• {item['title']}"
+            set_font(run, size=11, bold=True, color=primary_color)
+
+            if item.get('description'):
+                p2 = tf.add_paragraph()
+                p2.space_before = Pt(1)
+                p2.space_after = Pt(4)
+                run2 = p2.add_run()
+                run2.text = f"  {item['description']}"
+                set_font(run2, size=10)
+
+            for sub in item.get('sub_items', []):
+                p3 = tf.add_paragraph()
+                p3.space_before = Pt(1)
+                run3 = p3.add_run()
+                run3.text = f"    – {sub}"
+                set_font(run3, size=9, color='#444444')
+    else:
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        run.text = "No upcoming activities data available."
+        set_font(run, size=11, color='#888888')
 
     return slide
 
 def create_timeline_slide(prs, data, primary_color, secondary_color):
+    """Slide 6: Timeline & Milestones table."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_accent_bar(slide, primary_color, top=0)
 
@@ -317,144 +544,23 @@ def create_timeline_slide(prs, data, primary_color, secondary_color):
 
     return slide
 
-def create_deliverables_slide(prs, data, primary_color, secondary_color):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_accent_bar(slide, primary_color, top=0)
-
-    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "Deliverables Tracker"
-    set_font(run, size=24, bold=True, color=primary_color)
-
-    note_box = slide.shapes.add_textbox(Inches(0.8), Inches(1.3), Inches(11), Inches(1))
-    tf = note_box.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "Deliverables tracking is a planned feature. This slide will be populated automatically once the deliverables tracker is configured for this project."
-    set_font(run, size=12, color='#888888')
-
-    hint_box = slide.shapes.add_textbox(Inches(0.8), Inches(2.5), Inches(11), Inches(3))
-    tf = hint_box.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "Planned columns: Document | Status | Approval Required | Handoff | Work Product/Deliverable"
-    set_font(run, size=10, color='#aaaaaa')
-
-    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(3.5), Inches(11.5), Inches(0.04))
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = hex_to_rgb(secondary_color)
-    shape.line.fill.background()
-
-    return slide
-
-def create_raidd_slide(prs, data, primary_color, secondary_color):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_accent_bar(slide, primary_color, top=0)
-
-    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    run = p.add_run()
-    run.text = "RAIDD Log"
-    set_font(run, size=24, bold=True, color=primary_color)
-
-    raidd = data.get('raidd', {})
-    content_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.1), Inches(12.2), Inches(3.2))
-    tf = content_box.text_frame
-    tf.word_wrap = True
-
-    sections = [
-        ('Risks', raidd.get('risks', []), 'active, monitored'),
-        ('Issues', raidd.get('issues', []), 'tracked'),
-        ('Action Items', raidd.get('actionItems', []), 'open'),
-        ('Decisions', raidd.get('decisions', []), 'recorded'),
-        ('Dependencies', raidd.get('dependencies', []), 'tracked'),
-    ]
-
-    first = True
-    for section_name, entries, qualifier in sections:
-        active_entries = [e for e in entries if e.get('status', '') in ('open', 'in_progress')]
-        if not active_entries and not entries:
-            continue
-
-        if first:
-            p = tf.paragraphs[0]
-            first = False
-        else:
-            p = tf.add_paragraph()
-            p.space_before = Pt(8)
-
-        run = p.add_run()
-        run.text = f"{section_name} ({qualifier})"
-        set_font(run, size=11, bold=True, color=primary_color)
-
-        display_entries = active_entries if active_entries else entries
-        if not display_entries:
-            p = tf.add_paragraph()
-            run = p.add_run()
-            run.text = f"- None at this time."
-            set_font(run, size=9, color='#666666')
-        else:
-            for entry in display_entries[:8]:
-                p = tf.add_paragraph()
-                p.space_before = Pt(2)
-                ref = entry.get('refNumber', '')
-                title = entry.get('title', '')
-                priority = entry.get('priority', '')
-                priority_tag = f" [{priority.upper()}]" if priority else ''
-                run = p.add_run()
-                run.text = f"- {ref}: {title}{priority_tag}"
-                set_font(run, size=9)
-
-                mitigation = entry.get('mitigationPlan', '')
-                if mitigation:
-                    p2 = tf.add_paragraph()
-                    run2 = p2.add_run()
-                    run2.text = f"  Mitigation: {mitigation}"
-                    set_font(run2, size=8, color='#555555')
-
-    raidd_table_entries = raidd.get('tableEntries', [])
-    if raidd_table_entries:
-        num_rows = min(len(raidd_table_entries) + 1, 8)
-        table = slide.shapes.add_table(num_rows, 5, Inches(0.4), Inches(4.5), Inches(12.2), Inches(0.3 * num_rows)).table
-        table.columns[0].width = Inches(4.0)
-        table.columns[1].width = Inches(1.5)
-        table.columns[2].width = Inches(2.0)
-        table.columns[3].width = Inches(2.0)
-        table.columns[4].width = Inches(2.7)
-
-        headers = ['Risks/Issue Description', 'Status', 'Owner', 'Due Date', 'Mitigation']
-        for i, h in enumerate(headers):
-            set_cell_text(table.cell(0, i), h, size=8, bold=True, bg_color=primary_color, color=RGBColor(255, 255, 255))
-
-        for row_idx, entry in enumerate(raidd_table_entries[:7]):
-            r = row_idx + 1
-            set_cell_text(table.cell(r, 0), f"{entry.get('refNumber', '')} {entry.get('title', '')}", size=8)
-            set_cell_text(table.cell(r, 1), entry.get('status', ''), size=8)
-            set_cell_text(table.cell(r, 2), entry.get('ownerName', ''), size=8)
-            set_cell_text(table.cell(r, 3), entry.get('dueDate', ''), size=8)
-            set_cell_text(table.cell(r, 4), entry.get('mitigationPlan', ''), size=8)
-
-    return slide
-
 def generate_pptx(data, output_path):
     primary_color = data.get('primaryColor', '#810FFB')
     secondary_color = data.get('secondaryColor', '#E60CB3')
+
+    ai_report = data.get('aiReport', '')
+    sections = parse_markdown_sections(ai_report) if ai_report else {}
 
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
     prs.slide_height = SLIDE_HEIGHT
 
     create_title_slide(prs, data, primary_color, secondary_color)
-    create_dashboard_slide(prs, data, primary_color, secondary_color)
-    create_executive_summary_slide(prs, data, primary_color, secondary_color)
+    create_progress_summary_slide(prs, data, sections, primary_color, secondary_color)
+    create_accomplishments_slide(prs, data, sections, primary_color, secondary_color)
+    create_raidd_slide(prs, data, sections, primary_color, secondary_color)
+    create_upcoming_slide(prs, data, sections, primary_color, secondary_color)
     create_timeline_slide(prs, data, primary_color, secondary_color)
-    create_deliverables_slide(prs, data, primary_color, secondary_color)
-    create_raidd_slide(prs, data, primary_color, secondary_color)
 
     prs.save(output_path)
     return output_path

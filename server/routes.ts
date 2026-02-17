@@ -7036,8 +7036,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  // PowerPoint status report export
-  app.get("/api/projects/:id/export-pptx", requireAuth, async (req, res) => {
+  // PowerPoint status report export with AI-generated narrative content
+  app.post("/api/projects/:id/export-pptx", requireAuth, async (req, res) => {
     try {
       const project = await storage.getProject(req.params.id);
       if (!project) {
@@ -7056,23 +7056,23 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate } = req.query;
+      const { startDate, endDate, style } = req.body;
+      const reportStyle = ["executive_brief", "detailed_update", "client_facing"].includes(style) ? style : "client_facing";
+
+      const effectiveStartDate = startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+      const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
 
       const tenantId = req.user!.tenantId || (project as any).tenantId;
-      const [milestones, raiddEntries, allocations, tenant] = await Promise.all([
+      const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData] = await Promise.all([
         storage.getProjectMilestones(req.params.id),
         storage.getRaiddEntries(req.params.id, {}),
         storage.getProjectAllocations(req.params.id),
         tenantId ? storage.getTenant(tenantId) : Promise.resolve(null),
+        storage.getTimeEntries({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
+        storage.getExpenses({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
       ]);
 
-      const timeFilters: any = { projectId: req.params.id };
-      if (startDate) timeFilters.startDate = startDate as string;
-      if (endDate) timeFilters.endDate = endDate as string;
-      const timeEntries = await storage.getTimeEntries(timeFilters);
-
       const pmUser = project.pm ? await storage.getUser(project.pm) : null;
-
       const branding = (tenant as any)?.branding || {};
       const primaryColor = branding.primaryColor || '#810FFB';
       const secondaryColor = branding.secondaryColor || '#E60CB3';
@@ -7080,33 +7080,225 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const now = new Date();
       const reportDate = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-      const accomplished: string[] = [];
-      const upcoming: string[] = [];
+      const totalHours = timeEntries.reduce((sum, te) => sum + Number(te.hours || 0), 0);
+      const totalBillableHours = timeEntries.filter(te => te.billable).reduce((sum, te) => sum + Number(te.hours || 0), 0);
+      const totalExpenses = expenseData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+      const teamMembers = new Map<string, { name: string; hours: number; activities: string[] }>();
+      const userNameCache = new Map<string, string>();
+      for (const te of timeEntries) {
+        const key = te.personId;
+        if (!userNameCache.has(key)) {
+          const personName = (te as any).person?.name || (te as any).personName;
+          if (personName) {
+            userNameCache.set(key, personName);
+          } else {
+            try {
+              const personUser = await storage.getUser(key);
+              userNameCache.set(key, personUser?.name || "Unknown");
+            } catch {
+              userNameCache.set(key, "Unknown");
+            }
+          }
+        }
+        const existing = teamMembers.get(key) || { name: userNameCache.get(key) || "Unknown", hours: 0, activities: [] };
+        existing.hours += Number(te.hours || 0);
+        if (te.description && !existing.activities.includes(te.description)) {
+          existing.activities.push(te.description);
+        }
+        teamMembers.set(key, existing);
+      }
+
+      const teamSummary = Array.from(teamMembers.values())
+        .sort((a, b) => b.hours - a.hours)
+        .map(m => `- ${m.name}: ${m.hours.toFixed(1)} hours — ${m.activities.slice(0, 5).join("; ") || "No descriptions logged"}`)
+        .join("\n");
+
+      const expenseSummary = expenseData.length > 0
+        ? expenseData.map(e => `- ${e.category}: $${Number(e.amount).toFixed(2)}${e.description ? ` (${e.description})` : ""}`).join("\n")
+        : "No expenses recorded in this period.";
 
       const completedMilestones = milestones.filter((m: any) => m.status === 'completed');
       const inProgressMilestones = milestones.filter((m: any) => m.status === 'in-progress');
-
-      completedMilestones.forEach((m: any) => {
-        accomplished.push(`${m.name} milestone completed`);
-      });
-
-      if (timeEntries.length > 0) {
-        const totalHours = timeEntries.reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
-        accomplished.push(`${totalHours.toFixed(1)} hours logged across ${timeEntries.length} entries`);
-      }
-
-      inProgressMilestones.forEach((m: any) => {
-        upcoming.push(`Continue work on ${m.name}`);
-      });
-
       const notStarted = milestones.filter((m: any) => m.status === 'not-started');
-      if (notStarted.length > 0) {
-        upcoming.push(`${notStarted.length} milestone(s) pending start`);
-      }
 
-      const openActions = raiddEntries.filter((r: any) => r.type === 'action_item' && ['open', 'in_progress'].includes(r.status));
-      if (openActions.length > 0) {
-        upcoming.push(`${openActions.length} open action item(s) to address`);
+      const activeMilestones = milestones
+        .filter(m => m.status !== "completed")
+        .map(m => `- ${m.name} (${m.status})`)
+        .join("\n") || "No active milestones.";
+
+      const completedMilestonesSummary = completedMilestones
+        .map(m => `- ${m.name} (completed)`)
+        .join("\n") || "None completed in this period.";
+
+      const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
+      const completedAllocationsCount = allocations.filter((a: any) => a.status === "completed").length;
+
+      const openStatuses = ["open", "in_progress"];
+      const raiddByType = {
+        risks: raiddEntries.filter(r => r.type === "risk"),
+        issues: raiddEntries.filter(r => r.type === "issue"),
+        decisions: raiddEntries.filter(r => r.type === "decision"),
+        dependencies: raiddEntries.filter(r => r.type === "dependency"),
+        actionItems: raiddEntries.filter(r => r.type === "action_item"),
+      };
+
+      const activeRisks = raiddByType.risks.filter(r => openStatuses.includes(r.status));
+      const activeIssues = raiddByType.issues.filter(r => openStatuses.includes(r.status));
+      const activeActionItems = raiddByType.actionItems.filter(r => openStatuses.includes(r.status));
+      const activeDependencies = raiddByType.dependencies.filter(r => openStatuses.includes(r.status));
+      const recentDecisions = raiddByType.decisions
+        .filter(d => {
+          const updatedAt = new Date(d.updatedAt);
+          return updatedAt >= new Date(effectiveStartDate) && updatedAt <= new Date(effectiveEndDate + "T23:59:59");
+        });
+
+      const formatPriority = (p: string | null) => p ? ` [${p.toUpperCase()}]` : "";
+      const formatOwner = (name?: string) => name ? ` — Owner: ${name}` : "";
+      const formatDue = (d: string | null) => d ? ` — Due: ${d}` : "";
+
+      const riskSummary = activeRisks.length > 0
+        ? activeRisks.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${r.impact ? ` | Impact: ${r.impact}` : ""}${r.likelihood ? ` | Likelihood: ${r.likelihood}` : ""}${formatOwner(r.ownerName)}${r.mitigationPlan ? `\n  Mitigation: ${r.mitigationPlan}` : ""}`).join("\n")
+        : "No active risks.";
+
+      const issueSummary = activeIssues.length > 0
+        ? activeIssues.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.ownerName)}${r.resolutionNotes ? `\n  Resolution notes: ${r.resolutionNotes}` : ""}`).join("\n")
+        : "No active issues.";
+
+      const actionItemSummary = activeActionItems.length > 0
+        ? activeActionItems.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.assigneeName || r.ownerName)}${formatDue(r.dueDate)}`).join("\n")
+        : "No open action items.";
+
+      const dependencySummary = activeDependencies.length > 0
+        ? activeDependencies.map(r => `- ${r.refNumber || ""} ${r.title}${formatPriority(r.priority)} (${r.status})${formatOwner(r.ownerName)}`).join("\n")
+        : "No active dependencies.";
+
+      const decisionSummary = recentDecisions.length > 0
+        ? recentDecisions.map(r => `- ${r.refNumber || ""} ${r.title} (${r.status})${r.resolutionNotes ? ` — ${r.resolutionNotes}` : ""}`).join("\n")
+        : "No decisions recorded in this period.";
+
+      const raiddCounts = {
+        overdueActionItems: activeActionItems.filter(r => r.dueDate && new Date(r.dueDate) < new Date()).length,
+        criticalItems: raiddEntries.filter(r => r.priority === "critical" && openStatuses.includes(r.status)).length,
+      };
+
+      const pptxStyleInstructions: Record<string, string> = {
+        executive_brief: `Write a concise executive status report for a branded PowerPoint presentation. Structure your response with these exact markdown headers:
+## Progress Summary
+(2-3 paragraphs summarizing the period's work, momentum, and overall status)
+
+## Key Accomplishments
+(3-6 bullet points with **bold titles** and 1-2 sentence descriptions explaining each accomplishment's value and impact)
+
+## Risks, Issues & Key Decisions (RAIDD)
+(Organized into subsections for Risks, Issues, Decisions, Action Items, and Dependencies. Include every RAIDD entry with reference numbers, priorities, statuses, owners, and mitigation plans.)
+
+## Upcoming Activities
+(4-8 bullet points with **bold titles** and 1-2 sentence descriptions of next steps, linking to action items and milestones)
+
+Keep the tone executive-level, confident, and value-focused. Target 500-800 words.`,
+
+        detailed_update: `Write a comprehensive project status report for a branded PowerPoint presentation. Structure your response with these exact markdown headers:
+## Progress Summary
+(2-4 paragraphs with detailed narrative on work completed, key themes, and project trajectory)
+
+## Key Accomplishments
+(4-8 bullet points with **bold titles** followed by detailed descriptions explaining what was done, why it matters, and its impact on the engagement)
+
+## Risks, Issues & Key Decisions (RAIDD)
+(Full detail with subsections for each RAIDD category. Include every entry with reference numbers, priorities, statuses, owners, mitigation plans, impact assessments, and due dates.)
+
+## Upcoming Activities
+(5-10 bullet points with **bold titles** and detailed descriptions linking to action items, dependencies, and milestones. Include specific next steps and expected outcomes.)
+
+Be thorough and detailed. Target 800-1200 words.`,
+
+        client_facing: `Write a professional client-facing status report for a branded PowerPoint presentation. Structure your response with these exact markdown headers:
+## Progress Summary
+(2-3 paragraphs summarizing the engagement progress, momentum, and key themes. Use confident, professional tone suitable for client stakeholders.)
+
+## Key Accomplishments
+(4-6 bullet points with **bold titles** and 1-2 sentence descriptions focusing on deliverables, value delivered, and business impact. Avoid internal metrics.)
+
+## Risks, Issues & Key Decisions (RAIDD)
+(Client-appropriate detail with subsections. Include active Risks with mitigation plans, Issues with resolution status, Decisions made, open Action Items with owners and due dates, and Dependencies.)
+
+## Upcoming Activities
+(4-8 bullet points with **bold titles** and descriptions of next steps. Link to action items and milestones. Focus on what the client can expect and what requires their input.)
+
+Keep the tone positive, professional, and value-focused. Target 600-900 words.`,
+      };
+
+      const systemPrompt = `You are a professional consulting project manager writing a status report that will be exported as a branded PowerPoint presentation. ${pptxStyleInstructions[reportStyle]}
+
+Format the output as clean markdown with headers (##), bullet points (- ), and **bold text** for emphasis. Each bullet point under Key Accomplishments and Upcoming Activities MUST have a **bold title** followed by a description.
+
+CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items. Use subsections (- Risks, - Issues, - Decisions, - Action Items, - Dependencies) within the RAIDD section.`;
+
+      const userMessage = `Generate a status report for the following project activity:
+
+PROJECT: ${project.name}
+CLIENT: ${project.client?.name || "Unknown"}
+PERIOD: ${effectiveStartDate} to ${effectiveEndDate}
+STATUS: ${project.status}
+COMMERCIAL SCHEME: ${project.commercialScheme}
+${project.description ? `DESCRIPTION: ${project.description}` : ""}
+
+SUMMARY METRICS:
+- Total Hours Logged: ${totalHours.toFixed(1)} (${totalBillableHours.toFixed(1)} billable)
+- Total Expenses: $${totalExpenses.toFixed(2)}
+- Active Assignments: ${activeTeamCount}
+- Completed Assignments: ${completedAllocationsCount}
+
+TEAM ACTIVITY:
+${teamSummary || "No time entries recorded in this period."}
+
+EXPENSES:
+${expenseSummary}
+
+MILESTONES — Active:
+${activeMilestones}
+
+MILESTONES — Completed:
+${completedMilestonesSummary}
+
+RAIDD LOG — Active Risks (${activeRisks.length}):
+${riskSummary}
+
+RAIDD LOG — Active Issues (${activeIssues.length}):
+${issueSummary}
+
+RAIDD LOG — Open Action Items (${activeActionItems.length}):
+${actionItemSummary}
+
+RAIDD LOG — Active Dependencies (${activeDependencies.length}):
+${dependencySummary}
+
+RAIDD LOG — Decisions This Period (${recentDecisions.length}):
+${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACTION ITEMS: ${raiddCounts.overdueActionItems} action item(s) are past their due date.` : ""}${raiddCounts.criticalItems > 0 ? `\n⚠️ CRITICAL ITEMS: ${raiddCounts.criticalItems} item(s) are flagged as critical priority.` : ""}`;
+
+      let aiReport = "";
+      try {
+        const { aiService, buildGroundingContext } = await import("./services/ai-service.js");
+        const pptxTenantId = (req.user as any)?.tenantId;
+        const groundingDocs = pptxTenantId
+          ? await storage.getActiveGroundingDocumentsForTenant(pptxTenantId)
+          : await storage.getActiveGroundingDocuments();
+        const groundingCtx = buildGroundingContext(groundingDocs, 'status_report');
+
+        const maxTokensByStyle: Record<string, number> = {
+          executive_brief: 4096,
+          detailed_update: 8192,
+          client_facing: 4096,
+        };
+        const result = await aiService.customPrompt(systemPrompt, userMessage, {
+          temperature: 0.6,
+          maxTokens: maxTokensByStyle[reportStyle] || 4096,
+          groundingContext: groundingCtx,
+        });
+        aiReport = result.content;
+      } catch (aiError: any) {
+        console.error("AI generation failed for PPTX, using fallback:", aiError.message);
       }
 
       const milestonePosture: Record<string, string[]> = {
@@ -7115,19 +7307,11 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         'Not Yet Started': notStarted.map((m: any) => m.name),
       };
 
-      const executiveSummaryLines: string[] = [];
-      if (project.description) {
-        executiveSummaryLines.push(project.description);
-        executiveSummaryLines.push('');
-      }
-      accomplished.forEach(item => executiveSummaryLines.push(`- ${item}`));
-
-      const openStatuses = ['open', 'in_progress'];
       const raiddData = {
         risks: raiddEntries.filter((r: any) => r.type === 'risk').map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
-          dueDate: r.dueDate || '',
+          dueDate: r.dueDate || '', impact: r.impact || '', likelihood: r.likelihood || '',
         })),
         issues: raiddEntries.filter((r: any) => r.type === 'issue').map((r: any) => ({
           refNumber: r.refNumber || '', title: r.title, priority: r.priority,
@@ -7149,13 +7333,6 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           status: r.status, ownerName: r.ownerName || '', mitigationPlan: r.mitigationPlan || '',
           dueDate: r.dueDate || '',
         })),
-        tableEntries: raiddEntries
-          .filter((r: any) => ['risk', 'issue'].includes(r.type) && openStatuses.includes(r.status))
-          .map((r: any) => ({
-            refNumber: r.refNumber || '', title: r.title, status: r.status,
-            ownerName: r.ownerName || '', dueDate: r.dueDate || '',
-            mitigationPlan: r.mitigationPlan || '',
-          })),
       };
 
       let logoPath: string | null = null;
@@ -7178,15 +7355,15 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         projectName: project.name,
         clientName: (project as any).client?.name || '',
         reportDate,
+        periodStart: effectiveStartDate,
+        periodEnd: effectiveEndDate,
         pmName: pmUser?.name || '',
         projectStatus: project.status || 'active',
         projectDescription: project.description || '',
         primaryColor,
         secondaryColor,
         logoPath,
-        accomplished,
-        upcoming,
-        executiveSummary: executiveSummaryLines.join('\n'),
+        aiReport,
         milestonePosture,
         milestones: milestones.map((m: any) => ({
           name: m.name,
@@ -7196,6 +7373,12 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           endDate: m.endDate || '',
         })),
         raidd: raiddData,
+        metrics: {
+          totalHours: totalHours.toFixed(1),
+          billableHours: totalBillableHours.toFixed(1),
+          totalExpenses: totalExpenses.toFixed(2),
+          teamMembers: teamMembers.size,
+        },
       };
 
       const tmpFile = pathNode.join(osNode.tmpdir(), `status-report-${Date.now()}.pptx`);
