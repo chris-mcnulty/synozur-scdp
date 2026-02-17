@@ -259,16 +259,31 @@ def create_progress_summary_slide(prs, data, sections, primary_color, secondary_
     tf = content_box.text_frame
     tf.word_wrap = True
 
+    desc = data.get('projectDescription', '')
+    has_desc = False
+    if desc:
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        run.text = "Project Overview"
+        set_font(run, size=12, bold=True, color=primary_color)
+
+        p2 = tf.add_paragraph()
+        p2.space_before = Pt(2)
+        p2.space_after = Pt(8)
+        run2 = p2.add_run()
+        run2.text = desc
+        set_font(run2, size=10)
+        has_desc = True
+
     summary_text = sections.get('Progress Summary', '')
     if summary_text:
-        render_markdown_text(tf, summary_text, primary_color, size=11)
-    else:
-        desc = data.get('projectDescription', '')
-        if desc:
-            p = tf.paragraphs[0]
-            run = p.add_run()
-            run.text = desc
-            set_font(run, size=11)
+        if has_desc:
+            p_sep = tf.add_paragraph()
+            p_sep.space_before = Pt(4)
+            run_sep = p_sep.add_run()
+            run_sep.text = "Period Update"
+            set_font(run_sep, size=12, bold=True, color=primary_color)
+        render_markdown_text(tf, summary_text, primary_color, size=11, start_fresh=not has_desc)
 
     milestones = data.get('milestonePosture', {})
     if milestones and any(milestones.values()):
