@@ -6437,6 +6437,25 @@ export class DatabaseStorage implements IStorage {
           eq(timeEntries.invoiceBatchId, batchId)
         ));
       
+      // Mark source expenses as billed when their invoice lines are in this batch
+      const expenseLines = await tx.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
+        .from(invoiceLines)
+        .where(and(
+          eq(invoiceLines.batchId, batchId),
+          isNotNull(invoiceLines.sourceExpenseId)
+        ));
+      
+      const expenseIds = expenseLines
+        .map(l => l.sourceExpenseId)
+        .filter((id): id is string => id !== null);
+      
+      if (expenseIds.length > 0) {
+        await tx.update(expenses)
+          .set({ billedFlag: true })
+          .where(inArray(expenses.id, expenseIds));
+        console.log(`[STORAGE] Marked ${expenseIds.length} expenses as billed for batch ${batchId}`);
+      }
+      
       console.log(`[STORAGE] Batch ${batchId} finalized by user ${userId}`);
       
       return updatedBatch;
@@ -6566,6 +6585,25 @@ export class DatabaseStorage implements IStorage {
           lockedAt: null
         })
         .where(eq(timeEntries.invoiceBatchId, batchId));
+      
+      // Unmark source expenses as billed
+      const expenseLines = await tx.select({ sourceExpenseId: invoiceLines.sourceExpenseId })
+        .from(invoiceLines)
+        .where(and(
+          eq(invoiceLines.batchId, batchId),
+          isNotNull(invoiceLines.sourceExpenseId)
+        ));
+      
+      const expenseIds = expenseLines
+        .map(l => l.sourceExpenseId)
+        .filter((id): id is string => id !== null);
+      
+      if (expenseIds.length > 0) {
+        await tx.update(expenses)
+          .set({ billedFlag: false })
+          .where(inArray(expenses.id, expenseIds));
+        console.log(`[STORAGE] Unmarked ${expenseIds.length} expenses as unbilled for batch ${batchId}`);
+      }
       
       console.log(`[STORAGE] Batch ${batchId} unfinalized`);
       

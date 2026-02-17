@@ -62,6 +62,7 @@ const EXPENSE_CATEGORIES = [
 
 // Filter form schema
 const expenseFilterSchema = z.object({
+  personId: z.string().optional(),
   assignedPersonId: z.string().optional(),
   projectId: z.string().optional(),
   clientId: z.string().optional(),
@@ -880,10 +881,10 @@ export default function ExpenseManagement() {
                     )}
                   />
 
-                  {/* Person Filter (filters by Assigned To / project resource) */}
+                  {/* Person Filter (filters by expense submitter) */}
                   <FormField
                     control={filterForm.control}
-                    name="assignedPersonId"
+                    name="personId"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Person</FormLabel>
