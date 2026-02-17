@@ -7063,14 +7063,19 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
 
       const tenantId = req.user!.tenantId || (project as any).tenantId;
-      const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData] = await Promise.all([
+      const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData, epics] = await Promise.all([
         storage.getProjectMilestones(req.params.id),
         storage.getRaiddEntries(req.params.id, {}),
         storage.getProjectAllocations(req.params.id),
         tenantId ? storage.getTenant(tenantId) : Promise.resolve(null),
         storage.getTimeEntries({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
         storage.getExpenses({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
+        storage.getProjectEpics(req.params.id),
       ]);
+      const stagesArrays = await Promise.all(epics.map(epic => storage.getProjectStages(epic.id)));
+      const allStages = stagesArrays.flatMap((stages, index) =>
+        stages.map(stage => ({ ...stage, epicId: epics[index].id }))
+      );
 
       const pmUser = project.pm ? await storage.getUser(project.pm) : null;
       const branding = (tenant as any)?.branding || {};
@@ -7379,6 +7384,66 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           totalExpenses: totalExpenses.toFixed(2),
           teamMembers: teamMembers.size,
         },
+        timeline: (() => {
+          const stageDateMap = new Map<string, { startDate: string; endDate: string }>();
+          for (const alloc of allocations) {
+            const sid = (alloc as any).projectStageId;
+            if (!sid || !(alloc as any).plannedStartDate) continue;
+            const existing = stageDateMap.get(sid);
+            const aStart = (alloc as any).plannedStartDate;
+            const aEnd = (alloc as any).plannedEndDate || aStart;
+            if (!existing) {
+              stageDateMap.set(sid, { startDate: aStart, endDate: aEnd });
+            } else {
+              if (aStart < existing.startDate) existing.startDate = aStart;
+              if (aEnd > existing.endDate) existing.endDate = aEnd;
+            }
+          }
+
+          const epicMap = new Map<string, { name: string; order: number; stages: any[]; milestones: any[] }>();
+          for (const epic of epics) {
+            epicMap.set(epic.id, { name: epic.name, order: epic.order, stages: [], milestones: [] });
+          }
+
+          for (const stage of allStages) {
+            const dates = stageDateMap.get(stage.id);
+            const epicEntry = epicMap.get(stage.epicId);
+            if (epicEntry && dates) {
+              epicEntry.stages.push({
+                name: stage.name,
+                order: stage.order,
+                startDate: dates.startDate,
+                endDate: dates.endDate,
+              });
+            }
+          }
+
+          const unlinkedMilestones: any[] = [];
+          for (const m of milestones) {
+            const ms = { name: (m as any).name, targetDate: (m as any).targetDate || '', status: (m as any).status || '', isPayment: (m as any).isPaymentMilestone || false };
+            if (!ms.targetDate) continue;
+            const epicEntry = (m as any).projectEpicId ? epicMap.get((m as any).projectEpicId) : null;
+            if (epicEntry) {
+              epicEntry.milestones.push(ms);
+            } else {
+              unlinkedMilestones.push(ms);
+            }
+          }
+
+          const epicGroups = Array.from(epicMap.values())
+            .filter(e => e.stages.length > 0 || e.milestones.length > 0)
+            .sort((a, b) => a.order - b.order)
+            .map(e => ({
+              epicName: e.name,
+              stages: e.stages.sort((a: any, b: any) => {
+                if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+                return a.order - b.order;
+              }),
+              milestones: e.milestones,
+            }));
+
+          return { epicGroups, unlinkedMilestones };
+        })(),
       };
 
       const tmpFile = pathNode.join(osNode.tmpdir(), `status-report-${Date.now()}.pptx`);
