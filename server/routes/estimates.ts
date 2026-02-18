@@ -3770,11 +3770,20 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Sort by usage count (most used first)
       missingRoles.sort((a, b) => b.usageCount - a.usageCount);
 
+      // Get tenant defaults for rate suggestions
+      const tenant = req.user?.tenantId ? await storage.getTenant(req.user.tenantId) : null;
+      const defaultBillingRate = tenant?.defaultBillingRate || "0";
+      const defaultCostRate = tenant?.defaultCostRate || "0";
+
       res.json({
         valid: missingRoles.length === 0,
         missingRoles,
         totalResources: resourceNames.size,
-        matchedResources: resourceNames.size - missingRoles.length
+        matchedResources: resourceNames.size - missingRoles.length,
+        tenantDefaults: {
+          defaultBillingRate,
+          defaultCostRate
+        }
       });
     } catch (error) {
       console.error("CSV validation error:", error);
@@ -3796,8 +3805,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       for (const roleData of rolesToCreate) {
         const role = await storage.createRole({
           name: roleData.name,
-          defaultRackRate: roleData.defaultRackRate?.toString() || "175",
-          defaultCostRate: roleData.defaultCostRate?.toString() || "131.25",
+          defaultRackRate: roleData.defaultRackRate?.toString() || "0",
+          defaultCostRate: roleData.defaultCostRate?.toString() || "0",
           tenantId: tenantId || null
         });
         createdRoles.push(role);

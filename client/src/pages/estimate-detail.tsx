@@ -1199,11 +1199,12 @@ function EstimateDetailContent() {
         const validation = await validationResponse.json();
         
         if (validation.missingRoles && validation.missingRoles.length > 0) {
-          // Show missing roles wizard
+          const tenantBillingRate = validation.tenantDefaults?.defaultBillingRate || "0";
+          const tenantCostRate = validation.tenantDefaults?.defaultCostRate || "0";
           setMissingRoles(validation.missingRoles.map((r: any) => ({
             name: r.name,
-            billingRate: "175",
-            costRate: "131.25",
+            billingRate: tenantBillingRate,
+            costRate: tenantCostRate,
             usageCount: r.usageCount
           })));
           setShowMissingRolesWizard(true);
