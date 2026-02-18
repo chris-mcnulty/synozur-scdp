@@ -3878,7 +3878,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const headers = rows[0];
       const colIndex: any = {};
       headers.forEach((header, idx) => {
-        const normalized = header.toLowerCase().trim();
+        // Strip BOM and normalize
+        const normalized = header.replace(/^\uFEFF/, '').toLowerCase().trim();
         if (normalized.includes("epic")) colIndex.epic = idx;
         else if (normalized.includes("stage")) colIndex.stage = idx;
         else if (normalized.includes("workstream")) colIndex.workstream = idx;
@@ -3896,10 +3897,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         else if (normalized.includes("comment")) colIndex.comments = idx;
       });
       
-      // Fallback: if no "epic" column found but "workstream" column exists, use workstream as epic source
-      if (colIndex.epic === undefined && colIndex.workstream !== undefined) {
-        console.log("No 'Epic' column found - using 'Workstream' column as epic source");
-        colIndex.epic = colIndex.workstream;
+      // Fallback: if no explicit "epic" column found, default to column 0
+      // This matches the template/export layout where Epic Name is always column A
+      if (colIndex.epic === undefined) {
+        console.log("No 'Epic' column header found - defaulting to column 0 (first column) as epic source");
+        colIndex.epic = 0;
       }
       
       console.log("Column mappings:", colIndex);
@@ -4160,21 +4162,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const unmatchedEpics = new Set();
       const unmatchedStages = new Set();
       
-      // Detect column layout from header rows
-      // Standard layout: 0=Epic, 1=Stage, 2=Workstream
-      // Alternative layout (no Epic column): 0=Phase/other, 1=Stage, 2=Workstream → use Workstream as epic
-      const headerRow = data[0] as any[];
-      let epicCol = 0;
-      let useWorkstreamAsEpic = false;
-      if (headerRow) {
-        const col0Header = String(headerRow[0] || '').toLowerCase().replace(/[^\w\s]/g, '').trim();
-        const col2Header = String(headerRow[2] || '').toLowerCase().trim();
-        if (!col0Header.includes('epic') && col2Header.includes('workstream')) {
-          epicCol = 2;
-          useWorkstreamAsEpic = true;
-          console.log("No 'Epic' column found in Excel - using 'Workstream' column (col 2) as epic source");
-        }
-      }
+      // Excel layout always uses column 0 for Epic Name (matches template/export)
+      const epicCol = 0;
       
       console.log(`Total rows in Excel: ${data.length}`);
       console.log(`Processing data rows starting from row 4 (index 3)`);
