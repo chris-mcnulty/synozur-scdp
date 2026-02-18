@@ -2756,7 +2756,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // Estimate rate overrides
   app.get("/api/estimates/:id/rate-overrides", requireAuth, async (req, res) => {
     try {
-      const { RateResolver } = await import("./rate-resolver.js");
+      const { RateResolver } = await import("../rate-resolver.js");
       const enrichedOverrides = await RateResolver.getEstimateOverrides(req.params.id);
       res.json(enrichedOverrides);
     } catch (error) {
@@ -2945,7 +2945,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // Effective rates (batch resolution for all line items)
   app.get("/api/estimates/:id/effective-rates", requireAuth, async (req, res) => {
     try {
-      const { RateResolver } = await import("./rate-resolver.js");
+      const { RateResolver } = await import("../rate-resolver.js");
       const effectiveRates = await RateResolver.resolveRatesBatch(req.params.id);
       res.json(effectiveRates);
     } catch (error) {
