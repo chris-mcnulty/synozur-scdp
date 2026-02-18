@@ -7411,21 +7411,33 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           }
 
           for (const stage of allStages) {
-            const dates = stageDateMap.get(stage.id);
             const epicEntry = epicMap.get(stage.epicId);
-            if (epicEntry && dates) {
+            if (epicEntry) {
+              const dates = stageDateMap.get(stage.id);
               epicEntry.stages.push({
                 name: stage.name,
                 order: stage.order,
-                startDate: dates.startDate,
-                endDate: dates.endDate,
+                startDate: dates?.startDate || '',
+                endDate: dates?.endDate || '',
               });
             }
           }
 
+          const paymentMilestones: any[] = [];
           const unlinkedMilestones: any[] = [];
           for (const m of milestones) {
-            const ms = { name: (m as any).name, targetDate: (m as any).targetDate || '', status: (m as any).status || '', isPayment: (m as any).isPaymentMilestone || false };
+            const ms = {
+              name: (m as any).name,
+              targetDate: (m as any).targetDate || '',
+              startDate: (m as any).startDate || '',
+              endDate: (m as any).endDate || '',
+              status: (m as any).status || '',
+              isPayment: (m as any).isPaymentMilestone || false,
+            };
+            if (ms.isPayment) {
+              paymentMilestones.push(ms);
+              continue;
+            }
             if (!ms.targetDate) continue;
             const epicEntry = (m as any).projectEpicId ? epicMap.get((m as any).projectEpicId) : null;
             if (epicEntry) {
@@ -7441,13 +7453,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             .map(e => ({
               epicName: e.name,
               stages: e.stages.sort((a: any, b: any) => {
-                if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+                if (a.startDate && b.startDate && a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
                 return a.order - b.order;
               }),
               milestones: e.milestones,
             }));
 
-          return { epicGroups, unlinkedMilestones };
+          return { epicGroups, unlinkedMilestones, paymentMilestones };
         })(),
       };
 

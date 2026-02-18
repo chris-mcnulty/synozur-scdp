@@ -521,20 +521,19 @@ def create_timeline_slide(prs, data, primary_color, secondary_color):
     timeline = data.get('timeline', {})
     epic_groups = timeline.get('epicGroups', [])
     unlinked_milestones = timeline.get('unlinkedMilestones', [])
+    payment_milestones = timeline.get('paymentMilestones', [])
     all_milestones = data.get('milestones', [])
 
-    has_gantt_data = any(eg.get('stages') for eg in epic_groups)
-    if not has_gantt_data and not unlinked_milestones and not all_milestones:
+    has_epic_data = any(eg.get('stages') for eg in epic_groups)
+    has_any_data = has_epic_data or unlinked_milestones or payment_milestones or all_milestones
+
+    if not has_any_data:
         note_box = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(10), Inches(1))
         tf = note_box.text_frame
         p = tf.paragraphs[0]
         run = p.add_run()
         run.text = "No timeline data available for this project."
         set_font(run, size=12, color='#666666')
-        return slide
-
-    if not has_gantt_data:
-        _draw_milestone_table_fallback(slide, all_milestones, primary_color)
         return slide
 
     all_dates = []
@@ -550,119 +549,134 @@ def create_timeline_slide(prs, data, primary_color, secondary_color):
     for ms in unlinked_milestones:
         if ms.get('targetDate'):
             all_dates.append(ms['targetDate'])
+    for ms in payment_milestones:
+        if ms.get('targetDate'):
+            all_dates.append(ms['targetDate'])
 
-    if not all_dates:
-        _draw_milestone_table_fallback(slide, all_milestones, primary_color)
-        return slide
+    has_gantt_dates = len(all_dates) > 0
 
-    all_dates.sort()
-    min_date = datetime.strptime(all_dates[0][:10], '%Y-%m-%d')
-    max_date = datetime.strptime(all_dates[-1][:10], '%Y-%m-%d')
+    if has_gantt_dates:
+        all_dates.sort()
+        min_date = datetime.strptime(all_dates[0][:10], '%Y-%m-%d')
+        max_date = datetime.strptime(all_dates[-1][:10], '%Y-%m-%d')
 
-    padding_days = max(7, int((max_date - min_date).days * 0.05))
-    chart_start = min_date - timedelta(days=padding_days)
-    chart_end = max_date + timedelta(days=padding_days)
-    total_days = max((chart_end - chart_start).days, 1)
+        padding_days = max(7, int((max_date - min_date).days * 0.05))
+        chart_start = min_date - timedelta(days=padding_days)
+        chart_end = max_date + timedelta(days=padding_days)
+        total_days = max((chart_end - chart_start).days, 1)
 
-    label_width = Inches(2.8)
-    chart_left = Inches(3.2)
-    chart_width_in = 9.5
-    chart_width = Inches(chart_width_in)
-    chart_top = Inches(1.3)
-    row_height = Inches(0.35)
-    epic_header_height = Inches(0.30)
-    milestone_dot_size = Inches(0.18)
+        label_width = Inches(2.8)
+        chart_left = Inches(3.2)
+        chart_width_in = 9.5
+        chart_width = Inches(chart_width_in)
+        chart_top = Inches(1.3)
+        row_height = Inches(0.35)
+        epic_header_height = Inches(0.30)
+        milestone_dot_size = Inches(0.18)
 
-    def date_to_x(date_str):
-        d = datetime.strptime(date_str[:10], '%Y-%m-%d')
-        frac = (d - chart_start).days / total_days
-        return chart_left + Emu(int(chart_width_in * frac * 914400))
+        def date_to_x(date_str):
+            d = datetime.strptime(date_str[:10], '%Y-%m-%d')
+            frac = (d - chart_start).days / total_days
+            return chart_left + Emu(int(chart_width_in * frac * 914400))
 
-    bar_colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#7c3aed', '#4f46e5', '#818cf8', '#c084fc', '#a855f7']
+        bar_colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#7c3aed', '#4f46e5', '#818cf8', '#c084fc', '#a855f7']
 
-    _draw_month_axis(slide, chart_start, chart_end, chart_left, chart_width, chart_top, total_days, primary_color)
+        _draw_month_axis(slide, chart_start, chart_end, chart_left, chart_width, chart_top, total_days, primary_color)
 
-    y_cursor = chart_top + Inches(0.35)
-    color_idx = 0
+        y_cursor = chart_top + Inches(0.35)
+        color_idx = 0
 
-    for eg in epic_groups:
-        epic_name = eg.get('epicName', 'Unnamed Epic')
-        stages = eg.get('stages', [])
-        ms_list = eg.get('milestones', [])
+        for eg in epic_groups:
+            epic_name = eg.get('epicName', 'Unnamed Epic')
+            stages = eg.get('stages', [])
+            ms_list = eg.get('milestones', [])
 
-        if not stages and not ms_list:
-            continue
-
-        epic_label = slide.shapes.add_textbox(Inches(0.4), y_cursor, label_width, epic_header_height)
-        tf = epic_label.text_frame
-        tf.word_wrap = True
-        p = tf.paragraphs[0]
-        run = p.add_run()
-        run.text = epic_name
-        set_font(run, size=9, bold=True, color=primary_color)
-        y_cursor += epic_header_height
-
-        for stage in stages:
-            start_str = stage.get('startDate', '')
-            end_str = stage.get('endDate', '')
-            if not start_str or not end_str:
+            if not stages and not ms_list:
                 continue
 
-            stage_label = slide.shapes.add_textbox(Inches(0.6), y_cursor, label_width - Inches(0.2), row_height)
-            tf = stage_label.text_frame
+            epic_label = slide.shapes.add_textbox(Inches(0.4), y_cursor, label_width, epic_header_height)
+            tf = epic_label.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
-            p.alignment = PP_ALIGN.RIGHT
             run = p.add_run()
-            run.text = stage.get('name', '')
-            set_font(run, size=8, color='#333333')
+            run.text = epic_name
+            set_font(run, size=9, bold=True, color=primary_color)
+            y_cursor += epic_header_height
 
-            bar_left = date_to_x(start_str)
-            bar_right = date_to_x(end_str)
-            bar_w = max(bar_right - bar_left, Emu(int(914400 * 0.1)))
-            bar_h = Inches(0.22)
-            bar_top = y_cursor + Inches(0.06)
+            for stage in stages:
+                start_str = stage.get('startDate', '')
+                end_str = stage.get('endDate', '')
 
-            bar_color = bar_colors[color_idx % len(bar_colors)]
-            bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, bar_left, bar_top, bar_w, bar_h)
-            bar.fill.solid()
-            bar.fill.fore_color.rgb = hex_to_rgb(bar_color)
-            bar.line.fill.background()
+                stage_label = slide.shapes.add_textbox(Inches(0.6), y_cursor, label_width - Inches(0.2), row_height)
+                tf = stage_label.text_frame
+                tf.word_wrap = True
+                p = tf.paragraphs[0]
+                p.alignment = PP_ALIGN.RIGHT
+                run = p.add_run()
+                stage_name = stage.get('name', '')
+                if start_str and end_str:
+                    run.text = stage_name
+                else:
+                    run.text = f"{stage_name}  (no dates)"
+                set_font(run, size=8, color='#333333')
 
-            if bar_w > Emu(int(914400 * 1.2)):
-                bar_tf = bar.text_frame
-                bar_tf.word_wrap = False
-                bp = bar_tf.paragraphs[0]
-                bp.alignment = PP_ALIGN.CENTER
-                brun = bp.add_run()
-                s = datetime.strptime(start_str[:10], '%Y-%m-%d')
-                e = datetime.strptime(end_str[:10], '%Y-%m-%d')
-                brun.text = f"{s.strftime('%b %d')} – {e.strftime('%b %d')}"
-                set_font(brun, size=6, color='#FFFFFF', bold=True)
+                if start_str and end_str:
+                    bar_left = date_to_x(start_str)
+                    bar_right = date_to_x(end_str)
+                    bar_w = max(bar_right - bar_left, Emu(int(914400 * 0.1)))
+                    bar_h = Inches(0.22)
+                    bar_top = y_cursor + Inches(0.06)
 
-            y_cursor += row_height
-            color_idx += 1
+                    bar_color = bar_colors[color_idx % len(bar_colors)]
+                    bar = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, bar_left, bar_top, bar_w, bar_h)
+                    bar.fill.solid()
+                    bar.fill.fore_color.rgb = hex_to_rgb(bar_color)
+                    bar.line.fill.background()
 
-        for ms in ms_list:
-            if not ms.get('targetDate'):
-                continue
-            _draw_milestone_dot(slide, ms, date_to_x, y_cursor, label_width, secondary_color, milestone_dot_size)
-            y_cursor += Inches(0.28)
+                    if bar_w > Emu(int(914400 * 1.2)):
+                        bar_tf = bar.text_frame
+                        bar_tf.word_wrap = False
+                        bp = bar_tf.paragraphs[0]
+                        bp.alignment = PP_ALIGN.CENTER
+                        brun = bp.add_run()
+                        s = datetime.strptime(start_str[:10], '%Y-%m-%d')
+                        e = datetime.strptime(end_str[:10], '%Y-%m-%d')
+                        brun.text = f"{s.strftime('%b %d')} – {e.strftime('%b %d')}"
+                        set_font(brun, size=6, color='#FFFFFF', bold=True)
 
-    if unlinked_milestones:
-        ul_label = slide.shapes.add_textbox(Inches(0.4), y_cursor, label_width, epic_header_height)
-        tf = ul_label.text_frame
-        p = tf.paragraphs[0]
-        run = p.add_run()
-        run.text = "Project Milestones"
-        set_font(run, size=9, bold=True, color=primary_color)
-        y_cursor += epic_header_height
+                y_cursor += row_height
+                color_idx += 1
 
-        for ms in unlinked_milestones:
-            if not ms.get('targetDate'):
-                continue
-            _draw_milestone_dot(slide, ms, date_to_x, y_cursor, label_width, secondary_color, milestone_dot_size)
-            y_cursor += Inches(0.28)
+            for ms in ms_list:
+                if not ms.get('targetDate'):
+                    continue
+                _draw_milestone_dot(slide, ms, date_to_x, y_cursor, label_width, secondary_color, milestone_dot_size)
+                y_cursor += Inches(0.28)
+
+        if unlinked_milestones:
+            ul_label = slide.shapes.add_textbox(Inches(0.4), y_cursor, label_width, epic_header_height)
+            tf = ul_label.text_frame
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = "Project Milestones"
+            set_font(run, size=9, bold=True, color=primary_color)
+            y_cursor += epic_header_height
+
+            for ms in unlinked_milestones:
+                if not ms.get('targetDate'):
+                    continue
+                _draw_milestone_dot(slide, ms, date_to_x, y_cursor, label_width, secondary_color, milestone_dot_size)
+                y_cursor += Inches(0.28)
+
+        if payment_milestones:
+            _draw_payment_milestones_section(slide, payment_milestones, y_cursor, primary_color, secondary_color, date_to_x if has_gantt_dates else None)
+
+    else:
+        y_cursor = Inches(1.3)
+        _draw_epic_stages_list(slide, epic_groups, y_cursor, primary_color)
+        y_cursor_after = Inches(1.3) + Inches(0.3) * sum(1 + len(eg.get('stages', [])) for eg in epic_groups if eg.get('stages'))
+        if payment_milestones:
+            _draw_payment_milestones_section(slide, payment_milestones, y_cursor_after, primary_color, secondary_color, None)
 
     return slide
 
@@ -736,6 +750,111 @@ def _draw_milestone_dot(slide, ms, date_to_x, y_cursor, label_width, secondary_c
     d = datetime.strptime(target[:10], '%Y-%m-%d')
     run.text = f"{ms_name}{label_suffix} ({d.strftime('%b %d')})"
     set_font(run, size=7, color='#555555', italic=True)
+
+
+def _draw_payment_milestones_section(slide, payment_milestones, y_cursor, primary_color, secondary_color, date_to_x_fn):
+    """Draw payment milestones section below the Gantt chart."""
+    if not payment_milestones:
+        return y_cursor
+
+    label_width = Inches(2.8)
+    epic_header_height = Inches(0.30)
+    row_height = Inches(0.28)
+
+    header = slide.shapes.add_textbox(Inches(0.4), y_cursor, Inches(4), epic_header_height)
+    tf = header.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Payment Milestones"
+    set_font(run, size=9, bold=True, color=primary_color)
+    y_cursor += epic_header_height
+
+    for ms in payment_milestones:
+        ms_name = ms.get('name', '')
+        status = ms.get('status', '')
+        target_date = ms.get('targetDate', '')
+
+        status_icon = ''
+        dot_color = secondary_color
+        if status == 'completed':
+            status_icon = ' \u2713'
+            dot_color = '#22c55e'
+        elif status == 'in-progress':
+            status_icon = ' \u25B6'
+            dot_color = '#3b82f6'
+
+        ms_label = slide.shapes.add_textbox(Inches(0.6), y_cursor, label_width - Inches(0.2), Inches(0.25))
+        tf = ms_label.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.RIGHT
+        run = p.add_run()
+        date_display = ''
+        if target_date:
+            try:
+                d = datetime.strptime(target_date[:10], '%Y-%m-%d')
+                date_display = f" ({d.strftime('%b %d')})"
+            except:
+                pass
+        run.text = f"$ {ms_name}{status_icon}{date_display}"
+        set_font(run, size=8, color='#333333', bold=True)
+
+        if target_date and date_to_x_fn:
+            dot_size = Inches(0.16)
+            x = date_to_x_fn(target_date)
+            dot_top = y_cursor + Inches(0.04)
+            dot = slide.shapes.add_shape(MSO_SHAPE.DIAMOND, x - dot_size // 2, dot_top, dot_size, dot_size)
+            dot.fill.solid()
+            dot.fill.fore_color.rgb = hex_to_rgb(dot_color)
+            dot.line.fill.background()
+        else:
+            status_txt = status.replace('-', ' ').title() if status else 'Pending'
+            status_label = slide.shapes.add_textbox(Inches(3.2), y_cursor, Inches(2), Inches(0.25))
+            tf = status_label.text_frame
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = status_txt
+            font_color = '#22c55e' if status == 'completed' else '#3b82f6' if status == 'in-progress' else '#9ca3af'
+            set_font(run, size=7, color=font_color, italic=True)
+
+        y_cursor += row_height
+
+    return y_cursor
+
+
+def _draw_epic_stages_list(slide, epic_groups, y_cursor, primary_color):
+    """Draw a simple list of epics and their stages when no date data is available for Gantt bars."""
+    label_width = Inches(10)
+    epic_header_height = Inches(0.30)
+    row_height = Inches(0.25)
+
+    for eg in epic_groups:
+        epic_name = eg.get('epicName', 'Unnamed Epic')
+        stages = eg.get('stages', [])
+        if not stages:
+            continue
+
+        epic_label = slide.shapes.add_textbox(Inches(0.6), y_cursor, label_width, epic_header_height)
+        tf = epic_label.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        run.text = epic_name
+        set_font(run, size=10, bold=True, color=primary_color)
+        y_cursor += epic_header_height
+
+        for stage in stages:
+            stage_label = slide.shapes.add_textbox(Inches(1.0), y_cursor, label_width, row_height)
+            tf = stage_label.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = f"\u2022  {stage.get('name', '')}"
+            set_font(run, size=9, color='#444444')
+            y_cursor += row_height
+
+    return y_cursor
 
 
 def _draw_milestone_table_fallback(slide, milestones, primary_color):
