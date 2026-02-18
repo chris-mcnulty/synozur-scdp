@@ -3896,6 +3896,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         else if (normalized.includes("comment")) colIndex.comments = idx;
       });
       
+      // Fallback: if no "epic" column found but "workstream" column exists, use workstream as epic source
+      if (colIndex.epic === undefined && colIndex.workstream !== undefined) {
+        console.log("No 'Epic' column found - using 'Workstream' column as epic source");
+        colIndex.epic = colIndex.workstream;
+      }
+      
       console.log("Column mappings:", colIndex);
 
       // Get estimate and lookup data
@@ -4154,6 +4160,22 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       const unmatchedEpics = new Set();
       const unmatchedStages = new Set();
       
+      // Detect column layout from header rows
+      // Standard layout: 0=Epic, 1=Stage, 2=Workstream
+      // Alternative layout (no Epic column): 0=Phase/other, 1=Stage, 2=Workstream → use Workstream as epic
+      const headerRow = data[0] as any[];
+      let epicCol = 0;
+      let useWorkstreamAsEpic = false;
+      if (headerRow) {
+        const col0Header = String(headerRow[0] || '').toLowerCase().replace(/[^\w\s]/g, '').trim();
+        const col2Header = String(headerRow[2] || '').toLowerCase().trim();
+        if (!col0Header.includes('epic') && col2Header.includes('workstream')) {
+          epicCol = 2;
+          useWorkstreamAsEpic = true;
+          console.log("No 'Epic' column found in Excel - using 'Workstream' column (col 2) as epic source");
+        }
+      }
+      
       console.log(`Total rows in Excel: ${data.length}`);
       console.log(`Processing data rows starting from row 4 (index 3)`);
       let processedCount = 0;
@@ -4215,7 +4237,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         }
 
         // Lookup epic and stage IDs from names
-        const epicName = row[0] ? String(row[0]).trim() : "";
+        const epicName = row[epicCol] ? String(row[epicCol]).trim() : "";
         const stageName = row[1] ? String(row[1]).trim() : "";
         let epicId: string | null = epicName ? (epicNameToId.get(epicName.toLowerCase()) || null) : null;
         let stageId: string | null = null;
