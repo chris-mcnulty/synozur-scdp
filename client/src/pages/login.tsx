@@ -527,7 +527,7 @@ export default function Login() {
             <a href="https://synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Contact</a>
           </nav>
           <p className="text-xs text-gray-600">
-            &copy; {new Date().getFullYear()} Synozur Consulting. All rights reserved.
+            &copy; {new Date().getFullYear()} The Synozur Alliance LLC. All rights reserved.
           </p>
         </div>
       </footer>
