@@ -516,7 +516,7 @@ export default function Login() {
             <span className="text-sm text-gray-500">Constellation by Synozur</span>
           </div>
           <nav className="flex items-center gap-4 text-xs text-gray-500">
-            <a href="https://synozur.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">About Synozur</a>
+            <a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">About Synozur</a>
             <span className="text-gray-700">|</span>
             <a href="https://synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Terms</a>
             <span className="text-gray-700">|</span>
