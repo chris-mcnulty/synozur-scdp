@@ -524,7 +524,7 @@ export default function Login() {
             <span className="text-gray-700">|</span>
             <a href="https://www.synozur.com/insights" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Blog</a>
             <span className="text-gray-700">|</span>
-            <a href="https://synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Contact</a>
+            <a href="https://www.synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Contact</a>
           </nav>
           <p className="text-xs text-gray-600">
             &copy; {new Date().getFullYear()} The Synozur Alliance LLC. All rights reserved.
