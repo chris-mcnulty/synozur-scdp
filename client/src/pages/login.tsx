@@ -520,7 +520,7 @@ export default function Login() {
             <span className="text-gray-700">|</span>
             <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Terms</a>
             <span className="text-gray-700">|</span>
-            <a href="https://synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Privacy</a>
+            <a href="https://www.synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Privacy</a>
             <span className="text-gray-700">|</span>
             <a href="https://synozur.com/blog" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Blog</a>
             <span className="text-gray-700">|</span>
