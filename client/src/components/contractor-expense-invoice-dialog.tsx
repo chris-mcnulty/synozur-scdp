@@ -51,7 +51,7 @@ export function ContractorExpenseInvoiceDialog({
   const [recipientAddress, setRecipientAddress] = useState("");
   const [recipientContact, setRecipientContact] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("Payment due upon receipt");
+  const [paymentTerms, setPaymentTerms] = useState("Due upon client reimbursement");
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isGeneratingCsv, setIsGeneratingCsv] = useState(false);
 
@@ -385,7 +385,8 @@ export function ContractorExpenseInvoiceDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Payment due upon receipt">Payment due upon receipt</SelectItem>
+                    <SelectItem value="Due upon client reimbursement">Due upon client reimbursement</SelectItem>
+                    <SelectItem value="Due upon receipt">Due upon receipt</SelectItem>
                     <SelectItem value="Net 15">Net 15</SelectItem>
                     <SelectItem value="Net 30">Net 30</SelectItem>
                   </SelectContent>

@@ -724,7 +724,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       if (!companyPhone) companyPhone = await storage.getSystemSettingValue('COMPANY_PHONE');
       if (!companyEmail) companyEmail = await storage.getSystemSettingValue('COMPANY_EMAIL');
       if (!companyWebsite) companyWebsite = await storage.getSystemSettingValue('COMPANY_WEBSITE');
-      if (!defaultPaymentTerms) defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Net 30');
+      if (!defaultPaymentTerms) defaultPaymentTerms = await storage.getSystemSettingValue('PAYMENT_TERMS', 'Payment due upon receipt');
       
       let clientPaymentTerms: string | null = null;
       if (lines.length > 0) {
@@ -1628,7 +1628,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       }
       
       for (const [clientId, group] of Object.entries(linesByClient) as any[]) {
-        const paymentTerms = group.client.paymentTerms || batchDetails.paymentTerms || 'Net 30';
+        const paymentTerms = group.client.paymentTerms || batchDetails.paymentTerms || 'Payment due upon receipt';
         const dueDate = calculateDueDate(rawInvoiceDate, paymentTerms);
         
         for (const line of group.lines) {
