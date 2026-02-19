@@ -133,7 +133,7 @@ export default function RateManagement() {
   });
 
   const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users?includeInactive=true"],
     enabled: hasRole('admin'),
   });
 

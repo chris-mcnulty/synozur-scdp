@@ -205,7 +205,7 @@ export default function ClientDetail() {
   });
 
   const { data: allPlatformUsers = [], isError: usersQueryError } = useQuery<{ id: string; name: string; email: string }[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"],
     enabled: showAddStakeholder,
   });
 

@@ -397,7 +397,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       const platformRole = currentUser?.platformRole;
       const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
       const tenantId = isPlatformAdmin ? undefined : (currentUser?.tenantId || undefined);
-      const usersList = await storage.getUsers(tenantId);
+      const includeInactive = req.query.includeInactive === 'true';
+      const includeStakeholders = req.query.includeStakeholders === 'true';
+      const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
       
       if (isPlatformAdmin) {
         const allTenants = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);

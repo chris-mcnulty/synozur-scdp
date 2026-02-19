@@ -354,7 +354,7 @@ export default function ExpenseManagement() {
   });
 
   const { data: users = [] } = useQuery<User[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users?includeInactive=true"],
   });
 
   const bulkUpdateMutation = useMutation({

@@ -27,7 +27,7 @@ export default function Users() {
   const { isPlatformAdmin } = useAuth();
 
   const { data: users = [], isLoading } = useQuery<any[]>({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"],
   });
 
   const createUser = useMutation({
@@ -36,7 +36,7 @@ export default function Users() {
       body: JSON.stringify(data),
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
       setCreateDialogOpen(false);
       toast({
         title: "Success",
@@ -58,7 +58,7 @@ export default function Users() {
       body: JSON.stringify(data),
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
       setEditingUser(null);
       toast({
         title: "Success",
@@ -79,7 +79,7 @@ export default function Users() {
       method: "DELETE",
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users?includeInactive=true&includeStakeholders=true"] });
       setDeleteDialogOpen(false);
       setUserToDelete(null);
       toast({

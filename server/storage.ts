@@ -231,7 +231,7 @@ function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T
 
 export interface IStorage {
   // Users
-  getUsers(tenantId?: string): Promise<User[]>;
+  getUsers(tenantId?: string, options?: { includeInactive?: boolean; includeStakeholders?: boolean }): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
   getUsersByIds(ids: string[]): Promise<Map<string, User>>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -1036,27 +1036,51 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUsers(tenantId?: string): Promise<User[]> {
+  async getUsers(tenantId?: string, options?: { includeInactive?: boolean; includeStakeholders?: boolean }): Promise<User[]> {
+    const includeInactive = options?.includeInactive ?? false;
+    const includeStakeholders = options?.includeStakeholders ?? false;
+
     if (tenantId) {
+      const conditions: any[] = [
+        eq(tenantUsers.tenantId, tenantId),
+      ];
+      if (!includeInactive) {
+        conditions.push(eq(tenantUsers.status, 'active'));
+        conditions.push(eq(users.isActive, true));
+      }
+      if (!includeStakeholders) {
+        conditions.push(sql`${tenantUsers.role} != 'client'`);
+      }
+
       const membershipResults = await db.select({ user: users })
         .from(users)
         .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
-        .where(and(
-          eq(tenantUsers.tenantId, tenantId),
-          eq(tenantUsers.status, 'active')
-        ))
+        .where(and(...conditions))
         .orderBy(users.name);
       
       if (membershipResults.length > 0) {
         return membershipResults.map(r => r.user);
       }
       
-      return await db.select()
-        .from(users)
-        .where(or(
+      const fallbackConditions: any[] = [
+        or(
           eq(users.primaryTenantId, tenantId),
           isNull(users.primaryTenantId)
-        ))
+        )
+      ];
+      if (!includeInactive) {
+        fallbackConditions.push(eq(users.isActive, true));
+      }
+
+      return await db.select()
+        .from(users)
+        .where(and(...fallbackConditions))
+        .orderBy(users.name);
+    }
+    if (!includeInactive) {
+      return await db.select()
+        .from(users)
+        .where(eq(users.isActive, true))
         .orderBy(users.name);
     }
     return await db.select()
