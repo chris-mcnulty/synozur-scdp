@@ -225,8 +225,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
   app.get("/api/clients/:clientId/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
     try {
       const { clientId } = req.params;
+      const projectId = req.query.projectId as string | undefined;
       const { filter, tenantId } = shouldFilterByTenant(req);
-      const batches = await storage.getInvoiceBatchesForClient(clientId);
+      const batches = await storage.getInvoiceBatchesForClient(clientId, projectId);
       const filtered = filter
         ? batches.filter(b => b.tenantId === tenantId)
         : batches;

@@ -480,10 +480,15 @@ export default function ProjectDetail() {
     enabled: !!id,
   });
 
-  // Invoice batches query - fetch invoice batches for the project's client
+  // Invoice batches query - fetch invoice batches for the project's client, filtered to this project
   const { data: invoiceBatches = [], isLoading: invoiceBatchesLoading } = useQuery<any[]>({
-    queryKey: [`/api/clients/${currentClientId}/invoice-batches`],
-    enabled: !!currentClientId,
+    queryKey: [`/api/clients/${currentClientId}/invoice-batches`, { projectId: id }],
+    queryFn: async () => {
+      const response = await fetch(`/api/clients/${currentClientId}/invoice-batches?projectId=${id}`);
+      if (!response.ok) throw new Error('Failed to fetch invoice batches');
+      return response.json();
+    },
+    enabled: !!currentClientId && !!id,
   });
   
   // Group vocabulary catalog terms by type
@@ -4005,7 +4010,7 @@ export default function ProjectDetail() {
               <CardHeader>
                 <CardTitle>Invoices</CardTitle>
                 <CardDescription>
-                  Invoice batches for {analytics?.project?.client?.name || 'this client'}
+                  Invoice batches for this project
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -4019,7 +4024,7 @@ export default function ProjectDetail() {
                   <div className="text-center py-8">
                     <FileText className="w-12 h-12 mx-auto text-muted-foreground opacity-50 mb-4" />
                     <h3 className="text-lg font-medium mb-2">No invoices found</h3>
-                    <p className="text-muted-foreground">No invoice batches have been created for this client yet.</p>
+                    <p className="text-muted-foreground">No invoice batches have been created for this project yet.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
