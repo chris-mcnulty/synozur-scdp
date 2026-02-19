@@ -518,7 +518,7 @@ export default function Login() {
           <nav className="flex items-center gap-4 text-xs text-gray-500">
             <a href="https://www.synozur.com" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">About Synozur</a>
             <span className="text-gray-700">|</span>
-            <a href="https://synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Terms</a>
+            <a href="https://www.synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Terms</a>
             <span className="text-gray-700">|</span>
             <a href="https://synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Privacy</a>
             <span className="text-gray-700">|</span>
