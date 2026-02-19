@@ -515,6 +515,17 @@ export default function Login() {
             <SynozurLogo className="h-6 w-6" />
             <span className="text-sm text-gray-500">Constellation by Synozur</span>
           </div>
+          <nav className="flex items-center gap-4 text-xs text-gray-500">
+            <a href="https://synozur.com/about" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">About Synozur</a>
+            <span className="text-gray-700">|</span>
+            <a href="https://synozur.com/terms" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Terms</a>
+            <span className="text-gray-700">|</span>
+            <a href="https://synozur.com/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Privacy</a>
+            <span className="text-gray-700">|</span>
+            <a href="https://synozur.com/blog" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Blog</a>
+            <span className="text-gray-700">|</span>
+            <a href="https://synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Contact</a>
+          </nav>
           <p className="text-xs text-gray-600">
             &copy; {new Date().getFullYear()} Synozur Consulting. All rights reserved.
           </p>
