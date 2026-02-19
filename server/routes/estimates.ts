@@ -4852,6 +4852,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             name: estimate.name,
             code: projectCode,
             pm: req.user!.id,
+            tenantId: (req.user as any)?.tenantId || estimate.tenantId,
             startDate: new Date().toISOString().split('T')[0],
             commercialScheme: estimate.blockDollars ? "retainer" : "tm",
             retainerTotal: estimate.blockDollars || "0",
