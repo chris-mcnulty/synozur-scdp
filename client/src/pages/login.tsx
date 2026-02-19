@@ -524,6 +524,8 @@ export default function Login() {
             <span className="text-gray-700">|</span>
             <a href="https://www.synozur.com/insights" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Blog</a>
             <span className="text-gray-700">|</span>
+            <a href="https://www.synozur.com/applications" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Software</a>
+            <span className="text-gray-700">|</span>
             <a href="https://www.synozur.com/contact" target="_blank" rel="noopener noreferrer" className="hover:text-gray-300 transition-colors">Contact</a>
           </nav>
           <p className="text-xs text-gray-600">
