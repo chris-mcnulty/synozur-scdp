@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { SynozurTextLogo } from "@/components/icons/synozur-logo";
+import { SynozurAppSwitcher } from "@/components/synozur-app-switcher";
 import { getRoleDisplayName } from "@/lib/auth";
 import { Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,7 @@ export function Header() {
     <header className="bg-card border-b border-border sticky top-0 z-50" data-testid="header">
       <div className="flex items-center justify-between px-4 lg:px-6 py-4">
         <div className="flex items-center space-x-2 lg:space-x-6">
+          <SynozurAppSwitcher currentApp="constellation" variant="light" />
           <MobileNav />
           <SynozurTextLogo />
         </div>

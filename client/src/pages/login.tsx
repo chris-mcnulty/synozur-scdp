@@ -27,6 +27,7 @@ import {
   Cloud,
 } from "lucide-react";
 import { SynozurLogo } from "@/components/icons/synozur-logo";
+import { SynozurAppSwitcher } from "@/components/synozur-app-switcher";
 import heroImage from "@assets/AdobeStock_244105520_1771187192557.jpeg";
 import secondaryImage from "@assets/AdobeStock_189127184_1771187213585.jpeg";
 
@@ -174,6 +175,7 @@ export default function Login() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/80 backdrop-blur-xl border-b border-white/5">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <SynozurAppSwitcher currentApp="constellation" variant="dark" />
             <SynozurLogo className="h-8 w-8" />
             <div>
               <span className="text-xl font-bold tracking-tight">Constellation</span>
