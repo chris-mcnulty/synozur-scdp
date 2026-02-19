@@ -11565,7 +11565,7 @@ function calculateDueDate(paymentTerms?: string, baseDate?: Date | string | null
     startDate = getNowInTimezone(timezone);
   }
   
-  let daysToAdd = 0; // Default to Payment due upon receipt
+  let daysToAdd = 30; // Default to Net 30
   
   if (paymentTerms) {
     const lowerTerms = paymentTerms.toLowerCase();

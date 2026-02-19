@@ -248,10 +248,10 @@ export default function BatchDetail() {
       const response = await fetch('/api/system-settings/PAYMENT_TERMS');
       if (!response.ok) {
         // Return default if not found
-        return 'Payment due upon receipt';
+        return 'Payment due within 30 days';
       }
       const data = await response.json();
-      return data.value || 'Payment due upon receipt';
+      return data.value || 'Payment due within 30 days';
     },
     staleTime: 1000 * 60 * 60, // Cache for 1 hour
   });
@@ -1454,7 +1454,7 @@ export default function BatchDetail() {
             <div className="flex items-center gap-2">
               <p className="text-[10px] uppercase font-semibold text-muted-foreground">Payment Terms</p>
               <p className="text-sm font-medium" data-testid="text-payment-terms">
-                {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due upon receipt'}
+                {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
               </p>
               {batchDetails.paymentTerms ? (
                 <Badge variant="secondary" className="text-[9px] h-4 px-1">Custom</Badge>
@@ -1522,7 +1522,7 @@ export default function BatchDetail() {
                 {!isEditingPaymentTerms ? (
                   <div className="space-y-2">
                     <p className="text-sm" data-testid={batchDetails.status === 'finalized' ? 'text-finalized-payment-terms' : 'text-current-payment-terms'}>
-                      {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due upon receipt'}
+                      {batchDetails.paymentTerms || batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                     </p>
                     {batchDetails.status !== 'finalized' && canEditLines() && (
                       <Button
@@ -1569,13 +1569,13 @@ export default function BatchDetail() {
                         id="payment-terms-input"
                         value={customPaymentTerms}
                         onChange={(e) => setCustomPaymentTerms(e.target.value)}
-                        placeholder={defaultPaymentTerms || 'Payment due upon receipt'}
+                        placeholder={defaultPaymentTerms || 'Payment due within 30 days'}
                         className="min-h-[60px] text-xs"
                         data-testid="textarea-payment-terms"
                       />
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Using {batchDetails.clientPaymentTerms ? 'client' : 'default'}: {batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due upon receipt'}
+                        Using {batchDetails.clientPaymentTerms ? 'client' : 'default'}: {batchDetails.clientPaymentTerms || defaultPaymentTerms || 'Payment due within 30 days'}
                       </p>
                     )}
                     <div className="flex gap-1">
