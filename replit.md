@@ -44,7 +44,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Core Features
 - **AI Integration**: Uses Replit AI (OpenAI GPT-5 compatible) for estimate/invoice narrative generation and report queries.
 - **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence.
-- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download.
+- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers (tenant-scoped incrementing counter, resettable via Organization Settings). Expense-type batches default to "Payment Due Upon Receipt" terms. GL invoice number included in PDF filenames.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation.
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
 - **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks.

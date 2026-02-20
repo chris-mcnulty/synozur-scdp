@@ -44,7 +44,7 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
   // Invoice batch endpoints
   app.post("/api/invoice-batches", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
     try {
-      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, taxRate, invoicingMode, batchType } = req.body;
+      const { batchId: providedBatchId, startDate, endDate, month, discountPercent, discountAmount, taxRate, invoicingMode, batchType, paymentTerms: requestPaymentTerms } = req.body;
 
       console.log("[DEBUG] Creating invoice batch with:", { providedBatchId, startDate, endDate, month, invoicingMode, taxRate });
 
@@ -77,6 +77,21 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         defaultTaxRate = "0";
       }
 
+      let glInvoiceNumber: string | null = null;
+      const tenantId = req.user?.tenantId;
+      if (tenantId) {
+        try {
+          glInvoiceNumber = await storage.getAndIncrementGlInvoiceNumber(tenantId);
+        } catch (err) {
+          console.warn("[INVOICE] Failed to auto-generate GL invoice number:", err);
+        }
+      }
+
+      let finalPaymentTerms: string | undefined = requestPaymentTerms;
+      if (!finalPaymentTerms && finalBatchType === "expenses") {
+        finalPaymentTerms = "Payment Due Upon Receipt";
+      }
+
       const batch = await storage.createInvoiceBatch({
         batchId: finalBatchId,
         startDate: finalStartDate,
@@ -91,7 +106,9 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         batchType: finalBatchType,
         exportedToQBO: false,
         createdBy: req.user?.id || null,
-        tenantId: req.user?.tenantId || null
+        tenantId: tenantId || null,
+        glInvoiceNumber,
+        paymentTerms: finalPaymentTerms,
       });
 
       res.json(batch);
@@ -177,6 +194,38 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         message: "Failed to update batch settings", 
         error: error.message 
       });
+    }
+  });
+
+  app.get("/api/billing/gl-invoice-number", deps.requireAuth, deps.requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+      const nextNumber = await storage.getNextGlInvoiceNumber(tenantId);
+      res.json({ nextGlInvoiceNumber: nextNumber, formatted: String(nextNumber).padStart(5, '0') });
+    } catch (error: any) {
+      console.error("Failed to get GL invoice number:", error);
+      res.status(500).json({ message: "Failed to get GL invoice number" });
+    }
+  });
+
+  app.put("/api/billing/gl-invoice-number", deps.requireAuth, deps.requireRole(["admin"]), async (req, res) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({ message: "Tenant context required" });
+      }
+      const { nextGlInvoiceNumber } = req.body;
+      if (typeof nextGlInvoiceNumber !== 'number' || nextGlInvoiceNumber < 0) {
+        return res.status(400).json({ message: "nextGlInvoiceNumber must be a non-negative number" });
+      }
+      await storage.resetGlInvoiceNumber(tenantId, nextGlInvoiceNumber);
+      res.json({ nextGlInvoiceNumber, formatted: String(nextGlInvoiceNumber).padStart(5, '0'), message: "GL invoice number counter updated" });
+    } catch (error: any) {
+      console.error("Failed to reset GL invoice number:", error);
+      res.status(500).json({ message: "Failed to reset GL invoice number" });
     }
   });
 

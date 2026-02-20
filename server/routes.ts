@@ -5940,6 +5940,16 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const startDateObj = new Date(startDate);
       const normalizedMonth = `${startDateObj.getFullYear()}-${String(startDateObj.getMonth() + 1).padStart(2, '0')}-01`;
       
+      let glInvoiceNumber: string | null = null;
+      const tenantId = req.user?.tenantId;
+      if (tenantId) {
+        try {
+          glInvoiceNumber = await storage.getAndIncrementGlInvoiceNumber(tenantId);
+        } catch (err) {
+          console.warn("[INVOICE] Failed to auto-generate GL invoice number for milestone batch:", err);
+        }
+      }
+
       // Create invoice batch linked to milestone
       const batch = await storage.createInvoiceBatch({
         batchId,
@@ -5955,7 +5965,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         projectMilestoneId: milestoneId,
         exportedToQBO: false,
         createdBy: userId,
-        tenantId: req.user?.tenantId || null
+        tenantId: tenantId || null,
+        glInvoiceNumber,
       });
       
       // Automatically create an invoice line for the milestone amount

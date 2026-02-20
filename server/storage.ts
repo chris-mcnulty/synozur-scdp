@@ -9656,6 +9656,39 @@ export class DatabaseStorage implements IStorage {
     return batchId;
   }
 
+  async getAndIncrementGlInvoiceNumber(tenantId: string): Promise<string> {
+    const result = await db
+      .update(tenants)
+      .set({
+        nextGlInvoiceNumber: sql`COALESCE(${tenants.nextGlInvoiceNumber}, 1000) + 1`,
+      })
+      .where(eq(tenants.id, tenantId))
+      .returning({ previousValue: sql<number>`COALESCE(${tenants.nextGlInvoiceNumber}, 1000)` });
+
+    if (!result.length) {
+      throw new Error(`Tenant ${tenantId} not found`);
+    }
+
+    const num = result[0].previousValue;
+    return String(num).padStart(5, '0');
+  }
+
+  async getNextGlInvoiceNumber(tenantId: string): Promise<number> {
+    const [tenant] = await db
+      .select({ nextGlInvoiceNumber: tenants.nextGlInvoiceNumber })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId));
+
+    return tenant?.nextGlInvoiceNumber ?? 1000;
+  }
+
+  async resetGlInvoiceNumber(tenantId: string, newValue: number): Promise<void> {
+    await db
+      .update(tenants)
+      .set({ nextGlInvoiceNumber: newValue })
+      .where(eq(tenants.id, tenantId));
+  }
+
   async getUnbilledItemsDetail(filters?: {
     personId?: string;
     projectId?: string;

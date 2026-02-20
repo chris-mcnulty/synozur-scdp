@@ -40,6 +40,8 @@ export function BatchSettings() {
     endDate: new Date().toISOString().split('T')[0]
   });
   const [previewResult, setPreviewResult] = useState<string>('');
+  const [editingGlNumber, setEditingGlNumber] = useState(false);
+  const [newGlNumber, setNewGlNumber] = useState<string>('');
 
   // Fetch current batch settings
   const { data: settings, isLoading } = useQuery<BatchSettings>({
@@ -115,6 +117,34 @@ export function BatchSettings() {
 
   const handlePreview = () => {
     previewMutation.mutate(previewDates);
+  };
+
+  const { data: glNumberData } = useQuery<{ nextGlInvoiceNumber: number; formatted: string }>({
+    queryKey: ["/api/billing/gl-invoice-number"],
+  });
+
+  const glNumberMutation = useMutation({
+    mutationFn: (nextGlInvoiceNumber: number) => apiRequest("/api/billing/gl-invoice-number", {
+      method: "PUT",
+      body: JSON.stringify({ nextGlInvoiceNumber }),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/gl-invoice-number"] });
+      setEditingGlNumber(false);
+      toast({ title: "GL invoice number counter updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update counter", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleGlNumberSave = () => {
+    const num = parseInt(newGlNumber, 10);
+    if (isNaN(num) || num < 0) {
+      toast({ title: "Invalid number", description: "Please enter a valid non-negative number.", variant: "destructive" });
+      return;
+    }
+    glNumberMutation.mutate(num);
   };
 
   if (isLoading) {
@@ -342,6 +372,77 @@ export function BatchSettings() {
               {batchSettings.useSequential && ` sequential numbering with ${batchSettings.sequencePadding} digits,`}
               {!batchSettings.useSequential && " timestamp-based suffix,"}
               {" "}batch IDs will look like the preview above.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Hash className="w-5 h-5" />
+            GL Invoice Number Counter
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Each new invoice batch is automatically assigned an incrementing GL invoice number. You can view and reset the counter below.
+          </p>
+
+          <div className="flex items-center gap-4">
+            <div>
+              <Label className="text-sm font-medium">Next GL Invoice Number</Label>
+              <div className="flex items-center gap-3 mt-1.5">
+                {editingGlNumber ? (
+                  <>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newGlNumber}
+                      onChange={(e) => setNewGlNumber(e.target.value)}
+                      className="w-36 font-mono"
+                      data-testid="input-gl-number"
+                    />
+                    <Button size="sm" onClick={handleGlNumberSave} disabled={glNumberMutation.isPending} data-testid="button-save-gl-number">
+                      <Save className="w-4 h-4 mr-1" />
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingGlNumber(false)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Badge variant="outline" className="font-mono text-base px-3 py-1" data-testid="gl-number-display">
+                      {glNumberData?.formatted || '—'}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      (numeric: {glNumberData?.nextGlInvoiceNumber ?? '—'})
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setNewGlNumber(String(glNumberData?.nextGlInvoiceNumber ?? 1000));
+                        setEditingGlNumber(true);
+                      }}
+                      data-testid="button-edit-gl-number"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Reset Counter
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <Alert className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-sm">
+              Numbers starting with <strong>0</strong> (e.g., 01000) indicate development invoices. 
+              Production numbers start without a leading zero (e.g., 10066).
+              The number auto-increments each time a new invoice batch is created.
             </AlertDescription>
           </Alert>
         </CardContent>
