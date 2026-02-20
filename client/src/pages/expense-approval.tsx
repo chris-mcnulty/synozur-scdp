@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -7,12 +7,44 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
-import { CheckCircle, XCircle, FileText, Receipt, User, Send, ChevronDown, ChevronRight, MapPin, Store, Plane, Calendar, DollarSign, ExternalLink } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
+import { CheckCircle, XCircle, FileText, Receipt, User, Send, ChevronDown, ChevronRight, MapPin, Store, Plane, Calendar, DollarSign, ExternalLink, Filter, Users, ArrowUpDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import type { Expense, Project, Client } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
+import type { Expense, Project, Client, User as UserType } from "@shared/schema";
+
+type TimeFramePreset = 'all' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year';
+type SortOption = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'person_asc';
+
+function getDateRange(preset: TimeFramePreset): { startDate?: Date; endDate?: Date } {
+  const now = new Date();
+  switch (preset) {
+    case 'this_month': return { startDate: startOfMonth(now), endDate: endOfMonth(now) };
+    case 'last_month': { const last = subMonths(now, 1); return { startDate: startOfMonth(last), endDate: endOfMonth(last) }; }
+    case 'this_quarter': return { startDate: startOfQuarter(now), endDate: endOfQuarter(now) };
+    case 'last_quarter': { const lastQ = subMonths(startOfQuarter(now), 1); return { startDate: startOfQuarter(lastQ), endDate: endOfQuarter(lastQ) }; }
+    case 'this_year': return { startDate: startOfYear(now), endDate: endOfYear(now) };
+    default: return {};
+  }
+}
+
+interface SubmitterGroup {
+  submitterId: string;
+  submitterName: string;
+  reports: ExpenseReport[];
+  totalsByCurrency: Record<string, number>;
+  reportCount: number;
+}
+
+function formatCurrencyTotals(totals: Record<string, number>): string {
+  return Object.entries(totals)
+    .filter(([, amt]) => amt > 0)
+    .map(([currency, amt]) => `${currency} ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    .join(' + ') || '0.00';
+}
 
 interface ExpenseReport {
   id: string;
@@ -226,11 +258,23 @@ export default function ExpenseApproval() {
   const [rejectionMode, setRejectionMode] = useState(false);
   const [rejectionNote, setRejectionNote] = useState("");
   const [activeTab, setActiveTab] = useState("submitted");
+  const [filterPerson, setFilterPerson] = useState<string>("all");
+  const [filterTimeFrame, setFilterTimeFrame] = useState<TimeFramePreset>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("date_desc");
+  const [showFilters, setShowFilters] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { hasAnyRole } = useAuth();
+  const canViewAll = hasAnyRole(["admin", "billing-admin", "executive"]);
 
   const { data: allReports = [], isLoading, isError, error } = useQuery<ExpenseReport[]>({
     queryKey: ["/api/expense-reports"],
+  });
+
+  const { data: teamUsers = [] } = useQuery<UserType[]>({
+    queryKey: ["/api/users"],
+    enabled: canViewAll,
   });
 
   const { data: selectedReport, isLoading: isLoadingDetail } = useQuery<ExpenseReport>({
@@ -245,10 +289,97 @@ export default function ExpenseApproval() {
     enabled: !!selectedReportId,
   });
 
-  const submittedReports = allReports.filter(r => r.status === 'submitted');
-  const approvedReports = allReports.filter(r => r.status === 'approved');
-  const rejectedReports = allReports.filter(r => r.status === 'rejected');
-  const draftReports = allReports.filter(r => r.status === 'draft');
+  const dateRange = useMemo(() => getDateRange(filterTimeFrame), [filterTimeFrame]);
+
+  const getReportDate = (report: ExpenseReport): Date => {
+    if (report.status === 'approved' && report.approvedAt) return new Date(report.approvedAt);
+    if (report.status === 'rejected' && report.rejectedAt) return new Date(report.rejectedAt);
+    if (report.submittedAt) return new Date(report.submittedAt);
+    return new Date(report.createdAt);
+  };
+
+  const filtered = useMemo(() => {
+    let reports = allReports;
+    if (filterPerson !== 'all') {
+      reports = reports.filter(r => r.submitter.id === filterPerson);
+    }
+    if (dateRange.startDate && dateRange.endDate) {
+      reports = reports.filter(r => {
+        const d = getReportDate(r);
+        return d >= dateRange.startDate! && d <= dateRange.endDate!;
+      });
+    }
+    return reports;
+  }, [allReports, filterPerson, dateRange]);
+
+  const submittedReports = filtered.filter(r => r.status === 'submitted');
+  const approvedReports = filtered.filter(r => r.status === 'approved');
+  const rejectedReports = filtered.filter(r => r.status === 'rejected');
+  const draftReports = filtered.filter(r => r.status === 'draft');
+
+  const getTabReports = () => {
+    switch (activeTab) {
+      case 'submitted': return submittedReports;
+      case 'approved': return approvedReports;
+      case 'rejected': return rejectedReports;
+      case 'draft': return draftReports;
+      default: return submittedReports;
+    }
+  };
+
+  const sortedTabReports = useMemo(() => {
+    const list = [...getTabReports()];
+    switch (sortBy) {
+      case 'date_asc': return list.sort((a, b) => getReportDate(a).getTime() - getReportDate(b).getTime());
+      case 'date_desc': return list.sort((a, b) => getReportDate(b).getTime() - getReportDate(a).getTime());
+      case 'amount_desc': return list.sort((a, b) => parseFloat(b.totalAmount || '0') - parseFloat(a.totalAmount || '0'));
+      case 'amount_asc': return list.sort((a, b) => parseFloat(a.totalAmount || '0') - parseFloat(b.totalAmount || '0'));
+      case 'person_asc': return list.sort((a, b) => a.submitter.name.localeCompare(b.submitter.name));
+      default: return list;
+    }
+  }, [activeTab, filtered, sortBy]);
+
+  useEffect(() => {
+    setCollapsedGroups(new Set());
+  }, [activeTab, filterPerson, filterTimeFrame, sortBy]);
+
+  const groupedBySubmitter = useMemo((): SubmitterGroup[] => {
+    const groups = new Map<string, SubmitterGroup>();
+    for (const report of sortedTabReports) {
+      const uid = report.submitter.id;
+      if (!groups.has(uid)) {
+        groups.set(uid, { submitterId: uid, submitterName: report.submitter.name, reports: [], totalsByCurrency: {}, reportCount: 0 });
+      }
+      const g = groups.get(uid)!;
+      g.reports.push(report);
+      g.reportCount++;
+      const cur = report.currency || 'USD';
+      g.totalsByCurrency[cur] = (g.totalsByCurrency[cur] || 0) + parseFloat(report.totalAmount || '0');
+    }
+    return Array.from(groups.values()).sort((a, b) => a.submitterName.localeCompare(b.submitterName));
+  }, [sortedTabReports]);
+
+  const overallTotalsByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const g of groupedBySubmitter) {
+      for (const [cur, amt] of Object.entries(g.totalsByCurrency)) {
+        totals[cur] = (totals[cur] || 0) + amt;
+      }
+    }
+    return totals;
+  }, [groupedBySubmitter]);
+
+  const toggleGroupCollapse = (uid: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(uid)) next.delete(uid);
+      else next.add(uid);
+      return next;
+    });
+  };
+
+  const hasActiveFilters = filterPerson !== 'all' || filterTimeFrame !== 'all';
+  const clearFilters = () => { setFilterPerson('all'); setFilterTimeFrame('all'); };
 
   const approveReportMutation = useMutation({
     mutationFn: async (reportId: string) => {
@@ -477,12 +608,99 @@ export default function ExpenseApproval() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Expense Report Approval</h1>
-          <p className="text-muted-foreground mt-1">
-            Review and approve employee expense reports
-          </p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">Expense Report Approval</h1>
+            <p className="text-muted-foreground mt-1">
+              Review and approve employee expense reports
+            </p>
+          </div>
+          <Button
+            variant={showFilters ? "secondary" : "outline"}
+            onClick={() => setShowFilters(!showFilters)}
+            data-testid="button-toggle-filters"
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filters
+            {hasActiveFilters && (
+              <Badge variant="default" className="ml-2 h-5 px-1.5 text-xs">
+                {(filterPerson !== 'all' ? 1 : 0) + (filterTimeFrame !== 'all' ? 1 : 0)}
+              </Badge>
+            )}
+          </Button>
         </div>
+
+        {showFilters && (
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex flex-wrap items-end gap-4">
+                {canViewAll && (
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-sm font-medium mb-1.5 block">
+                      <Users className="inline h-3.5 w-3.5 mr-1" />
+                      Person
+                    </label>
+                    <Select value={filterPerson} onValueChange={setFilterPerson}>
+                      <SelectTrigger data-testid="filter-person">
+                        <SelectValue placeholder="All People" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All People</SelectItem>
+                        {teamUsers.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.name || u.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-sm font-medium mb-1.5 block">
+                    <Calendar className="inline h-3.5 w-3.5 mr-1" />
+                    Time Frame
+                  </label>
+                  <Select value={filterTimeFrame} onValueChange={(v) => setFilterTimeFrame(v as TimeFramePreset)}>
+                    <SelectTrigger data-testid="filter-timeframe">
+                      <SelectValue placeholder="All Time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="this_month">This Month</SelectItem>
+                      <SelectItem value="last_month">Last Month</SelectItem>
+                      <SelectItem value="this_quarter">This Quarter</SelectItem>
+                      <SelectItem value="last_quarter">Last Quarter</SelectItem>
+                      <SelectItem value="this_year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-sm font-medium mb-1.5 block">
+                    <ArrowUpDown className="inline h-3.5 w-3.5 mr-1" />
+                    Sort By
+                  </label>
+                  <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                    <SelectTrigger data-testid="filter-sort">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date_desc">Newest First</SelectItem>
+                      <SelectItem value="date_asc">Oldest First</SelectItem>
+                      <SelectItem value="amount_desc">Highest Amount</SelectItem>
+                      <SelectItem value="amount_asc">Lowest Amount</SelectItem>
+                      <SelectItem value="person_asc">Person (A-Z)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-10">
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-4">
@@ -500,20 +718,100 @@ export default function ExpenseApproval() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="submitted" className="mt-4">
-            {renderReportsList(submittedReports)}
-          </TabsContent>
-
-          <TabsContent value="approved" className="mt-4">
-            {renderReportsList(approvedReports)}
-          </TabsContent>
-
-          <TabsContent value="rejected" className="mt-4">
-            {renderReportsList(rejectedReports)}
-          </TabsContent>
-
-          <TabsContent value="draft" className="mt-4">
-            {renderReportsList(draftReports)}
+          <TabsContent value={activeTab} className="mt-4">
+            {sortedTabReports.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-center text-muted-foreground">
+                    No expense reports found{hasActiveFilters ? '. Try adjusting your filters.' : '.'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : groupedBySubmitter.length > 1 ? (
+              <div className="space-y-4">
+                {groupedBySubmitter.map((group) => {
+                  const isCollapsed = collapsedGroups.has(group.submitterId);
+                  return (
+                    <div key={group.submitterId} className="space-y-2">
+                      <button
+                        onClick={() => toggleGroupCollapse(group.submitterId)}
+                        className="flex items-center justify-between w-full px-4 py-2.5 bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{group.submitterName}</span>
+                          <Badge variant="outline" className="ml-1">
+                            {group.reportCount} report{group.reportCount !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
+                        <span className="font-semibold text-sm">
+                          Subtotal: {formatCurrencyTotals(group.totalsByCurrency)}
+                        </span>
+                      </button>
+                      {!isCollapsed && (
+                        <div className="pl-4 border-l-2 border-muted ml-2 space-y-3">
+                          {group.reports.map((report) => (
+                            <Card
+                              key={report.id}
+                              className="hover:shadow-md transition-shadow cursor-pointer"
+                              onClick={() => setSelectedReportId(report.id)}
+                              data-testid={`card-report-${report.id}`}
+                            >
+                              <CardHeader className="py-3">
+                                <div className="flex justify-between items-start">
+                                  <div className="flex-1">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                      <FileText className="h-4 w-4" />
+                                      {report.title}
+                                    </CardTitle>
+                                    <CardDescription className="mt-0.5 text-xs">
+                                      {report.reportNumber} • {report.items.length} expense{report.items.length !== 1 ? 's' : ''}
+                                    </CardDescription>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    {getStatusBadge(report.status)}
+                                    <span className="text-sm font-semibold">
+                                      {report.currency} {parseFloat(report.totalAmount || '0').toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
+                                  {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
+                                  {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
+                                </div>
+                                {report.rejectionNote && (
+                                  <div className="mt-1 p-2 bg-destructive/10 rounded text-xs">
+                                    <span className="font-medium text-destructive">Rejected: </span>{report.rejectionNote}
+                                  </div>
+                                )}
+                              </CardHeader>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                  <span className="font-bold text-base">
+                    Overall Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {renderReportsList(sortedTabReports)}
+                {sortedTabReports.length > 1 && (
+                  <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                    <span className="font-bold text-base">
+                      Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
