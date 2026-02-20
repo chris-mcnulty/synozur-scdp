@@ -821,14 +821,21 @@ export default function BatchDetail() {
         throw new Error(errorData.message || `HTTP ${response.status}`);
       }
 
-      // Get the PDF blob
       const pdfBlob = await response.blob();
       
-      // Create download link
+      let filename = `invoice-${batchId}.pdf`;
+      const disposition = response.headers.get('Content-Disposition');
+      if (disposition) {
+        const match = disposition.match(/filename="?([^";\n]+)"?/);
+        if (match?.[1]) {
+          filename = match[1];
+        }
+      }
+
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `invoice-${batchId}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
