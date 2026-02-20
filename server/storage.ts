@@ -4140,7 +4140,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string;
     endDate?: string;
     tenantId?: string;
-  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string } }[] })[]> {
+  }): Promise<(ExpenseReport & { submitter: User; approver?: User; rejecter?: User; items: { id: string; expense: { id: string; amount: string; currency: string } }[] })[]> {
     const conditions = [];
     
     if (filters.tenantId) {
@@ -4182,6 +4182,7 @@ export class DatabaseStorage implements IStorage {
           reportId: expenseReportItems.reportId,
           expenseId: expenseReportItems.expenseId,
           amount: expenses.amount,
+          currency: expenses.currency,
         })
         .from(expenseReportItems)
         .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
@@ -4193,10 +4194,10 @@ export class DatabaseStorage implements IStorage {
       if (!acc[item.reportId]) acc[item.reportId] = [];
       acc[item.reportId].push({
         id: item.id,
-        expense: { id: item.expenseId, amount: item.amount },
+        expense: { id: item.expenseId, amount: item.amount, currency: item.currency },
       });
       return acc;
-    }, {} as Record<string, { id: string; expense: { id: string; amount: string } }[]>);
+    }, {} as Record<string, { id: string; expense: { id: string; amount: string; currency: string } }[]>);
 
     return results.map(row => ({
       ...row.expense_reports,
@@ -4281,12 +4282,22 @@ export class DatabaseStorage implements IStorage {
         : 1;
       const reportNumber = `EXP-${year}-${month}-${String(nextNum).padStart(3, '0')}`;
 
-      // Calculate total amount from expenses
+      // Calculate total amount from expenses, converting to report currency (USD)
       const expenseList = expenseIds.length > 0
         ? await tx.select().from(expenses).where(inArray(expenses.id, expenseIds))
         : [];
       
-      const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      const reportCurrency = report.currency || 'USD';
+      let totalAmount = 0;
+      for (const exp of expenseList) {
+        const expCurrency = exp.currency || 'USD';
+        if (expCurrency !== reportCurrency) {
+          const { convertedAmount } = await convertCurrency(parseFloat(exp.amount), expCurrency, reportCurrency);
+          totalAmount += convertedAmount;
+        } else {
+          totalAmount += parseFloat(exp.amount);
+        }
+      }
 
       // Create the expense report
       const [created] = await tx.insert(expenseReports).values({
@@ -4539,13 +4550,26 @@ export class DatabaseStorage implements IStorage {
         }))
       );
 
-      // Recalculate total amount
+      // Recalculate total amount with currency conversion
+      const [currentReport] = await tx.select().from(expenseReports).where(eq(expenseReports.id, reportId));
+      const reportCurrency = currentReport?.currency || 'USD';
+      
       const expenseItems = await tx.select()
         .from(expenseReportItems)
         .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
         .where(eq(expenseReportItems.reportId, reportId));
 
-      const totalAmount = expenseItems.reduce((sum: number, item: any) => sum + parseFloat(item.expenses.amount), 0);
+      let totalAmount = 0;
+      for (const item of expenseItems) {
+        const expCurrency = item.expenses.currency || 'USD';
+        const amount = parseFloat(item.expenses.amount);
+        if (expCurrency !== reportCurrency) {
+          const { convertedAmount } = await convertCurrency(amount, expCurrency, reportCurrency);
+          totalAmount += convertedAmount;
+        } else {
+          totalAmount += amount;
+        }
+      }
 
       await tx.update(expenseReports)
         .set({
@@ -4573,13 +4597,25 @@ export class DatabaseStorage implements IStorage {
           eq(expenseReportItems.expenseId, expenseId)
         ));
 
-      // Recalculate total amount
+      // Recalculate total amount with currency conversion
+      const reportCurrency = report.currency || 'USD';
+      
       const remainingExpenseItems = await tx.select()
         .from(expenseReportItems)
         .innerJoin(expenses, eq(expenseReportItems.expenseId, expenses.id))
         .where(eq(expenseReportItems.reportId, reportId));
 
-      const totalAmount = remainingExpenseItems.reduce((sum: number, item: any) => sum + parseFloat(item.expenses.amount), 0);
+      let totalAmount = 0;
+      for (const item of remainingExpenseItems) {
+        const expCurrency = item.expenses.currency || 'USD';
+        const amount = parseFloat(item.expenses.amount);
+        if (expCurrency !== reportCurrency) {
+          const { convertedAmount } = await convertCurrency(amount, expCurrency, reportCurrency);
+          totalAmount += convertedAmount;
+        } else {
+          totalAmount += amount;
+        }
+      }
 
       await tx.update(expenseReports)
         .set({
@@ -4729,7 +4765,17 @@ export class DatabaseStorage implements IStorage {
         ? await tx.select().from(expenses).where(inArray(expenses.id, expenseIds))
         : [];
       
-      const totalAmount = expenseList.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      const batchCurrency = batch.currency || 'USD';
+      let totalAmount = 0;
+      for (const exp of expenseList) {
+        const expCurrency = exp.currency || 'USD';
+        if (expCurrency !== batchCurrency) {
+          const { convertedAmount } = await convertCurrency(parseFloat(exp.amount), expCurrency, batchCurrency);
+          totalAmount += convertedAmount;
+        } else {
+          totalAmount += parseFloat(exp.amount);
+        }
+      }
 
       const [created] = await tx.insert(reimbursementBatches).values({
         ...batch,

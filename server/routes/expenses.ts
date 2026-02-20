@@ -1,8 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { insertExpenseSchema, insertExpenseReportSchema, insertReimbursementBatchSchema, expenses, users, projects, clients, pendingReceipts, expenseAttachments, expenseReports, reimbursementBatches } from "@shared/schema";
+import { insertExpenseSchema, insertExpenseReportSchema, insertReimbursementBatchSchema, expenses, expenseReportItems, users, projects, clients, pendingReceipts, expenseAttachments, expenseReports, reimbursementBatches } from "@shared/schema";
 import { eq, sql, inArray, and } from "drizzle-orm";
+import { convertCurrency } from "../exchange-rates.js";
 import { fileTypeFromBuffer } from "file-type";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -1092,6 +1093,38 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (endDate) filters.endDate = endDate;
 
       const reports = await storage.getExpenseReports(filters);
+      
+      // Recalculate totals for reports that have foreign currency expenses
+      for (const report of reports) {
+        const reportCurrency = report.currency || 'USD';
+        if (report.items && report.items.length > 0) {
+          const hasForeignCurrency = report.items.some((item: any) => {
+            const expCurrency = item.expense?.currency || 'USD';
+            return expCurrency !== reportCurrency;
+          });
+          
+          if (hasForeignCurrency) {
+            let convertedTotal = 0;
+            for (const item of report.items) {
+              const expCurrency = (item as any).expense?.currency || 'USD';
+              const amount = parseFloat((item as any).expense?.amount || '0');
+              if (expCurrency !== reportCurrency) {
+                const { convertedAmount } = await convertCurrency(amount, expCurrency, reportCurrency);
+                convertedTotal += convertedAmount;
+              } else {
+                convertedTotal += amount;
+              }
+            }
+            report.totalAmount = convertedTotal.toFixed(2);
+            
+            // Update stored value
+            await db.update(expenseReports)
+              .set({ totalAmount: convertedTotal.toFixed(2) })
+              .where(eq(expenseReports.id, report.id));
+          }
+        }
+      }
+      
       res.json(reports);
     } catch (error) {
       console.error("[EXPENSE_REPORTS] Failed to fetch expense reports:", error);
@@ -1119,6 +1152,33 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       const userTenantId = (req as any).user?.tenantId;
       if (userTenantId && report.tenantId && report.tenantId !== userTenantId) {
         return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Recalculate totalAmount with currency conversion on read
+      const reportCurrency = report.currency || 'USD';
+      const hasForeignCurrency = report.items?.some((item: any) => {
+        const expCurrency = item.expense?.currency || 'USD';
+        return expCurrency !== reportCurrency;
+      });
+      
+      if (hasForeignCurrency && report.items?.length > 0) {
+        let convertedTotal = 0;
+        for (const item of report.items) {
+          const expCurrency = item.expense?.currency || 'USD';
+          const amount = parseFloat(item.expense?.amount || '0');
+          if (expCurrency !== reportCurrency) {
+            const { convertedAmount } = await convertCurrency(amount, expCurrency, reportCurrency);
+            convertedTotal += convertedAmount;
+          } else {
+            convertedTotal += amount;
+          }
+        }
+        report.totalAmount = convertedTotal.toFixed(2);
+        
+        // Also update the stored value in the database
+        await db.update(expenseReports)
+          .set({ totalAmount: convertedTotal.toFixed(2) })
+          .where(eq(expenseReports.id, report.id));
       }
 
       res.json(report);

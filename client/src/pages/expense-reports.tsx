@@ -821,7 +821,7 @@ export default function ExpenseReports() {
             reportId={selectedReport.id}
             reportNumber={selectedReport.reportNumber}
             reportTitle={selectedReport.title}
-            totalAmount={(selectedReport.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
+            totalAmount={selectedReport.totalAmount || '0'}
             currency={selectedReport.currency}
           />
         )}

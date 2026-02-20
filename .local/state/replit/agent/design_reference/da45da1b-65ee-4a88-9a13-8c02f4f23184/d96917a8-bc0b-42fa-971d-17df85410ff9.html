@@ -1,0 +1,826 @@
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synozur Consulting Delivery Platform - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                borderRadius: {
+                    lg: "var(--radius)",
+                    md: "calc(var(--radius) - 2px)",
+                    sm: "calc(var(--radius) - 4px)",
+                },
+                colors: {
+                    background: "var(--background)",
+                    foreground: "var(--foreground)",
+                    card: {
+                        DEFAULT: "var(--card)",
+                        foreground: "var(--card-foreground)",
+                    },
+                    popover: {
+                        DEFAULT: "var(--popover)",
+                        foreground: "var(--popover-foreground)",
+                    },
+                    primary: {
+                        DEFAULT: "var(--primary)",
+                        foreground: "var(--primary-foreground)",
+                    },
+                    secondary: {
+                        DEFAULT: "var(--secondary)",
+                        foreground: "var(--secondary-foreground)",
+                    },
+                    muted: {
+                        DEFAULT: "var(--muted)",
+                        foreground: "var(--muted-foreground)",
+                    },
+                    accent: {
+                        DEFAULT: "var(--accent)",
+                        foreground: "var(--accent-foreground)",
+                    },
+                    destructive: {
+                        DEFAULT: "var(--destructive)",
+                        foreground: "var(--destructive-foreground)",
+                    },
+                    border: "var(--border)",
+                    input: "var(--input)",
+                    ring: "var(--ring)",
+                    chart: {
+                        "1": "var(--chart-1)",
+                        "2": "var(--chart-2)",
+                        "3": "var(--chart-3)",
+                        "4": "var(--chart-4)",
+                        "5": "var(--chart-5)",
+                    }
+                },
+                fontFamily: {
+                    sans: ["var(--font-sans)"],
+                    serif: ["var(--font-serif)"],
+                    mono: ["var(--font-mono)"],
+                }
+            },
+        }
+    };
+    </script>
+    <style>
+        :root {
+            --card: hsl(180 6.6667% 97.0588%);
+            --ring: hsl(268.98, 96.72%, 52.16%);
+            --input: hsl(200 23.0769% 97.4510%);
+            --muted: hsl(240 1.9608% 90%);
+            --accent: hsl(211.58, 51.35%, 92.75%);
+            --border: hsl(201.4286 30.4348% 90.9804%);
+            --radius: 1.3rem;
+            --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --chart-1: hsl(268.98, 96.72%, 52.16%);
+            --chart-2: hsl(314.04, 90.08%, 47.45%);
+            --chart-3: hsl(269.16, 80.45%, 26.08%);
+            --chart-4: hsl(147.1429 78.5047% 41.9608%);
+            --chart-5: hsl(341.4894 75.2000% 50.9804%);
+            --popover: hsl(0 0% 100%);
+            --primary: hsl(268.98, 96.72%, 52.16%);
+            --sidebar: hsl(180 6.6667% 97.0588%);
+            --spacing: 0.25rem;
+            --font-mono: 'Roboto', sans-serif;
+            --font-sans: 'Inter', sans-serif;
+            --secondary: hsl(314.04, 90.08%, 47.45%);
+            --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --background: hsl(0 0% 100%);
+            --font-serif: 'Inter', sans-serif;
+            --foreground: hsl(210 25% 7.8431%);
+            --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --destructive: hsl(356.3033 90.5579% 54.3137%);
+            --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
+            --sidebar-accent: hsl(211.5789 51.3514% 92.7451%);
+            --sidebar-border: hsl(205.0000 25.0000% 90.5882%);
+            --card-foreground: hsl(210 25% 7.8431%);
+            --sidebar-primary: hsl(203.8863 88.2845% 53.1373%);
+            --tracking-normal: 0em;
+            --muted-foreground: hsl(210 25% 7.8431%);
+            --accent-foreground: hsl(269.16, 80.45%, 26.08%);
+            --popover-foreground: hsl(210 25% 7.8431%);
+            --primary-foreground: hsl(0 0% 100%);
+            --sidebar-foreground: hsl(210 25% 7.8431%);
+            --secondary-foreground: hsl(0 0% 100%);
+            --destructive-foreground: hsl(0 0% 100%);
+            --sidebar-accent-foreground: hsl(203.8863 88.2845% 53.1373%);
+            --sidebar-primary-foreground: hsl(0 0% 100%);
+        }
+
+        .dark {
+            --card: hsl(228 9.8039% 10%);
+            --ring: hsl(202.8169 89.1213% 53.1373%);
+            --input: hsl(207.6923 27.6596% 18.4314%);
+            --muted: hsl(0 0% 9.4118%);
+            --accent: hsl(205.7143 70% 7.8431%);
+            --border: hsl(210 5.2632% 14.9020%);
+            --radius: 1.3rem;
+            --shadow: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --chart-1: hsl(203.8863 88.2845% 53.1373%);
+            --chart-2: hsl(159.7826 100% 36.0784%);
+            --chart-3: hsl(42.0290 92.8251% 56.2745%);
+            --chart-4: hsl(147.1429 78.5047% 41.9608%);
+            --chart-5: hsl(341.4894 75.2000% 50.9804%);
+            --popover: hsl(0 0% 0%);
+            --primary: hsl(203.7736 87.6033% 52.5490%);
+            --sidebar: hsl(228 9.8039% 10%);
+            --spacing: 0.25rem;
+            --font-mono: Menlo, monospace;
+            --font-sans: Open Sans, sans-serif;
+            --secondary: hsl(195.0000 15.3846% 94.9020%);
+            --shadow-lg: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 4px 6px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-md: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 2px 4px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-sm: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 1px 2px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00), 0px 8px 10px -1px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --background: hsl(0 0% 0%);
+            --font-serif: Georgia, serif;
+            --foreground: hsl(200 6.6667% 91.1765%);
+            --shadow-2xl: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --shadow-2xs: 0px 2px 0px 0px hsl(202.8169 89.1213% 53.1373% / 0.00);
+            --destructive: hsl(356.3033 90.5579% 54.3137%);
+            --sidebar-ring: hsl(202.8169 89.1213% 53.1373%);
+            --sidebar-accent: hsl(205.7143 70% 7.8431%);
+            --sidebar-border: hsl(205.7143 15.7895% 26.0784%);
+            --card-foreground: hsl(0 0% 85.0980%);
+            --sidebar-primary: hsl(202.8169 89.1213% 53.1373%);
+            --tracking-normal: 0em;
+            --muted-foreground: hsl(210 3.3898% 46.2745%);
+            --accent-foreground: hsl(203.7736 87.6033% 52.5490%);
+            --popover-foreground: hsl(200 6.6667% 91.1765%);
+            --primary-foreground: hsl(0 0% 100%);
+            --sidebar-foreground: hsl(0 0% 85.0980%);
+            --secondary-foreground: hsl(210 25% 7.8431%);
+            --destructive-foreground: hsl(0 0% 100%);
+            --sidebar-accent-foreground: hsl(203.7736 87.6033% 52.5490%);
+            --sidebar-primary-foreground: hsl(0 0% 100%);
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-background text-foreground font-sans">
+    <!-- @COMPONENT: Header [Contains logo, user menu, role indicator] -->
+    <header class="bg-card border-b border-border sticky top-0 z-50">
+        <div class="flex items-center justify-between px-6 py-4">
+            <div class="flex items-center space-x-6">
+                <!-- Synozur Logo -->
+                <div class="flex items-center space-x-3">
+                    <!-- Synozur Alliance Logo representation with brand colors -->
+                    <div class="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center">
+                        <i class="fas fa-gem text-white text-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-semibold text-primary">SCDP</h1>
+                        <p class="text-xs text-muted-foreground">Synozur Consulting Platform</p>
+                    </div>
+                </div>
+                
+                <!-- Quick Navigation -->
+                <nav class="hidden md:flex space-x-4">
+                    <a href="#" class="px-3 py-2 text-sm font-medium text-primary bg-accent/20 rounded-md">Dashboard</a>
+                    <a href="#" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md">Projects</a>
+                    <a href="#" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md">Time</a>
+                    <a href="#" class="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-md">Billing</a>
+                </nav>
+            </div>
+            
+            <!-- User Menu -->
+            <div class="flex items-center space-x-4">
+                <div class="text-right hidden sm:block">
+                    <p class="text-sm font-medium" data-bind="user.name">Sarah Chen</p>
+                    <p class="text-xs text-primary font-medium" data-bind="user.role">Admin</p>
+                </div>
+                <div class="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center">
+                    <span class="text-white text-sm font-medium" data-bind="user.initials">SC</span>
+                </div>
+                <button class="text-muted-foreground hover:text-foreground">
+                    <i class="fas fa-cog"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+    <!-- @END_COMPONENT: Header -->
+    
+    <div class="flex min-h-screen">
+        <!-- @COMPONENT: Sidebar [Role-based navigation menu] -->
+        <aside class="w-64 bg-card border-r border-border">
+            <div class="p-6">
+                <nav class="space-y-2">
+                    <div class="pb-4">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Portfolio</h3>
+                    </div>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md bg-accent text-accent-foreground">
+                        <i class="fas fa-chart-line w-5"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50">
+                        <i class="fas fa-project-diagram w-5"></i>
+                        <span>Projects</span>
+                    </a>
+                    
+                    <div class="pt-4 pb-2">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Operations</h3>
+                    </div>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50">
+                        <i class="fas fa-clock w-5"></i>
+                        <span>Time Tracking</span>
+                    </a>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50">
+                        <i class="fas fa-receipt w-5"></i>
+                        <span>Expenses</span>
+                    </a>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50">
+                        <i class="fas fa-file-invoice-dollar w-5"></i>
+                        <span>Billing</span>
+                    </a>
+                    
+                    <!-- Admin Only Section -->
+                    <div class="pt-4 pb-2" data-role-visibility="admin,billing-admin">
+                        <h3 class="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Administration</h3>
+                    </div>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50" data-role-visibility="admin">
+                        <i class="fas fa-dollar-sign w-5"></i>
+                        <span>Rate Management</span>
+                        <span class="ml-auto text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Admin</span>
+                    </a>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50" data-role-visibility="admin">
+                        <i class="fas fa-users-cog w-5"></i>
+                        <span>User Management</span>
+                    </a>
+                    
+                    <a href="#" class="flex items-center space-x-3 px-3 py-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/50" data-role-visibility="admin">
+                        <i class="fas fa-palette w-5"></i>
+                        <span>Branding</span>
+                    </a>
+                </nav>
+            </div>
+        </aside>
+        <!-- @END_COMPONENT: Sidebar -->
+        
+        <!-- @COMPONENT: MainContent [Dashboard with portfolio overview and quick actions] -->
+        <main class="flex-1 p-6 space-y-6">
+            <!-- Dashboard Header -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-3xl font-bold">Portfolio Dashboard</h2>
+                    <p class="text-muted-foreground">Overview of active projects and team utilization</p>
+                </div>
+                <div class="flex space-x-3">
+                    <button class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+                        <i class="fas fa-plus mr-2"></i>New Project
+                    </button>
+                    <button class="px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors">
+                        <i class="fas fa-download mr-2"></i>Export
+                    </button>
+                </div>
+            </div>
+            
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-card p-6 rounded-lg border border-border">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-muted-foreground">Active Projects</p>
+                            <p class="text-2xl font-bold" data-bind="metrics.activeProjects">12</p>
+                        </div>
+                        <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-project-diagram text-primary"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-2">+2 from last month</p>
+                </div>
+                
+                <div class="bg-card p-6 rounded-lg border border-border">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-muted-foreground">Utilization Rate</p>
+                            <p class="text-2xl font-bold" data-bind="metrics.utilization">87%</p>
+                        </div>
+                        <div class="w-12 h-12 bg-secondary/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-chart-pie text-secondary"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-2">Target: 85%</p>
+                </div>
+                
+                <div class="bg-card p-6 rounded-lg border border-border">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-muted-foreground">Revenue (MTD)</p>
+                            <p class="text-2xl font-bold" data-bind="metrics.revenue">$485K</p>
+                        </div>
+                        <div class="w-12 h-12 bg-chart-4/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-dollar-sign text-chart-4"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-2">92% of target</p>
+                </div>
+                
+                <div class="bg-card p-6 rounded-lg border border-border">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-muted-foreground">Unbilled Hours</p>
+                            <p class="text-2xl font-bold" data-bind="metrics.unbilledHours">247</p>
+                        </div>
+                        <div class="w-12 h-12 bg-destructive/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-clock text-destructive"></i>
+                        </div>
+                    </div>
+                    <p class="text-xs text-muted-foreground mt-2">Requires attention</p>
+                </div>
+            </div>
+            
+            <!-- Active Projects Table -->
+            <div class="bg-card rounded-lg border border-border">
+                <div class="p-6 border-b border-border">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-semibold">Active Projects</h3>
+                        <div class="flex space-x-2">
+                            <button class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors">
+                                <i class="fas fa-filter mr-1"></i>Filter
+                            </button>
+                            <button class="px-3 py-1 text-sm border border-border rounded hover:bg-accent transition-colors">
+                                <i class="fas fa-sort mr-1"></i>Sort
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-muted/30">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Project</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Client</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">PM</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Budget</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Burned</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Due Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-border">
+                            <!-- @MAP: projects.map(project => ( -->
+                            <tr class="hover:bg-accent/30 transition-colors" data-mock="true">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 bg-primary/10 rounded-md flex items-center justify-center mr-3">
+                                            <i class="fas fa-briefcase text-primary text-sm"></i>
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-medium" data-bind="project.name">AI Strategy Implementation</div>
+                                            <div class="text-xs text-muted-foreground" data-bind="project.code">PRJ-2024-001</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.client">TechCorp Inc</td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.pm">Maria Rodriguez</td>
+                                <td class="px-6 py-4 text-sm font-medium" data-bind="project.budget">$125,000</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="text-sm font-medium" data-bind="project.burned">$87,500</div>
+                                        <div class="ml-2 w-16 bg-muted rounded-full h-2">
+                                            <div class="bg-primary h-2 rounded-full" style="width: 70%" data-bind="project.burnPercentage"></div>
+                                        </div>
+                                        <span class="ml-2 text-xs text-muted-foreground" data-bind="project.burnPercent">70%</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-chart-4/10 text-chart-4" data-bind="project.status">On Track</span>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.dueDate">Mar 15, 2024</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex space-x-2">
+                                        <button class="text-primary hover:text-primary/80" data-event="click:viewProject">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="text-muted-foreground hover:text-foreground" data-event="click:editProject">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <tr class="hover:bg-accent/30 transition-colors" data-mock="true">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 bg-secondary/10 rounded-md flex items-center justify-center mr-3">
+                                            <i class="fas fa-cogs text-secondary text-sm"></i>
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-medium" data-bind="project.name">Digital Transformation</div>
+                                            <div class="text-xs text-muted-foreground" data-bind="project.code">PRJ-2024-002</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.client">Global Manufacturing</td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.pm">David Kim</td>
+                                <td class="px-6 py-4 text-sm font-medium" data-bind="project.budget">$890,000</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="text-sm font-medium" data-bind="project.burned">$445,000</div>
+                                        <div class="ml-2 w-16 bg-muted rounded-full h-2">
+                                            <div class="bg-secondary h-2 rounded-full" style="width: 50%" data-bind="project.burnPercentage"></div>
+                                        </div>
+                                        <span class="ml-2 text-xs text-muted-foreground" data-bind="project.burnPercent">50%</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-chart-3/10 text-chart-3" data-bind="project.status">At Risk</span>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.dueDate">Apr 30, 2024</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex space-x-2">
+                                        <button class="text-primary hover:text-primary/80" data-event="click:viewProject">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="text-muted-foreground hover:text-foreground" data-event="click:editProject">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            
+                            <tr class="hover:bg-accent/30 transition-colors" data-mock="true">
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 bg-chart-5/10 rounded-md flex items-center justify-center mr-3">
+                                            <i class="fas fa-chart-line text-chart-5 text-sm"></i>
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-medium" data-bind="project.name">Market Analysis</div>
+                                            <div class="text-xs text-muted-foreground" data-bind="project.code">PRJ-2024-003</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.client">FinServ Partners</td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.pm">Jennifer Walsh</td>
+                                <td class="px-6 py-4 text-sm font-medium" data-bind="project.budget">$65,000</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex items-center">
+                                        <div class="text-sm font-medium" data-bind="project.burned">$52,000</div>
+                                        <div class="ml-2 w-16 bg-muted rounded-full h-2">
+                                            <div class="bg-chart-5 h-2 rounded-full" style="width: 80%" data-bind="project.burnPercentage"></div>
+                                        </div>
+                                        <span class="ml-2 text-xs text-muted-foreground" data-bind="project.burnPercent">80%</span>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-chart-4/10 text-chart-4" data-bind="project.status">On Track</span>
+                                </td>
+                                <td class="px-6 py-4 text-sm" data-bind="project.dueDate">Feb 28, 2024</td>
+                                <td class="px-6 py-4">
+                                    <div class="flex space-x-2">
+                                        <button class="text-primary hover:text-primary/80" data-event="click:viewProject">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="text-muted-foreground hover:text-foreground" data-event="click:editProject">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <!-- @END_MAP )) -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Quick Actions and Recent Activity Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Quick Actions -->
+                <div class="bg-card rounded-lg border border-border p-6">
+                    <h3 class="text-lg font-semibold mb-4">Quick Actions</h3>
+                    <div class="space-y-3">
+                        <button class="w-full flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors text-left">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-plus text-primary"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium">Create Estimate</p>
+                                    <p class="text-sm text-muted-foreground">Start a new project estimate</p>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-right text-muted-foreground"></i>
+                        </button>
+                        
+                        <button class="w-full flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors text-left">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-secondary/10 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-clock text-secondary"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium">Log Time</p>
+                                    <p class="text-sm text-muted-foreground">Enter time for today</p>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-right text-muted-foreground"></i>
+                        </button>
+                        
+                        <button class="w-full flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors text-left">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 bg-chart-4/10 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-file-invoice text-chart-4"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium">Create Invoice Batch</p>
+                                    <p class="text-sm text-muted-foreground">Generate monthly billing</p>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-right text-muted-foreground"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Recent Activity -->
+                <div class="bg-card rounded-lg border border-border p-6">
+                    <h3 class="text-lg font-semibold mb-4">Recent Activity</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-start space-x-3" data-mock="true">
+                            <div class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center mt-0.5">
+                                <i class="fas fa-user-edit text-primary text-xs"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm">
+                                    <span class="font-medium" data-bind="activity.user">Sarah Chen</span> updated estimate for 
+                                    <span class="font-medium" data-bind="activity.project">AI Strategy Implementation</span>
+                                </p>
+                                <p class="text-xs text-muted-foreground" data-bind="activity.time">2 hours ago</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3" data-mock="true">
+                            <div class="w-8 h-8 bg-secondary/10 rounded-full flex items-center justify-center mt-0.5">
+                                <i class="fas fa-clock text-secondary text-xs"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm">
+                                    <span class="font-medium" data-bind="activity.user">David Kim</span> logged 8.5 hours for 
+                                    <span class="font-medium" data-bind="activity.project">Digital Transformation</span>
+                                </p>
+                                <p class="text-xs text-muted-foreground" data-bind="activity.time">4 hours ago</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3" data-mock="true">
+                            <div class="w-8 h-8 bg-chart-4/10 rounded-full flex items-center justify-center mt-0.5">
+                                <i class="fas fa-file-invoice text-chart-4 text-xs"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm">
+                                    <span class="font-medium" data-bind="activity.user">Jennifer Walsh</span> created invoice batch for 
+                                    <span class="font-medium" data-bind="activity.client">FinServ Partners</span>
+                                </p>
+                                <p class="text-xs text-muted-foreground" data-bind="activity.time">6 hours ago</p>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start space-x-3" data-mock="true">
+                            <div class="w-8 h-8 bg-chart-5/10 rounded-full flex items-center justify-center mt-0.5">
+                                <i class="fas fa-plus text-chart-5 text-xs"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm">
+                                    <span class="font-medium" data-bind="activity.user">Maria Rodriguez</span> created new project 
+                                    <span class="font-medium" data-bind="activity.project">Company OS Assessment</span>
+                                </p>
+                                <p class="text-xs text-muted-foreground" data-bind="activity.time">1 day ago</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 pt-4 border-t border-border">
+                        <button class="text-sm text-primary hover:text-primary/80 font-medium">
+                            View all activity <i class="fas fa-arrow-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+        <!-- @END_COMPONENT: MainContent -->
+    </div>
+    
+    <!-- @COMPONENT: ProjectEstimationModal [Weekly staffing grid interface] -->
+    <div id="estimationModal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-card rounded-lg border border-border w-full max-w-6xl max-h-[90vh] overflow-hidden">
+            <div class="p-6 border-b border-border">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-semibold">Project Estimation - AI Strategy Implementation</h3>
+                    <button class="text-muted-foreground hover:text-foreground" data-event="click:closeModal">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                <!-- Project Structure -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1">
+                        <h4 class="font-semibold mb-3">Project Structure</h4>
+                        <div class="space-y-2">
+                            <div class="bg-accent/30 p-3 rounded-md">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium">Epic: Assessment</span>
+                                    <button class="text-muted-foreground hover:text-foreground">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                </div>
+                                <div class="mt-2 ml-4 space-y-1">
+                                    <div class="text-sm text-muted-foreground">Stage: Current State Analysis</div>
+                                    <div class="text-sm text-muted-foreground">Stage: Technology Audit</div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-accent/30 p-3 rounded-md">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-medium">Epic: Strategy Design</span>
+                                    <button class="text-muted-foreground hover:text-foreground">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                </div>
+                                <div class="mt-2 ml-4 space-y-1">
+                                    <div class="text-sm text-muted-foreground">Stage: AI Roadmap</div>
+                                    <div class="text-sm text-muted-foreground">Stage: Implementation Plan</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Weekly Staffing Grid -->
+                    <div class="lg:col-span-2">
+                        <h4 class="font-semibold mb-3">Weekly Staffing Grid</h4>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-border">
+                                        <th class="text-left p-2">Role/Person</th>
+                                        <th class="text-center p-2">Week 1</th>
+                                        <th class="text-center p-2">Week 2</th>
+                                        <th class="text-center p-2">Week 3</th>
+                                        <th class="text-center p-2">Week 4</th>
+                                        <th class="text-center p-2">Total</th>
+                                        <th class="text-right p-2">Cost</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-border">
+                                    <tr data-mock="true">
+                                        <td class="p-2 font-medium">Principal (Sarah Chen)</td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="20" data-bind="hours.week1">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="25" data-bind="hours.week2">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="15" data-bind="hours.week3">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="10" data-bind="hours.week4">
+                                        </td>
+                                        <td class="p-2 text-center font-medium" data-bind="totalHours">70</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="admin,billing-admin" data-bind="totalCost">$35,000</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="pm,employee,executive">***</td>
+                                    </tr>
+                                    <tr data-mock="true">
+                                        <td class="p-2 font-medium">Senior Consultant (David Kim)</td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="35" data-bind="hours.week1">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="40" data-bind="hours.week2">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="40" data-bind="hours.week3">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="25" data-bind="hours.week4">
+                                        </td>
+                                        <td class="p-2 text-center font-medium" data-bind="totalHours">140</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="admin,billing-admin" data-bind="totalCost">$42,000</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="pm,employee,executive">***</td>
+                                    </tr>
+                                    <tr data-mock="true">
+                                        <td class="p-2 font-medium">Analyst (Jennifer Walsh)</td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="25" data-bind="hours.week1">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="40" data-bind="hours.week2">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="40" data-bind="hours.week3">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <input type="number" class="w-16 px-2 py-1 border border-border rounded text-center" value="35" data-bind="hours.week4">
+                                        </td>
+                                        <td class="p-2 text-center font-medium" data-bind="totalHours">140</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="admin,billing-admin" data-bind="totalCost">$28,000</td>
+                                        <td class="p-2 text-right font-medium" data-role-visibility="pm,employee,executive">***</td>
+                                    </tr>
+                                </tbody>
+                                <tfoot class="border-t-2 border-primary">
+                                    <tr>
+                                        <td class="p-2 font-bold">Total</td>
+                                        <td class="p-2 text-center font-bold">80</td>
+                                        <td class="p-2 text-center font-bold">105</td>
+                                        <td class="p-2 text-center font-bold">95</td>
+                                        <td class="p-2 text-center font-bold">70</td>
+                                        <td class="p-2 text-center font-bold">350</td>
+                                        <td class="p-2 text-right font-bold" data-role-visibility="admin,billing-admin">$105,000</td>
+                                        <td class="p-2 text-right font-bold" data-role-visibility="pm,employee,executive">***</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Actions -->
+                <div class="flex justify-between pt-4 border-t border-border">
+                    <div class="flex space-x-3">
+                        <button class="px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors">
+                            <i class="fas fa-save mr-2"></i>Save as Template
+                        </button>
+                        <button class="px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors">
+                            <i class="fas fa-file-excel mr-2"></i>Export to Excel
+                        </button>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button class="px-4 py-2 border border-border rounded-md hover:bg-accent transition-colors" data-event="click:closeModal">
+                            Cancel
+                        </button>
+                        <button class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+                            <i class="fas fa-check mr-2"></i>Save Estimate
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- @END_COMPONENT: ProjectEstimationModal -->
+
+    <script>
+        // TODO: Implement business logic, API calls, or state management
+        
+        // Basic modal functionality for demo
+        (function() {
+            const modal = document.getElementById('estimationModal');
+            const openButtons = document.querySelectorAll('[data-event*="viewProject"]');
+            const closeButtons = document.querySelectorAll('[data-event*="closeModal"]');
+            
+            openButtons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    modal.classList.remove('hidden');
+                });
+            });
+            
+            closeButtons.forEach(button => {
+                button.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    modal.classList.add('hidden');
+                });
+            });
+            
+            // Close modal on backdrop click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            });
+        })();
+        
+        // Role-based visibility (demo)
+        (function() {
+            const currentUserRole = 'admin'; // This would come from authentication
+            const elements = document.querySelectorAll('[data-role-visibility]');
+            
+            elements.forEach(element => {
+                const allowedRoles = element.getAttribute('data-role-visibility').split(',');
+                if (!allowedRoles.includes(currentUserRole)) {
+                    element.style.display = 'none';
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
