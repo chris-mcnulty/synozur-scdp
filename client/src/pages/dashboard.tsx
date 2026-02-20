@@ -185,10 +185,16 @@ export default function Dashboard() {
                           key={project.id}
                           project={{
                             ...project,
-                            pm: project.pm || 'Unassigned',
-                            budget: project.retainerTotal ? `$${Number(project.retainerTotal).toLocaleString()}` : 'Not set',
-                            burned: '$0', // TODO: Calculate from time entries
-                            burnPercentage: 0, // TODO: Calculate actual burn percentage
+                            pm: project.pmName || 'Unassigned',
+                            budget: (project.totalBudget && project.totalBudget > 0)
+                              ? `$${project.totalBudget.toLocaleString()}`
+                              : (project.retainerTotal && Number(project.retainerTotal) > 0)
+                                ? `$${Number(project.retainerTotal).toLocaleString()}`
+                                : '$0',
+                            burned: project.burnedAmount
+                              ? `$${project.burnedAmount.toLocaleString()}`
+                              : '$0',
+                            burnPercentage: project.utilizationRate || 0,
                             dueDate: project.endDate ? new Date(project.endDate).toLocaleDateString() : 'Not set'
                           }}
                           onView={handleViewProject}

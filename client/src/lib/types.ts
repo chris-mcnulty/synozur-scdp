@@ -21,6 +21,10 @@ export interface ProjectWithClient {
   hasSow: boolean;
   clientId: string;
   pm: string | null;
+  pmName?: string | null;
+  totalBudget?: number;
+  burnedAmount?: number;
+  utilizationRate?: number;
   client: {
     id: string;
     name: string;

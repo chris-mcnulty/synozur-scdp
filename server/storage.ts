@@ -1248,9 +1248,11 @@ export class DatabaseStorage implements IStorage {
     return client;
   }
 
-  async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
+  async getProjects(tenantId?: string | null): Promise<(Project & { client: Client; pmName?: string | null; totalBudget?: number; burnedAmount?: number; utilizationRate?: number })[]> {
+    const pmAlias = alias(users, 'pm_user');
     let query = db.select().from(projects)
-      .leftJoin(clients, eq(projects.clientId, clients.id));
+      .leftJoin(clients, eq(projects.clientId, clients.id))
+      .leftJoin(pmAlias, eq(projects.pm, pmAlias.id));
     
     // Apply tenant filter if provided
     const projectRows = tenantId
@@ -1313,9 +1315,13 @@ export class DatabaseStorage implements IStorage {
           ? Math.round((burnedAmount / totalBudget) * 100)
           : 0;
         
+        const pmUser = (row as any).pm_user;
+        const pmName = pmUser ? `${pmUser.firstName || ''} ${pmUser.lastName || ''}`.trim() || pmUser.email : null;
+
         return {
           ...project,
           client,
+          pmName,
           totalBudget,
           burnedAmount,
           utilizationRate
@@ -5160,18 +5166,15 @@ export class DatabaseStorage implements IStorage {
     const tenantFilter = tenantId ? eq(projects.tenantId, tenantId) : undefined;
     const timeEntryTenantFilter = tenantId ? eq(timeEntries.tenantId, tenantId) : undefined;
 
-    // Get active projects count (only those with approved SOWs)
-    const activeProjectsConditions = [
+    // Get active projects count
+    const activeProjectsConditions: any[] = [
       eq(projects.status, 'active'),
-      eq(sows.status, 'approved'),
     ];
     if (tenantFilter) activeProjectsConditions.push(tenantFilter);
 
     const activeProjects = await db.select({ projectId: projects.id })
       .from(projects)
-      .innerJoin(sows, eq(projects.id, sows.projectId))
-      .where(and(...activeProjectsConditions))
-      .groupBy(projects.id);
+      .where(and(...activeProjectsConditions));
     
     const projectCount = { count: activeProjects.length };
 
