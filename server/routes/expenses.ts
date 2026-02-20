@@ -1827,6 +1827,37 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       }
 
       const batches = await storage.getReimbursementBatches(filters);
+      
+      // Recalculate totals for batches with foreign currency expenses
+      for (const batch of batches) {
+        const batchCurrency = batch.currency || 'USD';
+        if (batch.expenses && batch.expenses.length > 0) {
+          const hasForeignCurrency = batch.expenses.some((exp: any) => {
+            const expCurrency = exp.currency || 'USD';
+            return expCurrency !== batchCurrency;
+          });
+          
+          if (hasForeignCurrency) {
+            let convertedTotal = 0;
+            for (const exp of batch.expenses) {
+              const expCurrency = (exp as any).currency || 'USD';
+              const amount = parseFloat((exp as any).amount || '0');
+              if (expCurrency !== batchCurrency) {
+                const { convertedAmount } = await convertCurrency(amount, expCurrency, batchCurrency);
+                convertedTotal += convertedAmount;
+              } else {
+                convertedTotal += amount;
+              }
+            }
+            batch.totalAmount = convertedTotal.toFixed(2);
+            
+            await db.update(reimbursementBatches)
+              .set({ totalAmount: convertedTotal.toFixed(2) })
+              .where(eq(reimbursementBatches.id, batch.id));
+          }
+        }
+      }
+      
       res.json(batches);
     } catch (error) {
       console.error("[REIMBURSEMENT_BATCHES] Failed to fetch batches:", error);
@@ -1849,6 +1880,35 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       if (userTenantId && batch.tenantId && batch.tenantId !== userTenantId) {
         return res.status(403).json({ message: "Access denied" });
       }
+      
+      // Recalculate total with currency conversion for existing batches
+      const batchCurrency = batch.currency || 'USD';
+      if (batch.expenses && batch.expenses.length > 0) {
+        const hasForeignCurrency = batch.expenses.some((exp: any) => {
+          const expCurrency = exp.currency || 'USD';
+          return expCurrency !== batchCurrency;
+        });
+        
+        if (hasForeignCurrency) {
+          let convertedTotal = 0;
+          for (const exp of batch.expenses) {
+            const expCurrency = exp.currency || 'USD';
+            const amount = parseFloat(exp.amount || '0');
+            if (expCurrency !== batchCurrency) {
+              const { convertedAmount } = await convertCurrency(amount, expCurrency, batchCurrency);
+              convertedTotal += convertedAmount;
+            } else {
+              convertedTotal += amount;
+            }
+          }
+          batch.totalAmount = convertedTotal.toFixed(2);
+          
+          await db.update(reimbursementBatches)
+            .set({ totalAmount: convertedTotal.toFixed(2) })
+            .where(eq(reimbursementBatches.id, batch.id));
+        }
+      }
+      
       res.json(batch);
     } catch (error) {
       console.error("[REIMBURSEMENT_BATCHES] Failed to fetch batch:", error);
