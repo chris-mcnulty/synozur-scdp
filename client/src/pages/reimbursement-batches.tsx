@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/layout";
@@ -7,8 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { format } from "date-fns";
-import { Plus, CheckCircle, FileText, User, ThumbsUp, ThumbsDown, ArrowLeft, Send, ChevronDown, ChevronRight, Paperclip, DollarSign, ExternalLink } from "lucide-react";
+import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
+import { Plus, CheckCircle, FileText, User, ThumbsUp, ThumbsDown, ArrowLeft, Send, ChevronDown, ChevronRight, Paperclip, DollarSign, ExternalLink, Filter, Users, Calendar, ArrowUpDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -20,6 +20,47 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import type { Expense, Project, Client, User as UserType, ReimbursementLineItem, ExpenseAttachment } from "@shared/schema";
+
+type TimeFramePreset = 'all' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year';
+type SortOption = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'person_asc';
+
+function getDateRange(preset: TimeFramePreset): { startDate?: string; endDate?: string } {
+  const now = new Date();
+  const addDay = (d: Date) => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; };
+  switch (preset) {
+    case 'this_month':
+      return { startDate: format(startOfMonth(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfMonth(now)), 'yyyy-MM-dd') };
+    case 'last_month': {
+      const last = subMonths(now, 1);
+      return { startDate: format(startOfMonth(last), 'yyyy-MM-dd'), endDate: format(addDay(endOfMonth(last)), 'yyyy-MM-dd') };
+    }
+    case 'this_quarter':
+      return { startDate: format(startOfQuarter(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfQuarter(now)), 'yyyy-MM-dd') };
+    case 'last_quarter': {
+      const lastQ = subMonths(startOfQuarter(now), 1);
+      return { startDate: format(startOfQuarter(lastQ), 'yyyy-MM-dd'), endDate: format(addDay(endOfQuarter(lastQ)), 'yyyy-MM-dd') };
+    }
+    case 'this_year':
+      return { startDate: format(startOfYear(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfYear(now)), 'yyyy-MM-dd') };
+    default:
+      return {};
+  }
+}
+
+interface PersonGroup {
+  userId: string;
+  userName: string;
+  batches: ReimbursementBatch[];
+  totalsByCurrency: Record<string, number>;
+  batchCount: number;
+}
+
+function formatCurrencyTotals(totals: Record<string, number>): string {
+  return Object.entries(totals)
+    .filter(([, amt]) => amt > 0)
+    .map(([currency, amt]) => `${currency} ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    .join(' + ');
+}
 
 interface BatchLineItem extends ReimbursementLineItem {
   expense: Expense & { person: UserType; project: Project & { client: Client }; attachments?: ExpenseAttachment[] };
@@ -58,6 +99,11 @@ export default function ReimbursementBatches() {
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [lineItemNotes, setLineItemNotes] = useState<Record<string, string>>({});
   const [expandedLineItems, setExpandedLineItems] = useState<Set<string>>(new Set());
+  const [filterPerson, setFilterPerson] = useState<string>("all");
+  const [filterTimeFrame, setFilterTimeFrame] = useState<TimeFramePreset>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("date_desc");
+  const [showFilters, setShowFilters] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, hasAnyRole } = useAuth();
@@ -69,9 +115,24 @@ export default function ReimbursementBatches() {
   const isFinance = hasAnyRole(["admin", "billing-admin"]);
   const canViewAll = hasAnyRole(["admin", "billing-admin", "executive"]);
 
-  const batchesUrl = isPersonalView ? "/api/reimbursement-batches?mine=true" : "/api/reimbursement-batches";
+  const dateRange = useMemo(() => getDateRange(filterTimeFrame), [filterTimeFrame]);
+
+  const batchesUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (isPersonalView) params.set('mine', 'true');
+    if (dateRange.startDate) params.set('startDate', dateRange.startDate);
+    if (dateRange.endDate) params.set('endDate', dateRange.endDate);
+    const qs = params.toString();
+    return `/api/reimbursement-batches${qs ? `?${qs}` : ''}`;
+  }, [isPersonalView, dateRange]);
+
   const { data: batches = [], isLoading } = useQuery<ReimbursementBatch[]>({
     queryKey: [batchesUrl],
+  });
+
+  const { data: teamUsers = [] } = useQuery<UserType[]>({
+    queryKey: ["/api/users"],
+    enabled: canViewAll,
   });
 
   const availableExpensesUrl = (() => {
@@ -94,13 +155,82 @@ export default function ReimbursementBatches() {
   });
 
   const invalidateBatches = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/reimbursement-batches?mine=true"] });
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey[0];
+        return typeof key === 'string' && key.startsWith('/api/reimbursement-batches');
+      },
+    });
   };
 
-  const pendingBatches = batches.filter(b => b.status === 'pending');
-  const underReviewBatches = batches.filter(b => b.status === 'under_review');
-  const processedBatches = batches.filter(b => b.status === 'processed');
+  const filteredByPerson = useMemo(() => {
+    if (filterPerson === 'all') return batches;
+    return batches.filter(b => b.requestedForUserId === filterPerson || b.requestedBy === filterPerson);
+  }, [batches, filterPerson]);
+
+  const pendingBatches = filteredByPerson.filter(b => b.status === 'pending');
+  const underReviewBatches = filteredByPerson.filter(b => b.status === 'under_review');
+  const processedBatches = filteredByPerson.filter(b => b.status === 'processed');
+
+  const getTabBatches = () => {
+    switch (activeTab) {
+      case 'pending': return pendingBatches;
+      case 'under_review': return underReviewBatches;
+      case 'processed': return processedBatches;
+      default: return pendingBatches;
+    }
+  };
+
+  const sortedTabBatches = useMemo(() => {
+    const list = [...getTabBatches()];
+    switch (sortBy) {
+      case 'date_asc': return list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      case 'date_desc': return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      case 'amount_desc': return list.sort((a, b) => parseFloat(b.totalAmount) - parseFloat(a.totalAmount));
+      case 'amount_asc': return list.sort((a, b) => parseFloat(a.totalAmount) - parseFloat(b.totalAmount));
+      case 'person_asc': return list.sort((a, b) => (a.requestedForUser?.name || '').localeCompare(b.requestedForUser?.name || ''));
+      default: return list;
+    }
+  }, [activeTab, filteredByPerson, sortBy]);
+
+  const groupedByPerson = useMemo((): PersonGroup[] => {
+    const groups = new Map<string, PersonGroup>();
+    for (const batch of sortedTabBatches) {
+      const uid = batch.requestedForUserId || batch.requestedBy || 'unknown';
+      const uName = batch.requestedForUser?.name || batch.requester?.name || 'Unknown';
+      if (!groups.has(uid)) {
+        groups.set(uid, { userId: uid, userName: uName, batches: [], totalsByCurrency: {}, batchCount: 0 });
+      }
+      const g = groups.get(uid)!;
+      g.batches.push(batch);
+      g.batchCount++;
+      const cur = batch.currency || 'USD';
+      g.totalsByCurrency[cur] = (g.totalsByCurrency[cur] || 0) + parseFloat(batch.totalAmount || '0');
+    }
+    return Array.from(groups.values()).sort((a, b) => a.userName.localeCompare(b.userName));
+  }, [sortedTabBatches]);
+
+  const overallTotalsByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const g of groupedByPerson) {
+      for (const [cur, amt] of Object.entries(g.totalsByCurrency)) {
+        totals[cur] = (totals[cur] || 0) + amt;
+      }
+    }
+    return totals;
+  }, [groupedByPerson]);
+
+  const toggleGroupCollapse = (userId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const hasActiveFilters = filterPerson !== 'all' || filterTimeFrame !== 'all';
+  const clearFilters = () => { setFilterPerson('all'); setFilterTimeFrame('all'); };
 
   const createBatchMutation = useMutation({
     mutationFn: async ({ expenseIds, requestedForUserId }: { expenseIds: string[]; requestedForUserId?: string }) => {
@@ -690,11 +820,98 @@ export default function ReimbursementBatches() {
                 : "Request reimbursement for your approved expenses"}
             </p>
           </div>
-          <Button onClick={() => { setShowCreateDialog(true); setSelectedExpenseIds(new Set()); setSelectedUserId(""); }}>
-            <Plus className="mr-2 h-4 w-4" />
-            Request Reimbursement
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant={showFilters ? "secondary" : "outline"}
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="button-toggle-filters"
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+              {hasActiveFilters && (
+                <Badge variant="default" className="ml-2 h-5 px-1.5 text-xs">
+                  {(filterPerson !== 'all' ? 1 : 0) + (filterTimeFrame !== 'all' ? 1 : 0)}
+                </Badge>
+              )}
+            </Button>
+            <Button onClick={() => { setShowCreateDialog(true); setSelectedExpenseIds(new Set()); setSelectedUserId(""); }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Request Reimbursement
+            </Button>
+          </div>
         </div>
+
+        {showFilters && (
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex flex-wrap items-end gap-4">
+                {canViewAll && (
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-sm font-medium mb-1.5 block">
+                      <Users className="inline h-3.5 w-3.5 mr-1" />
+                      Person
+                    </label>
+                    <Select value={filterPerson} onValueChange={setFilterPerson}>
+                      <SelectTrigger data-testid="filter-person">
+                        <SelectValue placeholder="All People" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All People</SelectItem>
+                        {teamUsers.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.name || u.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-sm font-medium mb-1.5 block">
+                    <Calendar className="inline h-3.5 w-3.5 mr-1" />
+                    Time Frame
+                  </label>
+                  <Select value={filterTimeFrame} onValueChange={(v) => setFilterTimeFrame(v as TimeFramePreset)}>
+                    <SelectTrigger data-testid="filter-timeframe">
+                      <SelectValue placeholder="All Time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="this_month">This Month</SelectItem>
+                      <SelectItem value="last_month">Last Month</SelectItem>
+                      <SelectItem value="this_quarter">This Quarter</SelectItem>
+                      <SelectItem value="last_quarter">Last Quarter</SelectItem>
+                      <SelectItem value="this_year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-sm font-medium mb-1.5 block">
+                    <ArrowUpDown className="inline h-3.5 w-3.5 mr-1" />
+                    Sort By
+                  </label>
+                  <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+                    <SelectTrigger data-testid="filter-sort">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date_desc">Newest First</SelectItem>
+                      <SelectItem value="date_asc">Oldest First</SelectItem>
+                      <SelectItem value="amount_desc">Highest Amount</SelectItem>
+                      <SelectItem value="amount_asc">Lowest Amount</SelectItem>
+                      <SelectItem value="person_asc">Person (A-Z)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-10">
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
@@ -709,14 +926,97 @@ export default function ReimbursementBatches() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="pending" className="mt-4">
-            {isLoading ? <p className="text-muted-foreground">Loading...</p> : renderBatchesList(pendingBatches)}
-          </TabsContent>
-          <TabsContent value="under_review" className="mt-4">
-            {isLoading ? <p className="text-muted-foreground">Loading...</p> : renderBatchesList(underReviewBatches)}
-          </TabsContent>
-          <TabsContent value="processed" className="mt-4">
-            {isLoading ? <p className="text-muted-foreground">Loading...</p> : renderBatchesList(processedBatches)}
+          <TabsContent value={activeTab} className="mt-4">
+            {isLoading ? (
+              <p className="text-muted-foreground">Loading...</p>
+            ) : sortedTabBatches.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-center text-muted-foreground">
+                    No reimbursement requests found{hasActiveFilters ? '. Try adjusting your filters.' : '.'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : groupedByPerson.length > 1 ? (
+              <div className="space-y-4">
+                {groupedByPerson.map((group) => {
+                  const isCollapsed = collapsedGroups.has(group.userId);
+                  return (
+                    <div key={group.userId} className="space-y-2">
+                      <button
+                        onClick={() => toggleGroupCollapse(group.userId)}
+                        className="flex items-center justify-between w-full px-4 py-2.5 bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                        data-testid={`group-header-${group.userId}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{group.userName}</span>
+                          <Badge variant="outline" className="ml-1">
+                            {group.batchCount} request{group.batchCount !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
+                        <span className="font-semibold text-sm">
+                          Subtotal: {formatCurrencyTotals(group.totalsByCurrency)}
+                        </span>
+                      </button>
+                      {!isCollapsed && (
+                        <div className="grid gap-3 pl-4 border-l-2 border-muted ml-2">
+                          {group.batches.map((batch) => (
+                            <Card
+                              key={batch.id}
+                              className="hover:shadow-md transition-shadow cursor-pointer"
+                              onClick={() => openBatchDetail(batch)}
+                            >
+                              <CardHeader className="pb-3 py-3">
+                                <div className="flex justify-between items-start">
+                                  <div className="flex-1">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                      <FileText className="h-4 w-4" />
+                                      {batch.batchNumber}
+                                    </CardTitle>
+                                    <CardDescription className="mt-0.5 text-xs">
+                                      {batch.lineItems?.length || batch.expenses?.length || 0} expense item{(batch.lineItems?.length || batch.expenses?.length || 0) !== 1 ? 's' : ''}
+                                    </CardDescription>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    {getStatusBadge(batch.status)}
+                                    <span className="text-sm font-semibold">
+                                      {batch.currency} {parseFloat(batch.totalAmount).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Created: {format(new Date(batch.createdAt), 'MMM d, yyyy')}
+                                  {batch.processedAt && ` • Processed: ${format(new Date(batch.processedAt), 'MMM d, yyyy')}`}
+                                  {batch.paymentReferenceNumber && ` • Ref: ${batch.paymentReferenceNumber}`}
+                                </div>
+                              </CardHeader>
+                            </Card>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                  <span className="font-bold text-base">
+                    Overall Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {renderBatchesList(sortedTabBatches)}
+                {sortedTabBatches.length > 1 && (
+                  <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                    <span className="font-bold text-base">
+                      Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
