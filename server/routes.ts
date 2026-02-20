@@ -1669,7 +1669,8 @@ export async function registerRoutes(app: Express): Promise<void> {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
         clientId: req.query.clientId as string | undefined,
-        status: req.query.status as string | undefined
+        status: req.query.status as string | undefined,
+        tenantId: req.user?.tenantId
       };
 
       const metrics = await storage.getPortfolioMetrics(filters);
@@ -1690,7 +1691,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
-        clientId: req.query.clientId as string | undefined
+        clientId: req.query.clientId as string | undefined,
+        tenantId: req.user?.tenantId
       };
 
       const accuracy = await storage.getEstimateAccuracy(filters);
@@ -1711,7 +1713,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
-        clientId: req.query.clientId as string | undefined
+        clientId: req.query.clientId as string | undefined,
+        tenantId: req.user?.tenantId
       };
 
       const revenue = await storage.getRevenueMetrics(filters);
@@ -1732,7 +1735,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const filters = {
         startDate: req.query.startDate as string | undefined,
         endDate: req.query.endDate as string | undefined,
-        roleId: req.query.roleId as string | undefined
+        roleId: req.query.roleId as string | undefined,
+        tenantId: req.user?.tenantId
       };
 
       const utilization = await storage.getResourceUtilization(filters);
@@ -1752,11 +1756,17 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
 
       const { startDate, endDate, clientIds, status, pmId, quickFilter } = req.query;
+      const tenantId = req.user?.tenantId;
       
       // Parse client IDs if provided
       const clientIdList = clientIds ? (clientIds as string).split(',') : [];
       
-      // Fetch all necessary data
+      // Fetch all necessary data - TENANT SCOPED
+      const projectConditions: any[] = [];
+      if (tenantId) {
+        projectConditions.push(eq(projects.tenantId, tenantId));
+      }
+      
       const allProjects = await db.select({
         id: projects.id,
         name: projects.name,
@@ -1774,7 +1784,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       })
       .from(projects)
       .leftJoin(clients, eq(projects.clientId, clients.id))
-      .leftJoin(users, eq(projects.pm, users.id));
+      .leftJoin(users, eq(projects.pm, users.id))
+      .where(projectConditions.length > 0 ? and(...projectConditions) : undefined);
       
       // Apply filters
       let filteredProjects = allProjects;
@@ -1793,7 +1804,11 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Revenue calculation: Use authoritative batch header totals apportioned to projects
       // Formula: totalAmount + aggregateAdjustmentTotal - discountAmount (excludes tax, which is a liability)
-      // Step 1: Get finalized batches with their total amounts and adjustments
+      // Step 1: Get finalized batches with their total amounts and adjustments - TENANT SCOPED
+      const batchConditions: any[] = [eq(invoiceBatches.status, 'finalized')];
+      if (tenantId) {
+        batchConditions.push(eq(invoiceBatches.tenantId, tenantId));
+      }
       const finalizedBatches = await db.select({
         batchId: invoiceBatches.batchId,
         totalAmount: invoiceBatches.totalAmount,
@@ -1801,7 +1816,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         discountAmount: invoiceBatches.discountAmount
       })
       .from(invoiceBatches)
-      .where(eq(invoiceBatches.status, 'finalized'));
+      .where(and(...batchConditions));
       
       // Step 2: Get line amounts grouped by batch and project for apportioning
       const batchProjectLines = await db.select({
@@ -1840,9 +1855,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         }
       }
       
-      // Fetch time entries for labor cost calculation
+      // Fetch time entries for labor cost calculation - TENANT SCOPED via project join
       // Use the time entry's own costRate (captured at entry time) for accurate historical costing
       // Include salaried status to exclude salaried resources from cost
+      const timeConditions: any[] = [];
+      if (tenantId) {
+        timeConditions.push(eq(timeEntries.tenantId, tenantId));
+      }
       const timeData = await db.select({
         projectId: timeEntries.projectId,
         personId: timeEntries.personId,
@@ -1857,25 +1876,36 @@ export async function registerRoutes(app: Express): Promise<void> {
       })
       .from(timeEntries)
       .leftJoin(users, eq(timeEntries.personId, users.id))
-      .leftJoin(roles, eq(users.roleId, roles.id));
+      .leftJoin(roles, eq(users.roleId, roles.id))
+      .where(timeConditions.length > 0 ? and(...timeConditions) : undefined);
       
-      // Fetch expenses
+      // Fetch expenses - TENANT SCOPED
+      const expenseConditions: any[] = [];
+      if (tenantId) {
+        expenseConditions.push(eq(expenses.tenantId, tenantId));
+      }
       const expenseData = await db.select({
         projectId: expenses.projectId,
         amount: expenses.amount,
         approvalStatus: expenses.approvalStatus,
         date: expenses.date
       })
-      .from(expenses);
+      .from(expenses)
+      .where(expenseConditions.length > 0 ? and(...expenseConditions) : undefined);
       
-      // Fetch estimates for original estimate amounts
+      // Fetch estimates for original estimate amounts - TENANT SCOPED
+      const estimateConditions: any[] = [];
+      if (tenantId) {
+        estimateConditions.push(eq(estimates.tenantId, tenantId));
+      }
       const estimateData = await db.select({
         id: estimates.id,
         totalFees: estimates.totalFees,
         totalCost: estimates.totalCost,
         totalMargin: estimates.totalMargin
       })
-      .from(estimates);
+      .from(estimates)
+      .where(estimateConditions.length > 0 ? and(...estimateConditions) : undefined);
       
       // Fetch project milestones for completion tracking
       const milestoneData = await db.select({
@@ -2400,6 +2430,7 @@ export async function registerRoutes(app: Express): Promise<void> {
         sortOrder = 'asc',
         groupBy
       } = req.query;
+      const tenantId = req.user?.tenantId;
 
       // Permission check - employees can only see their own data
       const userId = req.user!.id;
@@ -2456,6 +2487,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         .leftJoin(projectStages, eq(projectAllocations.projectStageId, projectStages.id));
 
       const conditions: any[] = [];
+
+      // TENANT SCOPING - filter projects to current tenant
+      if (tenantId) {
+        conditions.push(eq(projects.tenantId, tenantId));
+      }
 
       // Filter by person
       if (targetPersonId) {

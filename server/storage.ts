@@ -707,6 +707,7 @@ export interface IStorage {
     endDate?: string; 
     clientId?: string;
     status?: string;
+    tenantId?: string;
   }): Promise<{
     projectId: string;
     projectName: string;
@@ -728,6 +729,7 @@ export interface IStorage {
     startDate?: string;
     endDate?: string;
     clientId?: string;
+    tenantId?: string;
   }): Promise<{
     projectId: string;
     projectName: string;
@@ -750,6 +752,7 @@ export interface IStorage {
     startDate?: string;
     endDate?: string;
     clientId?: string;
+    tenantId?: string;
   }): Promise<{
     summary: {
       totalRevenue: number;
@@ -781,6 +784,7 @@ export interface IStorage {
     startDate?: string;
     endDate?: string;
     roleId?: string;
+    tenantId?: string;
   }): Promise<{
     byPerson: {
       personId: string;
@@ -8048,6 +8052,7 @@ export class DatabaseStorage implements IStorage {
     endDate?: string; 
     clientId?: string;
     status?: string;
+    tenantId?: string;
   }): Promise<{
     projectId: string;
     projectName: string;
@@ -8066,6 +8071,9 @@ export class DatabaseStorage implements IStorage {
   }[]> {
     // Build filter conditions
     const conditions = [];
+    if (filters?.tenantId) {
+      conditions.push(eq(projects.tenantId, filters.tenantId));
+    }
     if (filters?.clientId) {
       conditions.push(eq(projects.clientId, filters.clientId));
     }
@@ -8170,6 +8178,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string;
     endDate?: string;
     clientId?: string;
+    tenantId?: string;
   }): Promise<{
     projectId: string;
     projectName: string;
@@ -8187,16 +8196,21 @@ export class DatabaseStorage implements IStorage {
     changeOrderCount: number;
     changeOrderValue: number;
   }[]> {
-    const projectQuery = filters?.clientId 
-      ? db.select()
-          .from(projects)
-          .leftJoin(clients, eq(projects.clientId, clients.id))
-          .where(eq(projects.clientId, filters.clientId))
-      : db.select()
-          .from(projects)
-          .leftJoin(clients, eq(projects.clientId, clients.id));
+    const estConditions: any[] = [];
+    if (filters?.tenantId) {
+      estConditions.push(eq(projects.tenantId, filters.tenantId));
+    }
+    if (filters?.clientId) {
+      estConditions.push(eq(projects.clientId, filters.clientId));
+    }
+    
+    const projectQuery = db.select()
+      .from(projects)
+      .leftJoin(clients, eq(projects.clientId, clients.id));
 
-    const projectResults = await projectQuery;
+    const projectResults = estConditions.length > 0
+      ? await projectQuery.where(and(...estConditions))
+      : await projectQuery;
 
     const accuracyMetrics = await Promise.all(projectResults.map(async (row) => {
       if (!row.projects) return null;
@@ -8314,6 +8328,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string;
     endDate?: string;
     clientId?: string;
+    tenantId?: string;
   }): Promise<{
     summary: {
       totalRevenue: number;
@@ -8341,7 +8356,10 @@ export class DatabaseStorage implements IStorage {
     }[];
   }> {
     // Build base query
-    let baseConditions = [];
+    let baseConditions: any[] = [];
+    if (filters?.tenantId) {
+      baseConditions.push(eq(projects.tenantId, filters.tenantId));
+    }
     if (filters?.startDate) {
       baseConditions.push(gte(timeEntries.date, filters.startDate));
     }
@@ -8376,43 +8394,37 @@ export class DatabaseStorage implements IStorage {
 
     const summaryResults = await summaryQuery;
     
-    // Get quoted revenue from estimates
-    const estimateQuery = filters?.clientId 
-      ? db.select({
-          quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
-        })
-        .from(estimates)
-        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-        .where(and(
-          eq(estimates.status, 'approved'),
-          eq(estimates.clientId, filters.clientId)
-        ))
-      : db.select({
-          quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
-        })
-        .from(estimates)
-        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-        .where(eq(estimates.status, 'approved'));
+    // Get quoted revenue from estimates - TENANT SCOPED
+    const estApprovedConditions: any[] = [eq(estimates.status, 'approved')];
+    if (filters?.tenantId) {
+      estApprovedConditions.push(eq(estimates.tenantId, filters.tenantId));
+    }
+    if (filters?.clientId) {
+      estApprovedConditions.push(eq(estimates.clientId, filters.clientId));
+    }
+    const estimateQuery = db.select({
+      quotedRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+    })
+    .from(estimates)
+    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+    .where(and(...estApprovedConditions));
 
     const estimateResults = await estimateQuery;
     
-    // Get pipeline revenue (draft estimates)
-    const pipelineQuery = filters?.clientId 
-      ? db.select({
-          pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
-        })
-        .from(estimates)
-        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-        .where(and(
-          eq(estimates.status, 'draft'),
-          eq(estimates.clientId, filters.clientId)
-        ))
-      : db.select({
-          pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
-        })
-        .from(estimates)
-        .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
-        .where(eq(estimates.status, 'draft'));
+    // Get pipeline revenue (draft estimates) - TENANT SCOPED
+    const estDraftConditions: any[] = [eq(estimates.status, 'draft')];
+    if (filters?.tenantId) {
+      estDraftConditions.push(eq(estimates.tenantId, filters.tenantId));
+    }
+    if (filters?.clientId) {
+      estDraftConditions.push(eq(estimates.clientId, filters.clientId));
+    }
+    const pipelineQuery = db.select({
+      pipelineRevenue: sql<number>`COALESCE(SUM(CAST(${estimateLineItems.adjustedHours} AS NUMERIC) * CAST(${estimateLineItems.rate} AS NUMERIC)), 0)::float`
+    })
+    .from(estimates)
+    .leftJoin(estimateLineItems, eq(estimateLineItems.estimateId, estimates.id))
+    .where(and(...estDraftConditions));
 
     const pipelineResults = await pipelineQuery;
 
@@ -8423,7 +8435,7 @@ export class DatabaseStorage implements IStorage {
     const pipelineRevenue = Number(pipelineResults[0]?.pipelineRevenue) || 0;
     const realizationRate = quotedRevenue > 0 ? (totalRevenue / quotedRevenue) * 100 : 0;
 
-    // Get monthly metrics
+    // Get monthly metrics - TENANT SCOPED (baseConditions already includes tenantId)
     const monthlyQuery = db.select({
       month: sql<string>`TO_CHAR(${timeEntries.date}::date, 'YYYY-MM')`,
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * COALESCE(
@@ -8453,7 +8465,14 @@ export class DatabaseStorage implements IStorage {
 
     const monthlyResults = await monthlyQuery;
 
-    // Get new contracts by month
+    // Get new contracts by month - TENANT SCOPED
+    const contractConditions: any[] = [];
+    if (filters?.tenantId) {
+      contractConditions.push(eq(projects.tenantId, filters.tenantId));
+    }
+    if (filters?.clientId) {
+      contractConditions.push(eq(projects.clientId, filters.clientId));
+    }
     const contractsQuery = db.select({
       month: sql<string>`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`,
       newContracts: sql<number>`COUNT(*)::int`,
@@ -8463,11 +8482,9 @@ export class DatabaseStorage implements IStorage {
     .groupBy(sql`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`)
     .orderBy(sql`TO_CHAR(${projects.createdAt}::date, 'YYYY-MM')`);
 
-    if (filters?.clientId) {
-      contractsQuery.where(eq(projects.clientId, filters.clientId));
-    }
-
-    const contractsResults = await contractsQuery;
+    const contractsResults = contractConditions.length > 0
+      ? await contractsQuery.where(and(...contractConditions))
+      : await contractsQuery;
 
     // Merge monthly data
     const monthlyMap = new Map();
@@ -8498,7 +8515,14 @@ export class DatabaseStorage implements IStorage {
 
     const monthly = Array.from(monthlyMap.values());
 
-    // Get metrics by client - using actual time entry billing rates
+    // Get metrics by client - using actual time entry billing rates - TENANT SCOPED
+    const clientQueryConditions: any[] = [];
+    if (filters?.tenantId) {
+      clientQueryConditions.push(eq(clients.tenantId, filters.tenantId));
+    }
+    if (filters?.clientId) {
+      clientQueryConditions.push(eq(clients.id, filters.clientId));
+    }
     const clientQuery = db.select({
       clientId: clients.id,
       clientName: clients.name,
@@ -8514,11 +8538,9 @@ export class DatabaseStorage implements IStorage {
     .groupBy(clients.id, clients.name)
     .orderBy(sql`SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END) DESC`);
 
-    if (filters?.clientId) {
-      clientQuery.where(eq(clients.id, filters.clientId));
-    }
-
-    const clientResults = await clientQuery;
+    const clientResults = clientQueryConditions.length > 0
+      ? await clientQuery.where(and(...clientQueryConditions))
+      : await clientQuery;
 
     const byClient = clientResults.map(row => ({
       clientId: row.clientId,
@@ -8547,6 +8569,7 @@ export class DatabaseStorage implements IStorage {
     startDate?: string;
     endDate?: string;
     roleId?: string;
+    tenantId?: string;
   }): Promise<{
     byPerson: {
       personId: string;
@@ -8583,7 +8606,19 @@ export class DatabaseStorage implements IStorage {
     const hoursPerDay = 8;
     const totalCapacity = workDays * hoursPerDay;
 
-    // Get utilization by person
+    // Get utilization by person - TENANT SCOPED
+    const timeJoinConditions: any[] = [eq(timeEntries.personId, users.id)];
+    if (filters?.startDate) timeJoinConditions.push(gte(timeEntries.date, filters.startDate));
+    if (filters?.endDate) timeJoinConditions.push(lte(timeEntries.date, filters.endDate));
+    if (filters?.tenantId) timeJoinConditions.push(eq(timeEntries.tenantId, filters.tenantId));
+    
+    const personWhereConditions: any[] = [eq(users.isActive, true)];
+    if (filters?.tenantId) {
+      personWhereConditions.push(
+        sql`${users.id} IN (SELECT user_id FROM tenant_users WHERE tenant_id = ${filters.tenantId})`
+      );
+    }
+    
     const personQuery = db.select({
       personId: users.id,
       personName: users.name,
@@ -8593,12 +8628,8 @@ export class DatabaseStorage implements IStorage {
       revenue: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) * CAST(${timeEntries.billingRate} AS NUMERIC) ELSE 0 END), 0)::float`
     })
     .from(users)
-    .leftJoin(timeEntries, and(
-      eq(timeEntries.personId, users.id),
-      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
-      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
-    ))
-    .where(eq(users.isActive, true))
+    .leftJoin(timeEntries, and(...timeJoinConditions))
+    .where(and(...personWhereConditions))
     .groupBy(users.id, users.name, users.role);
 
     const personResults = await personQuery;
@@ -8625,7 +8656,20 @@ export class DatabaseStorage implements IStorage {
       };
     });
 
-    // Get utilization by role
+    // Get utilization by role - TENANT SCOPED
+    const roleTimeJoinConditions: any[] = [eq(timeEntries.personId, users.id)];
+    if (filters?.startDate) roleTimeJoinConditions.push(gte(timeEntries.date, filters.startDate));
+    if (filters?.endDate) roleTimeJoinConditions.push(lte(timeEntries.date, filters.endDate));
+    if (filters?.tenantId) roleTimeJoinConditions.push(eq(timeEntries.tenantId, filters.tenantId));
+    
+    const roleWhereConditions: any[] = [eq(users.isActive, true)];
+    if (filters?.roleId) roleWhereConditions.push(eq(users.role, filters.roleId));
+    if (filters?.tenantId) {
+      roleWhereConditions.push(
+        sql`${users.id} IN (SELECT user_id FROM tenant_users WHERE tenant_id = ${filters.tenantId})`
+      );
+    }
+    
     const roleQuery = db.select({
       role: users.role,
       billableHours: sql<number>`COALESCE(SUM(CASE WHEN ${timeEntries.billable} THEN CAST(${timeEntries.hours} AS NUMERIC) ELSE 0 END), 0)::float`,
@@ -8633,15 +8677,8 @@ export class DatabaseStorage implements IStorage {
       headcount: sql<number>`COUNT(DISTINCT ${users.id})::int`
     })
     .from(users)
-    .leftJoin(timeEntries, and(
-      eq(timeEntries.personId, users.id),
-      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
-      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
-    ))
-    .where(and(
-      eq(users.isActive, true),
-      filters?.roleId ? eq(users.role, filters.roleId) : sql`true`
-    ))
+    .leftJoin(timeEntries, and(...roleTimeJoinConditions))
+    .where(and(...roleWhereConditions))
     .groupBy(users.role);
 
     const roleResults = await roleQuery;
@@ -8666,7 +8703,12 @@ export class DatabaseStorage implements IStorage {
       };
     });
 
-    // Get weekly trends
+    // Get weekly trends - TENANT SCOPED
+    const trendConditions: any[] = [];
+    if (filters?.tenantId) trendConditions.push(eq(timeEntries.tenantId, filters.tenantId));
+    if (filters?.startDate) trendConditions.push(gte(timeEntries.date, filters.startDate));
+    if (filters?.endDate) trendConditions.push(lte(timeEntries.date, filters.endDate));
+    
     const trendQuery = db.select({
       week: sql<string>`TO_CHAR(DATE_TRUNC('week', ${timeEntries.date}::date), 'YYYY-MM-DD')`,
       totalHours: sql<number>`SUM(CAST(${timeEntries.hours} AS NUMERIC))::float`,
@@ -8674,10 +8716,7 @@ export class DatabaseStorage implements IStorage {
       personCount: sql<number>`COUNT(DISTINCT ${timeEntries.personId})::int`
     })
     .from(timeEntries)
-    .where(and(
-      filters?.startDate ? gte(timeEntries.date, filters.startDate) : sql`true`,
-      filters?.endDate ? lte(timeEntries.date, filters.endDate) : sql`true`
-    ))
+    .where(trendConditions.length > 0 ? and(...trendConditions) : sql`true`)
     .groupBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`)
     .orderBy(sql`DATE_TRUNC('week', ${timeEntries.date}::date)`);
 
