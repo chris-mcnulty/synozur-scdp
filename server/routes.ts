@@ -394,22 +394,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin", "executive"]), async (req, res) => {
     try {
       const currentUser = (req as any).user;
-      const platformRole = currentUser?.platformRole;
-      const isPlatformAdmin = platformRole === 'global_admin' || platformRole === 'constellation_admin';
-      const tenantId = isPlatformAdmin ? undefined : (currentUser?.tenantId || undefined);
+      const tenantId = currentUser?.tenantId || undefined;
       const includeInactive = req.query.includeInactive === 'true';
       const includeStakeholders = req.query.includeStakeholders === 'true';
       const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
-      
-      if (isPlatformAdmin) {
-        const allTenants = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
-        const tenantMap = new Map(allTenants.map(t => [t.id, t.name]));
-        const enriched = usersList.map(u => ({
-          ...u,
-          primaryTenantName: u.primaryTenantId ? tenantMap.get(u.primaryTenantId) || null : null,
-        }));
-        return res.json(enriched);
-      }
       
       res.json(usersList);
     } catch (error) {
@@ -8267,6 +8255,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const isPlatformAdmin = req.user?.platformRole === 'global_admin' || req.user?.platformRole === 'constellation_admin';
 
       const filters: any = {};
+      if (req.user?.tenantId) {
+        filters.tenantId = req.user.tenantId;
+      }
       if (isManagerRole || isPlatformAdmin) {
         if (personId) filters.personId = personId;
       } else {
