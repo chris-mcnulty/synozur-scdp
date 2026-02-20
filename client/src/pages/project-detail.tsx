@@ -482,11 +482,9 @@ export default function ProjectDetail() {
 
   // Invoice batches query - fetch invoice batches for the project's client, filtered to this project
   const { data: invoiceBatches = [], isLoading: invoiceBatchesLoading } = useQuery<any[]>({
-    queryKey: [`/api/clients/${currentClientId}/invoice-batches`, { projectId: id }],
+    queryKey: ['/api/clients', currentClientId, 'invoice-batches', { projectId: id }],
     queryFn: async () => {
-      const response = await fetch(`/api/clients/${currentClientId}/invoice-batches?projectId=${id}`);
-      if (!response.ok) throw new Error('Failed to fetch invoice batches');
-      return response.json();
+      return apiRequest(`/api/clients/${currentClientId}/invoice-batches?projectId=${id}`);
     },
     enabled: !!currentClientId && !!id,
   });
