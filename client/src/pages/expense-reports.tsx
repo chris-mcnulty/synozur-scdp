@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout/layout";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertExpenseReportSchema, type Expense, type Project, type Client } from "@shared/schema";
-import { format } from "date-fns";
-import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt, RotateCcw, AlertTriangle, Undo2 } from "lucide-react";
+import { format, startOfMonth, endOfMonth, subMonths, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from "date-fns";
+import { Plus, Send, Edit, Trash2, FileText, Clock, CheckCircle, FileEdit, Receipt, RotateCcw, AlertTriangle, Undo2, Filter, Users, Calendar, ChevronDown, ChevronRight } from "lucide-react";
 import { ContractorExpenseInvoiceDialog } from "@/components/contractor-expense-invoice-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -57,6 +57,46 @@ interface ExpenseReport {
   }>;
 }
 
+type TimeFramePreset = 'all' | 'this_month' | 'last_month' | 'this_quarter' | 'last_quarter' | 'this_year' | 'custom';
+
+function getDateRange(preset: TimeFramePreset): { startDate?: string; endDate?: string } {
+  const now = new Date();
+  const addDay = (d: Date) => { const n = new Date(d); n.setDate(n.getDate() + 1); return n; };
+  switch (preset) {
+    case 'this_month':
+      return { startDate: format(startOfMonth(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfMonth(now)), 'yyyy-MM-dd') };
+    case 'last_month': {
+      const last = subMonths(now, 1);
+      return { startDate: format(startOfMonth(last), 'yyyy-MM-dd'), endDate: format(addDay(endOfMonth(last)), 'yyyy-MM-dd') };
+    }
+    case 'this_quarter':
+      return { startDate: format(startOfQuarter(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfQuarter(now)), 'yyyy-MM-dd') };
+    case 'last_quarter': {
+      const lastQ = subMonths(startOfQuarter(now), 1);
+      return { startDate: format(startOfQuarter(lastQ), 'yyyy-MM-dd'), endDate: format(addDay(endOfQuarter(lastQ)), 'yyyy-MM-dd') };
+    }
+    case 'this_year':
+      return { startDate: format(startOfYear(now), 'yyyy-MM-dd'), endDate: format(addDay(endOfYear(now)), 'yyyy-MM-dd') };
+    default:
+      return {};
+  }
+}
+
+interface PersonGroup {
+  submitterId: string;
+  submitterName: string;
+  reports: ExpenseReport[];
+  totalsByCurrency: Record<string, number>;
+  reportCount: number;
+}
+
+function formatCurrencyTotals(totals: Record<string, number>): string {
+  return Object.entries(totals)
+    .filter(([, amt]) => amt > 0)
+    .map(([currency, amt]) => `${currency} ${amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    .join(' + ');
+}
+
 export default function ExpenseReports() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -67,6 +107,10 @@ export default function ExpenseReports() {
   const [activeTab, setActiveTab] = useState<string>("draft");
   const [addingExpenses, setAddingExpenses] = useState(false);
   const [expensesToAdd, setExpensesToAdd] = useState<Set<string>>(new Set());
+  const [filterPerson, setFilterPerson] = useState<string>("all");
+  const [filterTimeFrame, setFilterTimeFrame] = useState<TimeFramePreset>("all");
+  const [showFilters, setShowFilters] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, hasAnyRole, isPlatformAdmin } = useAuth();
@@ -82,9 +126,24 @@ export default function ExpenseReports() {
     },
   });
 
-  // Fetch expense reports
+  const dateRange = useMemo(() => getDateRange(filterTimeFrame), [filterTimeFrame]);
+
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filterPerson !== 'all') params.set('submitterId', filterPerson);
+    if (dateRange.startDate) params.set('startDate', dateRange.startDate);
+    if (dateRange.endDate) params.set('endDate', dateRange.endDate);
+    return params.toString();
+  }, [filterPerson, dateRange]);
+
   const { data: reports = [], isLoading } = useQuery<ExpenseReport[]>({
-    queryKey: ["/api/expense-reports"],
+    queryKey: ["/api/expense-reports", queryParams],
+    queryFn: () => apiRequest(`/api/expense-reports${queryParams ? `?${queryParams}` : ''}`),
+  });
+
+  const { data: teamUsers = [] } = useQuery<{ id: string; firstName: string; lastName: string; email: string }[]>({
+    queryKey: ["/api/users"],
+    enabled: isAdmin,
   });
 
   // Fetch full details of selected report (with all expense items)
@@ -117,12 +176,10 @@ export default function ExpenseReports() {
     return !inReport;
   });
 
-  // Filter reports by status for tabs
   const draftReports = reports.filter(r => r.status === 'draft' || r.status === 'rejected');
   const pendingReports = reports.filter(r => r.status === 'submitted');
   const approvedReports = reports.filter(r => r.status === 'approved');
 
-  // Get reports for active tab
   const getFilteredReports = () => {
     switch (activeTab) {
       case 'draft':
@@ -137,6 +194,47 @@ export default function ExpenseReports() {
   };
 
   const filteredReports = getFilteredReports();
+
+  const groupedByPerson = useMemo((): PersonGroup[] => {
+    const groups = new Map<string, PersonGroup>();
+    for (const report of filteredReports) {
+      const sid = report.submitterId;
+      const sName = report.submitter?.name || report.submitter?.email || 'Unknown';
+      if (!groups.has(sid)) {
+        groups.set(sid, { submitterId: sid, submitterName: sName, reports: [], totalsByCurrency: {}, reportCount: 0 });
+      }
+      const g = groups.get(sid)!;
+      g.reports.push(report);
+      g.reportCount++;
+      const cur = report.currency || 'USD';
+      const reportTotal = parseFloat(report.totalAmount || '0') ||
+        (report.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0);
+      g.totalsByCurrency[cur] = (g.totalsByCurrency[cur] || 0) + reportTotal;
+    }
+    return Array.from(groups.values()).sort((a, b) => a.submitterName.localeCompare(b.submitterName));
+  }, [filteredReports]);
+
+  const overallTotalsByCurrency = useMemo(() => {
+    const totals: Record<string, number> = {};
+    for (const g of groupedByPerson) {
+      for (const [cur, amt] of Object.entries(g.totalsByCurrency)) {
+        totals[cur] = (totals[cur] || 0) + amt;
+      }
+    }
+    return totals;
+  }, [groupedByPerson]);
+
+  const toggleGroupCollapse = (submitterId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(submitterId)) next.delete(submitterId);
+      else next.add(submitterId);
+      return next;
+    });
+  };
+
+  const hasActiveFilters = filterPerson !== 'all' || filterTimeFrame !== 'all';
+  const clearFilters = () => { setFilterPerson('all'); setFilterTimeFrame('all'); };
 
   // Create expense report mutation
   const createReportMutation = useMutation({
@@ -364,15 +462,84 @@ export default function ExpenseReports() {
               Group your expenses into reports for approval
             </p>
           </div>
-          <Button 
-            onClick={() => setShowCreateDialog(true)} 
-            data-testid="button-create-report"
-            disabled={unassignedExpenses.length === 0}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Create Report
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant={showFilters ? "secondary" : "outline"}
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="button-toggle-filters"
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+              {hasActiveFilters && (
+                <Badge variant="default" className="ml-2 h-5 px-1.5 text-xs">
+                  {(filterPerson !== 'all' ? 1 : 0) + (filterTimeFrame !== 'all' ? 1 : 0)}
+                </Badge>
+              )}
+            </Button>
+            <Button 
+              onClick={() => setShowCreateDialog(true)} 
+              data-testid="button-create-report"
+              disabled={unassignedExpenses.length === 0}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create Report
+            </Button>
+          </div>
         </div>
+
+        {showFilters && (
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex flex-wrap items-end gap-4">
+                {isAdmin && (
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-sm font-medium mb-1.5 block">
+                      <Users className="inline h-3.5 w-3.5 mr-1" />
+                      Person
+                    </label>
+                    <Select value={filterPerson} onValueChange={setFilterPerson}>
+                      <SelectTrigger data-testid="filter-person">
+                        <SelectValue placeholder="All People" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All People</SelectItem>
+                        {teamUsers.map((u: any) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-sm font-medium mb-1.5 block">
+                    <Calendar className="inline h-3.5 w-3.5 mr-1" />
+                    Time Frame
+                  </label>
+                  <Select value={filterTimeFrame} onValueChange={(v) => setFilterTimeFrame(v as TimeFramePreset)}>
+                    <SelectTrigger data-testid="filter-timeframe">
+                      <SelectValue placeholder="All Time" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Time</SelectItem>
+                      <SelectItem value="this_month">This Month</SelectItem>
+                      <SelectItem value="last_month">Last Month</SelectItem>
+                      <SelectItem value="this_quarter">This Quarter</SelectItem>
+                      <SelectItem value="last_quarter">Last Quarter</SelectItem>
+                      <SelectItem value="this_year">This Year</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-10">
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {unassignedExpenses.length === 0 && reports.length === 0 && (
           <Card>
@@ -384,7 +551,6 @@ export default function ExpenseReports() {
           </Card>
         )}
 
-        {/* Reports List with Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="draft" className="flex items-center gap-2" data-testid="tab-draft">
@@ -402,60 +568,143 @@ export default function ExpenseReports() {
           </TabsList>
 
           <TabsContent value={activeTab} className="mt-4">
-            <div className="grid gap-4">
-              {filteredReports.length === 0 ? (
-                <Card>
-                  <CardContent className="pt-6">
-                    <p className="text-center text-muted-foreground">
-                      {activeTab === 'draft' && 'No draft or rejected reports.'}
-                      {activeTab === 'pending' && 'No reports pending approval.'}
-                      {activeTab === 'approved' && 'No approved reports.'}
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredReports.map((report) => (
-                  <Card key={report.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader className="cursor-pointer" onClick={() => {
-                      setSelectedReportId(report.id);
-                      setShowDetailDialog(true);
-                    }}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5" />
-                            {report.title}
-                          </CardTitle>
-                          <CardDescription className="mt-1">
-                            {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
-                          </CardDescription>
+            {filteredReports.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-center text-muted-foreground">
+                    {activeTab === 'draft' && 'No draft or rejected reports.'}
+                    {activeTab === 'pending' && 'No reports pending approval.'}
+                    {activeTab === 'approved' && 'No approved reports.'}
+                    {hasActiveFilters && ' Try adjusting your filters.'}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : groupedByPerson.length > 1 ? (
+              <div className="space-y-4">
+                {groupedByPerson.map((group) => {
+                  const isCollapsed = collapsedGroups.has(group.submitterId);
+                  return (
+                    <div key={group.submitterId} className="space-y-2">
+                      <button
+                        onClick={() => toggleGroupCollapse(group.submitterId)}
+                        className="flex items-center justify-between w-full px-4 py-2.5 bg-muted/60 hover:bg-muted rounded-lg transition-colors"
+                        data-testid={`group-header-${group.submitterId}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{group.submitterName}</span>
+                          <Badge variant="outline" className="ml-1">
+                            {group.reportCount} report{group.reportCount !== 1 ? 's' : ''}
+                          </Badge>
                         </div>
-                        <div className="flex flex-col items-end gap-2">
-                          {getStatusBadge(report.status)}
-                          <span className="text-lg font-semibold">
-                            {report.currency} {(report.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0).toFixed(2)}
-                          </span>
+                        <span className="font-semibold text-sm">
+                          Subtotal: {formatCurrencyTotals(group.totalsByCurrency)}
+                        </span>
+                      </button>
+                      {!isCollapsed && (
+                        <div className="grid gap-3 pl-4 border-l-2 border-muted ml-2">
+                          {group.reports.map((report) => (
+                            <Card key={report.id} className="hover:shadow-md transition-shadow">
+                              <CardHeader className="cursor-pointer py-3" onClick={() => {
+                                setSelectedReportId(report.id);
+                                setShowDetailDialog(true);
+                              }}>
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                      <FileText className="h-4 w-4" />
+                                      {report.title}
+                                    </CardTitle>
+                                    <CardDescription className="mt-1 text-xs">
+                                      {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
+                                    </CardDescription>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    {getStatusBadge(report.status)}
+                                    <span className="text-sm font-semibold">
+                                      {report.currency} {(parseFloat(report.totalAmount || '0') || (report.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0)).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
+                                  {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
+                                  {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
+                                </p>
+                                {report.rejectionNote && (
+                                  <div className="mt-1 p-2 bg-destructive/10 rounded text-xs">
+                                    <span className="font-medium text-destructive">Rejected: </span>
+                                    <span className="text-muted-foreground">{report.rejectionNote}</span>
+                                  </div>
+                                )}
+                              </CardHeader>
+                            </Card>
+                          ))}
                         </div>
-                      </div>
-                      {report.description && (
-                        <p className="text-sm text-muted-foreground mt-2">{report.description}</p>
                       )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
-                        {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
-                        {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
-                      </p>
-                      {report.rejectionNote && (
-                        <div className="mt-2 p-2 bg-destructive/10 rounded">
-                          <p className="text-sm font-medium text-destructive">Rejection Reason:</p>
-                          <p className="text-sm text-muted-foreground">{report.rejectionNote}</p>
+                    </div>
+                  );
+                })}
+                <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                  <span className="font-bold text-base">
+                    Overall Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-4">
+                  {filteredReports.map((report) => (
+                    <Card key={report.id} className="hover:shadow-md transition-shadow">
+                      <CardHeader className="cursor-pointer" onClick={() => {
+                        setSelectedReportId(report.id);
+                        setShowDetailDialog(true);
+                      }}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="flex items-center gap-2">
+                              <FileText className="h-5 w-5" />
+                              {report.title}
+                            </CardTitle>
+                            <CardDescription className="mt-1">
+                              {report.reportNumber} • {(report.items || []).length} expense{(report.items || []).length !== 1 ? 's' : ''}
+                            </CardDescription>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            {getStatusBadge(report.status)}
+                            <span className="text-lg font-semibold">
+                              {report.currency} {(parseFloat(report.totalAmount || '0') || (report.items || []).reduce((sum: number, item: any) => sum + parseFloat(item.expense?.amount || '0'), 0)).toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                      )}
-                    </CardHeader>
-                  </Card>
-                ))
-              )}
-            </div>
+                        {report.description && (
+                          <p className="text-sm text-muted-foreground mt-2">{report.description}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Created: {format(new Date(report.createdAt), 'MMM d, yyyy')}
+                          {report.submittedAt && ` • Submitted: ${format(new Date(report.submittedAt), 'MMM d, yyyy')}`}
+                          {report.approvedAt && ` • Approved: ${format(new Date(report.approvedAt), 'MMM d, yyyy')}`}
+                        </p>
+                        {report.rejectionNote && (
+                          <div className="mt-2 p-2 bg-destructive/10 rounded">
+                            <p className="text-sm font-medium text-destructive">Rejection Reason:</p>
+                            <p className="text-sm text-muted-foreground">{report.rejectionNote}</p>
+                          </div>
+                        )}
+                      </CardHeader>
+                    </Card>
+                  ))}
+                </div>
+                {filteredReports.length > 1 && (
+                  <div className="flex justify-end px-4 py-3 bg-primary/5 rounded-lg border">
+                    <span className="font-bold text-base">
+                      Total: {formatCurrencyTotals(overallTotalsByCurrency)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
