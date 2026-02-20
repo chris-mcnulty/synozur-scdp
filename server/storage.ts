@@ -584,6 +584,9 @@ export interface IStorage {
 
   // Batch Numbering
   generateBatchId(startDate: string, endDate: string): Promise<string>;
+  getAndIncrementGlInvoiceNumber(tenantId: string): Promise<string>;
+  getNextGlInvoiceNumber(tenantId: string): Promise<number>;
+  resetGlInvoiceNumber(tenantId: string, newValue: number): Promise<void>;
   
   // Project Analytics
   getProjectMonthlyMetrics(projectId: string): Promise<{

@@ -158,6 +158,9 @@ export const tenants = pgTable("tenants", {
   supportPlannerBucketName: text("support_planner_bucket_name"),
   supportListsEnabled: boolean("support_lists_enabled").default(false),
   
+  // GL Invoice Number Sequence
+  nextGlInvoiceNumber: integer("next_gl_invoice_number").default(1000),
+
   // Timestamps
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
