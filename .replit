@@ -109,6 +109,3 @@ AZURE_REDIRECT_URI = "https://fe536eef-aa4a-4f38-9444-a53b449002d7-00-2w4rayqj9t
 
 [userenv.shared]
 APP_PUBLIC_URL = "https://scdp.synozur.com"
-DD_LLMOBS_ENABLED = "1"
-DD_LLMOBS_ML_APP = "constellation"
-NODE_OPTIONS = "--import dd-trace/initialize.mjs"
