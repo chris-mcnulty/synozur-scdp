@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles } from "lucide-react";
+import { Building2, Save, Image, Mail, Phone, Globe, FileText, Settings, Palette, Link2, LifeBuoy, Upload, DollarSign, ExternalLink, CheckCircle, Info, ArrowRight, Languages, Sparkles, Hash, RotateCcw } from "lucide-react";
 import { MicrosoftPlannerIcon } from "@/components/icons/microsoft-icons";
 import { AdminSupportTab } from "@/components/admin/AdminSupportTab";
 
@@ -181,6 +181,9 @@ export default function OrganizationSettings() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("branding");
 
+  const [editingGlNumber, setEditingGlNumber] = useState(false);
+  const [newGlNumber, setNewGlNumber] = useState<string>('');
+
   const { data: tenantsData } = useQuery<TenantsResponse>({
     queryKey: ["/api/auth/tenants"],
   });
@@ -190,6 +193,34 @@ export default function OrganizationSettings() {
   const { data: tenantSettings, isLoading: isLoadingSettings } = useQuery<TenantSettings>({
     queryKey: ["/api/tenant/settings"],
   });
+
+  const { data: glNumberData } = useQuery<{ nextGlInvoiceNumber: number; formatted: string }>({
+    queryKey: ["/api/billing/gl-invoice-number"],
+  });
+
+  const glNumberMutation = useMutation({
+    mutationFn: (nextGlInvoiceNumber: number) => apiRequest("/api/billing/gl-invoice-number", {
+      method: "PUT",
+      body: JSON.stringify({ nextGlInvoiceNumber }),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/billing/gl-invoice-number"] });
+      setEditingGlNumber(false);
+      toast({ title: "GL invoice number counter updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update counter", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleGlNumberSave = () => {
+    const num = parseInt(newGlNumber, 10);
+    if (isNaN(num) || num < 0) {
+      toast({ title: "Invalid number", description: "Please enter a valid non-negative number.", variant: "destructive" });
+      return;
+    }
+    glNumberMutation.mutate(num);
+  };
 
   const brandingForm = useForm<BrandingFormData>({
     resolver: zodResolver(brandingSchema),
@@ -914,6 +945,71 @@ export default function OrganizationSettings() {
                   </div>
                 </form>
               </Form>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Hash className="h-5 w-5" />
+                    GL Invoice Number Counter
+                  </CardTitle>
+                  <CardDescription>
+                    Each new invoice batch is automatically assigned the next GL invoice number. You can view or reset the counter here.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <label className="text-sm font-medium">Next GL Invoice Number</label>
+                      {!editingGlNumber ? (
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-2xl font-mono font-semibold tracking-wider">
+                            {glNumberData?.formatted || "—"}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingGlNumber(true);
+                              setNewGlNumber(String(glNumberData?.nextGlInvoiceNumber || 1000));
+                            }}
+                          >
+                            <RotateCcw className="h-4 w-4 mr-1" />
+                            Reset
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={newGlNumber}
+                            onChange={(e) => setNewGlNumber(e.target.value)}
+                            className="w-40 font-mono"
+                          />
+                          <Button
+                            size="sm"
+                            onClick={handleGlNumberSave}
+                            disabled={glNumberMutation.isPending}
+                          >
+                            <Save className="h-4 w-4 mr-1" />
+                            Save
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => { setEditingGlNumber(false); setNewGlNumber(''); }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This counter increments automatically each time a new invoice batch is created. Resetting it will change the next number assigned.
+                  </p>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="integrations" className="space-y-6">
