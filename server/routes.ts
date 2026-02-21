@@ -21,6 +21,7 @@ import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
+import { createHubSpotDealNote, isHubSpotConnected } from "./services/hubspot-client.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -7694,6 +7695,54 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const filename = `${project.name.replace(/[^a-z0-9]/gi, '_')}-Status_Report-${now.toISOString().split('T')[0]}.pptx`;
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+        // Fire-and-forget: log status report to HubSpot deal
+        (async () => {
+          try {
+            const tenantId = (req as any).user?.tenantId;
+            if (!tenantId) return;
+            const connection = await storage.getCrmConnection(tenantId, "hubspot");
+            if (!connection?.isEnabled) return;
+            const settings = (connection.settings || {}) as Record<string, any>;
+            if (settings.revenueSyncEnabled === false) return;
+            const connected = await isHubSpotConnected();
+            if (!connected) return;
+
+            const projectEstimates = await storage.getEstimatesByProject(project.id);
+            for (const est of projectEstimates) {
+              const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", est.id);
+              if (mapping) {
+                const noteBody = `<strong>Status Report Generated</strong><br/>` +
+                  `Project: ${project.name}<br/>` +
+                  `Period: ${effectiveStartDate} to ${effectiveEndDate}<br/>` +
+                  `Style: ${reportStyle}<br/>` +
+                  `Report exported as PowerPoint on ${new Date().toLocaleDateString()}`;
+
+                await createHubSpotDealNote(mapping.crmObjectId, noteBody);
+
+                await storage.createCrmSyncLog({
+                  tenantId,
+                  crmProvider: "hubspot",
+                  action: "status_report_logged",
+                  status: "success",
+                  localObjectType: "project",
+                  localObjectId: project.id,
+                  crmObjectType: "deal",
+                  crmObjectId: mapping.crmObjectId,
+                  requestPayload: {
+                    projectName: project.name,
+                    startDate: effectiveStartDate,
+                    endDate: effectiveEndDate,
+                    style: reportStyle,
+                  } as any,
+                });
+                break;
+              }
+            }
+          } catch (e: any) {
+            console.error('[CRM] Status report sync failed:', e.message);
+          }
+        })();
 
         const fileStream = fsNode.createReadStream(tmpFile);
         fileStream.pipe(res);

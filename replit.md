@@ -1,7 +1,7 @@
 # Constellation - Synozur Consulting Delivery Platform (SCDP)
 
 ## Overview
-Constellation is a comprehensive platform designed to manage the entire lifecycle of consulting projects for consulting businesses. It aims to streamline operations, enhance efficiency, and provide robust management capabilities through features like estimation, resource allocation, time tracking, expense management, and automated invoice generation. Key capabilities include improved file management, transparent quote displays, advanced resource management for capacity planning, and milestone-based invoice generation. The platform leverages AI for narrative generation and automated expense calculations to achieve a highly efficient and data-driven consulting practice.
+Constellation is a comprehensive platform for managing consulting project lifecycles. It streamlines operations, enhances efficiency, and provides robust management capabilities including estimation, resource allocation, time tracking, expense management, and automated invoice generation. The platform leverages AI for narrative generation and automated expense calculations to achieve an efficient and data-driven consulting practice. Key capabilities include improved file management, transparent quote displays, advanced resource management for capacity planning, and milestone-based invoice generation.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -16,7 +16,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Frontend
 - **Framework**: React 18 with TypeScript and Vite.
 - **UI**: Radix UI components with shadcn/ui design system, styled using Tailwind CSS.
-- **Key UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, and advanced project list/detail views with consolidated tabs and deep linking. Standardized project selectors for clarity.
+- **Key UI/UX Decisions**: Refactored estimate tables, mobile optimization, responsive navigation, user persona-based navigation, prominent quote totals, dark/light mode, and advanced project list/detail views with consolidated tabs and deep linking. Standardized project selectors.
 
 ### Backend
 - **Runtime**: Node.js with Express.js.
@@ -44,32 +44,32 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Core Features
 - **AI Integration**: Uses Replit AI (OpenAI GPT-5 compatible) for estimate/invoice narrative generation and report queries.
 - **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence.
-- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers (tenant-scoped incrementing counter, resettable via Organization Settings). Expense-type batches default to "Payment Due Upon Receipt" terms. GL invoice number included in PDF filenames.
+- **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation.
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.
 - **Microsoft Planner Integration**: Full bidirectional sync of project assignments with Microsoft Planner tasks.
-- **Scheduled Jobs**: Background job system for expense reminders, time reminders, and Planner sync, with admin monitoring and multi-tenant scoping.
-- **Support Ticket Planner Integration**: Bidirectional sync between support tickets and Microsoft Planner tasks. New tickets create Planner tasks; Planner task completion auto-closes tickets. Tenant-level configuration via system settings UI. Tracked in `supportTicketPlannerSync` table.
+- **Scheduled Jobs**: Background job system for expense reminders, time reminders, and Planner sync.
+- **Support Ticket Planner Integration**: Bidirectional sync between support tickets and Microsoft Planner tasks.
 - **Financial Reporting**: Comprehensive reports showing revenue, cost, profit, and margins by client/project, with KPI summaries and health scoring.
 - **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement.
-- **Retainer Estimates & Management**: New estimate type for monthly hour-block engagements with creation wizard, auto-generated structure, utilization tracking, and live retainer month management at the project level.
+- **Retainer Estimates & Management**: New estimate type for monthly hour-block engagements with creation wizard, utilization tracking, and live retainer month management.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides.
 
 ### Multi-Tenancy
 - **Architecture**: UUID-based tenant IDs, tenant-scoped data isolation, service plans, and subdomain routing.
-- **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login via `primaryTenantId`, Azure AD tenant ID mapping, email domain matching, or default tenant fallback.
+- **Automatic Tenant Assignment**: Users are auto-assigned to tenants on login.
 - **Platform Roles**: `global_admin` and `constellation_admin` can manage all tenants; regular `admin` role manages their own tenant only.
 - **Platform Admin UI**: Available for managing tenants, service plans, user assignments, airport codes, and OCONUS per diem rates.
-- **Settings Separation**: Tenant-specific settings (financial rates, tax, invoice defaults, branding, vocabulary selections) stored in `tenants` table columns and managed in Organization Settings (`/organization-settings`). Platform-wide settings (estimation factors, vocabulary catalog, reminders) in System Settings (`/system-settings`). Rate resolution hierarchy: Project Overrides → User Rate Schedules → User Defaults → Organization Defaults → System Defaults.
-- **User Management Tenant Isolation**: `GET /api/users` filters by active tenant via `tenant_users` join. Only users with membership in the active tenant are returned.
-- **Platform User Management**: Platform admins can manage user tenant memberships (add/remove users to/from tenants with role assignment) via Platform Users page.
+- **Settings Separation**: Tenant-specific settings managed in Organization Settings (`/organization-settings`). Platform-wide settings in System Settings (`/system-settings`). Rate resolution hierarchy: Project Overrides → User Rate Schedules → User Defaults → Organization Defaults → System Defaults.
+- **User Management Tenant Isolation**: User listings filtered by active tenant.
+- **Platform User Management**: Platform admins can manage user tenant memberships and role assignments.
 - **Invoice Footer & Email Branding**: Configurable tenant-level branding.
 - **Vocabulary Multi-tenancy**: `organizationVocabulary` is tenant-scoped with strict tenant isolation.
-- **Multi-Tenant Identity & Stakeholder Model**: Uses `users` table for global identity and `tenant_users` table for tenant-specific access and roles, allowing a single person to have multiple roles across different tenants and clients. Security boundaries ensure tenant and stakeholder data isolation.
+- **Multi-Tenant Identity & Stakeholder Model**: Uses `users` table for global identity and `tenant_users` for tenant-specific access and roles, allowing multiple roles across tenants.
 
 ### Reference Data (System-wide)
 - **Airport Code Reference Data**: `airport_codes` table.
-- **OCONUS Per Diem Rates**: `oconus_per_diem_rates` table for Outside Continental US locations.
+- **OCONUS Per Diem Rates**: `oconus_per_diem_rates` table.
 
 ## External Dependencies
 
@@ -84,22 +84,4 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
-
-## Backlog
-
-1. **Continue routes.ts modularization** -- Next candidates for extraction: Time Entries (~1,500 lines), Projects (~72 endpoints). Current routes.ts is ~10,500 lines after extracting SharePoint/Containers (1,700 lines → `server/routes/sharepoint-containers.ts`), Expenses (3,100 lines → `server/routes/expenses.ts`, ~51 endpoints), Estimates (4,850 lines → `server/routes/estimates.ts`, ~48 endpoints including planning, epics, stages, line items, resource summary, templates, export/import, CRUD, approve/reject), and Invoices (2,100 lines → `server/routes/invoices.ts`, ~35 endpoints including batch CRUD, PDF generation, receipts bundle, adjustments, QBO export, repair).
-2. **Support ticket screenshot attachments** -- Allow users to attach screenshots to support tickets with safety/sanitization. Should support image upload (paste, drag-drop, or file picker), store images securely (e.g., Object Storage or SharePoint), display thumbnails in ticket detail view, and ensure uploaded files are validated (type, size limits) to prevent abuse.
-3. **Timeline snapshot / baseline comparison** -- Snapshot the original project timeline (stages, milestones, dates) at a point in time and allow comparison of original vs. current state in the Gantt timeline view and PPTX status reports. Should capture baseline dates and show drift/variance visually.
-4. **HubSpot CRM Integration (per-tenant, optional)** -- Bidirectional sync between Constellation and HubSpot, designed with CRM independence so records survive if a tenant switches CRMs later. Integration is an overlay, not a dependency — HubSpot IDs stored as optional foreign references.
-   - **Phase 1 IMPLEMENTED**: Deals → Estimates/Projects. Schema tables (`crm_connections`, `crm_object_mappings`, `crm_sync_log`) in `shared/schema.ts`. HubSpot client service at `server/services/hubspot-client.ts` using `@hubspot/api-client`. API routes at `server/routes/hubspot.ts` (status, connection settings, deals list, create-estimate-from-deal). Organization Settings → Integrations tab has HubSpot config card (enable/disable, probability threshold). CRM Deals page at `client/src/pages/crm-deals.tsx`. Estimate approve/reject hooks sync deal amount back to HubSpot (`server/routes/estimates.ts` — `syncEstimateStatusToCrm`). HubSpot connector is platform-level (single account); each tenant enables independently with own threshold. Mappings are tenant-scoped.
-   - **Phase 2 IMPLEMENTED**: Companies ↔ Clients. HubSpot company API functions (list, search, get, update) in `server/services/hubspot-client.ts`. API endpoints for company listing, linking/unlinking to clients, bidirectional sync, and client CRM link status in `server/routes/hubspot.ts`. Client detail page shows HubSpot CRM link card in Overview tab sidebar (link/unlink/sync). CRM Deals page shows "Client linked" badge next to company names for companies already linked to Constellation clients. Linking creates `crm_object_mappings` entry (company↔client) with audit trail in sync log.
-   - **Design Principles**:
-     - **CRM Independence**: Constellation is the system of record. All records stand on their own; HubSpot IDs are optional references. If a tenant disconnects or switches CRMs, no data is lost. Use a CRM abstraction layer internally (`crmType`, `crmObjectId`, `crmProvider`) to future-proof for Salesforce or others.
-     - **Read-only HubSpot users in mind**: Most Constellation users have read-only HubSpot seats. Surface HubSpot data (deal info, pipeline stage, contacts) inside Constellation rather than expecting users to work in HubSpot.
-     - **Deal-stage triggered automation**: Configurable per tenant (e.g., estimate creation prompted at 40% Pitch/Proposal stage).
-   - **Phase 2 — Companies ↔ Clients**: Link HubSpot companies to Constellation clients (match existing or auto-create). Two-way sync of basic info.
-   - **Phase 3 IMPLEMENTED**: Contacts ↔ Stakeholders. HubSpot contact API functions (get deal contacts, company contacts, search, get by ID) in `server/services/hubspot-client.ts`. API endpoints for deal/company contact listing, contact search, single and bulk import as client stakeholders, and client CRM contacts listing in `server/routes/hubspot.ts`. Client detail Stakeholders tab shows "Import from HubSpot" button (visible when CRM enabled) with multi-select contact dialog, select-all, and bulk import. Contacts mapped via `crm_object_mappings` (contact↔stakeholder) with sync log audit trail. Requires client to be linked to HubSpot company first.
-   - **Phase 4 IMPLEMENTED**: Estimates → Deal Stage Updates. Stage mapping configuration stored in `crm_connections.settings` jsonb (`dealStageMappings`, `selectedPipelineId`). `syncEstimateStatusToCrm` in `server/routes/estimates.ts` reads tenant stage mappings and calls `updateHubSpotDealStage` when a mapping exists for the current estimate status. Sync triggered on ALL estimate status transitions (draft, final, sent, approved, rejected) via the main PATCH `/api/estimates/:id` endpoint and dedicated approve/reject endpoints. Organization Settings → Integrations tab has Deal Stage Mapping UI: pipeline selector, per-status dropdowns mapping each estimate status to a HubSpot deal stage, with save button. PUT `/api/crm/connection` accepts `dealStageMappings` and `selectedPipelineId`. GET `/api/crm/status` returns current mappings.
-   - **Phase 5 — Revenue & Delivery Feedback**: Invoice totals and payment status sync back to deals. Status reports logged as HubSpot deal activities.
-   - **Data Model**: `crm_connections` (tenant-scoped, provider type, sync preferences, probability threshold, settings jsonb for stage mappings), `crm_object_mappings` (maps Constellation entity IDs to CRM object IDs, provider-agnostic), `crm_sync_log` (audit trail).
-   - **Tenant Configuration**: Organization Settings → Integrations tab. Toggle sync, configure deal probability threshold, configure deal stage mappings per pipeline.
+- **CRM Integration**: HubSpot API (for Deals, Companies, Contacts, Deal Stage Updates, Revenue Sync, and Activity Logging).

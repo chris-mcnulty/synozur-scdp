@@ -421,6 +421,29 @@ function HubSpotIntegrationCard() {
                   )}
                 </div>
 
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <p className="text-sm font-medium">Revenue & Activity Sync</p>
+                      <p className="text-xs text-muted-foreground">Sync invoice totals, payment status, and status report activity to linked HubSpot deals</p>
+                    </div>
+                    <Switch
+                      checked={(crmStatus as any)?.revenueSyncEnabled !== false}
+                      onCheckedChange={(checked) => {
+                        apiRequest("/api/crm/connection", {
+                          method: "PUT",
+                          body: JSON.stringify({ revenueSyncEnabled: checked }),
+                        }).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ["/api/crm/status"] });
+                          toast({ title: checked ? "Revenue sync enabled" : "Revenue sync disabled" });
+                        }).catch((err: Error) => {
+                          toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2 pt-1">
                   <Button variant="outline" size="sm" asChild>
                     <a href="/crm/deals">

@@ -48,6 +48,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         dealProbabilityThreshold: connection?.dealProbabilityThreshold ?? 40,
         dealStageMappings: settings.dealStageMappings ?? null,
         selectedPipelineId: settings.selectedPipelineId ?? null,
+        revenueSyncEnabled: settings.revenueSyncEnabled !== false,
         lastSyncAt: connection?.lastSyncAt ?? null,
         lastSyncStatus: connection?.lastSyncStatus ?? null,
         lastSyncError: connection?.lastSyncError ?? null,
@@ -78,10 +79,11 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         autoCreateEstimate: z.boolean().optional(),
         dealStageMappings: dealStageMappingSchema,
         selectedPipelineId: z.string().optional(),
+        revenueSyncEnabled: z.boolean().optional(),
       });
       const data = schema.parse(req.body);
 
-      const { dealStageMappings, selectedPipelineId, ...connectionFields } = data;
+      const { dealStageMappings, selectedPipelineId, revenueSyncEnabled, ...connectionFields } = data;
 
       const existingConnection = await storage.getCrmConnection(tenantId, "hubspot");
       const existingSettings = (existingConnection?.settings || {}) as Record<string, any>;
@@ -92,6 +94,9 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       }
       if (selectedPipelineId !== undefined) {
         updatedSettings.selectedPipelineId = selectedPipelineId;
+      }
+      if (revenueSyncEnabled !== undefined) {
+        updatedSettings.revenueSyncEnabled = revenueSyncEnabled;
       }
 
       const connection = await storage.upsertCrmConnection({

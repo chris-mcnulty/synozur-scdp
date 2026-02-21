@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage, db } from "../storage";
-import { invoiceBatches, invoiceLines, projects, clients, users, expenses, timeEntries, projectMilestones, expenseAttachments, updateInvoicePaymentSchema, insertInvoiceAdjustmentSchema, sows } from "@shared/schema";
+import { invoiceBatches, invoiceLines, projects, clients, users, expenses, timeEntries, projectMilestones, expenseAttachments, updateInvoicePaymentSchema, insertInvoiceAdjustmentSchema, sows, estimates, estimateMilestones } from "@shared/schema";
 import { eq, sql, inArray, and, gte, lte, isNull } from "drizzle-orm";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
+import { updateHubSpotDealProperties, createHubSpotDealNote, isHubSpotConnected } from "../services/hubspot-client.js";
 
 interface InvoiceRouteDeps {
   requireAuth: any;
@@ -37,6 +38,160 @@ async function checkBatchTenantAccess(batchId: string, req: Request, res: Respon
     return false;
   }
   return true;
+}
+
+async function syncInvoiceToCrm(
+  batchId: string,
+  tenantId: string,
+  action: 'invoice_finalized' | 'payment_updated',
+  paymentInfo?: { paymentStatus?: string; paymentAmount?: string; paymentDate?: string }
+) {
+  try {
+    const connection = await storage.getCrmConnection(tenantId, "hubspot");
+    if (!connection?.isEnabled) return;
+
+    const settings = (connection.settings || {}) as Record<string, any>;
+    if (settings.revenueSyncEnabled === false) return;
+
+    const connected = await isHubSpotConnected();
+    if (!connected) return;
+
+    const batchDetails = await storage.getInvoiceBatchByBatchId(batchId);
+    if (!batchDetails) return;
+
+    const batchLines = await storage.getInvoiceLinesForBatch(batchId);
+    if (!batchLines || batchLines.length === 0) return;
+
+    const projectTotals = new Map<string, number>();
+    for (const line of batchLines) {
+      const pid = (line as any).projectId;
+      if (!pid) continue;
+      const current = projectTotals.get(pid) || 0;
+      projectTotals.set(pid, current + Number((line as any).amount || 0));
+    }
+
+    let milestoneEstimateId: string | null = null;
+    if (batchDetails.projectMilestoneId) {
+      try {
+        const [pm] = await db.select().from(projectMilestones).where(eq(projectMilestones.id, batchDetails.projectMilestoneId));
+        if (pm?.estimateMilestoneId) {
+          const [em] = await db.select().from(estimateMilestones).where(eq(estimateMilestones.id, pm.estimateMilestoneId));
+          if (em) milestoneEstimateId = em.estimateId;
+        }
+      } catch (e) {
+        console.log(`[CRM-SYNC] Could not resolve milestone-based estimate for batch ${batchId}:`, (e as any).message);
+      }
+    }
+
+    for (const [projectId, totalAmount] of Array.from(projectTotals.entries())) {
+      try {
+        const projectEstimates = await storage.getEstimatesByProject(projectId);
+        let dealId: string | null = null;
+        let estimateId: string | null = null;
+
+        if (milestoneEstimateId) {
+          const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", milestoneEstimateId);
+          if (mapping) {
+            dealId = mapping.crmObjectId;
+            estimateId = milestoneEstimateId;
+          }
+        }
+
+        if (!dealId) {
+          const approvedEstimates = projectEstimates.filter(e => e.status === 'approved');
+          const candidateEstimates = approvedEstimates.length > 0 ? approvedEstimates : projectEstimates;
+
+          for (const est of candidateEstimates) {
+            const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", est.id);
+            if (mapping) {
+              dealId = mapping.crmObjectId;
+              estimateId = est.id;
+              break;
+            }
+          }
+        }
+
+        if (!dealId) {
+          console.log(`[CRM-SYNC] No deal mapping found for project ${projectId} (${projectEstimates.length} estimates checked)`);
+          continue;
+        }
+
+        const project = await storage.getProject(projectId);
+        const projectName = project?.name || 'Unknown Project';
+        const glNumber = batchDetails.glInvoiceNumber || batchDetails.batchId;
+
+        if (action === 'invoice_finalized') {
+          const noteBody = `<strong>Invoice Finalized</strong><br/>` +
+            `Project: ${projectName}<br/>` +
+            `Invoice: ${glNumber}<br/>` +
+            `Period: ${batchDetails.startDate} to ${batchDetails.endDate}<br/>` +
+            `Amount: $${totalAmount.toFixed(2)}<br/>` +
+            `Total Batch Amount: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
+
+          await createHubSpotDealNote(dealId, noteBody);
+        } else if (action === 'payment_updated' && paymentInfo) {
+          const statusLabel = paymentInfo.paymentStatus === 'paid' ? 'Paid' :
+            paymentInfo.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid';
+
+          const noteBody = `<strong>Payment Update</strong><br/>` +
+            `Project: ${projectName}<br/>` +
+            `Invoice: ${glNumber}<br/>` +
+            `Status: ${statusLabel}<br/>` +
+            (paymentInfo.paymentAmount ? `Amount Paid: $${Number(paymentInfo.paymentAmount).toFixed(2)}<br/>` : '') +
+            (paymentInfo.paymentDate ? `Payment Date: ${paymentInfo.paymentDate}<br/>` : '') +
+            `Invoice Total: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
+
+          await createHubSpotDealNote(dealId, noteBody);
+        }
+
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action,
+          status: "success",
+          localObjectType: "invoice",
+          localObjectId: batchId,
+          crmObjectType: "deal",
+          crmObjectId: dealId,
+          requestPayload: {
+            projectId,
+            estimateId,
+            totalAmount,
+            glNumber,
+            ...(paymentInfo || {}),
+          } as any,
+        });
+      } catch (projError: any) {
+        console.error(`[CRM] Revenue sync error for project ${projectId}:`, projError.message);
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action,
+          status: "error",
+          localObjectType: "invoice",
+          localObjectId: batchId,
+          errorMessage: projError.message,
+          requestPayload: { projectId } as any,
+        });
+      }
+    }
+
+    await storage.updateCrmSyncStatus(tenantId, "hubspot", "success");
+  } catch (error: any) {
+    console.error("[CRM] Revenue sync failed:", error.message);
+    try {
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action,
+        status: "error",
+        localObjectType: "invoice",
+        localObjectId: batchId,
+        errorMessage: error.message,
+      });
+      await storage.updateCrmSyncStatus(tenantId, "hubspot", "error", error.message);
+    } catch (_) {}
+  }
 }
 
 export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
@@ -551,6 +706,13 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
       await storage.recalculateBatchTax(batchId);
 
       const updatedBatch = await storage.finalizeBatch(batchId, userId);
+
+      const tenantId = getUserTenantId(req);
+      if (tenantId) {
+        syncInvoiceToCrm(batchId, tenantId, 'invoice_finalized').catch((e) => {
+          console.error('[CRM] Background invoice finalize sync failed:', e.message);
+        });
+      }
 
       res.json({
         message: "Batch finalized successfully",
@@ -1531,6 +1693,17 @@ export function registerInvoiceRoutes(app: Express, deps: InvoiceRouteDeps) {
         } catch (flagError) {
           console.error("[INVOICE_PAYMENT] Failed to auto-flag expenses as client-paid:", flagError);
         }
+      }
+
+      const tenantId = getUserTenantId(req);
+      if (tenantId) {
+        syncInvoiceToCrm(batchId, tenantId, 'payment_updated', {
+          paymentStatus: validatedData.paymentStatus,
+          paymentAmount: validatedData.paymentAmount || undefined,
+          paymentDate: validatedData.paymentDate || undefined,
+        }).catch((e) => {
+          console.error('[CRM] Background payment sync failed:', e.message);
+        });
       }
 
       res.json(updatedBatch);
