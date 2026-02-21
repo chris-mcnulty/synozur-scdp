@@ -5,7 +5,7 @@ import { invoiceBatches, invoiceLines, projects, clients, users, expenses, timeE
 import { eq, sql, inArray, and, gte, lte, isNull } from "drizzle-orm";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
-import { createHubSpotDealNote, isHubSpotConnected } from "../services/hubspot-client.js";
+import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "../services/hubspot-client.js";
 
 interface InvoiceRouteDeps {
   requireAuth: any;
@@ -120,6 +120,8 @@ async function syncInvoiceToCrm(
         const projectName = project?.name || 'Unknown Project';
         const glNumber = batchDetails.glInvoiceNumber || batchDetails.batchId;
 
+        let companyNoteBody: string | null = null;
+
         if (action === 'invoice_finalized') {
           const noteBody = `<strong>Invoice Finalized</strong><br/>` +
             `Project: ${projectName}<br/>` +
@@ -129,6 +131,7 @@ async function syncInvoiceToCrm(
             `Total Batch Amount: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
 
           await createHubSpotDealNote(tenantId, dealId, noteBody);
+          companyNoteBody = noteBody;
         } else if (action === 'payment_updated' && paymentInfo) {
           const statusLabel = paymentInfo.paymentStatus === 'paid' ? 'Paid' :
             paymentInfo.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid';
@@ -142,6 +145,15 @@ async function syncInvoiceToCrm(
             `Invoice Total: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
 
           await createHubSpotDealNote(tenantId, dealId, noteBody);
+          companyNoteBody = noteBody;
+        }
+
+        if (companyNoteBody && project?.clientId) {
+          const hubSpotCompanyId = await getLinkedHubSpotCompanyId(tenantId, project.clientId);
+          if (hubSpotCompanyId) {
+            await createHubSpotCompanyNote(tenantId, hubSpotCompanyId, companyNoteBody);
+            console.log(`[CRM-SYNC] Company note created for company ${hubSpotCompanyId} (client ${project.clientId})`);
+          }
         }
 
         await storage.createCrmSyncLog({

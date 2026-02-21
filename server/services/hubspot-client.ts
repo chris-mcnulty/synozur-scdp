@@ -337,6 +337,58 @@ export async function createHubSpotDealNote(tenantId: string, dealId: string, no
   }
 }
 
+export async function createHubSpotCompanyNote(tenantId: string, companyId: string, noteBody: string): Promise<string | null> {
+  try {
+    const accessToken = await getAccessTokenForTenant(tenantId);
+    const response = await fetch('https://api.hubapi.com/crm/v3/objects/notes', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        properties: {
+          hs_note_body: noteBody,
+          hs_timestamp: new Date().toISOString(),
+        },
+        associations: [
+          {
+            to: { id: companyId },
+            types: [
+              {
+                associationCategory: 'HUBSPOT_DEFINED',
+                associationTypeId: 190,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[HubSpot] Failed to create company note:', response.status, errText);
+      return null;
+    }
+
+    const result = await response.json() as any;
+    return result.id || null;
+  } catch (e: any) {
+    console.error('[HubSpot] Error creating company note:', e.message);
+    return null;
+  }
+}
+
+export async function getLinkedHubSpotCompanyId(tenantId: string, clientId: string): Promise<string | null> {
+  try {
+    const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
+    const companyMapping = mappings.find(m => m.localObjectId === clientId);
+    return companyMapping?.crmObjectId || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getHubSpotDealCompanyAssociations(tenantId: string, dealId: string): Promise<{ companyId: string; companyName: string } | null> {
   const client = await getHubSpotClient(tenantId);
   try {

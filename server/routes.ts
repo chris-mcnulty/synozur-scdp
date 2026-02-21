@@ -21,7 +21,7 @@ import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
-import { createHubSpotDealNote, isHubSpotConnected } from "./services/hubspot-client.js";
+import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -7696,29 +7696,25 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
-        // Fire-and-forget: log status report to HubSpot deal
+        // Fire-and-forget: log status report to HubSpot deal and company
         (async () => {
           try {
             const tenantId = (req as any).user?.tenantId;
             if (!tenantId) return;
-            const connection = await storage.getCrmConnection(tenantId, "hubspot");
-            if (!connection?.isEnabled) return;
-            const settings = (connection.settings || {}) as Record<string, any>;
-            if (settings.revenueSyncEnabled === false) return;
-            const connected = await isHubSpotConnected();
+            const connected = await isHubSpotConnected(tenantId);
             if (!connected) return;
+
+            const noteBody = `<strong>Status Report Generated</strong><br/>` +
+              `Project: ${project.name}<br/>` +
+              `Period: ${effectiveStartDate} to ${effectiveEndDate}<br/>` +
+              `Style: ${reportStyle}<br/>` +
+              `Report exported as PowerPoint on ${new Date().toLocaleDateString()}`;
 
             const projectEstimates = await storage.getEstimatesByProject(project.id);
             for (const est of projectEstimates) {
               const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", est.id);
               if (mapping) {
-                const noteBody = `<strong>Status Report Generated</strong><br/>` +
-                  `Project: ${project.name}<br/>` +
-                  `Period: ${effectiveStartDate} to ${effectiveEndDate}<br/>` +
-                  `Style: ${reportStyle}<br/>` +
-                  `Report exported as PowerPoint on ${new Date().toLocaleDateString()}`;
-
-                await createHubSpotDealNote(mapping.crmObjectId, noteBody);
+                await createHubSpotDealNote(tenantId, mapping.crmObjectId, noteBody);
 
                 await storage.createCrmSyncLog({
                   tenantId,
@@ -7737,6 +7733,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
                   } as any,
                 });
                 break;
+              }
+            }
+
+            if (project.clientId) {
+              const hubSpotCompanyId = await getLinkedHubSpotCompanyId(tenantId, project.clientId);
+              if (hubSpotCompanyId) {
+                await createHubSpotCompanyNote(tenantId, hubSpotCompanyId, noteBody);
+                console.log(`[CRM-SYNC] Status report company note for company ${hubSpotCompanyId}`);
               }
             }
           } catch (e: any) {
