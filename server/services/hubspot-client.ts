@@ -346,6 +346,117 @@ export async function updateHubSpotCompany(companyId: string, properties: Record
   await client.crm.companies.basicApi.update(companyId, { properties });
 }
 
+// ============================================================================
+// HubSpot Contacts API
+// ============================================================================
+
+export interface HubSpotContact {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  fullName: string;
+  jobTitle: string | null;
+  phone: string | null;
+  company: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const CONTACT_PROPERTIES = ['email', 'firstname', 'lastname', 'jobtitle', 'phone', 'company', 'createdate', 'hs_lastmodifieddate'];
+
+function mapContact(contact: any): HubSpotContact {
+  const p = contact.properties || {};
+  const firstName = p.firstname || null;
+  const lastName = p.lastname || null;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || p.email || 'Unknown Contact';
+  return {
+    id: contact.id,
+    email: p.email || null,
+    firstName,
+    lastName,
+    fullName,
+    jobTitle: p.jobtitle || null,
+    phone: p.phone || null,
+    company: p.company || null,
+    createdAt: p.createdate || String(contact.createdAt),
+    updatedAt: p.hs_lastmodifieddate || String(contact.updatedAt),
+  };
+}
+
+export async function getHubSpotDealContacts(dealId: string): Promise<HubSpotContact[]> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const deal = await client.crm.deals.basicApi.getById(dealId, undefined, undefined, ['contacts']);
+    const contactAssocs = deal.associations?.contacts?.results;
+    if (!contactAssocs || contactAssocs.length === 0) return [];
+
+    const contacts: HubSpotContact[] = [];
+    for (const assoc of contactAssocs) {
+      try {
+        const contact = await client.crm.contacts.basicApi.getById(assoc.id, CONTACT_PROPERTIES);
+        contacts.push(mapContact(contact));
+      } catch (e) {
+        console.error(`[HubSpot] Error fetching contact ${assoc.id}:`, e);
+      }
+    }
+    return contacts;
+  } catch (e) {
+    console.error('[HubSpot] Error fetching deal contacts:', e);
+    return [];
+  }
+}
+
+export async function getHubSpotContactById(contactId: string): Promise<HubSpotContact | null> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const contact = await client.crm.contacts.basicApi.getById(contactId, CONTACT_PROPERTIES);
+    return mapContact(contact);
+  } catch {
+    return null;
+  }
+}
+
+export async function searchHubSpotContacts(query: string): Promise<HubSpotContact[]> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const response = await client.crm.contacts.searchApi.doSearch({
+      query,
+      limit: 20,
+      properties: CONTACT_PROPERTIES,
+      filterGroups: [],
+      sorts: [],
+      after: 0 as any,
+    });
+    return response.results.map(mapContact);
+  } catch {
+    return [];
+  }
+}
+
+export async function getHubSpotCompanyContacts(companyId: string): Promise<HubSpotContact[]> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const company = await client.crm.companies.basicApi.getById(companyId, undefined, undefined, ['contacts']);
+    const contactAssocs = company.associations?.contacts?.results;
+    if (!contactAssocs || contactAssocs.length === 0) return [];
+
+    const contacts: HubSpotContact[] = [];
+    for (const assoc of contactAssocs) {
+      try {
+        const contact = await client.crm.contacts.basicApi.getById(assoc.id, CONTACT_PROPERTIES);
+        contacts.push(mapContact(contact));
+      } catch (e) {
+        console.error(`[HubSpot] Error fetching contact ${assoc.id}:`, e);
+      }
+    }
+    return contacts;
+  } catch (e) {
+    console.error('[HubSpot] Error fetching company contacts:', e);
+    return [];
+  }
+}
+
 export async function isHubSpotConnected(): Promise<boolean> {
   try {
     await getAccessToken();

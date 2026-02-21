@@ -312,6 +312,8 @@ export default function ClientDetail() {
   const [showAddStakeholder, setShowAddStakeholder] = useState(false);
   const [stakeholderForm, setStakeholderForm] = useState({ email: '', name: '', stakeholderTitle: '' });
   const [matchedUser, setMatchedUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [showHubSpotImport, setShowHubSpotImport] = useState(false);
+  const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
 
   const { toast } = useToast();
 
@@ -445,6 +447,53 @@ export default function ClientDetail() {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
+  const { data: crmContactsData } = useQuery<{
+    contacts: Array<{
+      id: string;
+      email: string | null;
+      fullName: string;
+      jobTitle: string | null;
+      phone: string | null;
+      company: string | null;
+      isMapped: boolean;
+    }>;
+    crmEnabled: boolean;
+    companyLinked?: boolean;
+  }>({
+    queryKey: ["/api/clients", clientId, "crm-contacts"],
+    enabled: showHubSpotImport && !!clientId,
+  });
+
+  const bulkImportMutation = useMutation({
+    mutationFn: async (data: { contactIds: string[]; clientId: string }) => {
+      return apiRequest("/api/crm/contacts/bulk-import", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "stakeholders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "crm-contacts"] });
+      const imported = data.imported || 0;
+      const skipped = data.skipped || 0;
+      toast({
+        title: "Import complete",
+        description: `${imported} contact(s) imported${skipped > 0 ? `, ${skipped} skipped` : ""}`,
+      });
+      setShowHubSpotImport(false);
+      setSelectedContactIds(new Set());
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const crmLinkQuery = useQuery<{ crmEnabled: boolean; linked: boolean }>({
+    queryKey: ["/api/clients", clientId, "crm-link"],
+    enabled: !!clientId,
+  });
+  const hasCrmEnabled = crmLinkQuery.data?.crmEnabled ?? false;
 
   const getEffectiveDate = (batch: InvoiceBatchWithDetails) => {
     return batch.asOfDate || (batch.finalizedAt ? new Date(batch.finalizedAt).toISOString().split('T')[0] : null) || new Date(batch.createdAt).toISOString().split('T')[0];
@@ -1550,9 +1599,16 @@ export default function ClientDetail() {
                   <UserCircle className="h-5 w-5" />
                   Client Stakeholders
                 </CardTitle>
-                <Button size="sm" onClick={() => setShowAddStakeholder(true)}>
-                  <UserPlus className="h-4 w-4 mr-1" /> Add Stakeholder
-                </Button>
+                <div className="flex items-center gap-2">
+                  {hasCrmEnabled && (
+                    <Button size="sm" variant="outline" onClick={() => setShowHubSpotImport(true)}>
+                      <Users className="h-4 w-4 mr-1" /> Import from HubSpot
+                    </Button>
+                  )}
+                  <Button size="sm" onClick={() => setShowAddStakeholder(true)}>
+                    <UserPlus className="h-4 w-4 mr-1" /> Add Stakeholder
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-4">
@@ -1706,6 +1762,138 @@ export default function ClientDetail() {
                 disabled={!stakeholderForm.email || addStakeholderMutation.isPending}
               >
                 {addStakeholderMutation.isPending ? "Adding..." : "Add Stakeholder"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Import from HubSpot Dialog */}
+        <Dialog open={showHubSpotImport} onOpenChange={(open) => {
+          setShowHubSpotImport(open);
+          if (!open) setSelectedContactIds(new Set());
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Import Contacts from HubSpot
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              {!crmContactsData ? (
+                <p className="text-muted-foreground text-center py-8">Loading HubSpot contacts...</p>
+              ) : !crmContactsData.crmEnabled ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>HubSpot integration is not enabled for this organization.</p>
+                  <p className="text-sm mt-1">Enable it in Organization Settings to import contacts.</p>
+                </div>
+              ) : crmContactsData.companyLinked === false ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Building2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>This client is not linked to a HubSpot company.</p>
+                  <p className="text-sm mt-1">Link a HubSpot company first in the Overview tab to import contacts.</p>
+                </div>
+              ) : crmContactsData.contacts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <UserCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No contacts found in the linked HubSpot company.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Select contacts from the linked HubSpot company to import as client stakeholders.
+                    Contacts already imported will be shown as disabled.
+                  </p>
+                  <div className="border rounded-md max-h-80 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[40px]">
+                            <input
+                              type="checkbox"
+                              className="rounded"
+                              checked={
+                                crmContactsData.contacts.filter(c => !c.isMapped && c.email).length > 0 &&
+                                crmContactsData.contacts.filter(c => !c.isMapped && c.email).every(c => selectedContactIds.has(c.id))
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  const importable = crmContactsData.contacts.filter(c => !c.isMapped && c.email);
+                                  setSelectedContactIds(new Set(importable.map(c => c.id)));
+                                } else {
+                                  setSelectedContactIds(new Set());
+                                }
+                              }}
+                            />
+                          </TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {crmContactsData.contacts.map(contact => (
+                          <TableRow key={contact.id} className={contact.isMapped ? "opacity-50" : ""}>
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                className="rounded"
+                                disabled={contact.isMapped || !contact.email}
+                                checked={selectedContactIds.has(contact.id)}
+                                onChange={(e) => {
+                                  const next = new Set(selectedContactIds);
+                                  if (e.target.checked) {
+                                    next.add(contact.id);
+                                  } else {
+                                    next.delete(contact.id);
+                                  }
+                                  setSelectedContactIds(next);
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{contact.fullName}</TableCell>
+                            <TableCell className="text-sm">{contact.email || <span className="text-muted-foreground italic">No email</span>}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{contact.jobTitle || '-'}</TableCell>
+                            <TableCell>
+                              {contact.isMapped ? (
+                                <Badge variant="outline" className="text-green-600 border-green-600">Imported</Badge>
+                              ) : !contact.email ? (
+                                <Badge variant="outline" className="text-amber-600 border-amber-600">No email</Badge>
+                              ) : (
+                                <Badge variant="secondary">Available</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  {selectedContactIds.size > 0 && (
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {selectedContactIds.size} contact(s) selected for import
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowHubSpotImport(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (clientId && selectedContactIds.size > 0) {
+                    bulkImportMutation.mutate({
+                      contactIds: Array.from(selectedContactIds),
+                      clientId,
+                    });
+                  }
+                }}
+                disabled={selectedContactIds.size === 0 || bulkImportMutation.isPending}
+              >
+                {bulkImportMutation.isPending
+                  ? "Importing..."
+                  : `Import ${selectedContactIds.size} Contact(s)`}
               </Button>
             </DialogFooter>
           </DialogContent>

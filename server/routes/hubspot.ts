@@ -12,7 +12,14 @@ import {
   getHubSpotCompanyById,
   searchHubSpotCompanies,
   updateHubSpotCompany,
+  getHubSpotDealContacts,
+  getHubSpotCompanyContacts,
+  getHubSpotContactById,
+  searchHubSpotContacts,
 } from "../services/hubspot-client.js";
+import { db } from "../db.js";
+import { tenantUsers, users } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
 interface HubSpotRouteDeps {
   requireAuth: any;
@@ -562,6 +569,405 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       }
     } catch (error: any) {
       console.error("[CRM] Error syncing company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================================
+  // Phase 3: Contacts ↔ Stakeholders
+  // ============================================================================
+
+  app.get("/api/crm/deals/:dealId/contacts", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const contacts = await getHubSpotDealContacts(req.params.dealId);
+
+      const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
+      const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedContacts = contacts.map(contact => ({
+        ...contact,
+        isMapped: mappedContactIds.has(contact.id),
+        mapping: mappedContactIds.get(contact.id) || null,
+      }));
+
+      res.json({ contacts: enrichedContacts });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching deal contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/companies/:companyId/contacts", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const contacts = await getHubSpotCompanyContacts(req.params.companyId);
+
+      const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
+      const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedContacts = contacts.map(contact => ({
+        ...contact,
+        isMapped: mappedContactIds.has(contact.id),
+        mapping: mappedContactIds.get(contact.id) || null,
+      }));
+
+      res.json({ contacts: enrichedContacts });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching company contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/contacts/search", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const query = req.query.q as string;
+      if (!query || query.length < 2) {
+        return res.status(400).json({ message: "Search query must be at least 2 characters" });
+      }
+
+      const contacts = await searchHubSpotContacts(query);
+
+      const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
+      const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedContacts = contacts.map(contact => ({
+        ...contact,
+        isMapped: mappedContactIds.has(contact.id),
+        mapping: mappedContactIds.get(contact.id) || null,
+      }));
+
+      res.json({ contacts: enrichedContacts });
+    } catch (error: any) {
+      console.error("[CRM] Error searching contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/contacts/:contactId/import-stakeholder", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const { contactId } = req.params;
+      const schema = z.object({
+        clientId: z.string(),
+        stakeholderTitle: z.string().optional(),
+      });
+      const body = schema.parse(req.body);
+
+      const existing = await storage.getCrmObjectMapping(tenantId, "hubspot", "contact", contactId);
+      if (existing) {
+        return res.status(409).json({
+          message: "This HubSpot contact is already imported as a stakeholder",
+          mapping: existing,
+        });
+      }
+
+      const hsContact = await getHubSpotContactById(contactId);
+      if (!hsContact) {
+        return res.status(404).json({ message: "Contact not found in HubSpot" });
+      }
+
+      if (!hsContact.email) {
+        return res.status(400).json({ message: "HubSpot contact has no email address — email is required to create a stakeholder" });
+      }
+
+      const client = await storage.getClient(body.clientId);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      if (client.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Client does not belong to this tenant" });
+      }
+
+      let user = await storage.getUserByEmail(hsContact.email.toLowerCase().trim());
+      if (!user) {
+        user = await storage.createUser({
+          email: hsContact.email.toLowerCase().trim(),
+          name: hsContact.fullName || hsContact.email.split('@')[0],
+          role: 'employee',
+        } as any);
+      }
+
+      const existingMembership = await db
+        .select()
+        .from(tenantUsers)
+        .where(
+          and(
+            eq(tenantUsers.userId, user.id),
+            eq(tenantUsers.tenantId, tenantId),
+            eq(tenantUsers.clientId, body.clientId)
+          )
+        );
+
+      let stakeholderRecord;
+      if (existingMembership.length > 0) {
+        const [updated] = await db
+          .update(tenantUsers)
+          .set({
+            stakeholderTitle: body.stakeholderTitle || hsContact.jobTitle || existingMembership[0].stakeholderTitle,
+          })
+          .where(eq(tenantUsers.id, existingMembership[0].id))
+          .returning();
+        stakeholderRecord = updated;
+      } else {
+        const [inserted] = await db
+          .insert(tenantUsers)
+          .values({
+            userId: user.id,
+            tenantId,
+            role: 'client',
+            clientId: body.clientId,
+            stakeholderTitle: body.stakeholderTitle || hsContact.jobTitle || null,
+            status: 'active',
+            invitedBy: (req as any).user?.id,
+            invitedAt: new Date(),
+          })
+          .returning();
+        stakeholderRecord = inserted;
+      }
+
+      await storage.createCrmObjectMapping({
+        tenantId,
+        crmProvider: "hubspot",
+        crmObjectType: "contact",
+        crmObjectId: contactId,
+        localObjectType: "stakeholder",
+        localObjectId: stakeholderRecord.id,
+        metadata: {
+          email: hsContact.email,
+          fullName: hsContact.fullName,
+          jobTitle: hsContact.jobTitle,
+          userId: user.id,
+          clientId: body.clientId,
+          importedAt: new Date().toISOString(),
+        } as any,
+      });
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "contact_imported_as_stakeholder",
+        status: "success",
+        crmObjectType: "contact",
+        crmObjectId: contactId,
+        localObjectType: "stakeholder",
+        localObjectId: stakeholderRecord.id,
+        requestPayload: {
+          email: hsContact.email,
+          fullName: hsContact.fullName,
+          clientId: body.clientId,
+        } as any,
+      });
+
+      res.json({
+        stakeholder: {
+          ...stakeholderRecord,
+          userName: user.name,
+          userEmail: user.email,
+        },
+        contact: hsContact,
+      });
+    } catch (error: any) {
+      console.error("[CRM] Error importing contact as stakeholder:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/contacts/bulk-import", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const schema = z.object({
+        contactIds: z.array(z.string()).min(1).max(50),
+        clientId: z.string(),
+      });
+      const body = schema.parse(req.body);
+
+      const client = await storage.getClient(body.clientId);
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      if (client.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Client does not belong to this tenant" });
+      }
+
+      const results: { contactId: string; status: string; email?: string; name?: string; error?: string }[] = [];
+
+      for (const contactId of body.contactIds) {
+        try {
+          const existing = await storage.getCrmObjectMapping(tenantId, "hubspot", "contact", contactId);
+          if (existing) {
+            results.push({ contactId, status: "skipped", error: "Already imported" });
+            continue;
+          }
+
+          const hsContact = await getHubSpotContactById(contactId);
+          if (!hsContact) {
+            results.push({ contactId, status: "failed", error: "Contact not found in HubSpot" });
+            continue;
+          }
+
+          if (!hsContact.email) {
+            results.push({ contactId, status: "skipped", error: "No email address" });
+            continue;
+          }
+
+          let user = await storage.getUserByEmail(hsContact.email.toLowerCase().trim());
+          if (!user) {
+            user = await storage.createUser({
+              email: hsContact.email.toLowerCase().trim(),
+              name: hsContact.fullName || hsContact.email.split('@')[0],
+              role: 'employee',
+            } as any);
+          }
+
+          const existingMembership = await db
+            .select()
+            .from(tenantUsers)
+            .where(
+              and(
+                eq(tenantUsers.userId, user.id),
+                eq(tenantUsers.tenantId, tenantId),
+                eq(tenantUsers.clientId, body.clientId)
+              )
+            );
+
+          let stakeholderRecord;
+          if (existingMembership.length > 0) {
+            stakeholderRecord = existingMembership[0];
+          } else {
+            const [inserted] = await db
+              .insert(tenantUsers)
+              .values({
+                userId: user.id,
+                tenantId,
+                role: 'client',
+                clientId: body.clientId,
+                stakeholderTitle: hsContact.jobTitle || null,
+                status: 'active',
+                invitedBy: (req as any).user?.id,
+                invitedAt: new Date(),
+              })
+              .returning();
+            stakeholderRecord = inserted;
+          }
+
+          await storage.createCrmObjectMapping({
+            tenantId,
+            crmProvider: "hubspot",
+            crmObjectType: "contact",
+            crmObjectId: contactId,
+            localObjectType: "stakeholder",
+            localObjectId: stakeholderRecord.id,
+            metadata: {
+              email: hsContact.email,
+              fullName: hsContact.fullName,
+              jobTitle: hsContact.jobTitle,
+              userId: user.id,
+              clientId: body.clientId,
+              importedAt: new Date().toISOString(),
+            } as any,
+          });
+
+          await storage.createCrmSyncLog({
+            tenantId,
+            crmProvider: "hubspot",
+            action: "contact_imported_as_stakeholder",
+            status: "success",
+            crmObjectType: "contact",
+            crmObjectId: contactId,
+            localObjectType: "stakeholder",
+            localObjectId: stakeholderRecord.id,
+          });
+
+          results.push({
+            contactId,
+            status: "imported",
+            email: hsContact.email,
+            name: hsContact.fullName,
+          });
+        } catch (e: any) {
+          results.push({ contactId, status: "failed", error: e.message });
+        }
+      }
+
+      res.json({
+        total: results.length,
+        imported: results.filter(r => r.status === "imported").length,
+        skipped: results.filter(r => r.status === "skipped").length,
+        failed: results.filter(r => r.status === "failed").length,
+        results,
+      });
+    } catch (error: any) {
+      console.error("[CRM] Error bulk importing contacts:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/clients/:clientId/crm-contacts", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.json({ contacts: [], crmEnabled: false });
+      }
+
+      const companyMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", req.params.clientId);
+      if (!companyMapping) {
+        return res.json({ contacts: [], crmEnabled: true, companyLinked: false });
+      }
+
+      const contacts = await getHubSpotCompanyContacts(companyMapping.crmObjectId);
+
+      const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
+      const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedContacts = contacts.map(contact => ({
+        ...contact,
+        isMapped: mappedContactIds.has(contact.id),
+        mapping: mappedContactIds.get(contact.id) || null,
+      }));
+
+      res.json({ contacts: enrichedContacts, crmEnabled: true, companyLinked: true });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching client CRM contacts:", error);
       res.status(500).json({ message: error.message });
     }
   });

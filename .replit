@@ -10,6 +10,7 @@ packages = ["alsa-lib", "at-spi2-atk", "at-spi2-core", "atk", "cairo", "chromium
 run = ["sh", "-c", "npm start"]
 deploymentTarget = "cloudrun"
 build = ["sh", "-c", "npm run build"]
+publicDir = "dist/public"
 
 [[ports]]
 localPort = 5000
