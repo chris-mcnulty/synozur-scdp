@@ -46,7 +46,7 @@ interface DealsResponse {
 
 interface CrmStatus {
   provider: string;
-  platformConnected: boolean;
+  tenantConnected: boolean;
   tenantEnabled: boolean;
   dealProbabilityThreshold: number;
 }
@@ -151,7 +151,7 @@ export default function CrmDeals() {
     );
   }
 
-  if (!crmStatus?.platformConnected || !crmStatus?.tenantEnabled) {
+  if (!crmStatus?.tenantConnected || !crmStatus?.tenantEnabled) {
     return (
       <Layout>
         <div className="container mx-auto py-8 px-4 max-w-7xl">
@@ -166,8 +166,8 @@ export default function CrmDeals() {
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              {!crmStatus?.platformConnected
-                ? "HubSpot is not connected to the platform. Contact your platform administrator to set up the HubSpot connection."
+              {!crmStatus?.tenantConnected
+                ? "HubSpot is not connected for your organization. Connect it in Organization Settings."
                 : "HubSpot sync is not enabled for your organization. Enable it in Organization Settings to view CRM deals."}
             </AlertDescription>
           </Alert>

@@ -5,6 +5,7 @@ import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserR
 import { eq, sql, inArray, max, and } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 
+
 async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, status: string, amount?: string | null) {
   try {
     const connection = await storage.getCrmConnection(tenantId, "hubspot");
@@ -13,18 +14,18 @@ async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, sta
     const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", estimateId);
     if (!mapping) return;
 
-    const connected = await isHubSpotConnected();
+    const connected = await isHubSpotConnected(tenantId);
     if (!connected) return;
 
     if (amount) {
-      await updateHubSpotDealAmount(mapping.crmObjectId, parseFloat(amount));
+      await updateHubSpotDealAmount(tenantId, mapping.crmObjectId, parseFloat(amount));
     }
 
     const settings = (connection.settings || {}) as Record<string, any>;
     const stageMappings = settings.dealStageMappings as Record<string, string> | undefined;
     let stageUpdated = false;
     if (stageMappings && stageMappings[status]) {
-      await updateHubSpotDealStage(mapping.crmObjectId, stageMappings[status]);
+      await updateHubSpotDealStage(tenantId, mapping.crmObjectId, stageMappings[status]);
       stageUpdated = true;
     }
 

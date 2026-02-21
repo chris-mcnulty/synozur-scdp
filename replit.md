@@ -84,4 +84,4 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Per Diem Rates**: GSA Per Diem API (CONUS) and DoD OCONUS rates database.
 - **Airport Codes**: IATA 3-letter code database.
 - **Exchange Rates**: Open Exchange Rates API.
-- **CRM Integration**: HubSpot API (for Deals, Companies, Contacts, Deal Stage Updates, Revenue Sync, and Activity Logging).
+- **CRM Integration**: HubSpot API with **per-tenant OAuth 2.0** (Deals, Companies, Contacts, Deal Stage Updates, Revenue Sync, Activity Logging). Each tenant stores their own HubSpot app credentials (client_id, client_secret) and OAuth tokens (access_token, refresh_token, expires_at) in `crm_connections.settings` jsonb. Token auto-refresh with 5-minute buffer. OAuth routes: `/api/crm/hubspot/oauth/start`, `/callback`, `/disconnect`, `/credentials`. All HubSpot client functions are tenant-scoped (first param = tenantId).

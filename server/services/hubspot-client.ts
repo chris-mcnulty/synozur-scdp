@@ -1,45 +1,93 @@
 import { Client } from '@hubspot/api-client';
+import { storage } from '../storage.js';
 
-// HubSpot connection via Replit connector (connection:conn_hubspot_01KAH52TA9XM6ATEF6T06QN7Z1)
-let connectionSettings: any;
-
-async function getAccessToken(): Promise<string> {
-  if (connectionSettings && connectionSettings.settings.expires_at && new Date(connectionSettings.settings.expires_at).getTime() > Date.now()) {
-    return connectionSettings.settings.access_token;
-  }
-
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
-  }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=hubspot',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  const accessToken = connectionSettings?.settings?.access_token || connectionSettings.settings?.oauth?.credentials?.access_token;
-
-  if (!connectionSettings || !accessToken) {
-    throw new Error('HubSpot not connected');
-  }
-  return accessToken;
+interface TenantOAuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  hubspotClientId: string;
+  hubspotClientSecret: string;
 }
 
-async function getUncachableHubSpotClient(): Promise<Client> {
-  const accessToken = await getAccessToken();
+const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+async function getTenantTokens(tenantId: string): Promise<TenantOAuthTokens> {
+  const connection = await storage.getCrmConnection(tenantId, "hubspot");
+  if (!connection) {
+    throw new Error('HubSpot is not configured for this organization');
+  }
+
+  const settings = (connection.settings || {}) as Record<string, any>;
+
+  if (!settings.accessToken || !settings.refreshToken) {
+    throw new Error('HubSpot is not connected for this organization. Please connect via Organization Settings.');
+  }
+
+  if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
+    throw new Error('HubSpot OAuth credentials not configured for this organization');
+  }
+
+  return {
+    accessToken: settings.accessToken,
+    refreshToken: settings.refreshToken,
+    expiresAt: settings.expiresAt || 0,
+    hubspotClientId: settings.hubspotClientId,
+    hubspotClientSecret: settings.hubspotClientSecret,
+  };
+}
+
+async function refreshTokenIfNeeded(tenantId: string): Promise<string> {
+  const tokens = await getTenantTokens(tenantId);
+
+  if (tokens.expiresAt > Date.now() + REFRESH_BUFFER_MS) {
+    return tokens.accessToken;
+  }
+
+  console.log(`[HubSpot] Refreshing token for tenant ${tenantId}`);
+
+  const response = await fetch('https://api.hubapi.com/oauth/v1/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: tokens.hubspotClientId,
+      client_secret: tokens.hubspotClientSecret,
+      refresh_token: tokens.refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(`[HubSpot] Token refresh failed for tenant ${tenantId}:`, errText);
+    throw new Error('HubSpot token refresh failed. Please reconnect in Organization Settings.');
+  }
+
+  const data = await response.json() as any;
+
+  const connection = await storage.getCrmConnection(tenantId, "hubspot");
+  const existingSettings = (connection?.settings || {}) as Record<string, any>;
+
+  await storage.upsertCrmConnection({
+    tenantId,
+    crmProvider: "hubspot",
+    settings: {
+      ...existingSettings,
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + (data.expires_in * 1000),
+    },
+  });
+
+  return data.access_token;
+}
+
+async function getHubSpotClient(tenantId: string): Promise<Client> {
+  const accessToken = await refreshTokenIfNeeded(tenantId);
   return new Client({ accessToken });
+}
+
+async function getAccessTokenForTenant(tenantId: string): Promise<string> {
+  return refreshTokenIfNeeded(tenantId);
 }
 
 export interface HubSpotDealStage {
@@ -72,8 +120,8 @@ export interface HubSpotDeal {
   updatedAt: string;
 }
 
-export async function getHubSpotPipelines(): Promise<HubSpotPipeline[]> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotPipelines(tenantId: string): Promise<HubSpotPipeline[]> {
+  const client = await getHubSpotClient(tenantId);
   const response = await client.crm.pipelines.pipelinesApi.getAll('deals');
 
   return response.results.map(pipeline => ({
@@ -88,9 +136,9 @@ export async function getHubSpotPipelines(): Promise<HubSpotPipeline[]> {
   }));
 }
 
-export async function getHubSpotDealsAboveThreshold(probabilityThreshold: number): Promise<HubSpotDeal[]> {
-  const client = await getUncachableHubSpotClient();
-  const pipelines = await getHubSpotPipelines();
+export async function getHubSpotDealsAboveThreshold(tenantId: string, probabilityThreshold: number): Promise<HubSpotDeal[]> {
+  const client = await getHubSpotClient(tenantId);
+  const pipelines = await getHubSpotPipelines(tenantId);
 
   const stageMap = new Map<string, { name: string; probability: number; pipelineId: string; pipelineName: string }>();
   const qualifyingStageIds: string[] = [];
@@ -176,9 +224,9 @@ export async function getHubSpotDealsAboveThreshold(probabilityThreshold: number
   });
 }
 
-export async function getHubSpotDealById(dealId: string): Promise<HubSpotDeal | null> {
-  const client = await getUncachableHubSpotClient();
-  const pipelines = await getHubSpotPipelines();
+export async function getHubSpotDealById(tenantId: string, dealId: string): Promise<HubSpotDeal | null> {
+  const client = await getHubSpotClient(tenantId);
+  const pipelines = await getHubSpotPipelines(tenantId);
 
   const stageMap = new Map<string, { name: string; probability: number; pipelineId: string; pipelineName: string }>();
   for (const pipeline of pipelines) {
@@ -221,8 +269,8 @@ export async function getHubSpotDealById(dealId: string): Promise<HubSpotDeal | 
   }
 }
 
-export async function updateHubSpotDealAmount(dealId: string, amount: number): Promise<void> {
-  const client = await getUncachableHubSpotClient();
+export async function updateHubSpotDealAmount(tenantId: string, dealId: string, amount: number): Promise<void> {
+  const client = await getHubSpotClient(tenantId);
   await client.crm.deals.basicApi.update(dealId, {
     properties: {
       amount: String(amount),
@@ -230,8 +278,8 @@ export async function updateHubSpotDealAmount(dealId: string, amount: number): P
   });
 }
 
-export async function updateHubSpotDealStage(dealId: string, stageId: string): Promise<void> {
-  const client = await getUncachableHubSpotClient();
+export async function updateHubSpotDealStage(tenantId: string, dealId: string, stageId: string): Promise<void> {
+  const client = await getHubSpotClient(tenantId);
   await client.crm.deals.basicApi.update(dealId, {
     properties: {
       dealstage: stageId,
@@ -239,15 +287,14 @@ export async function updateHubSpotDealStage(dealId: string, stageId: string): P
   });
 }
 
-export async function updateHubSpotDealProperties(dealId: string, properties: Record<string, string>): Promise<void> {
-  const client = await getUncachableHubSpotClient();
+export async function updateHubSpotDealProperties(tenantId: string, dealId: string, properties: Record<string, string>): Promise<void> {
+  const client = await getHubSpotClient(tenantId);
   await client.crm.deals.basicApi.update(dealId, { properties });
 }
 
-export async function createHubSpotDealNote(dealId: string, noteBody: string): Promise<string | null> {
-  const client = await getUncachableHubSpotClient();
+export async function createHubSpotDealNote(tenantId: string, dealId: string, noteBody: string): Promise<string | null> {
   try {
-    const accessToken = await getAccessToken();
+    const accessToken = await getAccessTokenForTenant(tenantId);
     const response = await fetch('https://api.hubapi.com/crm/v3/objects/notes', {
       method: 'POST',
       headers: {
@@ -287,8 +334,8 @@ export async function createHubSpotDealNote(dealId: string, noteBody: string): P
   }
 }
 
-export async function getHubSpotDealCompanyAssociations(dealId: string): Promise<{ companyId: string; companyName: string } | null> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotDealCompanyAssociations(tenantId: string, dealId: string): Promise<{ companyId: string; companyName: string } | null> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const deal = await client.crm.deals.basicApi.getById(dealId, undefined, undefined, ['companies']);
     const companyAssocs = deal.associations?.companies?.results;
@@ -339,8 +386,8 @@ function mapCompany(company: any): HubSpotCompany {
   };
 }
 
-export async function getHubSpotCompanies(limit: number = 100): Promise<HubSpotCompany[]> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotCompanies(tenantId: string, limit: number = 100): Promise<HubSpotCompany[]> {
+  const client = await getHubSpotClient(tenantId);
   const companies: HubSpotCompany[] = [];
   let after: string | undefined;
 
@@ -362,8 +409,8 @@ export async function getHubSpotCompanies(limit: number = 100): Promise<HubSpotC
   return companies;
 }
 
-export async function getHubSpotCompanyById(companyId: string): Promise<HubSpotCompany | null> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotCompanyById(tenantId: string, companyId: string): Promise<HubSpotCompany | null> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const company = await client.crm.companies.basicApi.getById(companyId, COMPANY_PROPERTIES);
     return mapCompany(company);
@@ -372,8 +419,8 @@ export async function getHubSpotCompanyById(companyId: string): Promise<HubSpotC
   }
 }
 
-export async function searchHubSpotCompanies(query: string): Promise<HubSpotCompany[]> {
-  const client = await getUncachableHubSpotClient();
+export async function searchHubSpotCompanies(tenantId: string, query: string): Promise<HubSpotCompany[]> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const response = await client.crm.companies.searchApi.doSearch({
       query,
@@ -389,8 +436,8 @@ export async function searchHubSpotCompanies(query: string): Promise<HubSpotComp
   }
 }
 
-export async function updateHubSpotCompany(companyId: string, properties: Record<string, string>): Promise<void> {
-  const client = await getUncachableHubSpotClient();
+export async function updateHubSpotCompany(tenantId: string, companyId: string, properties: Record<string, string>): Promise<void> {
+  const client = await getHubSpotClient(tenantId);
   await client.crm.companies.basicApi.update(companyId, { properties });
 }
 
@@ -432,8 +479,8 @@ function mapContact(contact: any): HubSpotContact {
   };
 }
 
-export async function getHubSpotDealContacts(dealId: string): Promise<HubSpotContact[]> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotDealContacts(tenantId: string, dealId: string): Promise<HubSpotContact[]> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const deal = await client.crm.deals.basicApi.getById(dealId, undefined, undefined, ['contacts']);
     const contactAssocs = deal.associations?.contacts?.results;
@@ -455,8 +502,8 @@ export async function getHubSpotDealContacts(dealId: string): Promise<HubSpotCon
   }
 }
 
-export async function getHubSpotContactById(contactId: string): Promise<HubSpotContact | null> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotContactById(tenantId: string, contactId: string): Promise<HubSpotContact | null> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const contact = await client.crm.contacts.basicApi.getById(contactId, CONTACT_PROPERTIES);
     return mapContact(contact);
@@ -465,8 +512,8 @@ export async function getHubSpotContactById(contactId: string): Promise<HubSpotC
   }
 }
 
-export async function searchHubSpotContacts(query: string): Promise<HubSpotContact[]> {
-  const client = await getUncachableHubSpotClient();
+export async function searchHubSpotContacts(tenantId: string, query: string): Promise<HubSpotContact[]> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const response = await client.crm.contacts.searchApi.doSearch({
       query,
@@ -482,8 +529,8 @@ export async function searchHubSpotContacts(query: string): Promise<HubSpotConta
   }
 }
 
-export async function getHubSpotCompanyContacts(companyId: string): Promise<HubSpotContact[]> {
-  const client = await getUncachableHubSpotClient();
+export async function getHubSpotCompanyContacts(tenantId: string, companyId: string): Promise<HubSpotContact[]> {
+  const client = await getHubSpotClient(tenantId);
   try {
     const company = await client.crm.companies.basicApi.getById(companyId, undefined, undefined, ['contacts']);
     const contactAssocs = company.associations?.contacts?.results;
@@ -505,10 +552,12 @@ export async function getHubSpotCompanyContacts(companyId: string): Promise<HubS
   }
 }
 
-export async function isHubSpotConnected(): Promise<boolean> {
+export async function isHubSpotConnected(tenantId: string): Promise<boolean> {
   try {
-    await getAccessToken();
-    return true;
+    const connection = await storage.getCrmConnection(tenantId, "hubspot");
+    if (!connection) return false;
+    const settings = (connection.settings || {}) as Record<string, any>;
+    return !!(settings.accessToken && settings.refreshToken);
   } catch {
     return false;
   }

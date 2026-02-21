@@ -20,6 +20,7 @@ import {
 import { db } from "../db.js";
 import { tenantUsers, users } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import crypto from "crypto";
 
 interface HubSpotRouteDeps {
   requireAuth: any;
@@ -30,7 +31,238 @@ function getUserTenantId(req: Request): string | undefined {
   return (req as any).user?.tenantId;
 }
 
+const STATE_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+const STATE_TTL_MS = 10 * 60 * 1000;
+
+function createSignedState(tenantId: string): string {
+  const payload = JSON.stringify({ tenantId, exp: Date.now() + STATE_TTL_MS, nonce: crypto.randomBytes(16).toString('hex') });
+  const hmac = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  return Buffer.from(payload).toString('base64url') + '.' + hmac;
+}
+
+function verifySignedState(state: string): { tenantId: string } | null {
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+  const [payloadB64, signature] = parts;
+  const payload = Buffer.from(payloadB64, 'base64url').toString();
+  const expectedSig = crypto.createHmac('sha256', STATE_SECRET).update(payload).digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) return null;
+  try {
+    const data = JSON.parse(payload);
+    if (data.exp < Date.now()) return null;
+    return { tenantId: data.tenantId };
+  } catch {
+    return null;
+  }
+}
+
+const usedStates = new Set<string>();
+setInterval(() => { usedStates.clear(); }, STATE_TTL_MS);
+
 export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
+
+  // ============================================================================
+  // OAuth Routes
+  // ============================================================================
+
+  app.post("/api/crm/hubspot/oauth/credentials", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const schema = z.object({
+        hubspotClientId: z.string().min(1, "Client ID is required"),
+        hubspotClientSecret: z.string().min(1, "Client Secret is required"),
+        hubspotRedirectUri: z.string().url().optional(),
+      });
+      const data = schema.parse(req.body);
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      const existingSettings = (connection?.settings || {}) as Record<string, any>;
+
+      await storage.upsertCrmConnection({
+        tenantId,
+        crmProvider: "hubspot",
+        settings: {
+          ...existingSettings,
+          hubspotClientId: data.hubspotClientId,
+          hubspotClientSecret: data.hubspotClientSecret,
+          ...(data.hubspotRedirectUri ? { hubspotRedirectUri: data.hubspotRedirectUri } : {}),
+        },
+      });
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "oauth_credentials_saved",
+        status: "success",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[CRM] Error saving OAuth credentials:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/hubspot/oauth/start", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      const settings = (connection?.settings || {}) as Record<string, any>;
+
+      if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
+        return res.status(400).json({ message: "Please save your HubSpot Client ID and Client Secret first" });
+      }
+
+      const state = createSignedState(tenantId);
+
+      const redirectUri = settings.hubspotRedirectUri || `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+
+      const scopes = [
+        'crm.objects.deals.read',
+        'crm.objects.deals.write',
+        'crm.objects.companies.read',
+        'crm.objects.companies.write',
+        'crm.objects.contacts.read',
+        'crm.schemas.deals.read',
+      ];
+
+      const authorizeUrl = new URL('https://app.hubspot.com/oauth/authorize');
+      authorizeUrl.searchParams.set('client_id', settings.hubspotClientId);
+      authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+      authorizeUrl.searchParams.set('scope', scopes.join(' '));
+      authorizeUrl.searchParams.set('state', state);
+
+      res.json({ authorizeUrl: authorizeUrl.toString() });
+    } catch (error: any) {
+      console.error("[CRM] Error starting OAuth:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/hubspot/oauth/callback", async (req: Request, res: Response) => {
+    try {
+      const { code, state } = req.query;
+
+      if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
+        return res.status(400).send('<html><body><h2>Invalid OAuth callback</h2><p>Missing code or state parameter.</p></body></html>');
+      }
+
+      if (usedStates.has(state)) {
+        return res.status(400).send('<html><body><h2>OAuth state already used</h2><p>Please try connecting again from Organization Settings.</p></body></html>');
+      }
+
+      const stateData = verifySignedState(state);
+      if (!stateData) {
+        return res.status(400).send('<html><body><h2>Invalid or expired OAuth state</h2><p>Please try connecting again from Organization Settings.</p></body></html>');
+      }
+
+      usedStates.add(state);
+      const { tenantId } = stateData;
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      const settings = (connection?.settings || {}) as Record<string, any>;
+
+      if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
+        return res.status(400).send('<html><body><h2>OAuth credentials not found</h2></body></html>');
+      }
+
+      const redirectUri = settings.hubspotRedirectUri || `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+
+      const tokenResponse = await fetch('https://api.hubapi.com/oauth/v1/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: settings.hubspotClientId,
+          client_secret: settings.hubspotClientSecret,
+          redirect_uri: redirectUri,
+          code,
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        const errText = await tokenResponse.text();
+        console.error('[CRM] OAuth token exchange failed:', errText);
+        return res.status(400).send('<html><body><h2>Failed to connect HubSpot</h2><p>Token exchange failed. Please try again.</p></body></html>');
+      }
+
+      const tokenData = await tokenResponse.json() as any;
+
+      await storage.upsertCrmConnection({
+        tenantId,
+        crmProvider: "hubspot",
+        isEnabled: true,
+        settings: {
+          ...settings,
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+          expiresAt: Date.now() + (tokenData.expires_in * 1000),
+          connectedAt: new Date().toISOString(),
+        },
+      });
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "oauth_connected",
+        status: "success",
+      });
+
+      res.send('<html><body><h2>HubSpot Connected Successfully!</h2><p>You can close this window and return to Constellation.</p><script>window.close();</script></body></html>');
+    } catch (error: any) {
+      console.error("[CRM] OAuth callback error:", error);
+      res.status(500).send('<html><body><h2>Connection Error</h2><p>An error occurred. Please try again.</p></body></html>');
+    }
+  });
+
+  app.post("/api/crm/hubspot/oauth/disconnect", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      const settings = (connection?.settings || {}) as Record<string, any>;
+
+      if (settings.accessToken) {
+        try {
+          await fetch(`https://api.hubapi.com/oauth/v1/refresh-tokens/${settings.refreshToken}`, {
+            method: 'DELETE',
+          });
+        } catch (e) {
+          console.error('[CRM] Error revoking HubSpot token:', e);
+        }
+      }
+
+      const { accessToken, refreshToken, expiresAt, connectedAt, ...preservedSettings } = settings;
+
+      await storage.upsertCrmConnection({
+        tenantId,
+        crmProvider: "hubspot",
+        isEnabled: false,
+        settings: preservedSettings,
+      });
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "oauth_disconnected",
+        status: "success",
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[CRM] Error disconnecting HubSpot:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================================
+  // Status & Connection Management
+  // ============================================================================
 
   app.get("/api/crm/status", deps.requireAuth, async (req: Request, res: Response) => {
     try {
@@ -38,12 +270,13 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
 
       const connection = await storage.getCrmConnection(tenantId, "hubspot");
-      const connected = await isHubSpotConnected();
+      const connected = await isHubSpotConnected(tenantId);
 
       const settings = (connection?.settings || {}) as Record<string, any>;
       res.json({
         provider: "hubspot",
-        platformConnected: connected,
+        tenantConnected: connected,
+        hasCredentials: !!(settings.hubspotClientId && settings.hubspotClientSecret),
         tenantEnabled: connection?.isEnabled ?? false,
         dealProbabilityThreshold: connection?.dealProbabilityThreshold ?? 40,
         dealStageMappings: settings.dealStageMappings ?? null,
@@ -121,9 +354,15 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
+  // ============================================================================
+  // Pipelines & Deals
+  // ============================================================================
+
   app.get("/api/crm/pipelines", deps.requireAuth, async (req: Request, res: Response) => {
     try {
-      const pipelines = await getHubSpotPipelines();
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+      const pipelines = await getHubSpotPipelines(tenantId);
       res.json(pipelines);
     } catch (error: any) {
       console.error("[CRM] Error fetching pipelines:", error);
@@ -142,7 +381,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       }
 
       const threshold = connection.dealProbabilityThreshold ?? 40;
-      const deals = await getHubSpotDealsAboveThreshold(threshold);
+      const deals = await getHubSpotDealsAboveThreshold(tenantId, threshold);
 
       const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
       const mappedDealIds = new Set(mappings.map(m => m.crmObjectId));
@@ -199,7 +438,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         });
       }
 
-      const deal = await getHubSpotDealById(dealId);
+      const deal = await getHubSpotDealById(tenantId, dealId);
       if (!deal) {
         return res.status(404).json({ message: "Deal not found in HubSpot" });
       }
@@ -214,7 +453,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       let clientId = body.clientId;
 
       if (!clientId) {
-        const companyAssoc = await getHubSpotDealCompanyAssociations(dealId);
+        const companyAssoc = await getHubSpotDealCompanyAssociations(tenantId, dealId);
         const companyName = body.clientName || companyAssoc?.companyName || deal.dealName;
 
         const existingClients = await storage.getClients(tenantId);
@@ -343,6 +582,10 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
+  // ============================================================================
+  // Companies
+  // ============================================================================
+
   app.get("/api/crm/companies", deps.requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
@@ -356,9 +599,9 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const search = req.query.search as string | undefined;
       let companies;
       if (search && search.length >= 2) {
-        companies = await searchHubSpotCompanies(search);
+        companies = await searchHubSpotCompanies(tenantId, search);
       } else {
-        companies = await getHubSpotCompanies(200);
+        companies = await getHubSpotCompanies(tenantId, 200);
       }
 
       const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
@@ -387,7 +630,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.status(400).json({ message: "HubSpot integration is not enabled" });
       }
 
-      const company = await getHubSpotCompanyById(req.params.companyId);
+      const company = await getHubSpotCompanyById(tenantId, req.params.companyId);
       if (!company) {
         return res.status(404).json({ message: "Company not found in HubSpot" });
       }
@@ -424,7 +667,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.status(409).json({ message: "This HubSpot company is already linked to a client", mapping: existing });
       }
 
-      const hsCompany = await getHubSpotCompanyById(companyId);
+      const hsCompany = await getHubSpotCompanyById(tenantId, companyId);
       if (!hsCompany) {
         return res.status(404).json({ message: "Company not found in HubSpot" });
       }
@@ -543,7 +786,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.status(404).json({ message: "This company is not linked to a client" });
       }
 
-      const hsCompany = await getHubSpotCompanyById(companyId);
+      const hsCompany = await getHubSpotCompanyById(tenantId, companyId);
       if (!hsCompany) {
         return res.status(404).json({ message: "Company not found in HubSpot" });
       }
@@ -581,7 +824,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         if (client.name && client.name !== hsCompany.name) properties.name = client.name;
 
         if (Object.keys(properties).length > 0) {
-          await updateHubSpotCompany(companyId, properties);
+          await updateHubSpotCompany(tenantId, companyId, properties);
         }
 
         await storage.createCrmSyncLog({
@@ -596,7 +839,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
           requestPayload: properties as any,
         });
 
-        const updatedCompany = await getHubSpotCompanyById(companyId);
+        const updatedCompany = await getHubSpotCompanyById(tenantId, companyId);
         res.json({ client, company: updatedCompany, synced: Object.keys(properties) });
       }
     } catch (error: any) {
@@ -619,7 +862,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.status(400).json({ message: "HubSpot integration is not enabled" });
       }
 
-      const contacts = await getHubSpotDealContacts(req.params.dealId);
+      const contacts = await getHubSpotDealContacts(tenantId, req.params.dealId);
 
       const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
       const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
@@ -637,34 +880,6 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.get("/api/crm/companies/:companyId/contacts", deps.requireAuth, async (req: Request, res: Response) => {
-    try {
-      const tenantId = getUserTenantId(req);
-      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
-
-      const connection = await storage.getCrmConnection(tenantId, "hubspot");
-      if (!connection?.isEnabled) {
-        return res.status(400).json({ message: "HubSpot integration is not enabled" });
-      }
-
-      const contacts = await getHubSpotCompanyContacts(req.params.companyId);
-
-      const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
-      const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
-
-      const enrichedContacts = contacts.map(contact => ({
-        ...contact,
-        isMapped: mappedContactIds.has(contact.id),
-        mapping: mappedContactIds.get(contact.id) || null,
-      }));
-
-      res.json({ contacts: enrichedContacts });
-    } catch (error: any) {
-      console.error("[CRM] Error fetching company contacts:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
   app.get("/api/crm/contacts/search", deps.requireAuth, async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
@@ -677,10 +892,10 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const query = req.query.q as string;
       if (!query || query.length < 2) {
-        return res.status(400).json({ message: "Search query must be at least 2 characters" });
+        return res.json({ contacts: [] });
       }
 
-      const contacts = await searchHubSpotContacts(query);
+      const contacts = await searchHubSpotContacts(tenantId, query);
 
       const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
       const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
@@ -723,7 +938,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         });
       }
 
-      const hsContact = await getHubSpotContactById(contactId);
+      const hsContact = await getHubSpotContactById(tenantId, contactId);
       if (!hsContact) {
         return res.status(404).json({ message: "Contact not found in HubSpot" });
       }
@@ -868,7 +1083,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
             continue;
           }
 
-          const hsContact = await getHubSpotContactById(contactId);
+          const hsContact = await getHubSpotContactById(tenantId, contactId);
           if (!hsContact) {
             results.push({ contactId, status: "failed", error: "Contact not found in HubSpot" });
             continue;
@@ -991,7 +1206,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.json({ contacts: [], crmEnabled: true, companyLinked: false });
       }
 
-      const contacts = await getHubSpotCompanyContacts(companyMapping.crmObjectId);
+      const contacts = await getHubSpotCompanyContacts(tenantId, companyMapping.crmObjectId);
 
       const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
       const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
@@ -1026,7 +1241,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       let company = null;
       try {
-        company = await getHubSpotCompanyById(mapping.crmObjectId);
+        company = await getHubSpotCompanyById(tenantId, mapping.crmObjectId);
       } catch {}
 
       res.json({

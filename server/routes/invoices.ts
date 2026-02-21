@@ -5,7 +5,7 @@ import { invoiceBatches, invoiceLines, projects, clients, users, expenses, timeE
 import { eq, sql, inArray, and, gte, lte, isNull } from "drizzle-orm";
 import { receiptStorage } from "../services/receipt-storage.js";
 import { invoicePDFStorage } from "../services/invoice-pdf-storage.js";
-import { updateHubSpotDealProperties, createHubSpotDealNote, isHubSpotConnected } from "../services/hubspot-client.js";
+import { createHubSpotDealNote, isHubSpotConnected } from "../services/hubspot-client.js";
 
 interface InvoiceRouteDeps {
   requireAuth: any;
@@ -53,7 +53,7 @@ async function syncInvoiceToCrm(
     const settings = (connection.settings || {}) as Record<string, any>;
     if (settings.revenueSyncEnabled === false) return;
 
-    const connected = await isHubSpotConnected();
+    const connected = await isHubSpotConnected(tenantId);
     if (!connected) return;
 
     const batchDetails = await storage.getInvoiceBatchByBatchId(batchId);
@@ -128,7 +128,7 @@ async function syncInvoiceToCrm(
             `Amount: $${totalAmount.toFixed(2)}<br/>` +
             `Total Batch Amount: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
 
-          await createHubSpotDealNote(dealId, noteBody);
+          await createHubSpotDealNote(tenantId, dealId, noteBody);
         } else if (action === 'payment_updated' && paymentInfo) {
           const statusLabel = paymentInfo.paymentStatus === 'paid' ? 'Paid' :
             paymentInfo.paymentStatus === 'partial' ? 'Partially Paid' : 'Unpaid';
@@ -141,7 +141,7 @@ async function syncInvoiceToCrm(
             (paymentInfo.paymentDate ? `Payment Date: ${paymentInfo.paymentDate}<br/>` : '') +
             `Invoice Total: $${Number(batchDetails.totalAmount || 0).toFixed(2)}`;
 
-          await createHubSpotDealNote(dealId, noteBody);
+          await createHubSpotDealNote(tenantId, dealId, noteBody);
         }
 
         await storage.createCrmSyncLog({
