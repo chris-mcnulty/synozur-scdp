@@ -119,7 +119,6 @@ function ClientCrmLink({ clientId }: { clientId: string }) {
 
   const { data: crmLink, isLoading } = useQuery<CrmLinkData>({
     queryKey: ["/api/clients", clientId, "crm-link"],
-    queryFn: () => fetch(`/api/clients/${clientId}/crm-link`).then(r => r.json()),
   });
 
   const [showLinkDialog, setShowLinkDialog] = useState(false);
@@ -128,7 +127,10 @@ function ClientCrmLink({ clientId }: { clientId: string }) {
 
   const { data: companiesData } = useQuery<{ companies: HubSpotCompanyItem[] }>({
     queryKey: ["/api/crm/companies", companySearch],
-    queryFn: () => fetch(`/api/crm/companies?search=${encodeURIComponent(companySearch)}`).then(r => r.json()),
+    queryFn: async () => {
+      const data = await apiRequest(`/api/crm/companies?search=${encodeURIComponent(companySearch)}`);
+      return data;
+    },
     enabled: showLinkDialog && crmLink?.crmEnabled === true,
   });
 
