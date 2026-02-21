@@ -65,61 +65,19 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
   // OAuth Routes
   // ============================================================================
 
-  app.post("/api/crm/hubspot/oauth/credentials", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
-    try {
-      const tenantId = getUserTenantId(req);
-      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
-
-      const schema = z.object({
-        hubspotClientId: z.string().min(1, "Client ID is required"),
-        hubspotClientSecret: z.string().min(1, "Client Secret is required"),
-        hubspotRedirectUri: z.string().url().optional(),
-      });
-      const data = schema.parse(req.body);
-
-      const connection = await storage.getCrmConnection(tenantId, "hubspot");
-      const existingSettings = (connection?.settings || {}) as Record<string, any>;
-
-      await storage.upsertCrmConnection({
-        tenantId,
-        crmProvider: "hubspot",
-        settings: {
-          ...existingSettings,
-          hubspotClientId: data.hubspotClientId,
-          hubspotClientSecret: data.hubspotClientSecret,
-          ...(data.hubspotRedirectUri ? { hubspotRedirectUri: data.hubspotRedirectUri } : {}),
-        },
-      });
-
-      await storage.createCrmSyncLog({
-        tenantId,
-        crmProvider: "hubspot",
-        action: "oauth_credentials_saved",
-        status: "success",
-      });
-
-      res.json({ success: true });
-    } catch (error: any) {
-      console.error("[CRM] Error saving OAuth credentials:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
   app.get("/api/crm/hubspot/oauth/start", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
 
-      const connection = await storage.getCrmConnection(tenantId, "hubspot");
-      const settings = (connection?.settings || {}) as Record<string, any>;
-
-      if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
-        return res.status(400).json({ message: "Please save your HubSpot Client ID and Client Secret first" });
+      const hubspotClientId = process.env.HUBSPOT_CLIENT_ID;
+      if (!hubspotClientId) {
+        return res.status(500).json({ message: "HubSpot platform credentials are not configured" });
       }
 
       const state = createSignedState(tenantId);
 
-      const redirectUri = settings.hubspotRedirectUri || `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
 
       const scopes = [
         'crm.objects.deals.read',
@@ -131,7 +89,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       ];
 
       const authorizeUrl = new URL('https://app.hubspot.com/oauth/authorize');
-      authorizeUrl.searchParams.set('client_id', settings.hubspotClientId);
+      authorizeUrl.searchParams.set('client_id', hubspotClientId);
       authorizeUrl.searchParams.set('redirect_uri', redirectUri);
       authorizeUrl.searchParams.set('scope', scopes.join(' '));
       authorizeUrl.searchParams.set('state', state);
@@ -163,22 +121,21 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       usedStates.add(state);
       const { tenantId } = stateData;
 
-      const connection = await storage.getCrmConnection(tenantId, "hubspot");
-      const settings = (connection?.settings || {}) as Record<string, any>;
-
-      if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
-        return res.status(400).send('<html><body><h2>OAuth credentials not found</h2></body></html>');
+      const hubspotClientId = process.env.HUBSPOT_CLIENT_ID;
+      const hubspotClientSecret = process.env.HUBSPOT_CLIENT_SECRET;
+      if (!hubspotClientId || !hubspotClientSecret) {
+        return res.status(500).send('<html><body><h2>Platform HubSpot credentials not configured</h2></body></html>');
       }
 
-      const redirectUri = settings.hubspotRedirectUri || `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
 
       const tokenResponse = await fetch('https://api.hubapi.com/oauth/v1/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'authorization_code',
-          client_id: settings.hubspotClientId,
-          client_secret: settings.hubspotClientSecret,
+          client_id: hubspotClientId,
+          client_secret: hubspotClientSecret,
           redirect_uri: redirectUri,
           code,
         }),
@@ -192,12 +149,15 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const tokenData = await tokenResponse.json() as any;
 
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      const existingSettings = (connection?.settings || {}) as Record<string, any>;
+
       await storage.upsertCrmConnection({
         tenantId,
         crmProvider: "hubspot",
         isEnabled: true,
         settings: {
-          ...settings,
+          ...existingSettings,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
           expiresAt: Date.now() + (tokenData.expires_in * 1000),
@@ -272,11 +232,12 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const connection = await storage.getCrmConnection(tenantId, "hubspot");
       const connected = await isHubSpotConnected(tenantId);
 
+      const platformConfigured = !!(process.env.HUBSPOT_CLIENT_ID && process.env.HUBSPOT_CLIENT_SECRET);
       const settings = (connection?.settings || {}) as Record<string, any>;
       res.json({
         provider: "hubspot",
         tenantConnected: connected,
-        hasCredentials: !!(settings.hubspotClientId && settings.hubspotClientSecret),
+        platformConfigured,
         tenantEnabled: connection?.isEnabled ?? false,
         dealProbabilityThreshold: connection?.dealProbabilityThreshold ?? 40,
         dealStageMappings: settings.dealStageMappings ?? null,

@@ -5,11 +5,18 @@ interface TenantOAuthTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
-  hubspotClientId: string;
-  hubspotClientSecret: string;
 }
 
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+function getPlatformCredentials(): { clientId: string; clientSecret: string } {
+  const clientId = process.env.HUBSPOT_CLIENT_ID;
+  const clientSecret = process.env.HUBSPOT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('HubSpot platform credentials (HUBSPOT_CLIENT_ID / HUBSPOT_CLIENT_SECRET) are not configured');
+  }
+  return { clientId, clientSecret };
+}
 
 async function getTenantTokens(tenantId: string): Promise<TenantOAuthTokens> {
   const connection = await storage.getCrmConnection(tenantId, "hubspot");
@@ -23,16 +30,10 @@ async function getTenantTokens(tenantId: string): Promise<TenantOAuthTokens> {
     throw new Error('HubSpot is not connected for this organization. Please connect via Organization Settings.');
   }
 
-  if (!settings.hubspotClientId || !settings.hubspotClientSecret) {
-    throw new Error('HubSpot OAuth credentials not configured for this organization');
-  }
-
   return {
     accessToken: settings.accessToken,
     refreshToken: settings.refreshToken,
     expiresAt: settings.expiresAt || 0,
-    hubspotClientId: settings.hubspotClientId,
-    hubspotClientSecret: settings.hubspotClientSecret,
   };
 }
 
@@ -45,13 +46,15 @@ async function refreshTokenIfNeeded(tenantId: string): Promise<string> {
 
   console.log(`[HubSpot] Refreshing token for tenant ${tenantId}`);
 
+  const { clientId, clientSecret } = getPlatformCredentials();
+
   const response = await fetch('https://api.hubapi.com/oauth/v1/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'refresh_token',
-      client_id: tokens.hubspotClientId,
-      client_secret: tokens.hubspotClientSecret,
+      client_id: clientId,
+      client_secret: clientSecret,
       refresh_token: tokens.refreshToken,
     }),
   });

@@ -182,7 +182,7 @@ function HubSpotIntegrationCard() {
   interface CrmStatus {
     provider: string;
     tenantConnected: boolean;
-    hasCredentials: boolean;
+    platformConfigured: boolean;
     tenantEnabled: boolean;
     dealProbabilityThreshold: number;
     dealStageMappings: Record<string, string> | null;
@@ -222,30 +222,11 @@ function HubSpotIntegrationCard() {
   const [threshold, setThreshold] = useState<string>("40");
   const [selectedPipeline, setSelectedPipeline] = useState<string>("");
   const [stageMappings, setStageMappings] = useState<Record<string, string>>({});
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [showCredentials, setShowCredentials] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
   const { data: pipelines } = useQuery<HubSpotPipeline[]>({
     queryKey: ["/api/crm/pipelines"],
     enabled: !!crmStatus?.tenantEnabled && !!crmStatus?.tenantConnected,
-  });
-
-  const saveCredentialsMutation = useMutation({
-    mutationFn: (data: { hubspotClientId: string; hubspotClientSecret: string }) =>
-      apiRequest("/api/crm/hubspot/oauth/credentials", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/crm/status"] });
-      toast({ title: "HubSpot credentials saved" });
-      setClientSecret("");
-    },
-    onError: (error: Error) => {
-      toast({ title: "Failed to save credentials", description: error.message, variant: "destructive" });
-    },
   });
 
   const disconnectMutation = useMutation({
@@ -319,13 +300,13 @@ function HubSpotIntegrationCard() {
               <CheckCircle className="h-3 w-3 mr-1" />
               Connected
             </Badge>
-          ) : crmStatus?.hasCredentials ? (
+          ) : crmStatus?.platformConfigured ? (
             <Badge variant="outline" className="text-orange-600 border-orange-600">
               Not Connected
             </Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground">
-              Not Configured
+              Not Available
             </Badge>
           )}
         </div>
@@ -335,83 +316,18 @@ function HubSpotIntegrationCard() {
           Pull deals from HubSpot that meet your probability threshold and create estimates from them. Deal amounts sync back to HubSpot when estimates are updated.
         </p>
 
-        <div className="space-y-3 border-t pt-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">OAuth Credentials</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowCredentials(!showCredentials)}
-            >
-              <Settings className="h-3 w-3 mr-1" />
-              {showCredentials ? "Hide" : (crmStatus?.hasCredentials ? "Update" : "Configure")}
-            </Button>
+        {!crmStatus?.platformConfigured && (
+          <div className="rounded-lg border p-3 bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-orange-800 dark:text-orange-300">
+                HubSpot integration is not yet available. Please contact your platform administrator.
+              </p>
+            </div>
           </div>
+        )}
 
-          {!crmStatus?.hasCredentials && !showCredentials && (
-            <div className="rounded-lg border p-3 bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
-              <div className="flex items-start gap-2">
-                <Info className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
-                <p className="text-sm text-orange-800 dark:text-orange-300">
-                  Enter your HubSpot app's Client ID and Client Secret to get started. You can find these in your HubSpot developer account under Apps &gt; your app &gt; Auth.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {showCredentials && (
-            <div className="space-y-3 p-3 rounded-lg border bg-muted/30">
-              <div>
-                <label className="text-xs font-medium">Client ID</label>
-                <Input
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="Enter HubSpot Client ID"
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium">Client Secret</label>
-                <Input
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder="Enter HubSpot Client Secret"
-                  className="mt-1"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (!clientId.trim() || !clientSecret.trim()) {
-                      toast({ title: "Both fields are required", variant: "destructive" });
-                      return;
-                    }
-                    saveCredentialsMutation.mutate({
-                      hubspotClientId: clientId.trim(),
-                      hubspotClientSecret: clientSecret.trim(),
-                    });
-                    setShowCredentials(false);
-                  }}
-                  disabled={saveCredentialsMutation.isPending}
-                >
-                  <Save className="h-3 w-3 mr-1" />
-                  Save Credentials
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => { setShowCredentials(false); setClientId(""); setClientSecret(""); }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {crmStatus?.hasCredentials && !crmStatus?.tenantConnected && (
+        {crmStatus?.platformConfigured && !crmStatus?.tenantConnected && (
           <div className="border-t pt-3">
             <Button
               onClick={handleConnect}
