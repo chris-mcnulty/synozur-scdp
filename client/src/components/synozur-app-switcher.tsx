@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 
+const BRAND_PRIMARY = "#810FFB";
+const BRAND_SECONDARY = "#E60CB3";
+
 const SYNOZUR_APPS = [
   {
     id: "vega",
@@ -7,7 +10,6 @@ const SYNOZUR_APPS = [
     tagline: "Company Operating System",
     description: "AI-augmented strategy, goals, execution, governance, and insight in one place.",
     url: "https://vega.synozur.com",
-    color: "#a855f7",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <polygon points="12,2 15,9 22,9 16.5,14 18.5,21 12,17 5.5,21 7.5,14 2,9 9,9" stroke="currentColor" strokeWidth="1.5" fill="currentColor" fillOpacity="0.15" />
@@ -20,7 +22,6 @@ const SYNOZUR_APPS = [
     tagline: "Delivery & Financial Management",
     description: "Time, cost, progress tracking with estimates, invoicing, and reporting.",
     url: "https://scdp.synozur.com",
-    color: "#3b82f6",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <circle cx="12" cy="5" r="1.5" fill="currentColor" />
@@ -43,7 +44,6 @@ const SYNOZUR_APPS = [
     tagline: "Innovation & Envisioning",
     description: "Co-design strategy, surface insights, and turn ideas into shared direction.",
     url: "https://nebula.synozur.com",
-    color: "#c026d3",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1" opacity="0.2" />
@@ -61,7 +61,6 @@ const SYNOZUR_APPS = [
     tagline: "Transformation & Maturity",
     description: "AI-powered maturity assessments with actionable roadmaps for change.",
     url: "https://orion.synozur.com",
-    color: "#f59e0b",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <circle cx="8" cy="6" r="1.5" fill="currentColor" fillOpacity="0.8" />
@@ -80,7 +79,6 @@ const SYNOZUR_APPS = [
     tagline: "Go-to-Market Intelligence",
     description: "Competitive and market insights for positioning, prioritization, and action.",
     url: "https://orbit.synozur.com",
-    color: "#10b981",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
         <circle cx="12" cy="12" r="3" fill="currentColor" fillOpacity="0.3" stroke="currentColor" strokeWidth="1" />
@@ -94,10 +92,10 @@ const SYNOZUR_APPS = [
 
 interface SynozurAppSwitcherProps {
   currentApp?: "vega" | "constellation" | "nebula" | "orion" | "orbit";
-  variant?: "light" | "dark";
+  forceDark?: boolean;
 }
 
-export function SynozurAppSwitcher({ currentApp = "constellation", variant = "dark" }: SynozurAppSwitcherProps) {
+export function SynozurAppSwitcher({ currentApp = "constellation", forceDark = false }: SynozurAppSwitcherProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -129,7 +127,7 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
     };
   }, [open]);
 
-  const isDark = variant === "dark";
+  const fd = forceDark;
 
   return (
     <div className="relative">
@@ -140,10 +138,10 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
         aria-haspopup="true"
         aria-controls={open ? "synozur-app-menu" : undefined}
         className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${
-          isDark
-            ? "hover:bg-white/10 text-gray-400 hover:text-white"
-            : "hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-        } ${open ? (isDark ? "bg-white/10 text-white" : "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white") : ""}`}
+          fd
+            ? `hover:bg-white/10 text-gray-400 hover:text-white ${open ? "bg-white/10 text-white" : ""}`
+            : `hover:bg-gray-100 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white ${open ? "bg-gray-100 dark:bg-white/10 text-gray-900 dark:text-white" : ""}`
+        }`}
         title="Synozur Apps"
         aria-label="Synozur Apps"
       >
@@ -166,20 +164,25 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
           id="synozur-app-menu"
           role="menu"
           aria-label="Synozur Suite Applications"
-          className="absolute top-full left-0 mt-2 w-[360px] rounded-xl shadow-2xl border z-[100] overflow-hidden bg-gray-950 border-white/10"
+          className={`absolute top-full left-0 mt-2 w-[360px] rounded-xl shadow-2xl border z-[100] overflow-hidden ${
+            fd
+              ? "bg-gray-950 border-white/10"
+              : "bg-white dark:bg-gray-950 border-gray-200 dark:border-white/10"
+          }`}
           style={{ animation: "fadeIn 0.15s ease-out" }}
         >
           <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
 
           <div className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-gray-500">Synozur Suite</span>
+              <span className={`text-[10px] font-bold tracking-[0.2em] uppercase ${fd ? "text-gray-500" : "text-gray-400 dark:text-gray-500"}`}>Synozur Suite</span>
             </div>
           </div>
 
           <div className="px-2 pb-3 space-y-0.5">
-            {SYNOZUR_APPS.map((app) => {
+            {SYNOZUR_APPS.map((app, index) => {
               const isCurrent = app.id === currentApp;
+              const accentColor = index % 2 === 0 ? BRAND_PRIMARY : BRAND_SECONDARY;
               return (
                 <a
                   key={app.id}
@@ -190,29 +193,35 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
                   onClick={isCurrent ? (e) => { e.preventDefault(); closeMenu(); } : undefined}
                   className={`flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all group cursor-pointer ${
                     isCurrent
-                      ? "bg-white/[0.08] ring-1 ring-white/10"
-                      : "hover:bg-white/[0.06]"
+                      ? fd
+                        ? "bg-white/[0.08] ring-1 ring-white/10"
+                        : "bg-gray-100 dark:bg-white/[0.08] ring-1 ring-gray-200 dark:ring-white/10"
+                      : fd
+                        ? "hover:bg-white/[0.06]"
+                        : "hover:bg-gray-50 dark:hover:bg-white/[0.06]"
                   }`}
                 >
                   <div
                     className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center mt-0.5"
                     style={{
-                      backgroundColor: `${app.color}15`,
-                      color: app.color,
+                      backgroundColor: `${accentColor}15`,
+                      color: accentColor,
                     }}
                   >
                     {app.icon}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-white">{app.name}</span>
+                      <span className={`text-sm font-semibold ${fd ? "text-white" : "text-gray-900 dark:text-white"}`}>{app.name}</span>
                       {isCurrent && (
-                        <span className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400">
+                        <span className={`text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full ${
+                          fd ? "bg-white/10 text-gray-400" : "bg-gray-200 dark:bg-white/10 text-gray-500 dark:text-gray-400"
+                        }`}>
                           Current
                         </span>
                       )}
                     </div>
-                    <p className="text-xs font-medium mt-0.5" style={{ color: app.color }}>
+                    <p className="text-xs font-medium mt-0.5" style={{ color: accentColor }}>
                       {app.tagline}
                     </p>
                     <p className="text-[11px] text-gray-500 leading-snug mt-0.5">
@@ -220,7 +229,9 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
                     </p>
                   </div>
                   {!isCurrent && (
-                    <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors mt-1.5 flex-shrink-0">
+                    <svg viewBox="0 0 16 16" fill="none" className={`w-3.5 h-3.5 transition-colors mt-1.5 flex-shrink-0 ${
+                      fd ? "text-gray-600 group-hover:text-gray-400" : "text-gray-300 dark:text-gray-600 group-hover:text-gray-500 dark:group-hover:text-gray-400"
+                    }`}>
                       <path d="M5 3L10 8L5 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                     </svg>
                   )}
@@ -229,12 +240,12 @@ export function SynozurAppSwitcher({ currentApp = "constellation", variant = "da
             })}
           </div>
 
-          <div className="border-t border-white/5 px-4 py-2.5">
+          <div className={`border-t px-4 py-2.5 ${fd ? "border-white/5" : "border-gray-100 dark:border-white/5"}`}>
             <a
               href="https://www.synozur.com/applications"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] text-gray-500 hover:text-gray-300 transition-colors"
+              className={`text-[11px] transition-colors ${fd ? "text-gray-500 hover:text-gray-300" : "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"}`}
             >
               Learn more at synozur.com
             </a>
