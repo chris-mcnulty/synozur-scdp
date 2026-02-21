@@ -222,6 +222,33 @@ export default function OrganizationSettings() {
     glNumberMutation.mutate(num);
   };
 
+  interface FinancialAlertRecipient {
+    id: string;
+    userId: string;
+    role: string;
+    receiveFinancialAlerts: boolean;
+    userName: string;
+    userEmail: string | null;
+  }
+
+  const { data: alertRecipients = [], isLoading: isLoadingAlertRecipients } = useQuery<FinancialAlertRecipient[]>({
+    queryKey: ["/api/tenant/financial-alert-recipients"],
+  });
+
+  const toggleAlertMutation = useMutation({
+    mutationFn: ({ membershipId, receiveFinancialAlerts }: { membershipId: string; receiveFinancialAlerts: boolean }) =>
+      apiRequest(`/api/tenant/financial-alert-recipients/${membershipId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ receiveFinancialAlerts }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/financial-alert-recipients"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
+    },
+  });
+
   const brandingForm = useForm<BrandingFormData>({
     resolver: zodResolver(brandingSchema),
     defaultValues: {
@@ -1008,6 +1035,62 @@ export default function OrganizationSettings() {
                   <p className="text-xs text-muted-foreground">
                     This counter increments automatically each time a new invoice batch is created. Resetting it will change the next number assigned.
                   </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Financial Alert Recipients
+                  </CardTitle>
+                  <CardDescription>
+                    Choose which team members receive email notifications for financial events like expense report submissions, approvals, and rejections. If no one is selected, admins and billing admins will receive alerts by default.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingAlertRecipients ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : alertRecipients.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No team members found in this organization.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {alertRecipients.map((member) => (
+                        <div key={member.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium truncate">{member.userName}</span>
+                              <Badge variant="outline" className="text-xs shrink-0">{member.role}</Badge>
+                            </div>
+                            {member.userEmail && (
+                              <p className="text-xs text-muted-foreground truncate">{member.userEmail}</p>
+                            )}
+                          </div>
+                          <Switch
+                            checked={member.receiveFinancialAlerts}
+                            onCheckedChange={(checked) => {
+                              toggleAlertMutation.mutate({
+                                membershipId: member.id,
+                                receiveFinancialAlerts: checked,
+                              });
+                            }}
+                          />
+                        </div>
+                      ))}
+                      {!alertRecipients.some(m => m.receiveFinancialAlerts) && (
+                        <Alert className="mt-3">
+                          <Info className="h-4 w-4" />
+                          <AlertDescription>
+                            No recipients selected. Financial alerts will default to admins and billing admins in this organization.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

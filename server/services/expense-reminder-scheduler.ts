@@ -35,12 +35,11 @@ function escapeHtml(text: string): string {
 async function getUsersWithUnsubmittedExpenses(tenantId: string): Promise<ExpenseReminderRecipient[]> {
   const recipients: ExpenseReminderRecipient[] = [];
   
-  const users = await storage.getUsers();
-  const tenantUsers = users.filter(u => 
+  const tenantScopedUsers = await storage.getUsers(tenantId);
+  const tenantUsers = tenantScopedUsers.filter(u => 
     u.isActive && 
     u.email && 
     u.canLogin &&
-    u.primaryTenantId === tenantId &&
     (u as any).receiveExpenseReminders !== false
   );
 

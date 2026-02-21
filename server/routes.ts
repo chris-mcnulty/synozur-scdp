@@ -806,8 +806,9 @@ export async function registerRoutes(app: Express): Promise<void> {
         userEnteredHours.set(entry.personId, currentHours + Number(entry.hours || 0));
       }
       
-      // Build the report
-      const users = await storage.getUsers();
+      // Build the report (tenant-scoped)
+      const activeTenantId = (req as any).user?.tenantId;
+      const users = await storage.getUsers(activeTenantId);
       const userMap = new Map(users.map(u => [u.id, u]));
       
       const missingEntries = [];
@@ -1021,6 +1022,74 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error: any) {
       console.error("[TENANT_SETTINGS] Failed to update tenant settings:", error);
       res.status(500).json({ message: "Failed to update tenant settings" });
+    }
+  });
+
+  // Financial Alert Recipients Management
+  app.get("/api/tenant/financial-alert-recipients", requireAuth, requireRole(["admin", "billing-admin"]), async (req, res) => {
+    try {
+      const activeTenantId = (req.user as any)?.tenantId;
+      if (!activeTenantId) {
+        return res.status(400).json({ message: "No active tenant context" });
+      }
+      
+      const memberships = await db.select({
+        id: tenantUsers.id,
+        userId: tenantUsers.userId,
+        role: tenantUsers.role,
+        receiveFinancialAlerts: tenantUsers.receiveFinancialAlerts,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(tenantUsers)
+      .innerJoin(users, eq(tenantUsers.userId, users.id))
+      .where(and(
+        eq(tenantUsers.tenantId, activeTenantId),
+        eq(tenantUsers.status, 'active'),
+        eq(users.isActive, true),
+        sql`${tenantUsers.role} != 'client'`,
+      ))
+      .orderBy(users.name);
+      
+      res.json(memberships);
+    } catch (error) {
+      console.error("[FINANCIAL_ALERTS] Failed to fetch recipients:", error);
+      res.status(500).json({ message: "Failed to fetch financial alert recipients" });
+    }
+  });
+
+  app.patch("/api/tenant/financial-alert-recipients/:membershipId", requireAuth, requireRole(["admin"]), async (req, res) => {
+    try {
+      const activeTenantId = (req.user as any)?.tenantId;
+      if (!activeTenantId) {
+        return res.status(400).json({ message: "No active tenant context" });
+      }
+      
+      const { receiveFinancialAlerts } = req.body;
+      if (typeof receiveFinancialAlerts !== 'boolean') {
+        return res.status(400).json({ message: "receiveFinancialAlerts must be a boolean" });
+      }
+      
+      const [membership] = await db.select()
+        .from(tenantUsers)
+        .where(and(
+          eq(tenantUsers.id, req.params.membershipId),
+          eq(tenantUsers.tenantId, activeTenantId),
+        ));
+      
+      if (!membership) {
+        return res.status(404).json({ message: "Membership not found in this tenant" });
+      }
+      
+      const [updated] = await db.update(tenantUsers)
+        .set({ receiveFinancialAlerts })
+        .where(eq(tenantUsers.id, req.params.membershipId))
+        .returning();
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("[FINANCIAL_ALERTS] Failed to update recipient:", error);
+      res.status(500).json({ message: "Failed to update financial alert recipient" });
     }
   });
 
@@ -8552,7 +8621,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
             projectMap.set(p.code.toLowerCase(), p.id); // Also map by project code
           });
 
-          const users = await storage.getUsers();
+          const users = await storage.getUsers(tenantId);
           const userMap = new Map();
           users.forEach(u => {
             // Map by full name (from name field)
@@ -10507,7 +10576,8 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
-      const allUsers = await storage.getUsers();
+      const raiiddTenantId = req.user?.tenantId;
+      const allUsers = await storage.getUsers(raiiddTenantId);
       const userEmailToId = new Map(allUsers.filter((u: any) => u.email).map((u: any) => [u.email.toLowerCase(), u.id]));
       const userNameToId = new Map(allUsers.map((u: any) => [u.name.toLowerCase(), u.id]));
 

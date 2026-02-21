@@ -2371,8 +2371,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Get all line items
       const lineItems = await storage.getEstimateLineItems(estimateId);
       
-      // Get all users to lookup current rates
-      const users = await storage.getUsers();
+      // Get all users to lookup current rates (tenant-scoped)
+      const users = await storage.getUsers(req.user?.tenantId);
       const userMap = new Map(users.map(u => [u.id, u]));
 
       // Get all roles to lookup default rates for role-based estimates
@@ -3923,7 +3923,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      const users = await storage.getUsers();
+      const users = await storage.getUsers(req.user?.tenantId);
 
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));
       // Stage lookup uses composite key: epicId:stageName to handle same-named stages in different epics
@@ -4148,10 +4148,10 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         return res.status(404).json({ message: "Estimate not found" });
       }
 
-      // Get epics, stages, and users for lookup
+      // Get epics, stages, and users for lookup (tenant-scoped)
       const epics = await storage.getEstimateEpics(req.params.id);
       const stages = await storage.getEstimateStages(req.params.id);
-      const users = await storage.getUsers();
+      const users = await storage.getUsers(req.user?.tenantId);
 
       // Create lookup maps for epic and stage IDs by name
       const epicNameToId = new Map(epics.map(e => [e.name.toLowerCase(), e.id]));

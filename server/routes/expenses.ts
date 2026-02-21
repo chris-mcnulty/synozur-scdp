@@ -1312,7 +1312,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       
       const submitter = await storage.getUser(submitted.submitterId);
       if (submitter && submitter.email && submitter.name) {
-        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenantId = (submitted as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
@@ -1330,22 +1330,23 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
           reportUrl
         );
         
-        const allUsers = await storage.getUsers();
-        const approvers = allUsers.filter(u => 
-          ['admin', 'executive', 'billing-admin'].includes(u.role) && u.email && u.name
-        );
-        
-        for (const approver of approvers) {
-          await emailService.notifyExpenseReportNeedsApproval(
-            { email: approver.email!, name: approver.name! },
-            { email: submitter.email, name: submitter.name },
-            submitted.reportNumber,
-            submitted.title,
-            submitted.totalAmount,
-            submitted.currency,
-            branding,
-            reportUrl
-          );
+        if (tenantId) {
+          const approvers = await storage.getFinancialAlertRecipients(tenantId);
+          
+          for (const approver of approvers) {
+            if (approver.email && approver.name) {
+              await emailService.notifyExpenseReportNeedsApproval(
+                { email: approver.email, name: approver.name },
+                { email: submitter.email, name: submitter.name },
+                submitted.reportNumber,
+                submitted.title,
+                submitted.totalAmount,
+                submitted.currency,
+                branding,
+                reportUrl
+              );
+            }
+          }
         }
       }
       
@@ -1367,7 +1368,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       
       const submitter = await storage.getUser(approved.submitterId);
       if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
-        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenantId = (approved as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         
@@ -1411,7 +1412,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
       
       const submitter = await storage.getUser(rejected.submitterId);
       if (submitter && submitter.email && submitter.name && req.user?.email && req.user?.name) {
-        const tenantId = (req.user as any)?.primaryTenantId;
+        const tenantId = (rejected as any).tenantId || (req.user as any)?.tenantId || (req.user as any)?.primaryTenantId;
         const tenant = tenantId ? await storage.getTenant(tenantId) : null;
         const branding = tenant ? { emailHeaderUrl: tenant.emailHeaderUrl, companyName: tenant.name } : undefined;
         

@@ -233,6 +233,9 @@ export const tenantUsers = pgTable("tenant_users", {
   // Status
   status: varchar("status", { length: 50 }).default("active"), // active, suspended, invited
   
+  // Notification preferences (tenant-specific)
+  receiveFinancialAlerts: boolean("receive_financial_alerts").notNull().default(false),
+  
   // Invitation tracking
   invitedBy: varchar("invited_by").references(() => users.id),
   invitedAt: timestamp("invited_at"),

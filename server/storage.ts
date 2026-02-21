@@ -232,6 +232,7 @@ function convertDecimalFieldsToNumbers<T extends Record<string, any>>(obj: T): T
 export interface IStorage {
   // Users
   getUsers(tenantId?: string, options?: { includeInactive?: boolean; includeStakeholders?: boolean }): Promise<User[]>;
+  getFinancialAlertRecipients(tenantId: string): Promise<User[]>;
   getUser(id: string): Promise<User | undefined>;
   getUsersByIds(ids: string[]): Promise<Map<string, User>>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -1093,6 +1094,35 @@ export class DatabaseStorage implements IStorage {
     return await db.select()
       .from(users)
       .orderBy(users.name);
+  }
+
+  async getFinancialAlertRecipients(tenantId: string): Promise<User[]> {
+    const results = await db.select({ user: users })
+      .from(users)
+      .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+      .where(and(
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.status, 'active'),
+        eq(tenantUsers.receiveFinancialAlerts, true),
+        eq(users.isActive, true),
+      ))
+      .orderBy(users.name);
+    
+    if (results.length > 0) {
+      return results.map(r => r.user);
+    }
+    
+    const fallbackResults = await db.select({ user: users })
+      .from(users)
+      .innerJoin(tenantUsers, eq(users.id, tenantUsers.userId))
+      .where(and(
+        eq(tenantUsers.tenantId, tenantId),
+        eq(tenantUsers.status, 'active'),
+        inArray(tenantUsers.role, ['admin', 'billing-admin']),
+        eq(users.isActive, true),
+      ))
+      .orderBy(users.name);
+    return fallbackResults.map(r => r.user);
   }
 
   async getUser(id: string): Promise<User | undefined> {
