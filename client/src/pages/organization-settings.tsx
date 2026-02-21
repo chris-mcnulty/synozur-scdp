@@ -258,8 +258,7 @@ function HubSpotIntegrationCard() {
   const handleConnect = async () => {
     setIsConnecting(true);
     try {
-      const res = await apiRequest("/api/crm/hubspot/oauth/start");
-      const data = await res.json();
+      const data = await apiRequest("/api/crm/hubspot/oauth/start");
       if (data.authorizeUrl) {
         window.open(data.authorizeUrl, "_blank", "width=600,height=700");
         setTimeout(() => {
