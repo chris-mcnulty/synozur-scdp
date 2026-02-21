@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   FileText, Copy, Download, Mail, Sparkles, Calendar, 
   Edit, Eye, Loader2, Check, Send, X, Presentation
@@ -75,6 +76,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [emailName, setEmailName] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [isDownloadingPptx, setIsDownloadingPptx] = useState(false);
+  const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
+  const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
 
   const getDateRange = useCallback(() => {
     switch (periodPreset) {
@@ -194,6 +197,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           startDate: start,
           endDate: end,
           style,
+          includeProjectPlan,
+          projectPlanFilter,
         }),
       });
       if (!response.ok) throw new Error('Export failed');
@@ -212,7 +217,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
     } finally {
       setIsDownloadingPptx(false);
     }
-  }, [projectId, style, getDateRange, toast]);
+  }, [projectId, style, includeProjectPlan, projectPlanFilter, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
   const periodLabel = `${format(new Date(displayStart), "MMM d")} - ${format(new Date(displayEnd), "MMM d, yyyy")}`;
@@ -283,6 +288,47 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">PowerPoint Options</Label>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="includeProjectPlan"
+                    checked={includeProjectPlan}
+                    onCheckedChange={(checked) => setIncludeProjectPlan(checked === true)}
+                  />
+                  <label htmlFor="includeProjectPlan" className="text-sm cursor-pointer">
+                    Include Project Plan
+                  </label>
+                </div>
+                {includeProjectPlan && (
+                  <div className="ml-6 flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">Show:</span>
+                    <button
+                      onClick={() => setProjectPlanFilter("open")}
+                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        projectPlanFilter === "open"
+                          ? "border-primary bg-primary/10 text-primary font-medium"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      Open Only
+                    </button>
+                    <button
+                      onClick={() => setProjectPlanFilter("all")}
+                      className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+                        projectPlanFilter === "all"
+                          ? "border-primary bg-primary/10 text-primary font-medium"
+                          : "border-border text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      All Assignments
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

@@ -901,6 +901,185 @@ def _draw_milestone_table_fallback(slide, milestones, primary_color):
             dates = ms['startDate']
         set_cell_text(table.cell(r, 3), dates, size=9)
 
+def create_project_plan_slides(prs, data, primary_color, secondary_color):
+    """Project Plan slides: assignments grouped by epic → stage, sorted by start date.
+    Single line per assignment. Auto-paginates across multiple slides."""
+    project_plan = data.get('projectPlan')
+    if not project_plan:
+        return
+
+    groups = project_plan.get('groups', [])
+    plan_filter = project_plan.get('filter', 'open')
+    if not groups:
+        return
+
+    PAGE_TOP = Inches(1.1)
+    PAGE_BOTTOM = Inches(7.0)
+    LEFT_MARGIN = Inches(0.5)
+    CONTENT_WIDTH = Inches(12.3)
+    EPIC_HEIGHT = Inches(0.32)
+    STAGE_HEIGHT = Inches(0.28)
+    ROW_HEIGHT = Inches(0.24)
+    HEADER_HEIGHT = Inches(0.28)
+
+    STATUS_ICONS = {
+        'open': '\u25CB',
+        'in_progress': '\u25D2',
+        'completed': '\u2713',
+        'cancelled': '\u2717',
+    }
+    STATUS_COLORS = {
+        'open': '#9ca3af',
+        'in_progress': '#3b82f6',
+        'completed': '#22c55e',
+        'cancelled': '#ef4444',
+    }
+
+    flat_items = []
+    for group in groups:
+        epic_name = group.get('epicName', 'Unnamed Epic')
+        flat_items.append(('epic', epic_name, None))
+        for stage_data in group.get('stages', []):
+            stage_name = stage_data.get('stageName', '')
+            flat_items.append(('stage', stage_name, None))
+            for assignment in stage_data.get('assignments', []):
+                flat_items.append(('assignment', None, assignment))
+
+    def item_height(item_type):
+        if item_type == 'epic':
+            return EPIC_HEIGHT
+        elif item_type == 'stage':
+            return STAGE_HEIGHT
+        else:
+            return ROW_HEIGHT
+
+    def start_new_slide(page_num):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        add_accent_bar(slide, primary_color, top=0)
+
+        txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        filter_label = "All Assignments" if plan_filter == 'all' else "Open Assignments"
+        suffix = f" (Page {page_num})" if page_num > 1 else ""
+        run.text = f"Project Plan — {filter_label}{suffix}"
+        set_font(run, size=22, bold=True, color=primary_color)
+
+        y = PAGE_TOP
+        cols = [
+            (Inches(0.3), 'Status'),
+            (Inches(2.8), 'Assignee'),
+            (Inches(3.8), 'Task'),
+            (Inches(1.3), 'Hours'),
+            (Inches(1.5), 'Start'),
+            (Inches(1.5), 'End'),
+        ]
+        x = LEFT_MARGIN
+        for col_w, col_label in cols:
+            hdr = slide.shapes.add_textbox(x, y, col_w, HEADER_HEIGHT)
+            tf_h = hdr.text_frame
+            tf_h.word_wrap = False
+            p_h = tf_h.paragraphs[0]
+            run_h = p_h.add_run()
+            run_h.text = col_label
+            set_font(run_h, size=7, bold=True, color='#666666')
+            x += col_w
+
+        line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, LEFT_MARGIN, y + HEADER_HEIGHT - Inches(0.02), CONTENT_WIDTH, Inches(0.01))
+        line.fill.solid()
+        line.fill.fore_color.rgb = hex_to_rgb('#dddddd')
+        line.line.fill.background()
+
+        return slide, y + HEADER_HEIGHT
+
+    page_num = 1
+    slide, y_cursor = start_new_slide(page_num)
+
+    for item_type, label, assignment in flat_items:
+        h = item_height(item_type)
+        if y_cursor + h > PAGE_BOTTOM:
+            page_num += 1
+            slide, y_cursor = start_new_slide(page_num)
+
+        if item_type == 'epic':
+            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, LEFT_MARGIN, y_cursor, CONTENT_WIDTH, EPIC_HEIGHT)
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = hex_to_rgb(primary_color)
+            bg.line.fill.background()
+
+            epic_txt = slide.shapes.add_textbox(LEFT_MARGIN + Inches(0.15), y_cursor, Inches(10), EPIC_HEIGHT)
+            tf = epic_txt.text_frame
+            tf.word_wrap = False
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.LEFT
+            run = p.add_run()
+            run.text = label
+            set_font(run, size=9, bold=True, color=RGBColor(255, 255, 255))
+            y_cursor += EPIC_HEIGHT
+
+        elif item_type == 'stage':
+            bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, LEFT_MARGIN, y_cursor, CONTENT_WIDTH, STAGE_HEIGHT)
+            bg.fill.solid()
+            bg.fill.fore_color.rgb = hex_to_rgb('#f0f0f0')
+            bg.line.fill.background()
+
+            stage_txt = slide.shapes.add_textbox(LEFT_MARGIN + Inches(0.3), y_cursor, Inches(10), STAGE_HEIGHT)
+            tf = stage_txt.text_frame
+            tf.word_wrap = False
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = label
+            set_font(run, size=8, bold=True, color='#333333')
+            y_cursor += STAGE_HEIGHT
+
+        else:
+            status = assignment.get('status', 'open')
+            icon = STATUS_ICONS.get(status, '\u25CB')
+            icon_color = STATUS_COLORS.get(status, '#9ca3af')
+
+            assignee = assignment.get('assignee', '')
+            task = assignment.get('task', '')
+            hours = assignment.get('hours', 0)
+            start_d = assignment.get('startDate', '')
+            end_d = assignment.get('endDate', '')
+
+            if start_d:
+                try:
+                    sd = datetime.strptime(start_d[:10], '%Y-%m-%d')
+                    start_d = sd.strftime('%b %d, %Y')
+                except:
+                    pass
+            if end_d:
+                try:
+                    ed = datetime.strptime(end_d[:10], '%Y-%m-%d')
+                    end_d = ed.strftime('%b %d, %Y')
+                except:
+                    pass
+
+            x = LEFT_MARGIN
+            cols_data = [
+                (Inches(0.3), icon, icon_color, True),
+                (Inches(2.8), assignee, '#222222', False),
+                (Inches(3.8), task[:80] + ('...' if len(task) > 80 else ''), '#444444', False),
+                (Inches(1.3), f"{hours:.1f}h" if hours else '', '#555555', False),
+                (Inches(1.5), start_d, '#555555', False),
+                (Inches(1.5), end_d, '#555555', False),
+            ]
+            for col_w, text, color, is_icon in cols_data:
+                cell = slide.shapes.add_textbox(x, y_cursor, col_w, ROW_HEIGHT)
+                tf = cell.text_frame
+                tf.word_wrap = False
+                p = tf.paragraphs[0]
+                run = p.add_run()
+                run.text = str(text)
+                sz = 10 if is_icon else 7
+                set_font(run, size=sz, color=color)
+                x += col_w
+
+            y_cursor += ROW_HEIGHT
+
+
 def generate_pptx(data, output_path):
     primary_color = data.get('primaryColor', '#810FFB')
     secondary_color = data.get('secondaryColor', '#E60CB3')
@@ -918,6 +1097,7 @@ def generate_pptx(data, output_path):
     create_raidd_slide(prs, data, sections, primary_color, secondary_color)
     create_upcoming_slide(prs, data, sections, primary_color, secondary_color)
     create_timeline_slide(prs, data, primary_color, secondary_color)
+    create_project_plan_slides(prs, data, primary_color, secondary_color)
 
     prs.save(output_path)
     return output_path

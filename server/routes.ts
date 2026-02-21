@@ -7169,7 +7169,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(403).json({ message: "You can only export projects you manage" });
       }
 
-      const { startDate, endDate, style } = req.body;
+      const { startDate, endDate, style, includeProjectPlan, projectPlanFilter } = req.body;
       const reportStyle = ["executive_brief", "detailed_update", "client_facing"].includes(style) ? style : "client_facing";
 
       const effectiveStartDate = startDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -7575,6 +7575,107 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           return { epicGroups, unlinkedMilestones, paymentMilestones };
         })(),
       };
+
+      if (includeProjectPlan) {
+        const planFilter = projectPlanFilter === 'all' ? 'all' : 'open';
+        const filteredAllocations = planFilter === 'all'
+          ? allocations
+          : allocations.filter((a: any) => a.status === 'open' || a.status === 'in_progress');
+
+        const userCache = new Map<string, string>();
+        const roleCache = new Map<string, string>();
+        for (const alloc of filteredAllocations) {
+          const personId = (alloc as any).personId;
+          const roleId = (alloc as any).roleId;
+          if (personId && !userCache.has(personId)) {
+            try {
+              const u = await storage.getUser(personId);
+              userCache.set(personId, u?.name || 'Unassigned');
+            } catch { userCache.set(personId, 'Unassigned'); }
+          }
+          if (roleId && !roleCache.has(roleId)) {
+            try {
+              const r = await storage.getRole(roleId);
+              roleCache.set(roleId, r?.name || 'Unknown Role');
+            } catch { roleCache.set(roleId, 'Unknown Role'); }
+          }
+        }
+
+        const epicStageMap = new Map<string, Map<string, any[]>>();
+        const epicNameMap = new Map<string, { name: string; order: number }>();
+        const stageNameMap = new Map<string, { name: string; order: number }>();
+
+        for (const epic of epics) {
+          epicNameMap.set(epic.id, { name: epic.name, order: epic.order });
+        }
+        for (const stage of allStages) {
+          stageNameMap.set(stage.id, { name: stage.name, order: stage.order });
+        }
+
+        for (const alloc of filteredAllocations) {
+          const epicId = (alloc as any).projectEpicId || '__none__';
+          const stageId = (alloc as any).projectStageId || '__none__';
+
+          if (!epicStageMap.has(epicId)) {
+            epicStageMap.set(epicId, new Map());
+          }
+          const stageMap = epicStageMap.get(epicId)!;
+          if (!stageMap.has(stageId)) {
+            stageMap.set(stageId, []);
+          }
+
+          const personId = (alloc as any).personId;
+          const roleId = (alloc as any).roleId;
+          const assigneeName = personId ? userCache.get(personId) || 'Unassigned'
+            : (alloc as any).resourceName || (roleId ? roleCache.get(roleId) || 'Unknown Role' : 'Unassigned');
+
+          stageMap.get(stageId)!.push({
+            assignee: assigneeName,
+            task: (alloc as any).taskDescription || '',
+            hours: Number((alloc as any).hours || 0),
+            startDate: (alloc as any).plannedStartDate || '',
+            endDate: (alloc as any).plannedEndDate || '',
+            status: (alloc as any).status || 'open',
+          });
+        }
+
+        const projectPlanGroups: any[] = [];
+        const sortedEpicIds = Array.from(epicStageMap.keys()).sort((a, b) => {
+          const orderA = epicNameMap.get(a)?.order ?? 999;
+          const orderB = epicNameMap.get(b)?.order ?? 999;
+          return orderA - orderB;
+        });
+
+        for (const epicId of sortedEpicIds) {
+          const epicName = epicNameMap.get(epicId)?.name || 'Unlinked';
+          const stageMap = epicStageMap.get(epicId)!;
+
+          const sortedStageIds = Array.from(stageMap.keys()).sort((a, b) => {
+            const orderA = stageNameMap.get(a)?.order ?? 999;
+            const orderB = stageNameMap.get(b)?.order ?? 999;
+            return orderA - orderB;
+          });
+
+          const stages: any[] = [];
+          for (const stageId of sortedStageIds) {
+            const stageName = stageNameMap.get(stageId)?.name || 'Unlinked';
+            const assignments = stageMap.get(stageId)!.sort((a: any, b: any) => {
+              if (a.startDate && b.startDate) return a.startDate < b.startDate ? -1 : 1;
+              if (a.startDate) return -1;
+              if (b.startDate) return 1;
+              return 0;
+            });
+            stages.push({ stageName, assignments });
+          }
+
+          projectPlanGroups.push({ epicName, stages });
+        }
+
+        (pptxData as any).projectPlan = {
+          filter: planFilter,
+          groups: projectPlanGroups,
+        };
+      }
 
       const tmpFile = pathNode.join(osNode.tmpdir(), `status-report-${Date.now()}.pptx`);
       const scriptPath = pathNode.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
