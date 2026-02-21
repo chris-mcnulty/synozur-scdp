@@ -949,6 +949,11 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.json({ contacts: [], crmEnabled: false });
       }
 
+      const client = await storage.getClient(req.params.clientId);
+      if (client && client.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Client does not belong to this tenant" });
+      }
+
       const companyMapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", req.params.clientId);
       if (!companyMapping) {
         return res.json({ contacts: [], crmEnabled: true, companyLinked: false });
