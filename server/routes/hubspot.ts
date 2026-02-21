@@ -77,7 +77,8 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
 
       const state = createSignedState(tenantId);
 
-      const redirectUri = `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      const redirectUri = `${protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
 
       const scopes = [
         'crm.objects.deals.read',
@@ -127,7 +128,8 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.status(500).send('<html><body><h2>Platform HubSpot credentials not configured</h2></body></html>');
       }
 
-      const redirectUri = `${req.protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
+      const redirectUri = `${protocol}://${req.get('host')}/api/crm/hubspot/oauth/callback`;
 
       const tokenResponse = await fetch('https://api.hubapi.com/oauth/v1/token', {
         method: 'POST',
