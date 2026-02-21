@@ -99,6 +99,210 @@ type ClientEditForm = Partial<Client> & {
   vocabularyWorkstream?: string;
 };
 
+function ClientCrmLink({ clientId }: { clientId: string }) {
+  const { toast } = useToast();
+
+  interface CrmLinkData {
+    linked: boolean;
+    crmEnabled: boolean;
+    mapping?: { id: string; crmObjectId: string };
+    company?: { id: string; name: string; domain: string | null; industry: string | null; city: string | null; state: string | null; phone: string | null; website: string | null };
+  }
+
+  interface HubSpotCompanyItem {
+    id: string;
+    name: string;
+    domain: string | null;
+    industry: string | null;
+    isMapped: boolean;
+  }
+
+  const { data: crmLink, isLoading } = useQuery<CrmLinkData>({
+    queryKey: ["/api/clients", clientId, "crm-link"],
+    queryFn: () => fetch(`/api/clients/${clientId}/crm-link`).then(r => r.json()),
+  });
+
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [companySearch, setCompanySearch] = useState("");
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
+
+  const { data: companiesData } = useQuery<{ companies: HubSpotCompanyItem[] }>({
+    queryKey: ["/api/crm/companies", companySearch],
+    queryFn: () => fetch(`/api/crm/companies?search=${encodeURIComponent(companySearch)}`).then(r => r.json()),
+    enabled: showLinkDialog && crmLink?.crmEnabled === true,
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: (companyId: string) =>
+      apiRequest(`/api/crm/companies/${companyId}/link-client`, {
+        method: "POST",
+        body: JSON.stringify({ clientId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "crm-link"] });
+      setShowLinkDialog(false);
+      toast({ title: "HubSpot company linked" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to link", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (companyId: string) =>
+      apiRequest(`/api/crm/companies/${companyId}/unlink-client`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "crm-link"] });
+      toast({ title: "HubSpot company unlinked" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to unlink", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: (data: { companyId: string; direction: string }) =>
+      apiRequest(`/api/crm/companies/${data.companyId}/sync`, {
+        method: "POST",
+        body: JSON.stringify({ direction: data.direction }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "crm-link"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId] });
+      toast({ title: "Sync complete" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) return null;
+  if (!crmLink?.crmEnabled) return null;
+
+  return (
+    <>
+      <Card className="mt-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Building2 className="h-4 w-4" />
+            HubSpot CRM
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {crmLink?.linked && crmLink.company ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Badge variant="outline" className="text-green-600 border-green-600">
+                  <CheckCircle className="h-3 w-3 mr-1" />
+                  Linked
+                </Badge>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{crmLink.company.name}</p>
+                {crmLink.company.domain && (
+                  <p className="text-xs text-muted-foreground">{crmLink.company.domain}</p>
+                )}
+                {crmLink.company.industry && (
+                  <p className="text-xs text-muted-foreground">{crmLink.company.industry}</p>
+                )}
+                {(crmLink.company.city || crmLink.company.state) && (
+                  <p className="text-xs text-muted-foreground">
+                    {[crmLink.company.city, crmLink.company.state].filter(Boolean).join(", ")}
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncMutation.mutate({ companyId: crmLink.mapping!.crmObjectId, direction: "from_hubspot" })}
+                  disabled={syncMutation.isPending}
+                >
+                  <TrendingUp className="h-3 w-3 mr-1" />
+                  Sync from HubSpot
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    if (confirm("Unlink this HubSpot company from this client?")) {
+                      unlinkMutation.mutate(crmLink.mapping!.crmObjectId);
+                    }
+                  }}
+                  disabled={unlinkMutation.isPending}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Unlink
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                No HubSpot company linked to this client.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setShowLinkDialog(true)}>
+                <UserPlus className="h-4 w-4 mr-1" />
+                Link HubSpot Company
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link HubSpot Company</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Search HubSpot Companies</Label>
+              <Input
+                placeholder="Type to search..."
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+              />
+            </div>
+            <div className="max-h-60 overflow-y-auto border rounded-md">
+              {companiesData?.companies?.map((company) => (
+                <div
+                  key={company.id}
+                  className={`flex items-center justify-between p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${selectedCompanyId === company.id ? "bg-primary/10" : ""} ${company.isMapped ? "opacity-50" : ""}`}
+                  onClick={() => !company.isMapped && setSelectedCompanyId(company.id)}
+                >
+                  <div>
+                    <p className="text-sm font-medium">{company.name}</p>
+                    {company.domain && <p className="text-xs text-muted-foreground">{company.domain}</p>}
+                    {company.industry && <p className="text-xs text-muted-foreground">{company.industry}</p>}
+                  </div>
+                  {company.isMapped && (
+                    <Badge variant="secondary" className="text-xs">Already linked</Badge>
+                  )}
+                </div>
+              ))}
+              {companiesData?.companies?.length === 0 && (
+                <p className="text-sm text-muted-foreground p-3 text-center">No companies found</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLinkDialog(false)}>Cancel</Button>
+            <Button
+              disabled={!selectedCompanyId || linkMutation.isPending}
+              onClick={() => linkMutation.mutate(selectedCompanyId)}
+            >
+              {linkMutation.isPending ? "Linking..." : "Link Company"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function ClientDetail() {
   const { id: clientId } = useParams<{ id: string }>();
   const [location, setLocation] = useLocation();
@@ -1010,6 +1214,7 @@ export default function ClientDetail() {
                     </div>
                   </CardContent>
                 </Card>
+                <ClientCrmLink clientId={clientId!} />
               </div>
             </div>
           </TabsContent>

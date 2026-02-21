@@ -33,6 +33,8 @@ interface HubSpotDeal {
   updatedAt: string;
   isMapped: boolean;
   mapping: { localObjectId: string } | null;
+  companyLinked: boolean;
+  linkedClientId: string | null;
 }
 
 interface DealsResponse {
@@ -247,7 +249,14 @@ export default function CrmDeals() {
                           <div>
                             <p className="font-medium">{deal.dealName}</p>
                             {deal.companyName && (
-                              <p className="text-xs text-muted-foreground">{deal.companyName}</p>
+                              <div className="flex items-center gap-1">
+                                <p className="text-xs text-muted-foreground">{deal.companyName}</p>
+                                {deal.companyLinked && (
+                                  <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 border-green-600">
+                                    Client linked
+                                  </Badge>
+                                )}
+                              </div>
                             )}
                           </div>
                         </TableCell>

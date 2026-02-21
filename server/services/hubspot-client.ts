@@ -258,6 +258,94 @@ export async function getHubSpotDealCompanyAssociations(dealId: string): Promise
   return null;
 }
 
+export interface HubSpotCompany {
+  id: string;
+  name: string;
+  domain: string | null;
+  industry: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  phone: string | null;
+  website: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const COMPANY_PROPERTIES = ['name', 'domain', 'industry', 'city', 'state', 'country', 'phone', 'website', 'createdate', 'hs_lastmodifieddate'];
+
+function mapCompany(company: any): HubSpotCompany {
+  const p = company.properties || {};
+  return {
+    id: company.id,
+    name: p.name || 'Unknown Company',
+    domain: p.domain || null,
+    industry: p.industry || null,
+    city: p.city || null,
+    state: p.state || null,
+    country: p.country || null,
+    phone: p.phone || null,
+    website: p.website || null,
+    createdAt: p.createdate || String(company.createdAt),
+    updatedAt: p.hs_lastmodifieddate || String(company.updatedAt),
+  };
+}
+
+export async function getHubSpotCompanies(limit: number = 100): Promise<HubSpotCompany[]> {
+  const client = await getUncachableHubSpotClient();
+  const companies: HubSpotCompany[] = [];
+  let after: string | undefined;
+
+  while (true) {
+    const response = await client.crm.companies.basicApi.getPage(
+      Math.min(limit - companies.length, 100),
+      after,
+      COMPANY_PROPERTIES
+    );
+
+    for (const company of response.results) {
+      companies.push(mapCompany(company));
+    }
+
+    if (companies.length >= limit || !response.paging?.next?.after) break;
+    after = response.paging.next.after;
+  }
+
+  return companies;
+}
+
+export async function getHubSpotCompanyById(companyId: string): Promise<HubSpotCompany | null> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const company = await client.crm.companies.basicApi.getById(companyId, COMPANY_PROPERTIES);
+    return mapCompany(company);
+  } catch {
+    return null;
+  }
+}
+
+export async function searchHubSpotCompanies(query: string): Promise<HubSpotCompany[]> {
+  const client = await getUncachableHubSpotClient();
+  try {
+    const response = await client.crm.companies.searchApi.doSearch({
+      query,
+      limit: 20,
+      properties: COMPANY_PROPERTIES,
+      filterGroups: [],
+      sorts: [],
+      after: 0 as any,
+    });
+    return response.results.map(mapCompany);
+  } catch {
+    return [];
+  }
+}
+
+export async function updateHubSpotCompany(companyId: string, properties: Record<string, string>): Promise<void> {
+  const client = await getUncachableHubSpotClient();
+  await client.crm.companies.basicApi.update(companyId, { properties });
+}
+
 export async function isHubSpotConnected(): Promise<boolean> {
   try {
     await getAccessToken();

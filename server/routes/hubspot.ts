@@ -8,6 +8,10 @@ import {
   getHubSpotDealCompanyAssociations,
   updateHubSpotDealAmount,
   isHubSpotConnected,
+  getHubSpotCompanies,
+  getHubSpotCompanyById,
+  searchHubSpotCompanies,
+  updateHubSpotCompany,
 } from "../services/hubspot-client.js";
 
 interface HubSpotRouteDeps {
@@ -104,11 +108,19 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
       const mappedDealIds = new Set(mappings.map(m => m.crmObjectId));
 
-      const enrichedDeals = deals.map(deal => ({
-        ...deal,
-        isMapped: mappedDealIds.has(deal.id),
-        mapping: mappings.find(m => m.crmObjectId === deal.id) || null,
-      }));
+      const companyMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
+      const mappedCompanyIds = new Map(companyMappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedDeals = deals.map(deal => {
+        const companyMapping = deal.companyId ? mappedCompanyIds.get(deal.companyId) : null;
+        return {
+          ...deal,
+          isMapped: mappedDealIds.has(deal.id),
+          mapping: mappings.find(m => m.crmObjectId === deal.id) || null,
+          companyLinked: !!companyMapping,
+          linkedClientId: companyMapping?.localObjectId || null,
+        };
+      });
 
       await storage.updateCrmSyncStatus(tenantId, "hubspot", "success");
 
@@ -288,6 +300,300 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       res.json({ success: true });
     } catch (error: any) {
       console.error("[CRM] Error deleting mapping:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/companies", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const search = req.query.search as string | undefined;
+      let companies;
+      if (search && search.length >= 2) {
+        companies = await searchHubSpotCompanies(search);
+      } else {
+        companies = await getHubSpotCompanies(200);
+      }
+
+      const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
+      const mappedCompanyIds = new Map(mappings.map(m => [m.crmObjectId, m]));
+
+      const enrichedCompanies = companies.map(company => ({
+        ...company,
+        isMapped: mappedCompanyIds.has(company.id),
+        mapping: mappedCompanyIds.get(company.id) || null,
+      }));
+
+      res.json({ companies: enrichedCompanies });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching companies:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/crm/companies/:companyId", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const company = await getHubSpotCompanyById(req.params.companyId);
+      if (!company) {
+        return res.status(404).json({ message: "Company not found in HubSpot" });
+      }
+
+      const mapping = await storage.getCrmObjectMapping(tenantId, "hubspot", "company", req.params.companyId);
+
+      res.json({ ...company, isMapped: !!mapping, mapping: mapping || null });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/companies/:companyId/link-client", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const { companyId } = req.params;
+      const schema = z.object({
+        clientId: z.string().optional(),
+        createNew: z.boolean().optional(),
+        syncFields: z.boolean().optional().default(true),
+      });
+      const body = schema.parse(req.body);
+
+      const existing = await storage.getCrmObjectMapping(tenantId, "hubspot", "company", companyId);
+      if (existing) {
+        return res.status(409).json({ message: "This HubSpot company is already linked to a client", mapping: existing });
+      }
+
+      const hsCompany = await getHubSpotCompanyById(companyId);
+      if (!hsCompany) {
+        return res.status(404).json({ message: "Company not found in HubSpot" });
+      }
+
+      let clientId = body.clientId;
+
+      if (!clientId && body.createNew !== false) {
+        const newClient = await storage.createClient({
+          name: hsCompany.name,
+          tenantId,
+          status: "active",
+          currency: "USD",
+          hasMsa: false,
+          hasNda: false,
+          contactName: null,
+          billingContact: null,
+        });
+        clientId = newClient.id;
+      }
+
+      if (!clientId) {
+        return res.status(400).json({ message: "Either provide a clientId or allow creating a new client" });
+      }
+
+      const clientMappingExists = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", clientId);
+      if (clientMappingExists) {
+        return res.status(409).json({ message: "This client is already linked to a HubSpot company", mapping: clientMappingExists });
+      }
+
+      const mapping = await storage.createCrmObjectMapping({
+        tenantId,
+        crmProvider: "hubspot",
+        crmObjectType: "company",
+        crmObjectId: companyId,
+        localObjectType: "client",
+        localObjectId: clientId,
+        metadata: {
+          companyName: hsCompany.name,
+          domain: hsCompany.domain,
+          linkedAt: new Date().toISOString(),
+        } as any,
+      });
+
+      if (body.syncFields) {
+        const updateData: Record<string, any> = {};
+        if (hsCompany.domain) updateData.billingContact = hsCompany.domain;
+        if (Object.keys(updateData).length > 0) {
+          await storage.updateClient(clientId, updateData);
+        }
+      }
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "company_linked",
+        status: "success",
+        localObjectType: "client",
+        localObjectId: clientId,
+        crmObjectType: "company",
+        crmObjectId: companyId,
+        requestPayload: body as any,
+      });
+
+      const client = await storage.getClient(clientId);
+      res.json({ mapping, client, company: hsCompany });
+    } catch (error: any) {
+      console.error("[CRM] Error linking company to client:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/crm/companies/:companyId/unlink-client", deps.requireAuth, deps.requireRole(["admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const { companyId } = req.params;
+      const mapping = await storage.getCrmObjectMapping(tenantId, "hubspot", "company", companyId);
+      if (!mapping) {
+        return res.status(404).json({ message: "No mapping found for this company" });
+      }
+
+      await storage.deleteCrmObjectMapping(mapping.id);
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "company_unlinked",
+        status: "success",
+        localObjectType: "client",
+        localObjectId: mapping.localObjectId,
+        crmObjectType: "company",
+        crmObjectId: companyId,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[CRM] Error unlinking company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/companies/:companyId/sync", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const { companyId } = req.params;
+      const schema = z.object({
+        direction: z.enum(["from_hubspot", "to_hubspot"]).default("from_hubspot"),
+      });
+      const body = schema.parse(req.body);
+
+      const mapping = await storage.getCrmObjectMapping(tenantId, "hubspot", "company", companyId);
+      if (!mapping) {
+        return res.status(404).json({ message: "This company is not linked to a client" });
+      }
+
+      const hsCompany = await getHubSpotCompanyById(companyId);
+      if (!hsCompany) {
+        return res.status(404).json({ message: "Company not found in HubSpot" });
+      }
+
+      const client = await storage.getClient(mapping.localObjectId);
+      if (!client) {
+        return res.status(404).json({ message: "Linked client not found" });
+      }
+
+      if (body.direction === "from_hubspot") {
+        const updateData: Record<string, any> = {};
+        if (hsCompany.name && hsCompany.name !== client.name) updateData.name = hsCompany.name;
+        if (hsCompany.domain) updateData.billingContact = hsCompany.domain;
+
+        if (Object.keys(updateData).length > 0) {
+          await storage.updateClient(mapping.localObjectId, updateData);
+        }
+
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action: "company_sync_from_hubspot",
+          status: "success",
+          localObjectType: "client",
+          localObjectId: mapping.localObjectId,
+          crmObjectType: "company",
+          crmObjectId: companyId,
+          requestPayload: updateData as any,
+        });
+
+        const updatedClient = await storage.getClient(mapping.localObjectId);
+        res.json({ client: updatedClient, company: hsCompany, synced: Object.keys(updateData) });
+      } else {
+        const properties: Record<string, string> = {};
+        if (client.name && client.name !== hsCompany.name) properties.name = client.name;
+
+        if (Object.keys(properties).length > 0) {
+          await updateHubSpotCompany(companyId, properties);
+        }
+
+        await storage.createCrmSyncLog({
+          tenantId,
+          crmProvider: "hubspot",
+          action: "company_sync_to_hubspot",
+          status: "success",
+          localObjectType: "client",
+          localObjectId: mapping.localObjectId,
+          crmObjectType: "company",
+          crmObjectId: companyId,
+          requestPayload: properties as any,
+        });
+
+        const updatedCompany = await getHubSpotCompanyById(companyId);
+        res.json({ client, company: updatedCompany, synced: Object.keys(properties) });
+      }
+    } catch (error: any) {
+      console.error("[CRM] Error syncing company:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/clients/:clientId/crm-link", deps.requireAuth, async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.json({ linked: false, crmEnabled: false });
+      }
+
+      const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "client", req.params.clientId);
+      if (!mapping) {
+        return res.json({ linked: false, crmEnabled: true });
+      }
+
+      let company = null;
+      try {
+        company = await getHubSpotCompanyById(mapping.crmObjectId);
+      } catch {}
+
+      res.json({
+        linked: true,
+        crmEnabled: true,
+        mapping,
+        company,
+      });
+    } catch (error: any) {
+      console.error("[CRM] Error fetching client CRM link:", error);
       res.status(500).json({ message: error.message });
     }
   });
