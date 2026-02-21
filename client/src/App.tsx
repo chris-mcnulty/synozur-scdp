@@ -50,6 +50,7 @@ import FileRepository from "@/pages/file-repository";
 import PortfolioTimelinePage from "@/pages/portfolio-timeline-page";
 import PortfolioRaidd from "@/pages/portfolio-raidd";
 import MyRaidd from "@/pages/my-raidd";
+import CrmDeals from "@/pages/crm-deals";
 import NotFound from "@/pages/not-found";
 import { useQuery } from "@tanstack/react-query";
 import { Redirect, useLocation } from "wouter";
@@ -328,6 +329,9 @@ function Router() {
             <SystemSettings />
           </PlatformAdminGuard>
         ) : <Redirect to="/login" />}
+      </Route>
+      <Route path="/crm/deals">
+        {user ? <CrmDeals /> : <Redirect to="/login" />}
       </Route>
       <Route path="/file-repository">
         {user ? <FileRepository /> : <Redirect to="/login" />}

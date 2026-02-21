@@ -20,6 +20,7 @@ import { registerSharePointContainerRoutes } from "./routes/sharepoint-container
 import { registerExpenseRoutes } from "./routes/expenses.js";
 import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./routes/estimates.js";
 import { registerInvoiceRoutes } from "./routes/invoices.js";
+import { registerHubSpotRoutes } from "./routes/hubspot.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -217,6 +218,12 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register invoice routes (extracted module)
   registerInvoiceRoutes(app, {
+    requireAuth,
+    requireRole,
+  });
+
+  // Register HubSpot CRM routes (extracted module)
+  registerHubSpotRoutes(app, {
     requireAuth,
     requireRole,
   });

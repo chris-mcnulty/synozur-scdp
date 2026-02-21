@@ -176,6 +176,170 @@ function EmailHeaderUpload({ onUploadSuccess }: { onUploadSuccess: (url: string)
   );
 }
 
+function HubSpotIntegrationCard() {
+  const { toast } = useToast();
+
+  interface CrmStatus {
+    provider: string;
+    platformConnected: boolean;
+    tenantEnabled: boolean;
+    dealProbabilityThreshold: number;
+    lastSyncAt: string | null;
+    lastSyncStatus: string | null;
+    lastSyncError: string | null;
+    connectionId: string | null;
+  }
+
+  const { data: crmStatus, isLoading } = useQuery<CrmStatus>({
+    queryKey: ["/api/crm/status"],
+  });
+
+  const updateConnectionMutation = useMutation({
+    mutationFn: (data: { isEnabled?: boolean; dealProbabilityThreshold?: number }) =>
+      apiRequest("/api/crm/connection", {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/status"] });
+      toast({ title: "HubSpot settings updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to update", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const [threshold, setThreshold] = useState<string>("40");
+
+  useEffect(() => {
+    if (crmStatus) {
+      setThreshold(String(crmStatus.dealProbabilityThreshold));
+    }
+  }, [crmStatus]);
+
+  if (isLoading) {
+    return (
+      <Card className="border-2">
+        <CardContent className="py-6">
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-2">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            HubSpot CRM
+          </CardTitle>
+          {crmStatus?.platformConnected ? (
+            <Badge variant="outline" className="text-green-600 border-green-600">
+              <CheckCircle className="h-3 w-3 mr-1" />
+              Connected
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-orange-600 border-orange-600">
+              Not Connected
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Pull deals from HubSpot that meet your probability threshold and create estimates from them. Deal amounts sync back to HubSpot when estimates are updated.
+        </p>
+
+        {crmStatus?.platformConnected && (
+          <>
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <p className="text-sm font-medium">Enable HubSpot Sync</p>
+                <p className="text-xs text-muted-foreground">Show HubSpot deals in Constellation and allow estimate creation</p>
+              </div>
+              <Switch
+                checked={crmStatus?.tenantEnabled ?? false}
+                onCheckedChange={(checked) => {
+                  updateConnectionMutation.mutate({ isEnabled: checked });
+                }}
+              />
+            </div>
+
+            {crmStatus?.tenantEnabled && (
+              <div className="space-y-3 border-t pt-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="text-sm font-medium">Deal Probability Threshold</label>
+                    <p className="text-xs text-muted-foreground">Only show deals at or above this probability percentage</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={threshold}
+                      onChange={(e) => setThreshold(e.target.value)}
+                      className="w-20 text-center font-mono"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const num = parseInt(threshold, 10);
+                        if (isNaN(num) || num < 0 || num > 100) {
+                          toast({ title: "Invalid threshold", description: "Enter a number between 0 and 100", variant: "destructive" });
+                          return;
+                        }
+                        updateConnectionMutation.mutate({ dealProbabilityThreshold: num });
+                      }}
+                      disabled={updateConnectionMutation.isPending}
+                    >
+                      <Save className="h-3 w-3 mr-1" />
+                      Save
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Button variant="outline" size="sm" asChild>
+                    <a href="/crm/deals">
+                      <ArrowRight className="h-4 w-4 mr-1" />
+                      View CRM Deals
+                    </a>
+                  </Button>
+                </div>
+
+                {crmStatus?.lastSyncAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Last synced: {new Date(crmStatus.lastSyncAt).toLocaleString()}
+                    {crmStatus.lastSyncStatus === "error" && crmStatus.lastSyncError && (
+                      <span className="text-red-500 ml-2">Error: {crmStatus.lastSyncError}</span>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {!crmStatus?.platformConnected && (
+          <div className="rounded-lg border p-3 bg-orange-50/50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-orange-800 dark:text-orange-300">
+                HubSpot is not connected to the platform. Contact your platform administrator to set up the HubSpot connection.
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OrganizationSettings() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -1180,6 +1344,8 @@ export default function OrganizationSettings() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  <HubSpotIntegrationCard />
 
                   <Card className="border border-dashed">
                     <CardHeader className="pb-3">

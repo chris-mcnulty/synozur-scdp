@@ -2807,6 +2807,96 @@ export const insertSupportTicketPlannerSyncSchema = createInsertSchema(supportTi
 export type InsertSupportTicketPlannerSync = z.infer<typeof insertSupportTicketPlannerSyncSchema>;
 export type SupportTicketPlannerSync = typeof supportTicketPlannerSync.$inferSelect;
 
+// ============================================================================
+// CRM INTEGRATION TABLES (Provider-agnostic, tenant-scoped)
+// ============================================================================
+
+export const crmProviderEnum = z.enum(['hubspot', 'salesforce']);
+export type CrmProvider = z.infer<typeof crmProviderEnum>;
+
+export const crmConnections = pgTable("crm_connections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  crmProvider: varchar("crm_provider", { length: 50 }).notNull(),
+  isEnabled: boolean("is_enabled").notNull().default(false),
+  dealProbabilityThreshold: integer("deal_probability_threshold").notNull().default(40),
+  dealStageFilter: text("deal_stage_filter"),
+  autoCreateEstimate: boolean("auto_create_estimate").notNull().default(false),
+  syncDirection: varchar("sync_direction", { length: 20 }).notNull().default("bidirectional"),
+  lastSyncAt: timestamp("last_sync_at"),
+  lastSyncStatus: varchar("last_sync_status", { length: 20 }),
+  lastSyncError: text("last_sync_error"),
+  settings: jsonb("settings").$type<Record<string, any>>(),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_crm_connections_tenant").on(table.tenantId),
+  uniqueTenantProvider: uniqueIndex("unique_crm_tenant_provider").on(table.tenantId, table.crmProvider),
+}));
+
+export const insertCrmConnectionSchema = createInsertSchema(crmConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastSyncAt: true,
+  lastSyncStatus: true,
+  lastSyncError: true,
+});
+export type InsertCrmConnection = z.infer<typeof insertCrmConnectionSchema>;
+export type CrmConnection = typeof crmConnections.$inferSelect;
+
+export const crmObjectMappings = pgTable("crm_object_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  crmProvider: varchar("crm_provider", { length: 50 }).notNull(),
+  crmObjectType: varchar("crm_object_type", { length: 50 }).notNull(),
+  crmObjectId: varchar("crm_object_id", { length: 255 }).notNull(),
+  localObjectType: varchar("local_object_type", { length: 50 }).notNull(),
+  localObjectId: varchar("local_object_id", { length: 255 }).notNull(),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+  lastSyncAt: timestamp("last_sync_at").notNull().default(sql`now()`),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_crm_mappings_tenant").on(table.tenantId),
+  crmObjectIdx: index("idx_crm_mappings_crm_object").on(table.crmProvider, table.crmObjectType, table.crmObjectId),
+  localObjectIdx: index("idx_crm_mappings_local_object").on(table.localObjectType, table.localObjectId),
+  uniqueMapping: uniqueIndex("unique_crm_object_mapping").on(table.tenantId, table.crmProvider, table.crmObjectType, table.crmObjectId, table.localObjectType),
+}));
+
+export const insertCrmObjectMappingSchema = createInsertSchema(crmObjectMappings).omit({
+  id: true,
+  createdAt: true,
+  lastSyncAt: true,
+});
+export type InsertCrmObjectMapping = z.infer<typeof insertCrmObjectMappingSchema>;
+export type CrmObjectMapping = typeof crmObjectMappings.$inferSelect;
+
+export const crmSyncLog = pgTable("crm_sync_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  crmProvider: varchar("crm_provider", { length: 50 }).notNull(),
+  action: varchar("action", { length: 50 }).notNull(),
+  crmObjectType: varchar("crm_object_type", { length: 50 }),
+  crmObjectId: varchar("crm_object_id", { length: 255 }),
+  localObjectType: varchar("local_object_type", { length: 50 }),
+  localObjectId: varchar("local_object_id", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull(),
+  errorMessage: text("error_message"),
+  requestPayload: jsonb("request_payload"),
+  responsePayload: jsonb("response_payload"),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_crm_sync_log_tenant").on(table.tenantId),
+  createdAtIdx: index("idx_crm_sync_log_created").on(table.createdAt),
+}));
+
+export const insertCrmSyncLogSchema = createInsertSchema(crmSyncLog).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertCrmSyncLog = z.infer<typeof insertCrmSyncLogSchema>;
+export type CrmSyncLog = typeof crmSyncLog.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,

@@ -57,7 +57,10 @@ import {
   groundingDocuments, type GroundingDocument, type InsertGroundingDocument,
   supportTickets, type SupportTicket, type InsertSupportTicket,
   supportTicketReplies, type SupportTicketReply, type InsertSupportTicketReply,
-  supportTicketPlannerSync, type SupportTicketPlannerSync, type InsertSupportTicketPlannerSync
+  supportTicketPlannerSync, type SupportTicketPlannerSync, type InsertSupportTicketPlannerSync,
+  crmConnections, type CrmConnection, type InsertCrmConnection,
+  crmObjectMappings, type CrmObjectMapping, type InsertCrmObjectMapping,
+  crmSyncLog, type CrmSyncLog, type InsertCrmSyncLog
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1041,6 +1044,19 @@ export interface IStorage {
   createGroundingDocument(doc: InsertGroundingDocument): Promise<GroundingDocument>;
   updateGroundingDocument(id: string, updates: Partial<InsertGroundingDocument>): Promise<GroundingDocument>;
   deleteGroundingDocument(id: string): Promise<void>;
+
+  // CRM Integration
+  getCrmConnection(tenantId: string, provider: string): Promise<CrmConnection | undefined>;
+  upsertCrmConnection(data: InsertCrmConnection): Promise<CrmConnection>;
+  updateCrmConnection(id: string, updates: Partial<InsertCrmConnection>): Promise<CrmConnection>;
+  updateCrmSyncStatus(tenantId: string, provider: string, status: string, error?: string | null): Promise<void>;
+  getCrmObjectMapping(tenantId: string, provider: string, crmObjectType: string, crmObjectId: string): Promise<CrmObjectMapping | undefined>;
+  getCrmObjectMappingByLocal(tenantId: string, provider: string, localObjectType: string, localObjectId: string): Promise<CrmObjectMapping | undefined>;
+  getCrmObjectMappings(tenantId: string, provider: string, crmObjectType?: string): Promise<CrmObjectMapping[]>;
+  createCrmObjectMapping(data: InsertCrmObjectMapping): Promise<CrmObjectMapping>;
+  deleteCrmObjectMapping(id: string): Promise<void>;
+  createCrmSyncLog(data: InsertCrmSyncLog): Promise<CrmSyncLog>;
+  getCrmSyncLogs(tenantId: string, provider: string, limit?: number): Promise<CrmSyncLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -11649,6 +11665,102 @@ export class DatabaseStorage implements IStorage {
         ne(supportTickets.status, 'resolved')
       ));
     return results;
+  }
+
+  // ============================================================================
+  // CRM Integration Methods
+  // ============================================================================
+
+  async getCrmConnection(tenantId: string, provider: string): Promise<CrmConnection | undefined> {
+    const [conn] = await db.select().from(crmConnections)
+      .where(and(eq(crmConnections.tenantId, tenantId), eq(crmConnections.crmProvider, provider)));
+    return conn;
+  }
+
+  async upsertCrmConnection(data: InsertCrmConnection): Promise<CrmConnection> {
+    const existing = await this.getCrmConnection(data.tenantId, data.crmProvider);
+    if (existing) {
+      const [updated] = await db.update(crmConnections)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(crmConnections.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(crmConnections).values(data).returning();
+    return created;
+  }
+
+  async updateCrmConnection(id: string, updates: Partial<InsertCrmConnection>): Promise<CrmConnection> {
+    const [updated] = await db.update(crmConnections)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(crmConnections.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateCrmSyncStatus(tenantId: string, provider: string, status: string, error?: string | null): Promise<void> {
+    await db.update(crmConnections)
+      .set({
+        lastSyncAt: new Date(),
+        lastSyncStatus: status,
+        lastSyncError: error || null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(crmConnections.tenantId, tenantId), eq(crmConnections.crmProvider, provider)));
+  }
+
+  async getCrmObjectMapping(tenantId: string, provider: string, crmObjectType: string, crmObjectId: string): Promise<CrmObjectMapping | undefined> {
+    const [mapping] = await db.select().from(crmObjectMappings)
+      .where(and(
+        eq(crmObjectMappings.tenantId, tenantId),
+        eq(crmObjectMappings.crmProvider, provider),
+        eq(crmObjectMappings.crmObjectType, crmObjectType),
+        eq(crmObjectMappings.crmObjectId, crmObjectId),
+      ));
+    return mapping;
+  }
+
+  async getCrmObjectMappingByLocal(tenantId: string, provider: string, localObjectType: string, localObjectId: string): Promise<CrmObjectMapping | undefined> {
+    const [mapping] = await db.select().from(crmObjectMappings)
+      .where(and(
+        eq(crmObjectMappings.tenantId, tenantId),
+        eq(crmObjectMappings.crmProvider, provider),
+        eq(crmObjectMappings.localObjectType, localObjectType),
+        eq(crmObjectMappings.localObjectId, localObjectId),
+      ));
+    return mapping;
+  }
+
+  async getCrmObjectMappings(tenantId: string, provider: string, crmObjectType?: string): Promise<CrmObjectMapping[]> {
+    const conditions = [
+      eq(crmObjectMappings.tenantId, tenantId),
+      eq(crmObjectMappings.crmProvider, provider),
+    ];
+    if (crmObjectType) {
+      conditions.push(eq(crmObjectMappings.crmObjectType, crmObjectType));
+    }
+    return await db.select().from(crmObjectMappings).where(and(...conditions));
+  }
+
+  async createCrmObjectMapping(data: InsertCrmObjectMapping): Promise<CrmObjectMapping> {
+    const [created] = await db.insert(crmObjectMappings).values(data).returning();
+    return created;
+  }
+
+  async deleteCrmObjectMapping(id: string): Promise<void> {
+    await db.delete(crmObjectMappings).where(eq(crmObjectMappings.id, id));
+  }
+
+  async createCrmSyncLog(data: InsertCrmSyncLog): Promise<CrmSyncLog> {
+    const [created] = await db.insert(crmSyncLog).values(data).returning();
+    return created;
+  }
+
+  async getCrmSyncLogs(tenantId: string, provider: string, limit: number = 50): Promise<CrmSyncLog[]> {
+    return await db.select().from(crmSyncLog)
+      .where(and(eq(crmSyncLog.tenantId, tenantId), eq(crmSyncLog.crmProvider, provider)))
+      .orderBy(desc(crmSyncLog.createdAt))
+      .limit(limit);
   }
 }
 

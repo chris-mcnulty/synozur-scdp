@@ -3,6 +3,54 @@ import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules } from "@shared/schema";
 import { eq, sql, inArray, max, and } from "drizzle-orm";
+import { updateHubSpotDealAmount, isHubSpotConnected } from "../services/hubspot-client.js";
+
+async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, status: string, amount?: string | null) {
+  try {
+    const connection = await storage.getCrmConnection(tenantId, "hubspot");
+    if (!connection?.isEnabled) return;
+
+    const mapping = await storage.getCrmObjectMappingByLocal(tenantId, "hubspot", "estimate", estimateId);
+    if (!mapping) return;
+
+    const connected = await isHubSpotConnected();
+    if (!connected) return;
+
+    if (amount) {
+      await updateHubSpotDealAmount(mapping.crmObjectId, parseFloat(amount));
+    }
+
+    await storage.createCrmSyncLog({
+      tenantId,
+      crmProvider: "hubspot",
+      action: "estimate_status_changed",
+      status: "success",
+      localObjectType: "estimate",
+      localObjectId: estimateId,
+      crmObjectType: "deal",
+      crmObjectId: mapping.crmObjectId,
+      requestPayload: { status, amount } as any,
+    });
+
+    await storage.updateCrmSyncStatus(tenantId, "hubspot", "success");
+  } catch (error: any) {
+    console.error("[CRM] Failed to sync estimate status:", error.message);
+    await storage.createCrmSyncLog({
+      tenantId,
+      crmProvider: "hubspot",
+      action: "estimate_status_changed",
+      status: "error",
+      localObjectType: "estimate",
+      localObjectId: estimateId,
+      errorMessage: error.message,
+      requestPayload: { status } as any,
+    });
+
+    try {
+      await storage.updateCrmSyncStatus(tenantId, "hubspot", "error", error.message);
+    } catch (_) {}
+  }
+}
 
 // Helper: Check if a line item represents a salaried resource
 // Individual employee setting takes precedence over role configuration
@@ -4880,6 +4928,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         }
       }
 
+      const tenantId = (req.user as any)?.tenantId || estimate.tenantId;
+      if (tenantId) {
+        syncEstimateStatusToCrm(req.params.id, tenantId, "approved", updatedEstimate?.presentedTotal || updatedEstimate?.totalFees).catch(() => {});
+      }
+
       res.json({ estimate: updatedEstimate, project });
     } catch (error: any) {
       console.error("[ERROR] Failed to approve estimate:", error);
@@ -4894,10 +4947,17 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.post("/api/estimates/:id/reject", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
     try {
       const { reason } = req.body;
-      const estimate = await storage.updateEstimate(req.params.id, { 
+      const estimate = await storage.getEstimate(req.params.id);
+      const updatedEstimate = await storage.updateEstimate(req.params.id, { 
         status: "rejected"
       });
-      res.json(estimate);
+
+      const tenantId = (req.user as any)?.tenantId || estimate?.tenantId;
+      if (tenantId) {
+        syncEstimateStatusToCrm(req.params.id, tenantId, "rejected").catch(() => {});
+      }
+
+      res.json(updatedEstimate);
     } catch (error) {
       res.status(500).json({ message: "Failed to reject estimate" });
     }
