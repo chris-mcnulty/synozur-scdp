@@ -3,7 +3,7 @@ import { z } from "zod";
 import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules } from "@shared/schema";
 import { eq, sql, inArray, max, and } from "drizzle-orm";
-import { updateHubSpotDealAmount, isHubSpotConnected } from "../services/hubspot-client.js";
+import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
 
 async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, status: string, amount?: string | null) {
   try {
@@ -20,6 +20,14 @@ async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, sta
       await updateHubSpotDealAmount(mapping.crmObjectId, parseFloat(amount));
     }
 
+    const settings = (connection.settings || {}) as Record<string, any>;
+    const stageMappings = settings.dealStageMappings as Record<string, string> | undefined;
+    let stageUpdated = false;
+    if (stageMappings && stageMappings[status]) {
+      await updateHubSpotDealStage(mapping.crmObjectId, stageMappings[status]);
+      stageUpdated = true;
+    }
+
     await storage.createCrmSyncLog({
       tenantId,
       crmProvider: "hubspot",
@@ -29,7 +37,7 @@ async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, sta
       localObjectId: estimateId,
       crmObjectType: "deal",
       crmObjectId: mapping.crmObjectId,
-      requestPayload: { status, amount } as any,
+      requestPayload: { status, amount, stageUpdated, targetStageId: stageMappings?.[status] } as any,
     });
 
     await storage.updateCrmSyncStatus(tenantId, "hubspot", "success");
@@ -4819,6 +4827,19 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       }
       
       const estimate = await storage.updateEstimate(req.params.id, updateData);
+
+      if (updateData.status && estimate) {
+        const tenantId = (req as any).user?.tenantId || estimate.tenantId;
+        if (tenantId) {
+          syncEstimateStatusToCrm(
+            req.params.id,
+            tenantId,
+            updateData.status,
+            estimate.presentedTotal || estimate.totalFees
+          ).catch(() => {});
+        }
+      }
+
       res.json(estimate);
     } catch (error) {
       res.status(500).json({ message: "Failed to update estimate" });

@@ -40,11 +40,14 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const connection = await storage.getCrmConnection(tenantId, "hubspot");
       const connected = await isHubSpotConnected();
 
+      const settings = (connection?.settings || {}) as Record<string, any>;
       res.json({
         provider: "hubspot",
         platformConnected: connected,
         tenantEnabled: connection?.isEnabled ?? false,
         dealProbabilityThreshold: connection?.dealProbabilityThreshold ?? 40,
+        dealStageMappings: settings.dealStageMappings ?? null,
+        selectedPipelineId: settings.selectedPipelineId ?? null,
         lastSyncAt: connection?.lastSyncAt ?? null,
         lastSyncStatus: connection?.lastSyncStatus ?? null,
         lastSyncError: connection?.lastSyncError ?? null,
@@ -61,17 +64,41 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
 
+      const dealStageMappingSchema = z.object({
+        draft: z.string().optional(),
+        final: z.string().optional(),
+        sent: z.string().optional(),
+        approved: z.string().optional(),
+        rejected: z.string().optional(),
+      }).optional();
+
       const schema = z.object({
         isEnabled: z.boolean().optional(),
         dealProbabilityThreshold: z.number().min(0).max(100).optional(),
         autoCreateEstimate: z.boolean().optional(),
+        dealStageMappings: dealStageMappingSchema,
+        selectedPipelineId: z.string().optional(),
       });
       const data = schema.parse(req.body);
+
+      const { dealStageMappings, selectedPipelineId, ...connectionFields } = data;
+
+      const existingConnection = await storage.getCrmConnection(tenantId, "hubspot");
+      const existingSettings = (existingConnection?.settings || {}) as Record<string, any>;
+
+      const updatedSettings: Record<string, any> = { ...existingSettings };
+      if (dealStageMappings !== undefined) {
+        updatedSettings.dealStageMappings = dealStageMappings;
+      }
+      if (selectedPipelineId !== undefined) {
+        updatedSettings.selectedPipelineId = selectedPipelineId;
+      }
 
       const connection = await storage.upsertCrmConnection({
         tenantId,
         crmProvider: "hubspot",
-        ...data,
+        ...connectionFields,
+        settings: updatedSettings,
       });
 
       await storage.createCrmSyncLog({

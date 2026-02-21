@@ -184,10 +184,18 @@ function HubSpotIntegrationCard() {
     platformConnected: boolean;
     tenantEnabled: boolean;
     dealProbabilityThreshold: number;
+    dealStageMappings: Record<string, string> | null;
+    selectedPipelineId: string | null;
     lastSyncAt: string | null;
     lastSyncStatus: string | null;
     lastSyncError: string | null;
     connectionId: string | null;
+  }
+
+  interface HubSpotPipeline {
+    id: string;
+    label: string;
+    stages: { id: string; label: string; probability: number; displayOrder: number }[];
   }
 
   const { data: crmStatus, isLoading } = useQuery<CrmStatus>({
@@ -195,7 +203,7 @@ function HubSpotIntegrationCard() {
   });
 
   const updateConnectionMutation = useMutation({
-    mutationFn: (data: { isEnabled?: boolean; dealProbabilityThreshold?: number }) =>
+    mutationFn: (data: { isEnabled?: boolean; dealProbabilityThreshold?: number; dealStageMappings?: Record<string, string>; selectedPipelineId?: string }) =>
       apiRequest("/api/crm/connection", {
         method: "PUT",
         body: JSON.stringify(data),
@@ -210,10 +218,23 @@ function HubSpotIntegrationCard() {
   });
 
   const [threshold, setThreshold] = useState<string>("40");
+  const [selectedPipeline, setSelectedPipeline] = useState<string>("");
+  const [stageMappings, setStageMappings] = useState<Record<string, string>>({});
+
+  const { data: pipelines } = useQuery<HubSpotPipeline[]>({
+    queryKey: ["/api/crm/pipelines"],
+    enabled: !!crmStatus?.tenantEnabled && !!crmStatus?.platformConnected,
+  });
 
   useEffect(() => {
     if (crmStatus) {
       setThreshold(String(crmStatus.dealProbabilityThreshold));
+      if (crmStatus.selectedPipelineId) {
+        setSelectedPipeline(crmStatus.selectedPipelineId);
+      }
+      if (crmStatus.dealStageMappings) {
+        setStageMappings(crmStatus.dealStageMappings);
+      }
     }
   }, [crmStatus]);
 
@@ -301,6 +322,103 @@ function HubSpotIntegrationCard() {
                       Save
                     </Button>
                   </div>
+                </div>
+
+                <div className="border-t pt-3 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Deal Stage Mapping</p>
+                    <p className="text-xs text-muted-foreground">Map estimate statuses to HubSpot deal stages so they auto-update when an estimate changes status</p>
+                  </div>
+
+                  {pipelines && pipelines.length > 0 ? (
+                    <>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium">Pipeline</label>
+                        <Select
+                          value={selectedPipeline}
+                          onValueChange={(val) => {
+                            setSelectedPipeline(val);
+                            setStageMappings({});
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select a pipeline" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pipelines.map(p => (
+                              <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {selectedPipeline && (() => {
+                        const activePipeline = pipelines.find(p => p.id === selectedPipeline);
+                        if (!activePipeline) return null;
+                        const estimateStatuses = [
+                          { key: "draft", label: "Draft" },
+                          { key: "final", label: "Final" },
+                          { key: "sent", label: "Sent" },
+                          { key: "approved", label: "Approved" },
+                          { key: "rejected", label: "Rejected" },
+                        ];
+                        return (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                              {estimateStatuses.map(es => (
+                                <div key={es.key} className="flex items-center gap-2">
+                                  <span className="text-xs w-16 shrink-0 font-medium">{es.label}</span>
+                                  <Select
+                                    value={stageMappings[es.key] || "__none__"}
+                                    onValueChange={(val) => {
+                                      setStageMappings(prev => {
+                                        const next = { ...prev };
+                                        if (val === "__none__") {
+                                          delete next[es.key];
+                                        } else {
+                                          next[es.key] = val;
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs flex-1">
+                                      <SelectValue placeholder="Not mapped" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__">Not mapped</SelectItem>
+                                      {activePipeline.stages.map(s => (
+                                        <SelectItem key={s.id} value={s.id}>
+                                          {s.label} ({Math.round(s.probability * 100)}%)
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              ))}
+                            </div>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                updateConnectionMutation.mutate({
+                                  dealStageMappings: stageMappings,
+                                  selectedPipelineId: selectedPipeline,
+                                });
+                              }}
+                              disabled={updateConnectionMutation.isPending}
+                            >
+                              <Save className="h-3 w-3 mr-1" />
+                              Save Stage Mappings
+                            </Button>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Loading pipelines...</p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
