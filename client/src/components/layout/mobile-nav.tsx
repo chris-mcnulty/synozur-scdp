@@ -35,6 +35,7 @@ import {
   ShieldAlert,
   Brain,
   LifeBuoy,
+  Handshake,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -121,7 +122,7 @@ interface SectionRoute {
 
 const sectionRoutes: SectionRoute[] = [
   { sectionId: "my-workspace", paths: ["/my-dashboard", "/my-assignments", "/time", "/expenses", "/expense-reports", "/my-reimbursements", "/my-projects"] },
-  { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports"] },
+  { sectionId: "portfolio", paths: ["/", "/portfolio/timeline", "/portfolio/raidd", "/projects", "/clients", "/estimates", "/resource-management", "/reports", "/crm/deals"] },
   { sectionId: "financial", paths: ["/billing", "/invoice-report", "/client-revenue-report", "/expense-management", "/expense-approval", "/reimbursement-batches", "/rates"] },
   { sectionId: "administration", paths: ["/users", "/system-settings", "/admin/scheduled-jobs", "/vocabulary", "/file-repository", "/admin/sharepoint", "/ai-grounding"] },
   { sectionId: "platform", paths: ["/platform/tenants", "/platform/service-plans", "/platform/users", "/platform/airports", "/platform/oconus", "/platform/grounding-docs"] },
@@ -256,6 +257,7 @@ export function MobileNav() {
                     <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />
                     <MobileNavItem href="/resource-management" icon={<Users />} label="Resources" onClick={handleNavClick} />
                     <MobileNavItem href="/reports" icon={<BarChart3 />} label="Reports" onClick={handleNavClick} />
+                    <MobileNavItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm"]} onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}
