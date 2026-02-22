@@ -16,7 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Edit2, Crown, Users, Calendar, Building2, Globe } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Plus, Edit2, Crown, Users, Calendar, Building2, Globe, Cloud, CloudOff, Zap, Info, RefreshCw, Unlink } from "lucide-react";
 import type { Tenant, ServicePlan } from "@shared/schema";
 
 const US_TIMEZONES = [
@@ -54,6 +55,9 @@ export default function PlatformTenants() {
   const { toast } = useToast();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [connectingTenant, setConnectingTenant] = useState<Tenant | null>(null);
+  const [m365Domain, setM365Domain] = useState("");
+  const [m365OwnershipType, setM365OwnershipType] = useState("msp");
 
   const { data: tenants, isLoading } = useQuery<Tenant[]>({
     queryKey: ["/api/platform/tenants"],
@@ -119,6 +123,71 @@ export default function PlatformTenants() {
       toast({ title: "Failed to update tenant", description: error.message, variant: "destructive" });
     },
   });
+
+  const connectM365Mutation = useMutation({
+    mutationFn: async ({ tenantId, domain, ownershipType }: { tenantId: string; domain: string; ownershipType: string }) => {
+      const result = await apiRequest("/api/m365/connect/start", {
+        method: "POST",
+        body: JSON.stringify({ domain, ownershipType, constellationTenantId: tenantId }),
+      });
+      return result;
+    },
+    onSuccess: (data: any) => {
+      if (data?.adminConsentUrl) {
+        window.open(data.adminConsentUrl, "_blank", "noopener,noreferrer");
+        toast({
+          title: "Admin consent window opened",
+          description: "Complete the Microsoft admin consent in the new window. The page will refresh when done.",
+        });
+        setConnectingTenant(null);
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to start M365 connection", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const testM365Mutation = useMutation({
+    mutationFn: async (tenantId: string) => {
+      return apiRequest("/api/m365/connect/test", {
+        method: "POST",
+        body: JSON.stringify({ constellationTenantId: tenantId }),
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/tenants"] });
+      if (data?.success) {
+        toast({ title: "Connection verified", description: data.message });
+      } else {
+        toast({ title: "Connection test failed", description: data?.message || "Could not connect", variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Connection test failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const disconnectM365Mutation = useMutation({
+    mutationFn: async (tenantId: string) => {
+      return apiRequest("/api/m365/connect/disconnect", {
+        method: "POST",
+        body: JSON.stringify({ constellationTenantId: tenantId }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/tenants"] });
+      toast({ title: "M365 disconnected" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to disconnect", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openConnectDialog = (tenant: Tenant) => {
+    setConnectingTenant(tenant);
+    setM365Domain(tenant.m365TenantDomain || tenant.allowedDomains?.[0] || "");
+    setM365OwnershipType(tenant.m365OwnershipType || "msp");
+  };
 
   const onSubmit = (data: TenantFormData) => {
     if (editingTenant) {
@@ -363,6 +432,7 @@ export default function PlatformTenants() {
                     <TableHead>Domains</TableHead>
                     <TableHead>Service Plan</TableHead>
                     <TableHead>SSO</TableHead>
+                    <TableHead>M365</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -406,16 +476,40 @@ export default function PlatformTenants() {
                           <Badge variant="outline">None</Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {tenant.m365ConnectionStatus === "connected" ? (
+                          <div className="flex items-center gap-1.5">
+                            <Cloud className="h-4 w-4 text-green-600" />
+                            <div>
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 text-green-600 border-green-600">Connected</Badge>
+                              {tenant.m365TenantDomain && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{tenant.m365TenantDomain}</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => openConnectDialog(tenant)}>
+                            <CloudOff className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                            Connect
+                          </Button>
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {tenant.createdAt ? new Date(tenant.createdAt).toLocaleDateString() : "N/A"}
                       </TableCell>
                       <TableCell>
-                        <Dialog open={editingTenant?.id === tenant.id} onOpenChange={(open) => !open && setEditingTenant(null)}>
-                          <DialogTrigger asChild>
-                            <Button variant="ghost" size="sm" onClick={() => openEditDialog(tenant)}>
-                              <Edit2 className="h-4 w-4" />
+                        <div className="flex items-center gap-1">
+                          {tenant.m365ConnectionStatus === "connected" && (
+                            <Button variant="ghost" size="sm" onClick={() => openConnectDialog(tenant)} title="M365 Connection Details">
+                              <Cloud className="h-4 w-4" />
                             </Button>
-                          </DialogTrigger>
+                          )}
+                          <Dialog open={editingTenant?.id === tenant.id} onOpenChange={(open) => !open && setEditingTenant(null)}>
+                            <DialogTrigger asChild>
+                              <Button variant="ghost" size="sm" onClick={() => openEditDialog(tenant)}>
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
                           <DialogContent className="max-w-md">
                             <DialogHeader>
                               <DialogTitle>Edit Tenant</DialogTitle>
@@ -567,6 +661,7 @@ export default function PlatformTenants() {
                             </Form>
                           </DialogContent>
                         </Dialog>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -576,6 +671,129 @@ export default function PlatformTenants() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={!!connectingTenant} onOpenChange={(open) => !open && setConnectingTenant(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Cloud className="h-5 w-5" />
+              {connectingTenant?.m365ConnectionStatus === "connected" ? "M365 Connection" : "Connect Microsoft 365 Tenant"}
+            </DialogTitle>
+            <DialogDescription>
+              {connectingTenant?.m365ConnectionStatus === "connected"
+                ? `${connectingTenant.name} is connected to Microsoft 365`
+                : `Connect ${connectingTenant?.name || "tenant"} to Microsoft 365 via admin consent`}
+            </DialogDescription>
+          </DialogHeader>
+
+          {connectingTenant?.m365ConnectionStatus === "connected" ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-muted-foreground text-xs">Azure Tenant ID</p>
+                  <p className="font-mono text-xs">{connectingTenant.azureTenantId}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Domain</p>
+                  <p>{connectingTenant.m365TenantDomain || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Display Name</p>
+                  <p>{connectingTenant.m365DisplayName || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Ownership</p>
+                  <p>{connectingTenant.m365OwnershipType === "msp" ? "MSP (Synozur Operates)" : "Customer Operates"}</p>
+                </div>
+                {connectingTenant.m365ConnectionTestedAt && (
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground text-xs">Last Verified</p>
+                    <p className="text-xs">{new Date(connectingTenant.m365ConnectionTestedAt).toLocaleString()}</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-between">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    disconnectM365Mutation.mutate(connectingTenant.id);
+                    setConnectingTenant(null);
+                  }}
+                  disabled={disconnectM365Mutation.isPending}
+                >
+                  <Unlink className="h-4 w-4 mr-1" />
+                  Disconnect
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testM365Mutation.mutate(connectingTenant.id)}
+                  disabled={testM365Mutation.isPending}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${testM365Mutation.isPending ? "animate-spin" : ""}`} />
+                  {testM365Mutation.isPending ? "Testing..." : "Test Connection"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription className="text-xs space-y-1">
+                  <p>A domain admin from the target tenant will authenticate against your Entra ID app and grant admin consent. The required permissions are baked into the app registration.</p>
+                  <p className="font-medium">Tip: Use an InPrivate / Incognito browser window to sign in as the remote domain admin, so it does not conflict with your current session.</p>
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tenant Domain</label>
+                <Input
+                  value={m365Domain}
+                  onChange={(e) => setM365Domain(e.target.value)}
+                  placeholder="e.g. contoso.onmicrosoft.com"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The Microsoft 365 domain for the target tenant
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Ownership Type</label>
+                <Select value={m365OwnershipType} onValueChange={setM365OwnershipType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="msp">MSP (Synozur Operates)</SelectItem>
+                    <SelectItem value="customer">Customer Operates</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setConnectingTenant(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!connectingTenant || !m365Domain.trim()) return;
+                    connectM365Mutation.mutate({
+                      tenantId: connectingTenant.id,
+                      domain: m365Domain.trim(),
+                      ownershipType: m365OwnershipType,
+                    });
+                  }}
+                  disabled={connectM365Mutation.isPending || !m365Domain.trim()}
+                >
+                  <Zap className="h-4 w-4 mr-1" />
+                  {connectM365Mutation.isPending ? "Starting..." : "Connect via Admin Consent"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

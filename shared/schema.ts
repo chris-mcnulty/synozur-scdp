@@ -108,6 +108,14 @@ export const tenants = pgTable("tenants", {
   adminConsentGrantedAt: timestamp("admin_consent_granted_at"),
   adminConsentGrantedBy: varchar("admin_consent_granted_by"),
   
+  // M365 Tenant Connection (admin consent flow - credentials baked into Entra app)
+  m365TenantDomain: text("m365_tenant_domain"),
+  m365OwnershipType: text("m365_ownership_type").default("msp"),
+  m365DisplayName: text("m365_display_name"),
+  m365ConnectionStatus: text("m365_connection_status").default("disconnected"),
+  m365ConnectionTestedAt: timestamp("m365_connection_tested_at"),
+  m365ConnectedBy: varchar("m365_connected_by"),
+  
   // Customization
   fiscalYearStartMonth: integer("fiscal_year_start_month").default(1),
   defaultTimezone: varchar("default_timezone", { length: 50 }).default("America/New_York"),
