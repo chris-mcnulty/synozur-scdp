@@ -14,6 +14,7 @@ import {
   updateHubSpotCompany,
   getHubSpotDealContacts,
   getHubSpotCompanyContacts,
+  searchHubSpotCompanyContacts,
   getHubSpotContactById,
   searchHubSpotContacts,
 } from "../services/hubspot-client.js";
@@ -1282,7 +1283,13 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         return res.json({ contacts: [], crmEnabled: true, companyLinked: false });
       }
 
-      const contacts = await getHubSpotCompanyContacts(tenantId, companyMapping.crmObjectId);
+      const search = (req.query.search as string || "").trim();
+      let contacts;
+      if (search.length >= 2) {
+        contacts = await searchHubSpotCompanyContacts(tenantId, companyMapping.crmObjectId, search);
+      } else {
+        contacts = await getHubSpotCompanyContacts(tenantId, companyMapping.crmObjectId, 50);
+      }
 
       const contactMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "contact");
       const mappedContactIds = new Map(contactMappings.map(m => [m.crmObjectId, m]));
@@ -1293,7 +1300,13 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         mapping: mappedContactIds.get(contact.id) || null,
       }));
 
-      res.json({ contacts: enrichedContacts, crmEnabled: true, companyLinked: true });
+      res.json({
+        contacts: enrichedContacts,
+        crmEnabled: true,
+        companyLinked: true,
+        searchApplied: search.length >= 2,
+        hasMore: !search && contacts.length >= 50,
+      });
     } catch (error: any) {
       console.error("[CRM] Error fetching client CRM contacts:", error);
       res.status(500).json({ message: error.message });

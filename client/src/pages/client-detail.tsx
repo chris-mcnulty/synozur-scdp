@@ -59,7 +59,8 @@ import {
   Filter,
   UserPlus,
   Trash2,
-  UserCircle
+  UserCircle,
+  Search
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
@@ -316,6 +317,8 @@ export default function ClientDetail() {
   const [matchedUser, setMatchedUser] = useState<{ id: string; name: string; email: string } | null>(null);
   const [showHubSpotImport, setShowHubSpotImport] = useState(false);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
+  const [contactSearch, setContactSearch] = useState("");
+  const [contactSearchDebounced, setContactSearchDebounced] = useState("");
 
   const { toast } = useToast();
 
@@ -384,6 +387,13 @@ export default function ClientDetail() {
       window.history.replaceState({}, '', newUrl);
     }
   }, [client]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setContactSearchDebounced(contactSearch);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [contactSearch]);
 
   // Fetch client projects
   const { data: allProjects = [] } = useQuery<ProjectWithClient[]>({
@@ -463,7 +473,15 @@ export default function ClientDetail() {
     crmEnabled: boolean;
     companyLinked?: boolean;
   }>({
-    queryKey: ["/api/clients", clientId, "crm-contacts"],
+    queryKey: ["/api/clients", clientId, "crm-contacts", contactSearchDebounced],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (contactSearchDebounced) params.set("search", contactSearchDebounced);
+      const url = `/api/clients/${clientId}/crm-contacts${params.toString() ? `?${params}` : ""}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch contacts");
+      return res.json();
+    },
     enabled: showHubSpotImport && !!clientId,
   });
 
@@ -1772,7 +1790,11 @@ export default function ClientDetail() {
         {/* Import from HubSpot Dialog */}
         <Dialog open={showHubSpotImport} onOpenChange={(open) => {
           setShowHubSpotImport(open);
-          if (!open) setSelectedContactIds(new Set());
+          if (!open) {
+            setSelectedContactIds(new Set());
+            setContactSearch("");
+            setContactSearchDebounced("");
+          }
         }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -1796,17 +1818,32 @@ export default function ClientDetail() {
                   <p>This client is not linked to a HubSpot company.</p>
                   <p className="text-sm mt-1">Link a HubSpot company first in the Overview tab to import contacts.</p>
                 </div>
-              ) : crmContactsData.contacts.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <UserCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>No contacts found in the linked HubSpot company.</p>
-                </div>
               ) : (
                 <>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Select contacts from the linked HubSpot company to import as client stakeholders.
-                    Contacts already imported will be shown as disabled.
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Search and select contacts from the linked HubSpot company to import as client stakeholders.
                   </p>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search contacts by name or email..."
+                      value={contactSearch}
+                      onChange={(e) => setContactSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                  {(crmContactsData as any)?.hasMore && !contactSearch && (
+                    <p className="text-xs text-amber-600 mb-2">
+                      Showing first 50 contacts. Use search to find specific people.
+                    </p>
+                  )}
+                  {crmContactsData.contacts.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <UserCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>{contactSearch ? `No contacts match "${contactSearch}".` : "No contacts found in the linked HubSpot company."}</p>
+                    </div>
+                  ) : (
+                  <>
                   <div className="border rounded-md max-h-80 overflow-y-auto">
                     <Table>
                       <TableHeader>
@@ -1876,6 +1913,8 @@ export default function ClientDetail() {
                     <p className="text-sm text-muted-foreground mt-2">
                       {selectedContactIds.size} contact(s) selected for import
                     </p>
+                  )}
+                  </>
                   )}
                 </>
               )}

@@ -584,25 +584,54 @@ export async function searchHubSpotContacts(tenantId: string, query: string): Pr
   }
 }
 
-export async function getHubSpotCompanyContacts(tenantId: string, companyId: string): Promise<HubSpotContact[]> {
+export async function getHubSpotCompanyContacts(tenantId: string, companyId: string, limit: number = 50): Promise<HubSpotContact[]> {
   const client = await getHubSpotClient(tenantId);
   try {
     const company = await client.crm.companies.basicApi.getById(companyId, undefined, undefined, ['contacts']);
     const contactAssocs = company.associations?.contacts?.results;
     if (!contactAssocs || contactAssocs.length === 0) return [];
 
+    const limitedAssocs = contactAssocs.slice(0, limit);
     const contacts: HubSpotContact[] = [];
-    for (const assoc of contactAssocs) {
-      try {
-        const contact = await client.crm.contacts.basicApi.getById(assoc.id, CONTACT_PROPERTIES);
-        contacts.push(mapContact(contact));
-      } catch (e) {
-        console.error(`[HubSpot] Error fetching contact ${assoc.id}:`, e);
+    const batchSize = 10;
+    for (let i = 0; i < limitedAssocs.length; i += batchSize) {
+      const batch = limitedAssocs.slice(i, i + batchSize);
+      const results = await Promise.allSettled(
+        batch.map(assoc => client.crm.contacts.basicApi.getById(assoc.id, CONTACT_PROPERTIES))
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          contacts.push(mapContact(result.value));
+        }
       }
     }
     return contacts;
   } catch (e) {
     console.error('[HubSpot] Error fetching company contacts:', e);
+    return [];
+  }
+}
+
+export async function searchHubSpotCompanyContacts(tenantId: string, companyId: string, query: string): Promise<HubSpotContact[]> {
+  const client = await getHubSpotClient(tenantId);
+  try {
+    const response = await client.crm.contacts.searchApi.doSearch({
+      query,
+      limit: 50,
+      properties: CONTACT_PROPERTIES,
+      filterGroups: [{
+        filters: [{
+          propertyName: 'associations.company',
+          operator: 'EQ' as any,
+          value: companyId,
+        }]
+      }],
+      sorts: [],
+      after: 0 as any,
+    });
+    return response.results.map(mapContact);
+  } catch (e) {
+    console.error('[HubSpot] Error searching company contacts:', e);
     return [];
   }
 }
