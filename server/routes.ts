@@ -22,7 +22,6 @@ import { registerEstimateRoutes, generateRetainerPaymentMilestones } from "./rou
 import { registerInvoiceRoutes } from "./routes/invoices.js";
 import { registerHubSpotRoutes } from "./routes/hubspot.js";
 import { createHubSpotDealNote, createHubSpotCompanyNote, getLinkedHubSpotCompanyId, isHubSpotConnected } from "./services/hubspot-client.js";
-import { registerM365ConnectRoutes } from "./routes/m365-connect.js";
 
 // Initialize SharePoint storage with database access
 initSharePointStorage(storage);
@@ -226,11 +225,6 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Register HubSpot CRM routes (extracted module)
   registerHubSpotRoutes(app, {
-    requireAuth,
-    requireRole,
-  });
-
-  registerM365ConnectRoutes(app, {
     requireAuth,
     requireRole,
   });
