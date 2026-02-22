@@ -68,6 +68,7 @@ interface Estimate {
   id: string;
   name: string;
   clientId: string;
+  clientName?: string;
   status: string;
   totalFees?: string | number | null;
 }
@@ -118,9 +119,18 @@ function formatDateRange(preset: DateRangePreset): string {
 }
 
 const WON_STAGE_KEYS = ["closedwon", "won", "closed won"];
+const LOST_STAGE_KEYS = ["closedlost", "lost", "closed lost"];
 
 function isWonStage(stageName: string, stageKey: string): boolean {
   return WON_STAGE_KEYS.includes(stageKey.toLowerCase()) || WON_STAGE_KEYS.includes(stageName.toLowerCase());
+}
+
+function isLostStage(stageName: string, stageKey: string): boolean {
+  return LOST_STAGE_KEYS.includes(stageKey.toLowerCase()) || LOST_STAGE_KEYS.includes(stageName.toLowerCase());
+}
+
+function isClosedStage(stageName: string, stageKey: string): boolean {
+  return isWonStage(stageName, stageKey) || isLostStage(stageName, stageKey);
 }
 
 export default function CrmDeals() {
@@ -272,9 +282,11 @@ export default function CrmDeals() {
       }
 
       if (stageFilter === "active") {
-        if (isWonStage(deal.dealStageName || "", deal.dealStage)) return false;
+        if (isClosedStage(deal.dealStageName || "", deal.dealStage)) return false;
       } else if (stageFilter === "won") {
         if (!isWonStage(deal.dealStageName || "", deal.dealStage)) return false;
+      } else if (stageFilter === "lost") {
+        if (!isLostStage(deal.dealStageName || "", deal.dealStage)) return false;
       } else if (stageFilter !== "all") {
         if (deal.dealStage !== stageFilter) return false;
       }
@@ -378,8 +390,9 @@ export default function CrmDeals() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="active">Active (Not Won)</SelectItem>
+                    <SelectItem value="active">Active (Open)</SelectItem>
                     <SelectItem value="won">Won</SelectItem>
+                    <SelectItem value="lost">Lost</SelectItem>
                     <SelectItem value="all">All Stages</SelectItem>
                     {uniqueStages.length > 0 && (
                       <>
@@ -608,8 +621,8 @@ export default function CrmDeals() {
                       availableEstimates.map((est) => (
                         <SelectItem key={est.id} value={est.id}>
                           <div className="flex items-center gap-2">
-                            <span>{est.name}</span>
-                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                            <span className="truncate">{est.clientName || "No Client"} — {est.name}</span>
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">
                               {est.status}
                             </Badge>
                           </div>
@@ -620,7 +633,7 @@ export default function CrmDeals() {
                 </Select>
                 {selectedDeal?.companyLinked && (
                   <p className="text-xs text-muted-foreground">
-                    Showing estimates for the linked client. Link more clients in the Clients page.
+                    Showing estimates for the linked client only.
                   </p>
                 )}
               </div>
