@@ -347,17 +347,39 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const deals = await getHubSpotDealsAboveThreshold(tenantId, threshold);
 
       const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
-      const mappedDealIds = new Set(mappings.map(m => m.crmObjectId));
+      const dealMappingsMap = new Map<string, typeof mappings>();
+      for (const m of mappings) {
+        const existing = dealMappingsMap.get(m.crmObjectId) || [];
+        existing.push(m);
+        dealMappingsMap.set(m.crmObjectId, existing);
+      }
 
       const companyMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "company");
       const mappedCompanyIds = new Map(companyMappings.map(m => [m.crmObjectId, m]));
 
+      const allEstimateIds = mappings.map(m => m.localObjectId);
+      const estimateNames = new Map<string, string>();
+      if (allEstimateIds.length > 0) {
+        for (const estId of allEstimateIds) {
+          try {
+            const est = await storage.getEstimate(estId);
+            if (est) estimateNames.set(estId, est.name);
+          } catch {}
+        }
+      }
+
       const enrichedDeals = deals.map(deal => {
         const companyMapping = deal.companyId ? mappedCompanyIds.get(deal.companyId) : null;
+        const dealMappings = dealMappingsMap.get(deal.id) || [];
         return {
           ...deal,
-          isMapped: mappedDealIds.has(deal.id),
-          mapping: mappings.find(m => m.crmObjectId === deal.id) || null,
+          isMapped: dealMappings.length > 0,
+          mappings: dealMappings.map(m => ({
+            localObjectId: m.localObjectId,
+            estimateName: estimateNames.get(m.localObjectId) || 'Unknown Estimate',
+            mappingId: m.id,
+          })),
+          mapping: dealMappings.length > 0 ? dealMappings[0] : null,
           companyLinked: !!companyMapping,
           linkedClientId: companyMapping?.localObjectId || null,
         };
@@ -391,14 +413,6 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       const connection = await storage.getCrmConnection(tenantId, "hubspot");
       if (!connection?.isEnabled) {
         return res.status(400).json({ message: "HubSpot integration is not enabled" });
-      }
-
-      const existingMapping = await storage.getCrmObjectMapping(tenantId, "hubspot", "deal", dealId);
-      if (existingMapping) {
-        return res.status(409).json({
-          message: "This deal is already linked to an estimate",
-          mapping: existingMapping,
-        });
       }
 
       const deal = await getHubSpotDealById(tenantId, dealId);
@@ -500,6 +514,105 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
       });
     } catch (error: any) {
       console.error("[CRM] Error creating estimate from deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/crm/deals/:dealId/link-estimate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+      const { dealId } = req.params;
+
+      const connection = await storage.getCrmConnection(tenantId, "hubspot");
+      if (!connection?.isEnabled) {
+        return res.status(400).json({ message: "HubSpot integration is not enabled" });
+      }
+
+      const schema = z.object({
+        estimateId: z.string(),
+      });
+      const body = schema.parse(req.body);
+
+      const estimate = await storage.getEstimate(body.estimateId);
+      if (!estimate || estimate.tenantId !== tenantId) {
+        return res.status(404).json({ message: "Estimate not found" });
+      }
+
+      const existingMappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
+      const alreadyLinked = existingMappings.find(
+        m => m.crmObjectId === dealId && m.localObjectId === body.estimateId
+      );
+      if (alreadyLinked) {
+        return res.status(409).json({ message: "This estimate is already linked to this deal" });
+      }
+
+      const deal = await getHubSpotDealById(tenantId, dealId);
+
+      await storage.createCrmObjectMapping({
+        tenantId,
+        crmProvider: "hubspot",
+        crmObjectType: "deal",
+        crmObjectId: dealId,
+        localObjectType: "estimate",
+        localObjectId: body.estimateId,
+        metadata: {
+          dealName: deal?.dealName || 'Unknown',
+          dealStage: deal?.dealStage,
+          pipeline: deal?.pipeline,
+          amount: deal?.amount,
+          linkedManually: true,
+        } as any,
+      });
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "link_estimate_to_deal",
+        crmObjectType: "deal",
+        crmObjectId: dealId,
+        localObjectType: "estimate",
+        localObjectId: body.estimateId,
+        status: "success",
+        requestPayload: { dealId, estimateId: body.estimateId },
+      });
+
+      res.json({ success: true, dealId, estimateId: body.estimateId });
+    } catch (error: any) {
+      console.error("[CRM] Error linking estimate to deal:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/crm/deals/:dealId/unlink-estimate/:estimateId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req: Request, res: Response) => {
+    try {
+      const tenantId = getUserTenantId(req);
+      if (!tenantId) return res.status(400).json({ message: "No active tenant" });
+      const { dealId, estimateId } = req.params;
+
+      const mappings = await storage.getCrmObjectMappings(tenantId, "hubspot", "deal");
+      const mapping = mappings.find(m => m.crmObjectId === dealId && m.localObjectId === estimateId);
+      if (!mapping) {
+        return res.status(404).json({ message: "Mapping not found" });
+      }
+
+      await storage.deleteCrmObjectMapping(mapping.id);
+
+      await storage.createCrmSyncLog({
+        tenantId,
+        crmProvider: "hubspot",
+        action: "unlink_estimate_from_deal",
+        crmObjectType: "deal",
+        crmObjectId: dealId,
+        localObjectType: "estimate",
+        localObjectId: estimateId,
+        status: "success",
+        requestPayload: { dealId, estimateId },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[CRM] Error unlinking estimate from deal:", error);
       res.status(500).json({ message: error.message });
     }
   });

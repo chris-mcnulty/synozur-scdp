@@ -14,7 +14,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
-import { Handshake, DollarSign, Calendar, ExternalLink, Plus, AlertTriangle, ArrowLeft, Search } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Handshake, DollarSign, Calendar, ExternalLink, Plus, AlertTriangle, ArrowLeft, Search, Link2, Unlink, X } from "lucide-react";
+
+interface EstimateMapping {
+  localObjectId: string;
+  estimateName: string;
+  mappingId: string;
+}
 
 interface HubSpotDeal {
   id: string;
@@ -32,6 +39,7 @@ interface HubSpotDeal {
   createdAt: string;
   updatedAt: string;
   isMapped: boolean;
+  mappings: EstimateMapping[];
   mapping: { localObjectId: string } | null;
   companyLinked: boolean;
   linkedClientId: string | null;
@@ -52,8 +60,16 @@ interface CrmStatus {
 }
 
 interface Client {
-  id: number;
+  id: string;
   name: string;
+}
+
+interface Estimate {
+  id: string;
+  name: string;
+  clientId: string;
+  status: string;
+  totalFees?: string | number | null;
 }
 
 function formatCurrency(amount: string | number | null): string {
@@ -68,8 +84,10 @@ export default function CrmDeals() {
   const [, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogTab, setDialogTab] = useState<string>("link");
   const [selectedDeal, setSelectedDeal] = useState<HubSpotDeal | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [selectedEstimateId, setSelectedEstimateId] = useState<string>("");
   const [estimateName, setEstimateName] = useState("");
 
   const { data: crmStatus, isLoading: isLoadingStatus } = useQuery<CrmStatus>({
@@ -86,23 +104,36 @@ export default function CrmDeals() {
     enabled: dialogOpen,
   });
 
+  const { data: estimates } = useQuery<Estimate[]>({
+    queryKey: ["/api/estimates"],
+    enabled: dialogOpen,
+  });
+
+  const linkedClientEstimates = estimates?.filter(est => {
+    if (!selectedDeal) return true;
+    if (selectedDeal.linkedClientId) {
+      return est.clientId === selectedDeal.linkedClientId;
+    }
+    return true;
+  }) ?? [];
+
+  const alreadyLinkedIds = new Set(selectedDeal?.mappings?.map(m => m.localObjectId) || []);
+  const availableEstimates = linkedClientEstimates.filter(est => !alreadyLinkedIds.has(est.id));
+
   const createEstimateMutation = useMutation({
     mutationFn: (dealId: string) =>
       apiRequest(`/api/crm/deals/${dealId}/create-estimate`, {
         method: "POST",
         body: JSON.stringify({
-          clientId: selectedClientId && selectedClientId !== "auto" ? parseInt(selectedClientId) : undefined,
+          clientId: selectedClientId && selectedClientId !== "auto" ? selectedClientId : undefined,
           estimateName: estimateName || undefined,
         }),
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/crm/deals"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
-      toast({ title: "Estimate created", description: `Estimate created from deal successfully.` });
-      setDialogOpen(false);
-      setSelectedDeal(null);
-      setSelectedClientId("");
-      setEstimateName("");
+      toast({ title: "Estimate created", description: "Estimate created and linked to deal successfully." });
+      closeDialog();
       if (data?.estimate?.id) {
         navigate(`/estimates/${data.estimate.id}`);
       }
@@ -112,16 +143,61 @@ export default function CrmDeals() {
     },
   });
 
-  const openCreateDialog = (deal: HubSpotDeal) => {
+  const linkEstimateMutation = useMutation({
+    mutationFn: ({ dealId, estimateId }: { dealId: string; estimateId: string }) =>
+      apiRequest(`/api/crm/deals/${dealId}/link-estimate`, {
+        method: "POST",
+        body: JSON.stringify({ estimateId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/deals"] });
+      toast({ title: "Estimate linked", description: "Existing estimate linked to deal successfully." });
+      setSelectedEstimateId("");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to link estimate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const unlinkEstimateMutation = useMutation({
+    mutationFn: ({ dealId, estimateId }: { dealId: string; estimateId: string }) =>
+      apiRequest(`/api/crm/deals/${dealId}/unlink-estimate/${estimateId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/deals"] });
+      toast({ title: "Estimate unlinked", description: "Estimate unlinked from deal." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to unlink estimate", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openDealDialog = (deal: HubSpotDeal) => {
     setSelectedDeal(deal);
     setEstimateName(deal.dealName);
-    setSelectedClientId("auto");
+    setSelectedClientId(deal.linkedClientId || "auto");
+    setSelectedEstimateId("");
+    setDialogTab(deal.companyLinked ? "link" : "create");
     setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setSelectedDeal(null);
+    setSelectedClientId("");
+    setEstimateName("");
+    setSelectedEstimateId("");
   };
 
   const handleCreateEstimate = () => {
     if (!selectedDeal) return;
     createEstimateMutation.mutate(selectedDeal.id);
+  };
+
+  const handleLinkEstimate = () => {
+    if (!selectedDeal || !selectedEstimateId) return;
+    linkEstimateMutation.mutate({ dealId: selectedDeal.id, estimateId: selectedEstimateId });
   };
 
   const filteredDeals = dealsData?.deals?.filter((deal) => {
@@ -195,7 +271,7 @@ export default function CrmDeals() {
               <p className="text-sm text-muted-foreground">
                 {isLoadingDeals
                   ? "Loading deals..."
-                  : `${dealsData?.total ?? 0} deals above ${dealsData?.threshold ?? 0}% probability · ${dealsData?.mapped ?? 0} mapped to estimates`}
+                  : `${dealsData?.total ?? 0} deals above ${dealsData?.threshold ?? 0}% probability · ${dealsData?.mapped ?? 0} with linked estimates`}
               </p>
             </div>
           </div>
@@ -235,10 +311,9 @@ export default function CrmDeals() {
                       <TableHead>Deal Name</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Stage</TableHead>
-                      <TableHead>Pipeline</TableHead>
                       <TableHead className="text-center">Probability</TableHead>
                       <TableHead>Close Date</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Linked Estimates</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -266,9 +341,6 @@ export default function CrmDeals() {
                         <TableCell>
                           <Badge variant="outline">{deal.dealStageName || deal.dealStage}</Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {deal.pipelineName || deal.pipeline}
-                        </TableCell>
                         <TableCell className="text-center">
                           <Badge
                             variant={deal.probability >= 80 ? "default" : deal.probability >= 50 ? "secondary" : "outline"}
@@ -286,36 +358,39 @@ export default function CrmDeals() {
                             : "—"}
                         </TableCell>
                         <TableCell>
-                          {deal.isMapped ? (
-                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">
-                              Mapped
-                            </Badge>
+                          {deal.mappings && deal.mappings.length > 0 ? (
+                            <div className="flex flex-col gap-1">
+                              {deal.mappings.map((m) => (
+                                <div key={m.localObjectId} className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => navigate(`/estimates/${m.localObjectId}`)}
+                                    className="text-xs text-primary hover:underline truncate max-w-[200px]"
+                                  >
+                                    {m.estimateName}
+                                  </button>
+                                  <button
+                                    onClick={() => unlinkEstimateMutation.mutate({ dealId: deal.id, estimateId: m.localObjectId })}
+                                    className="text-muted-foreground hover:text-destructive shrink-0"
+                                    title="Unlink estimate"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           ) : (
-                            <Badge variant="outline" className="text-orange-600 border-orange-400">
-                              Unmapped
-                            </Badge>
+                            <span className="text-xs text-muted-foreground">None</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {deal.isMapped && deal.mapping?.localObjectId ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/estimates/${deal.mapping!.localObjectId}`)}
-                            >
-                              <ExternalLink className="h-4 w-4 mr-1" />
-                              View Estimate
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openCreateDialog(deal)}
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Create Estimate
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openDealDialog(deal)}
+                          >
+                            <Link2 className="h-4 w-4 mr-1" />
+                            Link Estimate
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -328,54 +403,144 @@ export default function CrmDeals() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Create Estimate from Deal</DialogTitle>
+            <DialogTitle>Link Estimates to Deal</DialogTitle>
             <DialogDescription>
-              Create a new estimate linked to "{selectedDeal?.dealName}".
-              {selectedDeal?.amount ? ` Deal value: ${formatCurrency(selectedDeal.amount)}.` : ""}
+              {selectedDeal?.dealName}
+              {selectedDeal?.amount ? ` · ${formatCurrency(selectedDeal.amount)}` : ""}
+              {selectedDeal?.companyName ? ` · ${selectedDeal.companyName}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          {selectedDeal && selectedDeal.mappings.length > 0 && (
             <div className="space-y-2">
-              <Label>Estimate Name</Label>
-              <Input
-                value={estimateName}
-                onChange={(e) => setEstimateName(e.target.value)}
-                placeholder="Enter estimate name"
-              />
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Currently Linked</Label>
+              <div className="space-y-1">
+                {selectedDeal.mappings.map((m) => (
+                  <div key={m.localObjectId} className="flex items-center justify-between bg-muted/50 rounded px-3 py-1.5 text-sm">
+                    <button
+                      onClick={() => navigate(`/estimates/${m.localObjectId}`)}
+                      className="text-primary hover:underline truncate"
+                    >
+                      {m.estimateName}
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        unlinkEstimateMutation.mutate({ dealId: selectedDeal.id, estimateId: m.localObjectId });
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          mappings: selectedDeal.mappings.filter(x => x.localObjectId !== m.localObjectId),
+                        });
+                      }}
+                    >
+                      <Unlink className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Client</Label>
-              <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto-detect from HubSpot</SelectItem>
-                  {clients?.map((client) => (
-                    <SelectItem key={client.id} value={String(client.id)}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Choose "Auto-detect" to match the client from HubSpot company data, or select an existing client.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateEstimate}
-              disabled={createEstimateMutation.isPending}
-            >
-              {createEstimateMutation.isPending ? "Creating..." : "Create Estimate"}
-            </Button>
-          </DialogFooter>
+          )}
+
+          <Tabs value={dialogTab} onValueChange={setDialogTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="link">Link Existing</TabsTrigger>
+              <TabsTrigger value="create">Create New</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="link" className="space-y-4 pt-2">
+              {!selectedDeal?.companyLinked && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription className="text-xs">
+                    This deal's HubSpot company is not linked to a client. Showing all estimates. Link the company to a client first for filtered results.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <div className="space-y-2">
+                <Label>Select Estimate</Label>
+                <Select value={selectedEstimateId} onValueChange={setSelectedEstimateId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose an estimate to link..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableEstimates.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        No available estimates{selectedDeal?.companyLinked ? " for this client" : ""}
+                      </div>
+                    ) : (
+                      availableEstimates.map((est) => (
+                        <SelectItem key={est.id} value={est.id}>
+                          <div className="flex items-center gap-2">
+                            <span>{est.name}</span>
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                              {est.status}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {selectedDeal?.companyLinked && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing estimates for the linked client. Link more clients in the Clients page.
+                  </p>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+                <Button
+                  onClick={handleLinkEstimate}
+                  disabled={!selectedEstimateId || linkEstimateMutation.isPending}
+                >
+                  {linkEstimateMutation.isPending ? "Linking..." : "Link Estimate"}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="create" className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label>Estimate Name</Label>
+                <Input
+                  value={estimateName}
+                  onChange={(e) => setEstimateName(e.target.value)}
+                  placeholder="Enter estimate name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Client</Label>
+                <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detect from HubSpot</SelectItem>
+                    {clients?.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Choose "Auto-detect" to match the client from HubSpot company data, or select an existing client.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+                <Button
+                  onClick={handleCreateEstimate}
+                  disabled={createEstimateMutation.isPending}
+                >
+                  {createEstimateMutation.isPending ? "Creating..." : "Create Estimate"}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </Layout>

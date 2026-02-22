@@ -2860,7 +2860,7 @@ export const crmObjectMappings = pgTable("crm_object_mappings", {
   tenantIdx: index("idx_crm_mappings_tenant").on(table.tenantId),
   crmObjectIdx: index("idx_crm_mappings_crm_object").on(table.crmProvider, table.crmObjectType, table.crmObjectId),
   localObjectIdx: index("idx_crm_mappings_local_object").on(table.localObjectType, table.localObjectId),
-  uniqueMapping: uniqueIndex("unique_crm_object_mapping").on(table.tenantId, table.crmProvider, table.crmObjectType, table.crmObjectId, table.localObjectType),
+  uniqueMapping: uniqueIndex("unique_crm_object_mapping").on(table.tenantId, table.crmProvider, table.crmObjectType, table.crmObjectId, table.localObjectType, table.localObjectId),
 }));
 
 export const insertCrmObjectMappingSchema = createInsertSchema(crmObjectMappings).omit({
