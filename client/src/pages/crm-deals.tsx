@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Handshake, DollarSign, Calendar, ExternalLink, Plus, AlertTriangle, ArrowLeft, Search, Link2, Unlink, X } from "lucide-react";
+import { Handshake, DollarSign, Calendar, ExternalLink, Plus, AlertTriangle, ArrowLeft, Search, Link2, Unlink, X, Filter } from "lucide-react";
 
 interface EstimateMapping {
   localObjectId: string;
@@ -79,10 +79,56 @@ function formatCurrency(amount: string | number | null): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
 }
 
+type DateRangePreset = "all" | "current_quarter" | "next_quarter" | "this_year" | "custom";
+
+function getQuarterRange(offset: number = 0): { start: Date; end: Date } {
+  const now = new Date();
+  const currentQuarter = Math.floor(now.getMonth() / 3) + offset;
+  const year = now.getFullYear() + Math.floor(currentQuarter / 4);
+  const quarter = ((currentQuarter % 4) + 4) % 4;
+  const start = new Date(year, quarter * 3, 1);
+  const end = new Date(year, quarter * 3 + 3, 0, 23, 59, 59);
+  return { start, end };
+}
+
+function getDateRange(preset: DateRangePreset): { start: Date | null; end: Date | null } {
+  switch (preset) {
+    case "current_quarter": {
+      const { start, end } = getQuarterRange(0);
+      return { start, end };
+    }
+    case "next_quarter": {
+      const { start, end } = getQuarterRange(1);
+      return { start, end };
+    }
+    case "this_year": {
+      const now = new Date();
+      return { start: new Date(now.getFullYear(), 0, 1), end: new Date(now.getFullYear(), 11, 31, 23, 59, 59) };
+    }
+    default:
+      return { start: null, end: null };
+  }
+}
+
+function formatDateRange(preset: DateRangePreset): string {
+  const range = getDateRange(preset);
+  if (!range.start || !range.end) return "";
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(range.start)} – ${fmt(range.end)}, ${range.end.getFullYear()}`;
+}
+
+const WON_STAGE_KEYS = ["closedwon", "won", "closed won"];
+
+function isWonStage(stageName: string, stageKey: string): boolean {
+  return WON_STAGE_KEYS.includes(stageKey.toLowerCase()) || WON_STAGE_KEYS.includes(stageName.toLowerCase());
+}
+
 export default function CrmDeals() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
+  const [stageFilter, setStageFilter] = useState<string>("active");
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>("current_quarter");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<string>("link");
   const [selectedDeal, setSelectedDeal] = useState<HubSpotDeal | null>(null);
@@ -200,16 +246,48 @@ export default function CrmDeals() {
     linkEstimateMutation.mutate({ dealId: selectedDeal.id, estimateId: selectedEstimateId });
   };
 
-  const filteredDeals = dealsData?.deals?.filter((deal) => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      deal.dealName.toLowerCase().includes(term) ||
-      deal.companyName?.toLowerCase().includes(term) ||
-      deal.ownerName?.toLowerCase().includes(term) ||
-      deal.dealStageName?.toLowerCase().includes(term)
-    );
-  }) ?? [];
+  const uniqueStages = useMemo(() => {
+    if (!dealsData?.deals) return [];
+    const stageMap = new Map<string, string>();
+    for (const deal of dealsData.deals) {
+      if (deal.dealStage && !stageMap.has(deal.dealStage)) {
+        stageMap.set(deal.dealStage, deal.dealStageName || deal.dealStage);
+      }
+    }
+    return Array.from(stageMap.entries()).map(([key, name]) => ({ key, name, isWon: isWonStage(name, key) }));
+  }, [dealsData?.deals]);
+
+  const filteredDeals = useMemo(() => {
+    if (!dealsData?.deals) return [];
+    const dateRange = getDateRange(dateRangePreset);
+    return dealsData.deals.filter((deal) => {
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        const matchesSearch =
+          deal.dealName.toLowerCase().includes(term) ||
+          deal.companyName?.toLowerCase().includes(term) ||
+          deal.ownerName?.toLowerCase().includes(term) ||
+          deal.dealStageName?.toLowerCase().includes(term);
+        if (!matchesSearch) return false;
+      }
+
+      if (stageFilter === "active") {
+        if (isWonStage(deal.dealStageName || "", deal.dealStage)) return false;
+      } else if (stageFilter === "won") {
+        if (!isWonStage(deal.dealStageName || "", deal.dealStage)) return false;
+      } else if (stageFilter !== "all") {
+        if (deal.dealStage !== stageFilter) return false;
+      }
+
+      if (dateRange.start && dateRange.end) {
+        if (!deal.closeDate) return false;
+        const closeDate = new Date(deal.closeDate);
+        if (closeDate < dateRange.start || closeDate > dateRange.end) return false;
+      }
+
+      return true;
+    });
+  }, [dealsData?.deals, searchTerm, stageFilter, dateRangePreset]);
 
   if (isLoadingStatus) {
     return (
@@ -291,6 +369,59 @@ export default function CrmDeals() {
                 />
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Stage:</span>
+                <Select value={stageFilter} onValueChange={setStageFilter}>
+                  <SelectTrigger className="w-[160px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active (Not Won)</SelectItem>
+                    <SelectItem value="won">Won</SelectItem>
+                    <SelectItem value="all">All Stages</SelectItem>
+                    {uniqueStages.length > 0 && (
+                      <>
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1">
+                          Individual Stages
+                        </div>
+                        {uniqueStages.map((stage) => (
+                          <SelectItem key={stage.key} value={stage.key}>
+                            {stage.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Close Date:</span>
+                <Select value={dateRangePreset} onValueChange={(v) => setDateRangePreset(v as DateRangePreset)}>
+                  <SelectTrigger className="w-[180px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="current_quarter">Current Quarter</SelectItem>
+                    <SelectItem value="next_quarter">Next Quarter</SelectItem>
+                    <SelectItem value="this_year">This Year</SelectItem>
+                    <SelectItem value="all">All Dates</SelectItem>
+                  </SelectContent>
+                </Select>
+                {dateRangePreset !== "all" && (
+                  <span className="text-xs text-muted-foreground">
+                    {formatDateRange(dateRangePreset)}
+                  </span>
+                )}
+              </div>
+              {filteredDeals.length !== (dealsData?.deals?.length ?? 0) && (
+                <Badge variant="secondary" className="text-xs">
+                  {filteredDeals.length} of {dealsData?.deals?.length ?? 0} deals
+                </Badge>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {isLoadingDeals ? (
@@ -301,7 +432,9 @@ export default function CrmDeals() {
               </div>
             ) : filteredDeals.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
-                {searchTerm ? "No deals match your search." : "No deals found above the probability threshold."}
+                {searchTerm || stageFilter !== "all" || dateRangePreset !== "all"
+                  ? "No deals match your current filters."
+                  : "No deals found above the probability threshold."}
               </div>
             ) : (
               <div className="overflow-x-auto">
