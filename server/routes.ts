@@ -407,18 +407,65 @@ export async function registerRoutes(app: Express): Promise<void> {
       const includeStakeholders = req.query.includeStakeholders === 'true';
       const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
       
+      // Enrich users with client association info from tenant_users
+      let enrichedUsers = usersList.map((u: any) => ({ ...u }));
+      {
+        const membershipConditions: any[] = [eq(tenantUsers.status, 'active')];
+        if (tenantId) {
+          membershipConditions.push(eq(tenantUsers.tenantId, tenantId));
+        }
+        const memberships = await db.select({
+          userId: tenantUsers.userId,
+          clientId: tenantUsers.clientId,
+          tenantRole: tenantUsers.role,
+        })
+        .from(tenantUsers)
+        .where(and(...membershipConditions));
+        
+        // Build a map of userId -> client associations
+        const userClientMap = new Map<string, string[]>();
+        for (const m of memberships) {
+          if (m.clientId) {
+            const arr = userClientMap.get(m.userId) || [];
+            if (!arr.includes(m.clientId)) arr.push(m.clientId);
+            userClientMap.set(m.userId, arr);
+          }
+        }
+        
+        // Get client names for all referenced clientIds
+        const allClientIds = Array.from(new Set(memberships.filter(m => m.clientId).map(m => m.clientId!)));
+        const clientNameMap = new Map<string, string>();
+        if (allClientIds.length > 0) {
+          const clientRows = await db.select({ id: clients.id, name: clients.name })
+            .from(clients)
+            .where(inArray(clients.id, allClientIds));
+          for (const c of clientRows) {
+            clientNameMap.set(c.id, c.name);
+          }
+        }
+        
+        enrichedUsers = enrichedUsers.map((u: any) => {
+          const clientIds = userClientMap.get(u.id) || [];
+          const clientNames = clientIds.map(id => clientNameMap.get(id)).filter(Boolean);
+          return {
+            ...u,
+            clientIds,
+            clientNames,
+          };
+        });
+      }
+      
       // Portfolio-manager: strip cost rates for external (non-salaried) resources
       if (currentUser?.role === 'portfolio-manager') {
-        const filtered = usersList.map((u: any) => {
+        enrichedUsers = enrichedUsers.map((u: any) => {
           if (!u.isSalaried) {
             return { ...u, defaultCostRate: null };
           }
           return u;
         });
-        return res.json(filtered);
       }
       
-      res.json(usersList);
+      res.json(enrichedUsers);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch users" });
     }

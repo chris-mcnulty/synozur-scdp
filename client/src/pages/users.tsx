@@ -11,14 +11,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2 } from "lucide-react";
+import { Plus, Search, UserPlus, Edit, Shield, Trash2, Building2, Filter } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { getRoleDisplayName } from "@/lib/auth";
 
 export default function Users() {
   const [searchTerm, setSearchTerm] = useState("");
   const [tenantFilter, setTenantFilter] = useState("all");
+  const [orgFilter, setOrgFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -100,12 +103,25 @@ export default function Users() {
     ? Array.from(new Set(users.map((u: any) => u.primaryTenantName).filter(Boolean)))
     : [];
 
+  // Extract unique organization/client names from users' clientNames arrays
+  const orgNames = Array.from(new Set(
+    users.flatMap((u: any) => u.clientNames || []).filter(Boolean)
+  )).sort() as string[];
+
+  // Extract unique roles for the role filter
+  const availableRoles = Array.from(new Set(
+    users.map((u: any) => u.role).filter(Boolean)
+  )).sort() as string[];
+
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTenant = !isPlatformAdmin || tenantFilter === "all" ||
       (tenantFilter === "unassigned" ? !user.primaryTenantName : user.primaryTenantName === tenantFilter);
-    return matchesSearch && matchesTenant;
+    const matchesOrg = orgFilter === "all" ||
+      (orgFilter === "internal" ? !(user.clientNames?.length > 0) : (user.clientNames || []).includes(orgFilter));
+    const matchesRole = roleFilter === "all" || user.role === roleFilter;
+    return matchesSearch && matchesTenant && matchesOrg && matchesRole;
   });
 
   const getRoleBadgeColor = (role: string) => {
@@ -113,7 +129,9 @@ export default function Users() {
       case 'admin': return 'destructive';
       case 'billing-admin': return 'secondary';
       case 'pm': return 'default';
+      case 'portfolio-manager': return 'default';
       case 'employee': return 'outline';
+      case 'client': return 'secondary';
       default: return 'outline';
     }
   };
@@ -147,6 +165,31 @@ export default function Users() {
                   data-testid="input-search-users"
                 />
               </div>
+              <Select value={orgFilter} onValueChange={setOrgFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <Building2 className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="All Organizations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Organizations</SelectItem>
+                  <SelectItem value="internal">Internal Only</SelectItem>
+                  {orgNames.map((name: string) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <Shield className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {availableRoles.map((role: string) => (
+                    <SelectItem key={role} value={role}>{getRoleDisplayName(role)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {isPlatformAdmin && tenantNames.length > 0 && (
                 <Select value={tenantFilter} onValueChange={setTenantFilter}>
                   <SelectTrigger className="w-[200px]">
@@ -177,8 +220,9 @@ export default function Users() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Organization</TableHead>
                     {isPlatformAdmin && <TableHead>Primary Tenant</TableHead>}
-                    <TableHead>System Role</TableHead>
+                    <TableHead>Role</TableHead>
                     <TableHead>Can Login</TableHead>
                     <TableHead>Assignable</TableHead>
                     <TableHead>Charge Rate</TableHead>
@@ -191,6 +235,20 @@ export default function Users() {
                     <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email || <span className="text-muted-foreground">-</span>}</TableCell>
+                      <TableCell>
+                        {user.clientNames?.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {user.clientNames.map((name: string) => (
+                              <Badge key={name} variant="outline" className="font-normal text-xs">
+                                <Building2 className="w-3 h-3 mr-1" />
+                                {name}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Internal</span>
+                        )}
+                      </TableCell>
                       {isPlatformAdmin && (
                         <TableCell>
                           {user.primaryTenantName ? (
@@ -206,7 +264,7 @@ export default function Users() {
                       <TableCell>
                         <Badge variant={getRoleBadgeColor(user.role)}>
                           <Shield className="w-3 h-3 mr-1" />
-                          {user.role}
+                          {getRoleDisplayName(user.role)}
                         </Badge>
                       </TableCell>
                       <TableCell>

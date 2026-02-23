@@ -1037,7 +1037,12 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
         user = await storage.createUser({
           email: hsContact.email.toLowerCase().trim(),
           name: hsContact.fullName || hsContact.email.split('@')[0],
-          role: 'employee',
+          firstName: hsContact.fullName?.split(' ')[0] || null,
+          lastName: hsContact.fullName?.split(' ').slice(1).join(' ') || null,
+          title: hsContact.jobTitle || null,
+          role: 'client',
+          canLogin: false,
+          isAssignable: false,
         } as any);
       }
 
@@ -1176,7 +1181,12 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
             user = await storage.createUser({
               email: hsContact.email.toLowerCase().trim(),
               name: hsContact.fullName || hsContact.email.split('@')[0],
-              role: 'employee',
+              firstName: hsContact.fullName?.split(' ')[0] || null,
+              lastName: hsContact.fullName?.split(' ').slice(1).join(' ') || null,
+              title: hsContact.jobTitle || null,
+              role: 'client',
+              canLogin: false,
+              isAssignable: false,
             } as any);
           }
 
