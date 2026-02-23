@@ -311,7 +311,7 @@ export default function TenantGroundingDocs() {
     </Form>
   );
 
-  if (!hasAnyRole(["admin", "pm"])) {
+  if (!hasAnyRole(["admin", "pm", "portfolio-manager"])) {
     return (
       <Layout>
         <div className="p-6">

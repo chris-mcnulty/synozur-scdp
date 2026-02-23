@@ -404,7 +404,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/deals/:dealId/create-estimate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/deals/:dealId/create-estimate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -519,7 +519,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/deals/:dealId/link-estimate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/deals/:dealId/link-estimate", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -585,7 +585,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.delete("/api/crm/deals/:dealId/unlink-estimate/:estimateId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm"]), async (req: Request, res: Response) => {
+  app.delete("/api/crm/deals/:dealId/unlink-estimate/:estimateId", deps.requireAuth, deps.requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -721,7 +721,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/companies/:companyId/link-client", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/companies/:companyId/link-client", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -847,7 +847,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/companies/:companyId/sync", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/companies/:companyId/sync", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -990,7 +990,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/contacts/:contactId/import-stakeholder", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/contacts/:contactId/import-stakeholder", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });
@@ -1126,7 +1126,7 @@ export function registerHubSpotRoutes(app: Express, deps: HubSpotRouteDeps) {
     }
   });
 
-  app.post("/api/crm/contacts/bulk-import", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req: Request, res: Response) => {
+  app.post("/api/crm/contacts/bulk-import", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req: Request, res: Response) => {
     try {
       const tenantId = getUserTenantId(req);
       if (!tenantId) return res.status(400).json({ message: "No active tenant" });

@@ -543,7 +543,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
     }
   });
 
-  app.get("/api/expenses/admin", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.get("/api/expenses/admin", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager", "billing-admin"]), async (req, res) => {
     try {
       const {
         clientId,
@@ -2738,7 +2738,7 @@ export function registerExpenseRoutes(app: Express, deps: ExpenseRouteDeps) {
     }
   });
 
-  app.get("/api/expenses/export", deps.requireAuth, deps.requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.get("/api/expenses/export", deps.requireAuth, deps.requireRole(["admin", "pm", "portfolio-manager", "billing-admin"]), async (req, res) => {
     try {
       const { format = 'csv', ...filterParams } = req.query as Record<string, string>;
 

@@ -274,7 +274,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // PORTFOLIO TIMELINE ENDPOINT
   // ============================================================================
 
-  app.patch("/api/estimates/:id/planning", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/estimates/:id/planning", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
       const { potentialStartDate } = req.body;
@@ -483,7 +483,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   // ============================================================================
 
   // Get available resources for Sub-SOW generation (users from project allocations only)
-  app.get("/api/projects/:id/sub-sow/resources", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/projects/:id/sub-sow/resources", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const projectId = req.params.id;
       
@@ -550,7 +550,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Get Sub-SOW data for a specific resource (from project allocations only)
-  app.get("/api/projects/:id/sub-sow/:userId", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/projects/:id/sub-sow/:userId", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
       
@@ -645,7 +645,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Generate Sub-SOW with AI narrative (from project allocations only)
-  app.post("/api/projects/:id/sub-sow/:userId/generate", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/sub-sow/:userId/generate", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
       const { generateNarrative = true } = req.body;
@@ -764,7 +764,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Generate Sub-SOW PDF (from project allocations only)
-  app.post("/api/projects/:id/sub-sow/:userId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/sub-sow/:userId/pdf", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const { id: projectId, userId } = req.params;
       const { narrative } = req.body;
@@ -873,7 +873,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/sows/:id/approve", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/sows/:id/approve", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       // Get the SOW before approval to track previous budget
       const sowToApprove = await storage.getSow(req.params.id);
@@ -965,7 +965,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/projects/:id/recalculate-budget", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:id/recalculate-budget", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       if (!req.user?.id) {
         return res.status(401).json({ message: "User not authenticated" });
@@ -990,7 +990,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/clients", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/clients", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       console.log("[DEBUG] Creating client with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
@@ -1030,7 +1030,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.patch("/api/clients/:id", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.patch("/api/clients/:id", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const client = await storage.getClient(req.params.id);
       if (!client) {
@@ -1081,7 +1081,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/clients/:clientId/stakeholders", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/clients/:clientId/stakeholders", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const { email, name, stakeholderTitle } = req.body;
       if (!email) {
@@ -1150,7 +1150,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.patch("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.patch("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const { stakeholderTitle } = req.body;
       const [updated] = await db
@@ -1180,7 +1180,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.delete("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.delete("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const [deleted] = await db
         .delete(tenantUsers)
@@ -1260,7 +1260,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/clients/:clientId/rate-overrides", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/clients/:clientId/rate-overrides", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const { insertClientRateOverrideSchema } = await import("@shared/schema");
       
@@ -1317,7 +1317,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.patch("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.patch("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       // Verify override exists and belongs to this client
       const overrides = await storage.getClientRateOverrides(req.params.clientId);
@@ -1337,7 +1337,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.delete("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.delete("/api/clients/:clientId/rate-overrides/:overrideId", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       // Verify override exists and belongs to this client
       const overrides = await storage.getClientRateOverrides(req.params.clientId);
@@ -1358,7 +1358,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Roles (admin only)
-  app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+  app.get("/api/roles", requireAuth, requireRole(["admin", "billing-admin", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
       const fetchedRoles = await storage.getRoles(tenantId);
@@ -1452,7 +1452,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     return !!membership;
   }
 
-  app.get("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.get("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { userId } = req.query;
       if (!userId || typeof userId !== 'string') {
@@ -1471,7 +1471,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+  app.post("/api/rates/schedules", requireAuth, requireRole(["admin", "billing-admin", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const validatedData = insertUserRateScheduleSchema.parse(req.body);
       
@@ -1490,7 +1490,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin", "executive"]), async (req, res) => {
+  app.patch("/api/rates/schedules/:id", requireAuth, requireRole(["admin", "billing-admin", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const [existingSchedule] = await db.select().from(userRateSchedules).where(eq(userRateSchedules.id, req.params.id));
       if (!existingSchedule) {
@@ -1509,7 +1509,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/rates/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/rates/bulk-update", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { filters, rates, skipLocked = true, dryRun = false } = req.body;
 
@@ -1544,7 +1544,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Project Rate Overrides
-  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const overrides = await storage.getProjectRateOverrides(req.params.projectId);
       res.json(overrides);
@@ -1554,7 +1554,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/rate-overrides", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       const validatedData = insertProjectRateOverrideSchema.parse({
         ...req.body,
@@ -1571,7 +1571,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/rate-overrides/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive", "portfolio-manager"]), async (req, res) => {
     try {
       await storage.deleteProjectRateOverride(req.params.id);
       res.status(204).send();
@@ -1581,7 +1581,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/projects/:projectId/recalculate-rates", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/recalculate-rates", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const project = await storage.getProject(req.params.projectId);
       if (!project) {
@@ -3104,7 +3104,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // PM Wizard - Check for existing PM hours and create new ones
-  app.post("/api/estimates/:estimateId/pm-hours", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/estimates/:estimateId/pm-hours", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
@@ -4610,7 +4610,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.post("/api/estimates", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/estimates", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { name, clientId, projectId, validDays } = req.body;
       console.log("[DEBUG] Creating estimate with:", { name, clientId, projectId, validDays });
@@ -4754,7 +4754,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status', 'potentialStartDate'];
       const isNonDraftSafe = Object.keys(req.body).every(key => nonDraftSafeFields.includes(key));
@@ -4848,7 +4848,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Archive/unarchive estimate
-  app.patch("/api/estimates/:id/archive", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.patch("/api/estimates/:id/archive", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { archived } = req.body;
       const estimate = await storage.updateEstimate(req.params.id, { archived });
@@ -4858,7 +4858,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  app.delete("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.delete("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       await storage.deleteEstimate(req.params.id);
       res.json({ success: true, message: "Estimate deleted successfully" });
@@ -4869,7 +4869,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Copy estimate
-  app.post("/api/estimates/:id/copy", requireAuth, requireRole(["admin", "billing-admin", "pm"]), async (req, res) => {
+  app.post("/api/estimates/:id/copy", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { targetClientId, newClient, name, projectId } = req.body;
       
@@ -4891,7 +4891,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Approve estimate and optionally create project
-  app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/estimates/:id/approve", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const { createProject: shouldCreateProject, copyAssignments, blockHourDescription, kickoffDate } = req.body;
 
@@ -4966,7 +4966,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Reject estimate
-  app.post("/api/estimates/:id/reject", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/estimates/:id/reject", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       const { reason } = req.body;
       const estimate = await storage.getEstimate(req.params.id);
@@ -4986,7 +4986,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   });
 
   // Revert estimate from approved to draft (so it can be reapproved)
-  app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
       // Get the estimate to verify it's approved
       const estimate = await storage.getEstimate(req.params.id);

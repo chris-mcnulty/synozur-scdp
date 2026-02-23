@@ -153,7 +153,7 @@ export function Sidebar() {
   const { hasAnyRole, isPlatformAdmin } = useAuth();
   const [location] = useLocation();
   
-  const isManager = hasAnyRole(['admin', 'pm', 'executive']);
+  const isManager = hasAnyRole(['admin', 'pm', 'portfolio-manager', 'executive']);
   const isFinanceRole = hasAnyRole(['admin', 'billing-admin']);
   const isAdmin = hasAnyRole(['admin']);
 
@@ -215,7 +215,7 @@ export function Sidebar() {
               >
                 <SidebarItem href="/" icon={<ChartLine />} label="Dashboard" />
                 <SidebarItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" />
-                {hasAnyRole(["admin", "pm", "executive"]) && (
+                {hasAnyRole(["admin", "pm", "portfolio-manager", "executive"]) && (
                   <SidebarItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" />
                 )}
                 <SidebarItem href="/projects" icon={<FolderOpen />} label="All Projects" />
@@ -223,7 +223,7 @@ export function Sidebar() {
                 <SidebarItem href="/estimates" icon={<FileText />} label="Estimates" />
                 <SidebarItem href="/resource-management" icon={<Users />} label="Resources" />
                 <SidebarItem href="/reports" icon={<BarChart3 />} label="Reports" />
-                <SidebarItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm"]} />
+                <SidebarItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} />
               </CollapsibleSection>
             )}
             

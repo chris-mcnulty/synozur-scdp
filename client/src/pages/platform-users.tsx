@@ -68,6 +68,7 @@ const TENANT_ROLES = [
   { value: "admin", label: "Admin" },
   { value: "billing-admin", label: "Billing Admin" },
   { value: "pm", label: "Project Manager" },
+  { value: "portfolio-manager", label: "Portfolio Manager" },
   { value: "employee", label: "Employee" },
   { value: "executive", label: "Executive" },
   { value: "client", label: "Client" },

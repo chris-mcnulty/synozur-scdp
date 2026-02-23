@@ -36,7 +36,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 ### Authentication & Authorization
 - **Production SSO**: Azure AD (Microsoft Entra ID).
 - **Development Auth**: Local email/password.
-- **Roles**: Five-tier hierarchy (admin, billing-admin, pm, employee, executive) with feature-based permissions.
+- **Roles**: Six-tier hierarchy (admin, billing-admin, pm, portfolio-manager, employee, executive) with feature-based permissions. Portfolio-manager has PM-level access to ALL projects (not scoped to assigned ones), view-only expense access, and hidden external resource cost rates.
 
 ### Document Storage
 - **Strategy**: Multi-tier with SharePoint Online (primary for business documents) and Replit Object Storage (for legacy data).

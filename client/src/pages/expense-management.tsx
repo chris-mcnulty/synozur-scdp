@@ -263,7 +263,7 @@ export default function ExpenseManagement() {
   const { hasAnyRole } = useAuth();
 
   // Check permissions
-  if (!hasAnyRole(['admin', 'pm', 'billing-admin'])) {
+  if (!hasAnyRole(['admin', 'pm', 'portfolio-manager', 'billing-admin'])) {
     return (
       <Layout>
         <div className="p-6 text-center">

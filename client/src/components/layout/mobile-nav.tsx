@@ -159,7 +159,7 @@ export function MobileNav() {
   const { hasAnyRole, isPlatformAdmin, user } = useAuth();
   const [location] = useLocation();
   
-  const isManager = hasAnyRole(['admin', 'pm', 'executive']);
+  const isManager = hasAnyRole(['admin', 'pm', 'portfolio-manager', 'executive']);
   const isFinanceRole = hasAnyRole(['admin', 'billing-admin']);
   const isAdmin = hasAnyRole(['admin']);
 
@@ -249,7 +249,7 @@ export function MobileNav() {
                   >
                     <MobileNavItem href="/" icon={<ChartLine />} label="Dashboard" onClick={handleNavClick} />
                     <MobileNavItem href="/portfolio/timeline" icon={<GanttChart />} label="Timeline" onClick={handleNavClick} />
-                    {hasAnyRole(["admin", "pm", "executive"]) && (
+                    {hasAnyRole(["admin", "pm", "portfolio-manager", "executive"]) && (
                       <MobileNavItem href="/portfolio/raidd" icon={<ShieldAlert />} label="RAIDD" onClick={handleNavClick} />
                     )}
                     <MobileNavItem href="/projects" icon={<FolderOpen />} label="All Projects" onClick={handleNavClick} />
@@ -257,7 +257,7 @@ export function MobileNav() {
                     <MobileNavItem href="/estimates" icon={<FileText />} label="Estimates" onClick={handleNavClick} />
                     <MobileNavItem href="/resource-management" icon={<Users />} label="Resources" onClick={handleNavClick} />
                     <MobileNavItem href="/reports" icon={<BarChart3 />} label="Reports" onClick={handleNavClick} />
-                    <MobileNavItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm"]} onClick={handleNavClick} />
+                    <MobileNavItem href="/crm/deals" icon={<Handshake />} label="CRM Deals" requiredRoles={["admin", "pm", "portfolio-manager"]} onClick={handleNavClick} />
                   </MobileCollapsibleSection>
                 </>
               )}

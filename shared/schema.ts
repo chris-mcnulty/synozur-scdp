@@ -188,7 +188,7 @@ export const users = pgTable("users", {
   lastName: text("last_name"),
   initials: text("initials"),
   title: text("title"), // Job title for the person
-  role: text("role").notNull().default("employee"), // admin, billing-admin, pm, employee, executive
+  role: text("role").notNull().default("employee"), // admin, billing-admin, pm, portfolio-manager, employee, executive
   canLogin: boolean("can_login").notNull().default(false), // Controls authentication access
   isAssignable: boolean("is_assignable").notNull().default(true), // Can be assigned to projects/estimates
   roleId: varchar("role_id").references(() => roles.id), // Optional reference to standard role
@@ -224,7 +224,7 @@ export const tenantUsers = pgTable("tenant_users", {
   tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   
   // Tenant-specific role (existing Constellation roles)
-  role: varchar("role", { length: 50 }).notNull().default("employee"), // admin, billing-admin, pm, employee, executive, client
+  role: varchar("role", { length: 50 }).notNull().default("employee"), // admin, billing-admin, pm, portfolio-manager, employee, executive, client
   
   // Client association (for stakeholder/client role users)
   clientId: varchar("client_id").references(() => clients.id, { onDelete: 'cascade' }),

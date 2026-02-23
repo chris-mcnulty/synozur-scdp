@@ -399,13 +399,24 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // User management
-  app.get("/api/users", requireAuth, requireRole(["admin", "pm", "billing-admin", "executive"]), async (req, res) => {
+  app.get("/api/users", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "billing-admin", "executive"]), async (req, res) => {
     try {
       const currentUser = (req as any).user;
       const tenantId = currentUser?.tenantId || undefined;
       const includeInactive = req.query.includeInactive === 'true';
       const includeStakeholders = req.query.includeStakeholders === 'true';
       const usersList = await storage.getUsers(tenantId, { includeInactive, includeStakeholders });
+      
+      // Portfolio-manager: strip cost rates for external (non-salaried) resources
+      if (currentUser?.role === 'portfolio-manager') {
+        const filtered = usersList.map((u: any) => {
+          if (!u.isSalaried) {
+            return { ...u, defaultCostRate: null };
+          }
+          return u;
+        });
+        return res.json(filtered);
+      }
       
       res.json(usersList);
     } catch (error) {
@@ -653,7 +664,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Manual trigger for Planner sync (tenant-scoped)
-  app.post("/api/admin/scheduled-jobs/planner-sync/run", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/admin/scheduled-jobs/planner-sync/run", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const user = req.user as any;
       const { projectId } = req.body;
@@ -758,7 +769,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Missing time entries report for a project
-  app.get("/api/admin/time-reminders/missing", requireAuth, requireRole(["admin", "pm", "billing-admin"]), async (req, res) => {
+  app.get("/api/admin/time-reminders/missing", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "billing-admin"]), async (req, res) => {
     try {
       const { projectId, weekStart } = req.query;
       
@@ -2837,7 +2848,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       console.log("[DEBUG] Creating project with:", req.body);
       console.log("[DEBUG] User role:", req.user?.role);
@@ -2865,7 +2876,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/projects/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       // Get the project first to check it exists
       const project = await storage.getProject(req.params.id);
@@ -2914,7 +2925,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/epics", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { name, description } = req.body;
       if (!name) {
@@ -2939,7 +2950,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { name, description, order } = req.body;
       if (!name && description === undefined && order === undefined) {
@@ -2959,7 +2970,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/epics/:epicId", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectEpic(req.params.epicId);
       res.json({ message: "Epic deleted successfully" });
@@ -3010,7 +3021,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:projectId/allocations", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/allocations", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       // Validate required hours
       const hours = typeof req.body.hours === 'string' ? parseFloat(req.body.hours) : req.body.hours;
@@ -3091,7 +3102,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Check permissions: admin/pm can update any allocation,
       // regular users can only update status fields on their own assignments
-      const isAdminOrPm = user.role === 'admin' || user.role === 'pm' || 
+      const isAdminOrPm = user.role === 'admin' || user.role === 'pm' || user.role === 'portfolio-manager' ||
                           user.role === 'global_admin' || user.role === 'constellation_admin';
       const isOwnAssignment = allocation.personId === user.id;
       
@@ -3125,7 +3136,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.delete("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/allocations/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       await storage.deleteProjectAllocation(req.params.id);
       res.status(204).send();
@@ -3135,7 +3146,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:projectId/allocations/bulk-update", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/allocations/bulk-update", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const updated = await storage.bulkUpdateProjectAllocations(req.params.projectId, req.body.allocations);
       
@@ -3181,7 +3192,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post("/api/projects/:projectId/engagements", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/engagements", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { userId } = req.body;
       if (!userId) {
@@ -3201,8 +3212,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       const { projectId, userId } = req.params;
       const { notes, force } = req.body;
       
-      // Check if user can complete this engagement (self, admin, or PM)
-      const canComplete = user.id === userId || ['admin', 'pm'].includes(user.role);
+      // Check if user can complete this engagement (self, admin, PM, or portfolio-manager)
+      const canComplete = user.id === userId || ['admin', 'pm', 'portfolio-manager'].includes(user.role);
       if (!canComplete) {
         return res.status(403).json({ message: "Not authorized to complete this engagement" });
       }
@@ -3230,7 +3241,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.patch("/api/projects/:projectId/engagements/:userId/reactivate", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.patch("/api/projects/:projectId/engagements/:userId/reactivate", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const engagement = await storage.ensureProjectEngagement(req.params.projectId, req.params.userId);
       res.json(engagement);
@@ -3241,7 +3252,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Delete a team membership (for cleaning up erroneous entries like "Unknown User")
-  app.delete("/api/projects/:projectId/engagements/:engagementId", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/engagements/:engagementId", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       await storage.deleteProjectEngagement(req.params.engagementId);
       res.status(204).send();
@@ -3441,7 +3452,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a Planner tab in a channel (requires TeamsTab.Create permission)
-  app.post("/api/planner/teams/:teamId/channels/:channelId/tabs", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/planner/teams/:teamId/channels/:channelId/tabs", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { planId, planTitle } = req.body;
@@ -3486,7 +3497,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new plan in a group
-  app.post("/api/planner/groups/:groupId/plans", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/planner/groups/:groupId/plans", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { title } = req.body;
@@ -3514,7 +3525,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new Team
-  app.post("/api/planner/teams", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/planner/teams", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { displayName, description, templateId, ownerIds, clientId } = req.body;
@@ -3562,7 +3573,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Create a new Channel in a Team
-  app.post("/api/planner/teams/:teamId/channels", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/planner/teams/:teamId/channels", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { displayName, description, membershipType } = req.body;
@@ -3585,7 +3596,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Add a member to a Team
-  app.post("/api/planner/teams/:teamId/members", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/planner/teams/:teamId/members", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { azureUserId, role } = req.body;
@@ -3619,7 +3630,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Generate AI-powered status report for a project
-  app.post("/api/projects/:projectId/status-report", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/status-report", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const user = req.user as any;
@@ -3832,7 +3843,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Email a status report
-  app.post("/api/projects/:projectId/status-report/email", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/status-report/email", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const user = req.user as any;
@@ -3892,7 +3903,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Create/connect project to Planner
-  app.post("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const { planId, planTitle, planWebUrl, groupId, groupName, channelId, channelName, syncDirection } = req.body;
@@ -3930,7 +3941,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Update Planner connection settings
-  app.patch("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.patch("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const connection = await storage.getProjectPlannerConnection(req.params.projectId);
       if (!connection) {
@@ -3952,7 +3963,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Disconnect project from Planner
-  app.delete("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/projects/:projectId/planner-connection", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       await storage.deleteProjectPlannerConnection(req.params.projectId);
       res.status(204).send();
@@ -3963,7 +3974,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Trigger sync for a project
-  app.post("/api/projects/:projectId/planner-sync", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/planner-sync", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { plannerService } = await import('./services/planner-service');
       const { projectId } = req.params;
@@ -5015,7 +5026,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Create new project allocation
-  app.post("/api/project-allocations", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/project-allocations", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const { insertProjectAllocationSchema } = await import("@shared/schema");
       const data = insertProjectAllocationSchema.parse(req.body);
@@ -5028,7 +5039,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Import allocations from Excel/CSV
-  app.post("/api/projects/:projectId/allocations/import", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.post("/api/projects/:projectId/allocations/import", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
       const xlsx = await import("xlsx");
       const { insertProjectAllocationSchema } = await import("@shared/schema");
@@ -5326,7 +5337,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Get all assignments (for resource management)
-  app.get("/api/assignments", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/assignments", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const tenantId = req.user?.tenantId;
       console.log("[API] /api/assignments - Fetching allocations with epic and stage data for tenant:", tenantId);
@@ -5719,7 +5730,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Get capacity planning data (timeline view)
-  app.get("/api/capacity/timeline", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.get("/api/capacity/timeline", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { startDate, endDate, personId, utilizationThreshold } = req.query;
       const tenantId = req.user?.tenantId;
@@ -6130,7 +6141,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/copy-estimate-structure", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { estimateId } = req.body;
       if (!estimateId) {
@@ -6184,9 +6195,9 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Check user permissions - only allow admin, billing-admin, pm, and executive roles
+      // Check user permissions - only allow admin, billing-admin, pm, portfolio-manager, and executive roles
       const user = req.user!;
-      const allowedRoles = ["admin", "billing-admin", "pm", "executive"];
+      const allowedRoles = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
 
       // Check if user has an allowed role
       const hasAllowedRole = allowedRoles.includes(user.role);
@@ -6200,7 +6211,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         });
       }
 
-      // Additional check for PMs - they can only see their own projects
+      // Additional check for PMs - they can only see their own projects (portfolio-managers can see all)
       if (user.role === "pm" && project.pm !== user.id) {
         return res.status(403).json({ 
           message: "You can only view analytics for projects you manage" 
@@ -6641,11 +6652,12 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Check user permissions: admin, billing-admin, executives, or PM for this project
+      // Check user permissions: admin, billing-admin, executives, portfolio-manager, or PM for this project
       const canViewProject = 
         req.user!.role === 'admin' ||
         req.user!.role === 'billing-admin' ||
         req.user!.role === 'executive' ||
+        req.user!.role === 'portfolio-manager' ||
         (req.user!.role === 'pm' && project.pm === req.user!.id);
 
       if (!canViewProject) {
@@ -7162,6 +7174,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         req.user!.role === 'admin' ||
         req.user!.role === 'billing-admin' ||
         req.user!.role === 'executive' ||
+        req.user!.role === 'portfolio-manager' ||
         (req.user!.role === 'pm' && project.pm === req.user!.id) ||
         req.user!.role === 'global_admin' ||
         req.user!.role === 'constellation_admin';
@@ -7855,7 +7868,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.post("/api/projects/:id/change-orders", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/change-orders", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const insertData = insertChangeOrderSchema.parse({
         ...req.body,
@@ -7872,7 +7885,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.patch("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const changeOrder = await storage.updateChangeOrder(req.params.id, req.body);
       res.json(changeOrder);
@@ -7882,7 +7895,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.delete("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/change-orders/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       await storage.deleteChangeOrder(req.params.id);
       res.json({ message: "Change order deleted successfully" });
@@ -7893,7 +7906,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // SOW/Change Order Document Upload
-  app.post("/api/sows/:id/upload", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), upload.single('file'), async (req, res) => {
+  app.post("/api/sows/:id/upload", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), upload.single('file'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -8014,7 +8027,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:id/sows", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       console.log("Creating SOW with data:", req.body);
       console.log("Project ID:", req.params.id);
@@ -8060,7 +8073,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const currentSow = await storage.getSow(req.params.id);
       if (!currentSow) {
@@ -8099,7 +8112,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.delete("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/sows/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       await storage.deleteSow(req.params.id);
       res.json({ message: "SOW deleted successfully" });
@@ -8278,8 +8291,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
       // Check if entry is locked (invoice batch)
       const isAdmin = ["admin", "billing-admin"].includes(req.user!.role);
-      const isPM = req.user?.role === "pm";
-      const isPrivileged = ["admin", "billing-admin", "pm", "executive"].includes(req.user!.role);
+      const isPM = req.user?.role === "pm" || req.user?.role === "portfolio-manager";
+      const isPrivileged = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"].includes(req.user!.role);
 
       if (existingEntry.locked && !isAdmin) {
         return res.status(403).json({ 
@@ -9591,7 +9604,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
     }
   });
 
-  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/milestones", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const { projectId } = req.params;
       const milestoneData = {
@@ -9608,7 +9621,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Update milestone
-  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const milestone = await storage.updateProjectMilestone(req.params.id, req.body);
       res.json(milestone);
@@ -9618,7 +9631,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Delete milestone
-  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/milestones/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectMilestone(req.params.id);
       res.status(204).send();
@@ -9638,7 +9651,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Create workstream
-  app.post("/api/projects/:projectId/workstreams", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.post("/api/projects/:projectId/workstreams", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const workstreamData = {
         ...req.body,
@@ -9653,7 +9666,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Update workstream
-  app.patch("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.patch("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const workstream = await storage.updateProjectWorkStream(req.params.id, req.body);
       res.json(workstream);
@@ -9663,7 +9676,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
   });
 
   // Delete workstream
-  app.delete("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "executive"]), async (req, res) => {
+  app.delete("/api/workstreams/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       await storage.deleteProjectWorkStream(req.params.id);
       res.status(204).send();

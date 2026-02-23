@@ -348,6 +348,7 @@ export default function Users() {
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="billing-admin">Billing Admin</SelectItem>
                       <SelectItem value="pm">Project Manager</SelectItem>
+                      <SelectItem value="portfolio-manager">Portfolio Manager</SelectItem>
                       <SelectItem value="employee">Employee</SelectItem>
                       <SelectItem value="executive">Executive</SelectItem>
                     </SelectContent>
@@ -502,6 +503,7 @@ export default function Users() {
                         <SelectItem value="admin">Admin</SelectItem>
                         <SelectItem value="billing-admin">Billing Admin</SelectItem>
                         <SelectItem value="pm">Project Manager</SelectItem>
+                        <SelectItem value="portfolio-manager">Portfolio Manager</SelectItem>
                         <SelectItem value="employee">Employee</SelectItem>
                         <SelectItem value="executive">Executive</SelectItem>
                       </SelectContent>

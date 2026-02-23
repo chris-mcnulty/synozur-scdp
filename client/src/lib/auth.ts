@@ -2,6 +2,7 @@ export const ROLES = {
   ADMIN: 'admin',
   BILLING_ADMIN: 'billing-admin',
   PM: 'pm',
+  PORTFOLIO_MANAGER: 'portfolio-manager',
   EMPLOYEE: 'employee',
   EXECUTIVE: 'executive',
   CLIENT: 'client',
@@ -17,6 +18,8 @@ export function getRoleDisplayName(role: string | UserRole): string {
       return 'Billing Admin';
     case ROLES.PM:
       return 'Project Manager';
+    case ROLES.PORTFOLIO_MANAGER:
+      return 'Portfolio Manager';
     case ROLES.EMPLOYEE:
       return 'Employee';
     case ROLES.EXECUTIVE:
@@ -29,10 +32,10 @@ export function getRoleDisplayName(role: string | UserRole): string {
 }
 
 // Roles that can view basic pricing information (rates, totals)
-const PRICING_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.BILLING_ADMIN, ROLES.EXECUTIVE]);
+const PRICING_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.BILLING_ADMIN, ROLES.EXECUTIVE, ROLES.PORTFOLIO_MANAGER]);
 // Roles that can view cost information and profit margins
 const COST_MARGIN_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.BILLING_ADMIN, ROLES.EXECUTIVE]);
-const PROJECT_MANAGEMENT_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.PM, ROLES.EXECUTIVE]);
+const PROJECT_MANAGEMENT_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.PM, ROLES.EXECUTIVE, ROLES.PORTFOLIO_MANAGER]);
 // Roles that can manage most operations (executive has broad access)
 const MANAGEMENT_ROLES: ReadonlySet<UserRole> = new Set([ROLES.ADMIN, ROLES.BILLING_ADMIN, ROLES.EXECUTIVE]);
 // Roles that can create/manage roles
