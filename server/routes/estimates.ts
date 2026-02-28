@@ -2541,10 +2541,23 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           costRate = rate * defaultCostRatio;
         }
 
-        // Calculate adjusted hours
-        const baseHours = Number(item.baseHours || 0);
-        const factor = Number(item.factor || 1);
-        const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+        // Calculate adjusted hours — program blocks use durationWeeks × utilization formula
+        let adjustedHours: number;
+        if (item.durationWeeks != null && item.utilizationPercent != null) {
+          // Program block: hours = durationWeeks × (utilizationPercent / 100 × 40)
+          const hoursPerWeek = (Number(item.utilizationPercent) / 100) * 40;
+          const rawHours = Number(item.durationWeeks) * hoursPerWeek;
+          adjustedHours = rawHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+          // For free-text role blocks (no roleId, no userId), preserve existing rate
+          if (!item.roleId && !item.assignedUserId) {
+            rate = Number(item.rate || 0);
+            costRate = Number(item.costRate || 0);
+          }
+        } else {
+          const baseHours = Number(item.baseHours || 0);
+          const factor = Number(item.factor || 1);
+          adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
+        }
 
         // Calculate amounts using determined rates
         const totalAmount = adjustedHours * rate;
