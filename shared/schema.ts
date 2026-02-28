@@ -460,7 +460,7 @@ export const estimates = pgTable("estimates", {
   projectId: varchar("project_id").references(() => projects.id), // Optional - can create estimate without project
   version: integer("version").notNull().default(1),
   status: text("status").notNull().default("draft"), // draft, final, approved, rejected
-  estimateType: text("estimate_type").notNull().default("detailed"), // detailed or block
+  estimateType: text("estimate_type").notNull().default("detailed"), // detailed, block, retainer, or program
   pricingType: text("pricing_type").notNull().default("hourly"), // hourly or fixed
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }),
   totalFees: decimal("total_fees", { precision: 10, scale: 2 }),
@@ -520,7 +520,9 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   description: text("description").notNull(),
   category: text("category"), // Optional category/phase
   workstream: text("workstream"), // Workstream name
-  week: integer("week"), // Week number
+  week: integer("week"), // Week number (also used as startWeek for program estimates)
+  durationWeeks: integer("duration_weeks"), // Program estimates: how many weeks this block runs
+  utilizationPercent: integer("utilization_percent"), // Program estimates: 20/40/60/80/100 (% of 40hr week)
   baseHours: decimal("base_hours", { precision: 10, scale: 2 }).notNull(),
   factor: decimal("factor", { precision: 10, scale: 2 }).notNull().default(sql`1`), // Multiplier (e.g., 4 interviews × 3 hours)
   rate: decimal("rate", { precision: 10, scale: 2 }).notNull().default(sql`0`), // Charge rate (customer-facing)
@@ -543,36 +545,6 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
-
-// Program Estimate Blocks - week-based staffing blocks for large program estimates
-export const estimateProgramBlocks = pgTable("estimate_program_blocks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
-  epicId: varchar("epic_id").references(() => estimateEpics.id),
-  stageId: varchar("stage_id").references(() => estimateStages.id),
-  workstream: text("workstream"),
-  roleLabel: text("role_label").notNull(),
-  roleId: varchar("role_id").references(() => roles.id),
-  assignedUserId: varchar("assigned_user_id").references(() => users.id),
-  resourceName: text("resource_name"),
-  startWeek: integer("start_week").notNull().default(1),
-  durationWeeks: integer("duration_weeks").notNull().default(1),
-  utilizationPercent: integer("utilization_percent").notNull().default(100),
-  billingRate: decimal("billing_rate", { precision: 10, scale: 2 }).notNull().default('0'),
-  costRate: decimal("cost_rate", { precision: 10, scale: 2 }),
-  size: text("size").notNull().default("small"),
-  complexity: text("complexity").notNull().default("small"),
-  confidence: text("confidence").notNull().default("high"),
-  adjustedHours: decimal("adjusted_hours", { precision: 10, scale: 2 }).notNull().default('0'),
-  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull().default('0'),
-  totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
-  description: text("description"),
-  sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().default(sql`now()`),
-});
-
-export type EstimateProgramBlock = typeof estimateProgramBlocks.$inferSelect;
-export type InsertEstimateProgramBlock = typeof estimateProgramBlocks.$inferInsert;
 
 // Client Rate Overrides - Default rates for a client (applies to new estimates only)
 export const clientRateOverrides = pgTable("client_rate_overrides", {
@@ -1272,27 +1244,7 @@ export const estimatesRelations = relations(estimates, ({ one, many }) => ({
   }),
   epics: many(estimateEpics),
   lineItems: many(estimateLineItems),
-  programBlocks: many(estimateProgramBlocks),
   rateOverrides: many(estimateRateOverrides),
-}));
-
-export const estimateProgramBlocksRelations = relations(estimateProgramBlocks, ({ one }) => ({
-  estimate: one(estimates, {
-    fields: [estimateProgramBlocks.estimateId],
-    references: [estimates.id],
-  }),
-  epic: one(estimateEpics, {
-    fields: [estimateProgramBlocks.epicId],
-    references: [estimateEpics.id],
-  }),
-  stage: one(estimateStages, {
-    fields: [estimateProgramBlocks.stageId],
-    references: [estimateStages.id],
-  }),
-  assignedUser: one(users, {
-    fields: [estimateProgramBlocks.assignedUserId],
-    references: [users.id],
-  }),
 }));
 
 export const estimateLineItemsRelations = relations(estimateLineItems, ({ one }) => ({

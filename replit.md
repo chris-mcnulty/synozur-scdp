@@ -43,7 +43,8 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 
 ### Core Features
 - **AI Integration**: Uses Replit AI (OpenAI GPT-5 compatible) for estimate/invoice narrative generation and report queries.
-- **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence.
+- **Estimate Management**: Supports Excel/CSV import/export, AI-driven text export, status-based locking, and hierarchical rate precedence. Four estimate types: `detailed` (line items), `program` (week-based staffing blocks for >$1M programs), `block` (simple lump sum), and `retainer` (monthly hours).
+- **Program Estimate Type**: Week-based staffing block estimates for large programs. Each block = role × duration weeks × utilization % (20/40/60/80/100 → 8–40 hrs/wk). Same epic/stage/workstream hierarchy and three-factor contingency system as detailed estimates. Two new nullable columns added to `estimate_line_items`: `duration_weeks` and `utilization_percent`. Includes a Gantt timeline view.
 - **Invoice & Document Management**: Automated generation, PDF handling, milestone-based invoicing, expense receipt inclusion, and receipts bundle download. Auto-generated GL invoice numbers.
 - **Expense Approval Workflow**: Comprehensive system with finite state machine, role-based access, and automated per diem calculation.
 - **Resource Management**: Dual List/Timeline views, capacity planning dashboard, and conflict detection.

@@ -47,7 +47,7 @@ interface Estimate {
   projectId?: string;
   projectName?: string;
   status: 'draft' | 'sent' | 'final' | 'approved' | 'rejected';
-  estimateType?: 'detailed' | 'block' | 'retainer';
+  estimateType?: 'detailed' | 'block' | 'retainer' | 'program';
   totalHours: number;
   totalCost: number;
   totalAmount: number;
@@ -421,9 +421,9 @@ export default function Estimates() {
                       <TableCell>{estimate.projectName || "-"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          estimate.estimateType === 'block' ? 'bg-purple-100 text-purple-800' : estimate.estimateType === 'retainer' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                          estimate.estimateType === 'block' ? 'bg-purple-100 text-purple-800' : estimate.estimateType === 'retainer' ? 'bg-blue-100 text-blue-800' : estimate.estimateType === 'program' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {estimate.estimateType === 'block' ? 'Block' : estimate.estimateType === 'retainer' ? 'Retainer' : 'Detailed'}
+                          {estimate.estimateType === 'block' ? 'Block' : estimate.estimateType === 'retainer' ? 'Retainer' : estimate.estimateType === 'program' ? 'Program' : 'Detailed'}
                         </span>
                       </TableCell>
                       <TableCell>{getStatusBadge(estimate.status)}</TableCell>
@@ -666,12 +666,13 @@ export default function Estimates() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="detailed">Detailed (with line items)</SelectItem>
+                        <SelectItem value="program">Program (week-based staffing blocks)</SelectItem>
                         <SelectItem value="block">Block (simple hours/dollars)</SelectItem>
                         <SelectItem value="retainer">Retainer (monthly hours)</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      {estimateType === 'retainer' ? 'Monthly retainer with rate tiers and hour caps' : 'Block estimates are ideal for simple fixed hours/dollars'}
+                      {estimateType === 'retainer' ? 'Monthly retainer with rate tiers and hour caps' : estimateType === 'program' ? 'Large program estimates built from week-based staffing blocks (>$1M)' : 'Block estimates are ideal for simple fixed hours/dollars'}
                     </p>
                   </div>
                   

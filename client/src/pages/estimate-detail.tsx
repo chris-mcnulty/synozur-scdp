@@ -24,6 +24,7 @@ import { RatePrecedenceBadge } from "@/components/RatePrecedenceBadge";
 import { VocabularyProvider, useVocabulary } from "@/lib/vocabulary-context";
 import { useEffectiveRates } from "@/hooks/useEffectiveRates";
 import { useGenerateEstimateNarrative, useAIStatus } from "@/lib/ai";
+import { ProgramEstimateView } from "@/components/ProgramEstimateView";
 
 function EstimateDetailContent() {
   const { id } = useParams();
@@ -1789,7 +1790,7 @@ function EstimateDetailContent() {
                   value={estimate?.estimateType || 'detailed'} 
                   onValueChange={(value) => {
                     updateEstimateMutation.mutate({ 
-                      estimateType: value as 'detailed' | 'block'
+                      estimateType: value as 'detailed' | 'block' | 'program'
                     });
                   }}
                   disabled={!isEditable}
@@ -1799,6 +1800,7 @@ function EstimateDetailContent() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="detailed">Detailed (Line Items)</SelectItem>
+                    <SelectItem value="program">Program (Week-Based Blocks)</SelectItem>
                     <SelectItem value="block">Block (Simple Hours/Dollars)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -2771,7 +2773,30 @@ function EstimateDetailContent() {
 
         <TabsContent value="inputs" className="space-y-6">
 
-          <Card>
+          {estimate?.estimateType === 'program' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Program Blocks</CardTitle>
+                <CardDescription>
+                  Each block represents a role working for a number of weeks. Hours are derived from duration × utilization × 40 hrs/wk, then adjusted by the three contingency factors.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ProgramEstimateView
+                  estimate={estimate}
+                  lineItems={lineItems}
+                  epics={epics}
+                  stages={stages}
+                  users={users}
+                  roles={roles}
+                  isEditable={isEditable}
+                  estimateId={id!}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {estimate?.estimateType !== 'program' && <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -3896,7 +3921,7 @@ function EstimateDetailContent() {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Rate Overrides Section - Always visible to display existing overrides */}
       {id && <RateOverridesSection estimateId={id} isEditable={isEditable} />}
