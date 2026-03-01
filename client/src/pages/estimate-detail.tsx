@@ -2194,7 +2194,7 @@ function EstimateDetailContent() {
                   </p>
                 </div>
                 <div>
-                  <Label htmlFor="margin">Margin (%)</Label>
+                  <Label htmlFor="margin">Rate% (including any commissions)</Label>
                   <Input
                     id="margin"
                     type="number"
