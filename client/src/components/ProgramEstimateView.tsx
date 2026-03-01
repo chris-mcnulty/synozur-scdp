@@ -150,7 +150,7 @@ const FormRow = ({
   };
   const resolveRateFromRole = (roleId: string) => {
     const r = roles.find((r: any) => r.id === roleId);
-    return { billingRate: r?.billingRate || r?.defaultRate || "0", costRate: r?.costRate || "0" };
+    return { billingRate: r?.defaultRackRate || "0", costRate: r?.defaultCostRate || "0" };
   };
 
   return (
