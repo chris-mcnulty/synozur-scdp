@@ -300,6 +300,7 @@ export interface IStorage {
     newClient?: Partial<InsertClient>;
     name?: string;
     projectId?: string;
+    tenantId?: string;
   }): Promise<Estimate>;
   
   // Estimate Epics
@@ -1653,6 +1654,7 @@ export class DatabaseStorage implements IStorage {
     newClient?: Partial<InsertClient>;
     name?: string;
     projectId?: string;
+    tenantId?: string;
   }): Promise<Estimate> {
     return await db.transaction(async (tx) => {
       // Get the original estimate
@@ -1670,13 +1672,17 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
+      // Resolve tenantId: prefer explicit option, fallback to original estimate's tenantId
+      const resolvedTenantId = options.tenantId || originalEstimate.tenantId;
+
       // Create new client if provided
       if (options.newClient) {
         const [newClient] = await tx.insert(clients).values({
           name: options.newClient.name || "New Client",
           status: options.newClient.status || "pending",
           currency: options.newClient.currency || "USD",
-          ...options.newClient
+          ...options.newClient,
+          tenantId: resolvedTenantId,
         }).returning();
         targetClientId = newClient.id;
       }
@@ -1689,6 +1695,7 @@ export class DatabaseStorage implements IStorage {
         status: "draft",
         version: 1,
         validUntil: null,
+        tenantId: resolvedTenantId,
         // Copy pricing and structure
         estimateType: originalEstimate.estimateType,
         pricingType: originalEstimate.pricingType,
