@@ -4857,7 +4857,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.patch("/api/estimates/:id", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
     try {
-      const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status', 'potentialStartDate'];
+      const nonDraftSafeFields = ['projectId', 'presentedTotal', 'margin', 'status', 'potentialStartDate', 'name'];
       const isNonDraftSafe = Object.keys(req.body).every(key => nonDraftSafeFields.includes(key));
       
       if (!isNonDraftSafe) {

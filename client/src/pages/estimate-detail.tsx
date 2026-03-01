@@ -1443,7 +1443,6 @@ function EstimateDetailContent() {
           <div>
             <h1 className="text-3xl font-bold">Estimate Details</h1>
             <p className="text-muted-foreground cursor-pointer" onClick={() => {
-              if (!isEditable) return;
               setEditingField('estimate-name');
               setEditingEstimateName(estimate?.name || "");
             }}>
