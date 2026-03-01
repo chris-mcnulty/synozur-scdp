@@ -2086,6 +2086,21 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
+  // Clear ALL line items from an estimate (used to recover from bad imports)
+  app.delete("/api/estimates/:estimateId/line-items", requireAuth, async (req, res) => {
+    try {
+      if (!await ensureEstimateIsEditable(req.params.estimateId, res)) return;
+      const existingItems = await storage.getEstimateLineItems(req.params.estimateId);
+      const itemIds = existingItems.map(item => item.id);
+      if (itemIds.length > 0) {
+        await storage.bulkDeleteEstimateLineItems(itemIds);
+      }
+      res.json({ success: true, deleted: itemIds.length });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to clear line items" });
+    }
+  });
+
   // Estimate resource summary
   app.get("/api/estimates/:id/resource-summary", requireAuth, async (req, res) => {
     try {
@@ -3346,10 +3361,12 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Create CSV header row (excluding cost-sensitive fields: cost rate, margin, profit)
       // Include referral markup columns when referral fees are enabled
       const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+      const isProgramEstimate = estimate?.estimateType === 'program';
       const headers = ["Epic Name", "Stage Name", "Workstream", "Week #", "Description", "Category", "Resource", "Base Hours", "Factor", "Rate", "Size", "Complexity", "Confidence", "Comments", "Adjusted Hours", "Total Amount"];
       if (hasReferralFee) {
         headers.push("Referral Markup", "Quoted Amount");
       }
+      headers.push("Duration Weeks", "Utilization %");
 
       // Build CSV rows
       const csvRows = [headers];
@@ -3377,6 +3394,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         if (hasReferralFee) {
           row.push(item.referralMarkup || "0", item.totalAmountWithReferral || item.totalAmount || "0");
         }
+        // Duration Weeks and Utilization % — populated for program estimates only
+        row.push(
+          isProgramEstimate && item.durationWeeks != null ? String(item.durationWeeks) : "",
+          isProgramEstimate && item.utilizationPercent != null ? String(item.utilizationPercent) : ""
+        );
 
         csvRows.push(row);
       });
@@ -3899,6 +3921,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import CSV endpoint hit for estimate:", req.params.id);
+
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
       // Parse base64 file data and import mode
@@ -3962,7 +3985,9 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         if (normalized.includes("epic")) colIndex.epic = idx;
         else if (normalized.includes("stage")) colIndex.stage = idx;
         else if (normalized.includes("workstream")) colIndex.workstream = idx;
-        else if (normalized.includes("week")) colIndex.week = idx;
+        else if (normalized.includes("duration weeks")) colIndex.durationWeeks = idx;
+        else if (normalized.includes("utilization")) colIndex.utilizationPercent = idx;
+        else if (normalized === "week #" || normalized === "week") colIndex.week = idx;
         else if (normalized.includes("description") || normalized === "activity") colIndex.description = idx;
         else if (normalized.includes("category")) colIndex.category = idx;
         else if (normalized.includes("resource")) colIndex.resource = idx;
@@ -4097,6 +4122,36 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         const adjustedHours = baseHoursNum * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rateNum;
 
+        // Program block fields — read from columns if present, otherwise infer from baseHours
+        let durationWeeks: number | null = null;
+        let utilizationPercent: number | null = null;
+        if (estimate.estimateType === 'program') {
+          if (colIndex.durationWeeks !== undefined && row[colIndex.durationWeeks]) {
+            durationWeeks = Number(row[colIndex.durationWeeks]) || null;
+          }
+          if (colIndex.utilizationPercent !== undefined && row[colIndex.utilizationPercent]) {
+            utilizationPercent = Number(row[colIndex.utilizationPercent]) || null;
+          }
+          // If columns are missing or empty, infer from baseHours
+          // Try each valid utilization (100, 80, 60, 40, 20) and pick the first that yields a whole-number duration
+          if (durationWeeks === null || utilizationPercent === null) {
+            const UTIL_OPTIONS = [100, 80, 60, 40, 20];
+            for (const util of UTIL_OPTIONS) {
+              const weeks = baseHoursNum / (util / 100 * 40);
+              if (weeks > 0 && Math.abs(weeks - Math.round(weeks)) < 0.01) {
+                durationWeeks = Math.round(weeks);
+                utilizationPercent = util;
+                break;
+              }
+            }
+            // Last resort: round to nearest week at 100% utilization
+            if (durationWeeks === null) {
+              durationWeeks = Math.max(1, Math.round(baseHoursNum / 40));
+              utilizationPercent = 100;
+            }
+          }
+        }
+
         lineItems.push({
           estimateId: req.params.id,
           epicId,
@@ -4117,6 +4172,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           comments: row[colIndex.comments] || null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
+          durationWeeks,
+          utilizationPercent,
           sortOrder: i
         });
       }
@@ -4175,6 +4232,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Check if estimate is editable
       if (!await ensureEstimateIsEditable(req.params.id, res)) return;
       console.log("Import Excel endpoint hit for estimate:", req.params.id);
+
       const xlsx = await import("xlsx");
       const { insertEstimateLineItemSchema } = await import("@shared/schema");
 
@@ -4397,6 +4455,25 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         const adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         const totalAmount = adjustedHours * rate;
 
+        // Program block fields — infer from baseHours for program estimates
+        let durationWeeks: number | null = null;
+        let utilizationPercent: number | null = null;
+        if (estimate.estimateType === 'program') {
+          const UTIL_OPTIONS = [100, 80, 60, 40, 20];
+          for (const util of UTIL_OPTIONS) {
+            const weeks = baseHours / (util / 100 * 40);
+            if (weeks > 0 && Math.abs(weeks - Math.round(weeks)) < 0.01) {
+              durationWeeks = Math.round(weeks);
+              utilizationPercent = util;
+              break;
+            }
+          }
+          if (durationWeeks === null) {
+            durationWeeks = Math.max(1, Math.round(baseHours / 40));
+            utilizationPercent = 100;
+          }
+        }
+
         lineItems.push({
           estimateId: req.params.id,
           epicId,
@@ -4417,6 +4494,8 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           comments: row[commentsCol] ? String(row[commentsCol]) : null,
           adjustedHours: adjustedHours.toFixed(2),
           totalAmount: totalAmount.toFixed(2),
+          durationWeeks,
+          utilizationPercent,
           sortOrder: i - 3
         });
       }
