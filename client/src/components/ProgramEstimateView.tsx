@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,7 @@ function calcAdjustedHours(
 
 interface BlockForm {
   description: string;
+  comments: string;
   epicId: string;
   stageId: string;
   workstream: string;
@@ -100,6 +101,7 @@ interface BlockForm {
 
 const defaultForm = (): BlockForm => ({
   description: "",
+  comments: "",
   epicId: "none",
   stageId: "none",
   workstream: "",
@@ -331,8 +333,8 @@ const FormRow = ({
         </div>
       </div>
 
-      {/* Row 3: Confidence / Description / preview / buttons */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+      {/* Row 3: Confidence / Description / Comments */}
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
         <div>
           <Label className="text-xs">Confidence</Label>
           <Select value={f.confidence} onValueChange={(v) => setF({ ...f, confidence: v })}>
@@ -343,30 +345,46 @@ const FormRow = ({
           </Select>
         </div>
 
-        <div>
-          <Label className="text-xs">Description (optional)</Label>
+        <div className="col-span-3">
+          <Label className="text-xs">Description</Label>
           <Input
             className="h-7 text-xs mt-0.5"
-            placeholder="Block notes"
+            placeholder="Block description"
             value={f.description}
             onChange={(e) => setF({ ...f, description: e.target.value })}
           />
         </div>
 
-        <div className="col-span-2 flex items-end gap-2">
-          <span className="text-xs text-muted-foreground flex-1">
-            {h} base hrs → {adj.toFixed(1)} adj hrs → ${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-          </span>
-          {onCancel && (
-            <Button size="sm" variant="ghost" onClick={onCancel}>
-              <X className="h-3.5 w-3.5 mr-1" /> Cancel
-            </Button>
-          )}
-          <Button size="sm" onClick={onSubmit}>
-            {submitLabel === "Add Block" ? <Plus className="h-3.5 w-3.5 mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
-            {submitLabel}
-          </Button>
+        <div className="col-span-4">
+          <Label className="text-xs">Comments</Label>
+          <Input
+            className="h-7 text-xs mt-0.5"
+            placeholder="Optional comments or notes"
+            value={f.comments}
+            onChange={(e) => setF({ ...f, comments: e.target.value })}
+          />
         </div>
+      </div>
+
+      {/* Recalc bar + action buttons */}
+      <div className="flex items-center gap-3 pt-0.5">
+        <div className="flex-1 rounded bg-muted/50 border px-3 py-1.5 text-xs font-mono">
+          <span className="text-muted-foreground">Recalc: </span>
+          <span>{h} base hrs</span>
+          <span className="text-muted-foreground mx-1">→</span>
+          <span className="font-semibold">{adj.toFixed(1)} adj hrs</span>
+          <span className="text-muted-foreground mx-1">→</span>
+          <span className="font-semibold text-emerald-600 dark:text-emerald-400">${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+        </div>
+        {onCancel && (
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            <X className="h-3.5 w-3.5 mr-1" /> Cancel
+          </Button>
+        )}
+        <Button size="sm" onClick={onSubmit}>
+          {submitLabel === "Add Block" ? <Plus className="h-3.5 w-3.5 mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+          {submitLabel}
+        </Button>
       </div>
     </div>
   );
@@ -449,6 +467,7 @@ export function ProgramEstimateView({
 
     return {
       description: f.description || roleLabel,
+      comments: f.comments || null,
       epicId: f.epicId === "none" ? null : f.epicId,
       stageId: f.stageId === "none" ? null : f.stageId,
       workstream: f.workstream || null,
@@ -526,6 +545,7 @@ export function ProgramEstimateView({
     setShowAddForm(false);
     setEditingForm({
       description: block.description || "",
+      comments: block.comments || "",
       epicId: block.epicId || "none",
       stageId: block.stageId || "none",
       workstream: block.workstream || "",
@@ -695,101 +715,100 @@ export function ProgramEstimateView({
                 const stage = stages.find((s) => s.id === block.stageId);
                 const epicColor = epic ? epicColorMap.get(epic.id) : undefined;
 
-                if (isEditing) {
-                  return (
-                    <TableRow key={block.id}>
-                      <TableCell colSpan={isEditable ? 11 : 10} className="p-0">
-                        <FormRow
-                          f={editingForm}
-                          setF={setEditingForm}
-                          onSubmit={() => saveEdit(block)}
-                          onCancel={() => setEditingId(null)}
-                          submitLabel="Save"
-                          epics={epics}
-                          stages={stages}
-                          roles={roles}
-                          users={users}
-                          estimate={estimate}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                }
-
                 return (
-                  <TableRow key={block.id} className="text-xs">
-                    <TableCell className="py-2">
-                      <span className="font-medium">{block.resourceName || "—"}</span>
-                      {block.workstream && (
-                        <span className="block text-muted-foreground">{block.workstream}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-2">
-                      {epic && (
-                        <div className="flex items-center gap-1">
-                          <span className={`inline-block w-2 h-2 rounded-full ${epicColor}`} />
-                          <span>{epic.name}</span>
-                        </div>
-                      )}
-                      {stage && <span className="text-muted-foreground block">{stage.name}</span>}
-                      {!epic && !stage && <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell className="py-2">{block.week ?? "—"}</TableCell>
-                    <TableCell className="py-2">{block.durationWeeks}w</TableCell>
-                    <TableCell className="py-2">{block.utilizationPercent}%</TableCell>
-                    <TableCell className="py-2">{hoursPerWeek.toFixed(0)}</TableCell>
-                    <TableCell className="py-2">{Number(block.adjustedHours || 0).toFixed(1)}</TableCell>
-                    <TableCell className="py-2">${Number(block.rate || 0).toLocaleString()}</TableCell>
-                    <TableCell className="py-2 text-right font-medium">
-                      ${Number(block.totalAmount || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                    </TableCell>
-                    <TableCell className="py-2">
-                      <div className="flex gap-0.5">
-                        {block.size !== "small" && (
-                          <Badge variant="outline" className="text-xs px-1 py-0">
-                            {block.size === "medium" ? "M" : "L"}S
-                          </Badge>
-                        )}
-                        {block.complexity !== "small" && (
-                          <Badge variant="outline" className="text-xs px-1 py-0">
-                            {block.complexity === "medium" ? "M" : "H"}C
-                          </Badge>
-                        )}
-                        {block.confidence !== "high" && (
-                          <Badge variant="secondary" className="text-xs px-1 py-0">
-                            {block.confidence === "medium" ? "M" : "L"}Conf
-                          </Badge>
-                        )}
-                        {block.size === "small" && block.complexity === "small" && block.confidence === "high" && (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    {isEditable && (
+                  <Fragment key={block.id}>
+                    <TableRow className={`text-xs ${isEditing ? "bg-muted/40" : ""}`}>
                       <TableCell className="py-2">
-                        <div className="flex gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            onClick={() => startEdit(block)}
-                          >
-                            <Edit2 className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6 text-destructive hover:text-destructive"
-                            onClick={() => {
-                              if (confirm("Remove this block?")) deleteMutation.mutate(block.id);
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                        <span className="font-medium">{block.resourceName || "—"}</span>
+                        {block.workstream && (
+                          <span className="block text-muted-foreground">{block.workstream}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        {epic && (
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-block w-2 h-2 rounded-full ${epicColor}`} />
+                            <span>{epic.name}</span>
+                          </div>
+                        )}
+                        {stage && <span className="text-muted-foreground block">{stage.name}</span>}
+                        {!epic && !stage && <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="py-2">{block.week ?? "—"}</TableCell>
+                      <TableCell className="py-2">{block.durationWeeks}w</TableCell>
+                      <TableCell className="py-2">{block.utilizationPercent}%</TableCell>
+                      <TableCell className="py-2">{hoursPerWeek.toFixed(0)}</TableCell>
+                      <TableCell className="py-2">{Number(block.adjustedHours || 0).toFixed(1)}</TableCell>
+                      <TableCell className="py-2">${Number(block.rate || 0).toLocaleString()}</TableCell>
+                      <TableCell className="py-2 text-right font-medium">
+                        ${Number(block.totalAmount || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <div className="flex gap-0.5">
+                          {block.size !== "small" && (
+                            <Badge variant="outline" className="text-xs px-1 py-0">
+                              {block.size === "medium" ? "M" : "L"}S
+                            </Badge>
+                          )}
+                          {block.complexity !== "small" && (
+                            <Badge variant="outline" className="text-xs px-1 py-0">
+                              {block.complexity === "medium" ? "M" : "H"}C
+                            </Badge>
+                          )}
+                          {block.confidence !== "high" && (
+                            <Badge variant="secondary" className="text-xs px-1 py-0">
+                              {block.confidence === "medium" ? "M" : "L"}Conf
+                            </Badge>
+                          )}
+                          {block.size === "small" && block.complexity === "small" && block.confidence === "high" && (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </div>
                       </TableCell>
+                      {isEditable && (
+                        <TableCell className="py-2">
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => isEditing ? setEditingId(null) : startEdit(block)}
+                            >
+                              {isEditing ? <ChevronUp className="h-3 w-3" /> : <Edit2 className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => {
+                                if (confirm("Remove this block?")) deleteMutation.mutate(block.id);
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                    {isEditing && (
+                      <TableRow key={`${block.id}-edit`}>
+                        <TableCell colSpan={isEditable ? 11 : 10} className="p-0">
+                          <FormRow
+                            f={editingForm}
+                            setF={setEditingForm}
+                            onSubmit={() => saveEdit(block)}
+                            onCancel={() => setEditingId(null)}
+                            submitLabel="Save"
+                            epics={epics}
+                            stages={stages}
+                            roles={roles}
+                            users={users}
+                            estimate={estimate}
+                          />
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableRow>
+                  </Fragment>
                 );
               })}
             </TableBody>
