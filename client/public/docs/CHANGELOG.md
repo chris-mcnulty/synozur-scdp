@@ -17,6 +17,70 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.03.01 (March 1, 2026)
+
+**Release Date:** March 1, 2026  
+**Status:** Production Release  
+**Codename:** Program Estimates & CRM Integration
+
+This release introduces the Program estimate type with staffing blocks and Gantt visualization, the Portfolio Manager role for cross-project oversight, HubSpot CRM integration for deal pipeline management, user management improvements, estimate fixes, and financial reporting enhancements.
+
+#### ✨ New Features
+
+**Program Estimate Type**
+- New "Program" estimate type for large multi-workstream engagements
+- Staffing blocks with resource name, role, epic/workstream, weekly allocation, and duration
+- Gantt-style timeline visualization of staffing blocks with drag-and-resize support
+- Automatic cost and amount calculation based on block hours and rates
+- Filtering by epic, resource, and free-text search within the program view
+- Sort order management for organizing blocks within the estimate
+- PM Wizard dialog for guided program estimate creation and configuration
+
+**Portfolio Manager Role**
+- New "portfolio-manager" role as the sixth tier in the role hierarchy
+- Cross-project visibility for portfolio-level oversight without full admin access
+- Access to portfolio dashboards, timelines, RAIDD, and resource views
+- Scoped permissions — cannot modify system settings or manage users
+- Integrated into role-based access control across all API endpoints
+
+**HubSpot CRM Integration**
+- New CRM Deals page at `/crm/deals` for viewing and managing HubSpot deal pipeline
+- Tenant-level HubSpot connection configuration in Organization Settings
+- Deal list with stage, amount, close date, and associated company details
+- Create estimate directly from a CRM deal with pre-populated fields
+- Link existing estimates to CRM deals for pipeline tracking
+- Unlink estimates from deals when engagement changes
+- Contact import from HubSpot companies and deals
+- Pipeline and deal stage visibility for sales-to-delivery handoff
+- Threshold-based deal filtering for high-value opportunity focus
+- Company search and association management via HubSpot API
+
+**User Management Improvements**
+- Enhanced user list with improved filtering and sorting capabilities
+- Portfolio Manager role available in user role assignment
+- Improved role hierarchy enforcement for user creation and editing
+
+**Financial Reporting Enhancements**
+- Client revenue report with detailed breakdown by project and time period
+- Improved financial report filtering and export options
+- Enhanced report formatting for cleaner presentation
+
+#### 🐛 Bug Fixes
+- Fixed estimate total calculations for program-type estimates with staffing blocks
+- Fixed edge cases in rate resolution when project-level and client-level overrides conflict
+- Resolved issue where estimate detail page could show stale data after block edits
+- Fixed mobile layout issues on the estimates list page
+- Improved error handling for HubSpot API connection failures
+
+#### 📚 Documentation
+- Updated changelog, roadmap, and user guide for new version
+- Added HubSpot CRM integration documentation
+- Updated role hierarchy documentation to include Portfolio Manager
+
+---
+
+## Recent Releases
+
 ### Version 1.2026.02.13 (February 13, 2026)
 
 **Release Date:** February 13, 2026  
@@ -105,8 +169,6 @@ This release introduces the RAIDD Log for structured project governance, AI-powe
 - Updated backlog with completed status for RAIDD and status reporting features
 
 ---
-
-## Recent Releases
 
 ### Version 1.2026.02.11 (February 11, 2026)
 
@@ -638,5 +700,5 @@ Have ideas for improving Constellation? Contact your administrator or reach out 
 
 ---
 
-*Last Updated: February 13, 2026*  
+*Last Updated: March 1, 2026*  
 *Maintained by: Synozur IT Team*
