@@ -478,9 +478,7 @@ export default function ClientDetail() {
       const params = new URLSearchParams();
       if (contactSearchDebounced) params.set("search", contactSearchDebounced);
       const url = `/api/clients/${clientId}/crm-contacts${params.toString() ? `?${params}` : ""}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch contacts");
-      return res.json();
+      return apiRequest(url);
     },
     enabled: showHubSpotImport && !!clientId,
   });
