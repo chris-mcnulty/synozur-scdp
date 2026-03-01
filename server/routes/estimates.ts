@@ -5059,52 +5059,6 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
     }
   });
 
-  // Repair orphaned estimates (missing tenantId)
-  app.post("/api/admin/repair-estimate-tenants", requireAuth, requireRole(["admin"]), async (req, res) => {
-    try {
-      const orphaned = await db.select({
-        id: estimates.id,
-        name: estimates.name,
-        clientId: estimates.clientId,
-        projectId: estimates.projectId,
-      }).from(estimates).where(isNull(estimates.tenantId));
-
-      if (orphaned.length === 0) {
-        return res.json({ message: "No orphaned estimates found", repaired: 0 });
-      }
-
-      let repaired = 0;
-      const details: any[] = [];
-
-      for (const est of orphaned) {
-        let resolvedTenantId: string | null = null;
-
-        if (est.projectId) {
-          const [proj] = await db.select({ tenantId: projects.tenantId }).from(projects).where(eq(projects.id, est.projectId));
-          if (proj?.tenantId) resolvedTenantId = proj.tenantId;
-        }
-
-        if (!resolvedTenantId && est.clientId) {
-          const [cli] = await db.select({ tenantId: clients.tenantId }).from(clients).where(eq(clients.id, est.clientId));
-          if (cli?.tenantId) resolvedTenantId = cli.tenantId;
-        }
-
-        if (resolvedTenantId) {
-          await db.update(estimates).set({ tenantId: resolvedTenantId }).where(eq(estimates.id, est.id));
-          repaired++;
-          details.push({ id: est.id, name: est.name, tenantId: resolvedTenantId });
-        } else {
-          details.push({ id: est.id, name: est.name, tenantId: null, error: "Could not resolve tenant" });
-        }
-      }
-
-      res.json({ message: `Repaired ${repaired} of ${orphaned.length} orphaned estimates`, repaired, total: orphaned.length, details });
-    } catch (error: any) {
-      console.error("Error repairing estimate tenants:", error);
-      res.status(500).json({ message: "Failed to repair estimate tenants", error: error.message });
-    }
-  });
-
   // Revert estimate from approved to draft (so it can be reapproved)
   app.post("/api/estimates/:id/revert-approval", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
