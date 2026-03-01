@@ -916,6 +916,76 @@ export function ProgramEstimateView({
         </div>
       )}
 
+      {/* Week Subtotals */}
+      {(() => {
+        const weekTotals = filteredBlocks.reduce((acc: any, block) => {
+          const week = (block.week ?? 0).toString();
+          if (!acc[week]) {
+            acc[week] = { hours: 0, amount: 0, cost: 0, count: 0 };
+          }
+          acc[week].hours += Number(block.adjustedHours || 0);
+          acc[week].amount += Number(block.totalAmount || 0);
+          acc[week].cost += Number(block.totalCost || 0);
+          acc[week].count += 1;
+          return acc;
+        }, {});
+
+        const sortedWeeks = Object.entries(weekTotals).sort(([a], [b]) => Number(a) - Number(b));
+
+        if (sortedWeeks.length > 1) {
+          return (
+            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+              <h4 className="font-semibold mb-2">Subtotals by Week</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {sortedWeeks.map(([week, data]: [string, any]) => (
+                  <div key={week} className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-700">
+                    <span className="font-medium">Week {week}</span>
+                    <div className="text-right">
+                      <div className="text-sm text-muted-foreground">
+                        {Math.round(data.hours)} hrs ({data.count} blocks)
+                      </div>
+                      <div className="font-semibold">
+                        ${Math.round(data.amount).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Totals Summary */}
+      <div className="flex justify-end">
+        <div className="text-right space-y-1">
+          <div className="text-sm text-muted-foreground">
+            Total Hours: {Math.round(totalHours)}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Total Cost: ${Math.round(programBlocks.reduce((s, b) => s + Number(b.totalCost || 0), 0)).toLocaleString()}
+          </div>
+          {estimate?.presentedTotal && Number(estimate.presentedTotal) !== totalAmount ? (
+            <>
+              <div className="text-sm text-muted-foreground">
+                Blocks Total: ${Math.round(totalAmount).toLocaleString()}
+              </div>
+              <div className="text-lg font-semibold text-blue-600">
+                Quote Total: ${Math.round(Number(estimate.presentedTotal)).toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                (Override: {Number(estimate.presentedTotal) > totalAmount ? '+' : ''}{Math.round(Number(estimate.presentedTotal) - totalAmount).toLocaleString()})
+              </div>
+            </>
+          ) : (
+            <div className="text-lg font-semibold">
+              Total Amount: ${Math.round(totalAmount).toLocaleString()}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Recalculate Confirmation Dialog */}
       <Dialog open={showRecalcDialog} onOpenChange={setShowRecalcDialog}>
         <DialogContent>
