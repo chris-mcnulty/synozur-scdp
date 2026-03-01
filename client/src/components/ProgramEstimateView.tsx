@@ -5,11 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Trash2, Calendar, BarChart3, List, Edit2, Check, X } from "lucide-react";
+import { Plus, Trash2, BarChart3, List, Edit2, Check, X, ChevronDown, ChevronUp, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Estimate, EstimateLineItem, EstimateEpic, EstimateStage } from "@shared/schema";
 
@@ -153,8 +151,14 @@ const FormRow = ({
     return { billingRate: r?.defaultRackRate || "0", costRate: r?.defaultCostRate || "0" };
   };
 
+  const d = Number(f.durationWeeks) || 0;
+  const u = Number(f.utilizationPercent) || 100;
+  const h = d * (u / 100) * 40;
+  const adj = calcAdjustedHours(d, u, f.size, f.complexity, f.confidence, estimate);
+  const total = adj * (Number(f.billingRate) || 0);
+
   return (
-    <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+    <div className="space-y-3 p-4 border-b bg-muted/20">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="col-span-2">
           <Label className="text-xs">Role / Resource *</Label>
@@ -348,7 +352,10 @@ const FormRow = ({
           />
         </div>
 
-        <div className="col-span-2 flex gap-2 justify-end">
+        <div className="col-span-2 flex items-end gap-2">
+          <span className="text-xs text-muted-foreground flex-1">
+            {h} base hrs → {adj.toFixed(1)} adj hrs → ${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          </span>
           {onCancel && (
             <Button size="sm" variant="ghost" onClick={onCancel}>
               <X className="h-3.5 w-3.5 mr-1" /> Cancel
@@ -359,17 +366,6 @@ const FormRow = ({
             {submitLabel}
           </Button>
         </div>
-      </div>
-
-      <div className="text-xs text-muted-foreground">
-        {(() => {
-          const d = Number(f.durationWeeks) || 0;
-          const u = Number(f.utilizationPercent) || 100;
-          const h = d * (u / 100) * 40;
-          const adj = calcAdjustedHours(d, u, f.size, f.complexity, f.confidence, estimate);
-          const total = adj * (Number(f.billingRate) || 0);
-          return `Preview: ${h} base hrs → ${adj.toFixed(1)} adjusted hrs with contingency → $${total.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-        })()}
       </div>
     </div>
   );
@@ -390,11 +386,37 @@ export function ProgramEstimateView({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<BlockForm>(defaultForm());
   const [view, setView] = useState<"table" | "gantt">("table");
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  // Filters
+  const [filterEpic, setFilterEpic] = useState("all");
+  const [filterResource, setFilterResource] = useState("all");
+  const [filterText, setFilterText] = useState("");
 
   const programBlocks = useMemo(
     () => lineItems.filter((li) => li.durationWeeks != null),
     [lineItems]
   );
+
+  // Unique resource names for filter dropdown
+  const resourceNames = useMemo(() => {
+    const names = new Set<string>();
+    programBlocks.forEach((b) => { if (b.resourceName) names.add(b.resourceName); });
+    return Array.from(names).sort();
+  }, [programBlocks]);
+
+  const filteredBlocks = useMemo(() => {
+    return programBlocks.filter((b) => {
+      const matchesEpic = filterEpic === "all" || b.epicId === filterEpic;
+      const matchesResource = filterResource === "all" || b.resourceName === filterResource;
+      const matchesText = !filterText ||
+        (b.description || "").toLowerCase().includes(filterText.toLowerCase()) ||
+        (b.resourceName || "").toLowerCase().includes(filterText.toLowerCase());
+      return matchesEpic && matchesResource && matchesText;
+    });
+  }, [programBlocks, filterEpic, filterResource, filterText]);
+
+  const hasFilters = filterEpic !== "all" || filterResource !== "all" || filterText !== "";
 
   const epicColorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -459,6 +481,7 @@ export function ProgramEstimateView({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
       setForm(defaultForm());
+      setShowAddForm(false);
       toast({ title: "Block added" });
     },
     onError: () => toast({ title: "Failed to add block", variant: "destructive" }),
@@ -499,6 +522,7 @@ export function ProgramEstimateView({
 
   const startEdit = (block: EstimateLineItem) => {
     setEditingId(block.id);
+    setShowAddForm(false);
     setEditingForm({
       description: block.description || "",
       epicId: block.epicId || "none",
@@ -532,19 +556,17 @@ export function ProgramEstimateView({
 
   const ganttWeeks = Array.from({ length: ganttMaxWeek }, (_, i) => i + 1);
 
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Header row: summary + view toggle */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            {programBlocks.length} block{programBlocks.length !== 1 ? "s" : ""} ·{" "}
-            {totalHours.toFixed(0)} adjusted hours ·{" "}
-            <span className="font-semibold text-foreground">
-              ${totalAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })} total
-            </span>
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          {programBlocks.length} block{programBlocks.length !== 1 ? "s" : ""} ·{" "}
+          {totalHours.toFixed(0)} adjusted hours ·{" "}
+          <span className="font-semibold text-foreground">
+            ${totalAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })} total
+          </span>
+        </p>
         <div className="flex gap-1 border rounded-md p-0.5">
           <Button
             size="sm"
@@ -565,18 +587,78 @@ export function ProgramEstimateView({
         </div>
       </div>
 
-      {isEditable && (
-        <FormRow
-          f={form}
-          setF={setForm}
-          onSubmit={handleAdd}
-          submitLabel="Add Block"
-          epics={epics}
-          stages={stages}
-          roles={roles}
-          users={users}
-          estimate={estimate}
+      {/* Filter + Add row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <Input
+          className="h-7 text-xs w-36"
+          placeholder="Search..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
         />
+        <Select value={filterEpic} onValueChange={setFilterEpic}>
+          <SelectTrigger className="h-7 text-xs w-36">
+            <SelectValue placeholder="Epic" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All epics</SelectItem>
+            {epics.map((e) => (
+              <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterResource} onValueChange={setFilterResource}>
+          <SelectTrigger className="h-7 text-xs w-40">
+            <SelectValue placeholder="Resource" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All resources</SelectItem>
+            {resourceNames.map((r) => (
+              <SelectItem key={r} value={r}>{r}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {hasFilters && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => { setFilterEpic("all"); setFilterResource("all"); setFilterText(""); }}
+          >
+            <X className="h-3 w-3 mr-1" /> Clear
+          </Button>
+        )}
+        <div className="ml-auto">
+          {isEditable && (
+            <Button
+              size="sm"
+              variant={showAddForm ? "secondary" : "default"}
+              className="h-7 px-3 text-xs"
+              onClick={() => { setShowAddForm(!showAddForm); setEditingId(null); if (!showAddForm) setForm(defaultForm()); }}
+            >
+              {showAddForm ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+              {showAddForm ? "Cancel" : "Add Block"}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Collapsible add form */}
+      {showAddForm && isEditable && (
+        <div className="rounded-md border">
+          <FormRow
+            f={form}
+            setF={setForm}
+            onSubmit={handleAdd}
+            onCancel={() => { setShowAddForm(false); setForm(defaultForm()); }}
+            submitLabel="Add Block"
+            epics={epics}
+            stages={stages}
+            roles={roles}
+            users={users}
+            estimate={estimate}
+          />
+        </div>
       )}
 
       {view === "table" ? (
@@ -598,14 +680,14 @@ export function ProgramEstimateView({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {programBlocks.length === 0 && (
+              {filteredBlocks.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={isEditable ? 11 : 10} className="text-center text-muted-foreground text-sm py-8">
-                    No blocks yet. Add a block above.
+                    {hasFilters ? "No blocks match the current filters." : "No blocks yet. Click \"Add Block\" to get started."}
                   </TableCell>
                 </TableRow>
               )}
-              {programBlocks.map((block) => {
+              {filteredBlocks.map((block) => {
                 const isEditing = editingId === block.id;
                 const hoursPerWeek = ((block.utilizationPercent || 100) / 100) * 40;
                 const epic = epics.find((e) => e.id === block.epicId);
@@ -615,7 +697,7 @@ export function ProgramEstimateView({
                 if (isEditing) {
                   return (
                     <TableRow key={block.id}>
-                      <TableCell colSpan={isEditable ? 11 : 10} className="p-2">
+                      <TableCell colSpan={isEditable ? 11 : 10} className="p-0">
                         <FormRow
                           f={editingForm}
                           setF={setEditingForm}
@@ -634,41 +716,73 @@ export function ProgramEstimateView({
                 }
 
                 return (
-                  <TableRow key={block.id}>
-                    <TableCell className="text-xs font-medium">
-                      <div className="flex items-center gap-1.5">
-                        {epicColor && <span className={`w-2 h-2 rounded-full ${epicColor} flex-shrink-0`} />}
-                        {block.resourceName || block.description}
-                      </div>
+                  <TableRow key={block.id} className="text-xs">
+                    <TableCell className="py-2">
+                      <span className="font-medium">{block.resourceName || "—"}</span>
                       {block.workstream && (
-                        <div className="text-muted-foreground mt-0.5">{block.workstream}</div>
+                        <span className="block text-muted-foreground">{block.workstream}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {epic?.name || "—"}
-                      {stage && <div className="text-muted-foreground">{stage.name}</div>}
+                    <TableCell className="py-2">
+                      {epic && (
+                        <div className="flex items-center gap-1">
+                          <span className={`inline-block w-2 h-2 rounded-full ${epicColor}`} />
+                          <span>{epic.name}</span>
+                        </div>
+                      )}
+                      {stage && <span className="text-muted-foreground block">{stage.name}</span>}
+                      {!epic && !stage && <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell className="text-xs">{block.week ?? "—"}</TableCell>
-                    <TableCell className="text-xs">{block.durationWeeks}w</TableCell>
-                    <TableCell className="text-xs">{block.utilizationPercent}%</TableCell>
-                    <TableCell className="text-xs">{hoursPerWeek}h</TableCell>
-                    <TableCell className="text-xs">{Number(block.adjustedHours || 0).toFixed(1)}</TableCell>
-                    <TableCell className="text-xs">${Number(block.rate || 0).toFixed(0)}</TableCell>
-                    <TableCell className="text-xs text-right font-medium">
+                    <TableCell className="py-2">{block.week ?? "—"}</TableCell>
+                    <TableCell className="py-2">{block.durationWeeks}w</TableCell>
+                    <TableCell className="py-2">{block.utilizationPercent}%</TableCell>
+                    <TableCell className="py-2">{hoursPerWeek.toFixed(0)}</TableCell>
+                    <TableCell className="py-2">{Number(block.adjustedHours || 0).toFixed(1)}</TableCell>
+                    <TableCell className="py-2">${Number(block.rate || 0).toLocaleString()}</TableCell>
+                    <TableCell className="py-2 text-right font-medium">
                       ${Number(block.totalAmount || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </TableCell>
-                    <TableCell className="text-xs">
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">{block.size?.charAt(0).toUpperCase()}</Badge>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 ml-0.5">{block.complexity?.charAt(0).toUpperCase()}</Badge>
-                      <Badge variant="outline" className="text-[10px] px-1 py-0 ml-0.5">{block.confidence?.charAt(0).toUpperCase()}</Badge>
+                    <TableCell className="py-2">
+                      <div className="flex gap-0.5">
+                        {block.size !== "small" && (
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            {block.size === "medium" ? "M" : "L"}S
+                          </Badge>
+                        )}
+                        {block.complexity !== "small" && (
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            {block.complexity === "medium" ? "M" : "H"}C
+                          </Badge>
+                        )}
+                        {block.confidence !== "high" && (
+                          <Badge variant="secondary" className="text-xs px-1 py-0">
+                            {block.confidence === "medium" ? "M" : "L"}Conf
+                          </Badge>
+                        )}
+                        {block.size === "small" && block.complexity === "small" && block.confidence === "high" && (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
                     </TableCell>
                     {isEditable && (
-                      <TableCell>
+                      <TableCell className="py-2">
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(block)}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() => startEdit(block)}
+                          >
                             <Edit2 className="h-3 w-3" />
                           </Button>
-                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteMutation.mutate(block.id)}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              if (confirm("Remove this block?")) deleteMutation.mutate(block.id);
+                            }}
+                          >
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
@@ -681,115 +795,76 @@ export function ProgramEstimateView({
           </Table>
         </div>
       ) : (
-        <GanttView
-          blocks={programBlocks}
-          epics={epics}
-          stages={stages}
-          epicColorMap={epicColorMap}
-          ganttWeeks={ganttWeeks}
-        />
-      )}
-
-      {programBlocks.length > 0 && (
-        <div className="flex justify-end gap-8 p-3 border rounded-lg bg-muted/20 text-sm">
-          <div>
-            <span className="text-muted-foreground">Total Adjusted Hours: </span>
-            <span className="font-semibold">{totalHours.toFixed(1)}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Total Fees: </span>
-            <span className="font-semibold text-lg">
-              ${totalAmount.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GanttView({
-  blocks,
-  epics,
-  stages,
-  epicColorMap,
-  ganttWeeks,
-}: {
-  blocks: EstimateLineItem[];
-  epics: EstimateEpic[];
-  stages: EstimateStage[];
-  epicColorMap: Map<string, string>;
-  ganttWeeks: number[];
-}) {
-  if (blocks.length === 0) {
-    return (
-      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-        Add blocks to see the timeline.
-      </div>
-    );
-  }
-
-  const totalWeeks = ganttWeeks.length;
-
-  return (
-    <div className="border rounded-lg overflow-x-auto">
-      <div style={{ minWidth: Math.max(600, totalWeeks * 32 + 200) }}>
-        <div className="flex border-b bg-muted/40">
-          <div className="w-48 flex-shrink-0 px-3 py-2 text-xs font-medium text-muted-foreground border-r">
-            Role / Resource
-          </div>
-          <div className="flex flex-1">
-            {ganttWeeks.map((w) => (
-              <div
-                key={w}
-                className="flex-1 text-center text-[10px] text-muted-foreground py-2 border-r last:border-r-0 min-w-[28px]"
-              >
-                W{w}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {blocks.map((block) => {
-          const start = (block.week || 1) - 1;
-          const dur = block.durationWeeks || 1;
-          const epic = epics.find((e) => e.id === block.epicId);
-          const stage = stages.find((s) => s.id === block.stageId);
-          const colorClass = epic ? epicColorMap.get(epic.id) : "bg-slate-400";
-
-          return (
-            <div key={block.id} className="flex border-b last:border-b-0 hover:bg-muted/10">
-              <div className="w-48 flex-shrink-0 px-3 py-2 border-r">
-                <div className="text-xs font-medium truncate">{block.resourceName || block.description}</div>
-                {(epic || stage) && (
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    {epic?.name}{stage ? ` / ${stage.name}` : ""}
-                  </div>
-                )}
-                <div className="text-[10px] text-muted-foreground">
-                  {block.durationWeeks}w · {block.utilizationPercent}% · ${Number(block.totalAmount || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                </div>
-              </div>
-              <div className="flex flex-1 relative py-1.5">
-                {ganttWeeks.map((w) => (
-                  <div key={w} className="flex-1 border-r last:border-r-0 min-w-[28px]" />
-                ))}
-                <div
-                  className={`absolute top-1.5 bottom-1.5 ${colorClass} rounded opacity-85 flex items-center justify-center overflow-hidden`}
-                  style={{
-                    left: `calc(${(start / totalWeeks) * 100}% + 2px)`,
-                    width: `calc(${(dur / totalWeeks) * 100}% - 4px)`,
-                  }}
-                >
-                  <span className="text-white text-[10px] font-medium px-1 truncate">
-                    {block.resourceName || block.description}
-                  </span>
+        <div className="rounded-md border overflow-x-auto">
+          <div className="min-w-[600px]">
+            <div className="flex border-b">
+              <div className="w-40 shrink-0 p-2 text-xs font-medium text-muted-foreground border-r">Role</div>
+              <div className="flex-1 overflow-x-auto">
+                <div className="flex">
+                  {ganttWeeks.map((wk) => (
+                    <div
+                      key={wk}
+                      className="text-center text-xs text-muted-foreground border-r last:border-r-0 py-2"
+                      style={{ minWidth: 32, width: 32 }}
+                    >
+                      {wk}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>
+            {filteredBlocks.length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-8">
+                {hasFilters ? "No blocks match the current filters." : "No blocks to display."}
+              </div>
+            ) : (
+              filteredBlocks.map((block) => {
+                const epic = epics.find((e) => e.id === block.epicId);
+                const epicColor = epic ? epicColorMap.get(epic.id) : "bg-gray-400";
+                const startWk = block.week || 1;
+                const dur = block.durationWeeks || 1;
+
+                return (
+                  <div key={block.id} className="flex border-b last:border-b-0 hover:bg-muted/30">
+                    <div className="w-40 shrink-0 p-2 border-r">
+                      <p className="text-xs font-medium truncate">{block.resourceName || "—"}</p>
+                      {epic && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${epicColor}`} />
+                          <span className="text-xs text-muted-foreground truncate">{epic.name}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 relative" style={{ minHeight: 36 }}>
+                      <div className="flex h-full">
+                        {ganttWeeks.map((wk) => (
+                          <div
+                            key={wk}
+                            className="border-r last:border-r-0 h-full"
+                            style={{ minWidth: 32, width: 32 }}
+                          />
+                        ))}
+                      </div>
+                      <div
+                        className={`absolute top-1 bottom-1 rounded ${epicColor || "bg-blue-500"} opacity-80 flex items-center px-1`}
+                        style={{
+                          left: `${(startWk - 1) * 32}px`,
+                          width: `${dur * 32 - 2}px`,
+                        }}
+                        title={`${block.resourceName} — Wk ${startWk}–${startWk + dur - 1} — ${block.utilizationPercent}%`}
+                      >
+                        <span className="text-white text-xs truncate">
+                          {block.utilizationPercent}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
