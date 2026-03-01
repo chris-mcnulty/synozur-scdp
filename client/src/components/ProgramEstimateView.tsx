@@ -417,7 +417,9 @@ export function ProgramEstimateView({
   const [filterText, setFilterText] = useState("");
 
   const programBlocks = useMemo(
-    () => lineItems.filter((li) => li.durationWeeks != null),
+    () => lineItems
+      .filter((li) => li.durationWeeks != null)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     [lineItems]
   );
 
