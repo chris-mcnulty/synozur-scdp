@@ -60,7 +60,8 @@ import {
   UserPlus,
   Trash2,
   UserCircle,
-  Search
+  Search,
+  Pencil
 } from "lucide-react";
 import { Link } from "wouter";
 import { Client, Project, InvoiceBatch, Sow } from "@shared/schema";
@@ -315,6 +316,7 @@ export default function ClientDetail() {
   const [showAddStakeholder, setShowAddStakeholder] = useState(false);
   const [stakeholderForm, setStakeholderForm] = useState({ email: '', name: '', stakeholderTitle: '' });
   const [matchedUser, setMatchedUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [editingStakeholder, setEditingStakeholder] = useState<{ id: string; name: string; title: string } | null>(null);
   const [showHubSpotImport, setShowHubSpotImport] = useState(false);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [contactSearch, setContactSearch] = useState("");
@@ -457,6 +459,23 @@ export default function ClientDetail() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateStakeholderMutation = useMutation({
+    mutationFn: async ({ id, name, title }: { id: string; name: string; title: string }) => {
+      return apiRequest(`/api/clients/${clientId}/stakeholders/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, stakeholderTitle: title }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients", clientId, "stakeholders"] });
+      setEditingStakeholder(null);
+      toast({ title: "Stakeholder updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update stakeholder", variant: "destructive" });
     },
   });
 
@@ -1663,15 +1682,24 @@ export default function ClientDetail() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => removeStakeholderMutation.mutate(s.id)}
-                              disabled={removeStakeholderMutation.isPending}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setEditingStakeholder({ id: s.id, name: s.userName || '', title: s.stakeholderTitle || '' })}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => removeStakeholderMutation.mutate(s.id)}
+                                disabled={removeStakeholderMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1684,6 +1712,56 @@ export default function ClientDetail() {
         </Tabs>
 
         {/* Add Stakeholder Dialog */}
+        {/* Edit Stakeholder Dialog */}
+        <Dialog open={!!editingStakeholder} onOpenChange={(open) => { if (!open) setEditingStakeholder(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Stakeholder</DialogTitle>
+            </DialogHeader>
+            {editingStakeholder && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const fd = new FormData(e.currentTarget);
+                  updateStakeholderMutation.mutate({
+                    id: editingStakeholder.id,
+                    name: fd.get('name') as string,
+                    title: fd.get('title') as string,
+                  });
+                }}
+                className="space-y-4 py-2"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="edit-stakeholder-name">Name</Label>
+                  <Input
+                    id="edit-stakeholder-name"
+                    name="name"
+                    defaultValue={editingStakeholder.name}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-stakeholder-title">Title / Role</Label>
+                  <Input
+                    id="edit-stakeholder-title"
+                    name="title"
+                    placeholder="e.g. Project Sponsor"
+                    defaultValue={editingStakeholder.title}
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setEditingStakeholder(null)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={updateStakeholderMutation.isPending}>
+                    {updateStakeholderMutation.isPending ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showAddStakeholder} onOpenChange={(open) => {
           setShowAddStakeholder(open);
           if (!open) { setMatchedUser(null); setStakeholderForm({ email: '', name: '', stakeholderTitle: '' }); }

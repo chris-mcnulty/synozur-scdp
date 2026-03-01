@@ -1152,7 +1152,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
   app.patch("/api/clients/:clientId/stakeholders/:stakeholderId", requireAuth, requireRole(["admin", "pm", "billing-admin", "portfolio-manager"]), async (req, res) => {
     try {
-      const { stakeholderTitle } = req.body;
+      const { stakeholderTitle, name } = req.body;
       const [updated] = await db
         .update(tenantUsers)
         .set({ stakeholderTitle })
@@ -1167,6 +1167,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
       if (!updated) {
         return res.status(404).json({ message: "Stakeholder not found" });
+      }
+
+      // Also update the user's name if provided
+      if (name && name.trim()) {
+        const trimmed = name.trim();
+        const parts = trimmed.split(' ');
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ') || '';
+        await storage.updateUser(updated.userId, { name: trimmed, firstName, lastName });
       }
 
       const user = await storage.getUser(updated.userId);
