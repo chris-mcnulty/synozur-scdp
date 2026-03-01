@@ -110,7 +110,7 @@ const defaultForm = (): BlockForm => ({
   roleId: "none",
   roleFreeText: "",
   userId: "none",
-  startWeek: "1",
+  startWeek: "0",
   durationWeeks: "4",
   utilizationPercent: "100",
   billingRate: "0",
@@ -218,7 +218,7 @@ const FormRow = ({
           <Input
             className="h-7 text-xs mt-0.5"
             type="number"
-            min="1"
+            min="0"
             value={f.startWeek}
             onChange={(e) => setF({ ...f, startWeek: e.target.value })}
           />
@@ -419,7 +419,12 @@ export function ProgramEstimateView({
   const programBlocks = useMemo(
     () => lineItems
       .filter((li) => li.durationWeeks != null)
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+      .sort((a, b) => {
+        const weekA = Number(a.week ?? 0);
+        const weekB = Number(b.week ?? 0);
+        if (weekA !== weekB) return weekA - weekB;
+        return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+      }),
     [lineItems]
   );
 
@@ -477,7 +482,7 @@ export function ProgramEstimateView({
       epicId: f.epicId === "none" ? null : f.epicId,
       stageId: f.stageId === "none" ? null : f.stageId,
       workstream: f.workstream || null,
-      week: Number(f.startWeek) || 1,
+      week: f.startWeek !== "" ? Number(f.startWeek) : 0,
       durationWeeks,
       utilizationPercent,
       baseHours: String(baseHoursRaw),
@@ -569,7 +574,7 @@ export function ProgramEstimateView({
       roleId: block.roleId || "none",
       roleFreeText: block.resourceName || "",
       userId: block.assignedUserId || "none",
-      startWeek: String(block.week || 1),
+      startWeek: String(block.week ?? 0),
       durationWeeks: String(block.durationWeeks || 4),
       utilizationPercent: String(block.utilizationPercent || 100),
       billingRate: String(block.rate || "0"),
@@ -587,12 +592,17 @@ export function ProgramEstimateView({
   const totalHours = programBlocks.reduce((s, b) => s + Number(b.adjustedHours || 0), 0);
   const totalAmount = programBlocks.reduce((s, b) => s + Number(b.totalAmount || 0), 0);
 
-  const ganttMaxWeek = useMemo(() => {
-    if (!programBlocks.length) return 12;
-    return Math.max(...programBlocks.map((b) => (b.week || 1) + (b.durationWeeks || 1) - 1), 12);
+  const ganttMinWeek = useMemo(() => {
+    if (!programBlocks.length) return 0;
+    return Math.min(...programBlocks.map((b) => b.week ?? 0), 0);
   }, [programBlocks]);
 
-  const ganttWeeks = Array.from({ length: ganttMaxWeek }, (_, i) => i + 1);
+  const ganttMaxWeek = useMemo(() => {
+    if (!programBlocks.length) return 12;
+    return Math.max(...programBlocks.map((b) => (b.week ?? 0) + (b.durationWeeks || 1) - 1), 12);
+  }, [programBlocks]);
+
+  const ganttWeeks = Array.from({ length: ganttMaxWeek - ganttMinWeek + 1 }, (_, i) => i + ganttMinWeek);
 
   return (
     <div className="space-y-3">
@@ -873,7 +883,7 @@ export function ProgramEstimateView({
               filteredBlocks.map((block) => {
                 const epic = epics.find((e) => e.id === block.epicId);
                 const epicColor = epic ? epicColorMap.get(epic.id) : "bg-gray-400";
-                const startWk = block.week || 1;
+                const startWk = block.week ?? 0;
                 const dur = block.durationWeeks || 1;
 
                 return (
@@ -900,7 +910,7 @@ export function ProgramEstimateView({
                       <div
                         className={`absolute top-1 bottom-1 rounded ${epicColor || "bg-blue-500"} opacity-80 flex items-center px-1`}
                         style={{
-                          left: `${(startWk - 1) * 32}px`,
+                          left: `${(startWk - ganttMinWeek) * 32}px`,
                           width: `${dur * 32 - 2}px`,
                         }}
                         title={`${block.resourceName} — Wk ${startWk}–${startWk + dur - 1} — ${block.utilizationPercent}%`}

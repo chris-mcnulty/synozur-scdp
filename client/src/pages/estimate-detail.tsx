@@ -200,9 +200,10 @@ function EstimateDetailContent() {
     
     // Default sort by week (ascending)
     return filtered.sort((a, b) => {
-      const weekA = a.week ?? 0;
-      const weekB = b.week ?? 0;
-      return Number(weekA) - Number(weekB);
+      const weekA = Number(a.week ?? 0);
+      const weekB = Number(b.week ?? 0);
+      if (weekA !== weekB) return weekA - weekB;
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
     });
   };
 
