@@ -141,10 +141,10 @@ export class RateResolver {
         .from(roles)
         .where(eq(roles.id, roleId));
       
-      if (role && role.defaultRackRate) {
+      if (role && (role.defaultRackRate || role.defaultCostRate)) {
         return {
-          billingRate: Number(role.defaultRackRate),
-          costRate: null, // Roles don't have separate cost rates
+          billingRate: role.defaultRackRate ? Number(role.defaultRackRate) : null,
+          costRate: role.defaultCostRate ? Number(role.defaultCostRate) : null,
           precedence: 'role_default',
           source: `Role default (${role.name})`
         };

@@ -4,6 +4,7 @@ import { storage, db, generateSubSOWPdf } from "../storage";
 import { insertEstimateSchema, insertClientSchema, insertRoleSchema, insertUserRateScheduleSchema, insertProjectRateOverrideSchema, sows, timeEntries, users, projects, tenants, tenantUsers, projectMilestones, estimateLineItems, estimateEpics, estimateStages, estimateActivities, estimates, roles, userRateSchedules } from "@shared/schema";
 import { eq, sql, inArray, max, and } from "drizzle-orm";
 import { updateHubSpotDealAmount, updateHubSpotDealStage, isHubSpotConnected } from "../services/hubspot-client.js";
+import { RateResolver } from "../rate-resolver";
 
 
 async function syncEstimateStatusToCrm(estimateId: string, tenantId: string, status: string, amount?: string | null) {
@@ -2452,58 +2453,47 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       // Get all line items
       const lineItems = await storage.getEstimateLineItems(estimateId);
       
-      // Get all users to lookup current rates (tenant-scoped)
-      const users = await storage.getUsers(req.user?.tenantId);
-      const userMap = new Map(users.map(u => [u.id, u]));
+      // Get all roles for name-based fallback lookup
+      const allRoles = await storage.getRoles(req.user?.tenantId);
+      const roleNameMap = new Map(allRoles.map(r => [r.name.toLowerCase().trim(), r]));
 
-      // Get all roles to lookup default rates for role-based estimates
-      const roles = await storage.getRoles(req.user?.tenantId);
-      const roleMap = new Map(roles.map(r => [r.id, r]));
-      // Create role name map for looking up by resourceName (case-insensitive)
-      const roleNameMap = new Map(roles.map(r => [r.name.toLowerCase().trim(), r]));
-      
-      // Find "All" role as last-resort fallback
-      const allRole = roles.find(r => r.name === 'All');
-      let defaultCostRatio = 0.75; // Default to 75% cost ratio (25% margin)
+      // Find "All" role as last-resort fallback for cost ratio
+      const allRole = allRoles.find(r => r.name === 'All');
+      let defaultCostRatio = 0.75;
       if (allRole) {
         const rackRate = Number(allRole.defaultRackRate) || 0;
-        const costRate = Number(allRole.defaultCostRate) || 0;
-        if (rackRate > 0 && costRate > 0) {
-          defaultCostRatio = costRate / rackRate;
+        const costRateVal = Number(allRole.defaultCostRate) || 0;
+        if (rackRate > 0 && costRateVal > 0) {
+          defaultCostRatio = costRateVal / rackRate;
         }
       }
 
       let updatedCount = 0;
 
-      // Helper to normalize factor values (handles mixed-case imports)
       const normalizeSize = (val: any): string => {
         const v = String(val || '').toLowerCase().trim();
         if (v === 'small' || v === 's') return 'small';
         if (v === 'medium' || v === 'm' || v === 'medum') return 'medium';
         if (v === 'large' || v === 'l') return 'large';
-        return 'small'; // default
+        return 'small';
       };
       const normalizeConfidence = (val: any): string => {
         const v = String(val || '').toLowerCase().trim();
         if (v === 'high' || v === 'h') return 'high';
         if (v === 'medium' || v === 'm' || v === 'medum') return 'medium';
         if (v === 'low' || v === 'l') return 'low';
-        return 'high'; // default
+        return 'high';
       };
 
-      // Recalculate each line item
       for (const item of lineItems) {
-        // Skip items with manual rate overrides completely
         if (item.hasManualRateOverride) {
           continue;
         }
 
-        // Normalize factor values for case-insensitive matching
         const size = normalizeSize(item.size);
         const complexity = normalizeSize(item.complexity);
         const confidence = normalizeConfidence(item.confidence);
 
-        // Get multipliers from estimate
         const sizeMultiplier = size === 'small' ? Number(estimate.sizeSmallMultiplier || 1) :
                                size === 'medium' ? Number(estimate.sizeMediumMultiplier || 1) :
                                Number(estimate.sizeLargeMultiplier || 1);
@@ -2516,80 +2506,61 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
                                      confidence === 'medium' ? Number(estimate.confidenceMediumMultiplier || 1) :
                                      Number(estimate.confidenceLowMultiplier || 1);
 
-        // Determine rates: user > role > existing
-        // Rate precedence: Manual overrides (already skipped) > User defaults > Role defaults > Existing rates
-        let rate = Number(item.rate || 0); // Default to existing rate
-        let costRate = Number(item.costRate || 0); // Default to existing cost rate
-        
-        // First check role defaults (if no user assigned)
-        // Try to find role by roleId first, then by resourceName
-        let matchedRole = null;
-        if (item.roleId) {
-          matchedRole = roleMap.get(item.roleId);
-        }
-        // If no roleId or role not found, try matching by resourceName
-        if (!matchedRole && item.resourceName && !item.assignedUserId) {
+        let rate = Number(item.rate || 0);
+        let costRate = Number(item.costRate || 0);
+
+        // Use the full RateResolver precedence chain:
+        // Manual override (skipped above) > Estimate override > Client override > User default > Role default
+        let resolvedRoleId = item.roleId || undefined;
+
+        // For items without roleId, try matching by resourceName to the role catalog
+        if (!resolvedRoleId && item.resourceName && !item.assignedUserId) {
           const lookupKey = item.resourceName.toLowerCase().trim();
-          matchedRole = roleNameMap.get(lookupKey);
-        }
-        
-        if (matchedRole && !item.assignedUserId) {
-          // Use role defaults for billing and cost rates
-          if (matchedRole.defaultRackRate != null) {
-            rate = Number(matchedRole.defaultRackRate);
-          }
-          if (matchedRole.defaultCostRate != null) {
-            costRate = Number(matchedRole.defaultCostRate);
+          const matchedRole = roleNameMap.get(lookupKey);
+          if (matchedRole) {
+            resolvedRoleId = matchedRole.id;
           }
         }
-        
-        // User defaults override role defaults
-        if (item.assignedUserId) {
-          const user = userMap.get(item.assignedUserId);
-          if (user) {
-            // Override with user defaults only if they are defined (not null/undefined)
-            if (user.defaultBillingRate != null) {
-              rate = Number(user.defaultBillingRate);
-            }
-            if (user.defaultCostRate != null) {
-              costRate = Number(user.defaultCostRate);
-            }
+
+        const effectiveRates = await RateResolver.resolveRates({
+          estimateId,
+          lineItemId: item.id,
+          userId: item.assignedUserId || undefined,
+          roleId: resolvedRoleId,
+        });
+
+        if (effectiveRates.precedence !== 'none') {
+          if (effectiveRates.billingRate != null) {
+            rate = effectiveRates.billingRate;
+          }
+          if (effectiveRates.costRate != null) {
+            costRate = effectiveRates.costRate;
           }
         }
-        
-        // FALLBACK: If no matching role (by ID or name) and no user assigned, 
-        // but we have a billing rate and no cost rate,
+
+        // FALLBACK: If resolver found no rates and we have a billing rate but no cost rate,
         // calculate cost rate using the default cost ratio (from "All" role or 75% default)
-        // This prevents 100% margin for generic rate estimates
-        if (!matchedRole && !item.assignedUserId && rate > 0 && costRate === 0) {
+        if (effectiveRates.precedence === 'none' && rate > 0 && costRate === 0) {
           costRate = rate * defaultCostRatio;
         }
 
         // Calculate adjusted hours — program blocks use durationWeeks × utilization formula
         let adjustedHours: number;
         if (item.durationWeeks != null && item.utilizationPercent != null) {
-          // Program block: hours = durationWeeks × (utilizationPercent / 100 × 40)
           const hoursPerWeek = (Number(item.utilizationPercent) / 100) * 40;
           const rawHours = Number(item.durationWeeks) * hoursPerWeek;
           adjustedHours = rawHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
-          // For free-text role blocks (no roleId, no userId), preserve existing rate
-          if (!item.roleId && !item.assignedUserId) {
-            rate = Number(item.rate || 0);
-            costRate = Number(item.costRate || 0);
-          }
         } else {
           const baseHours = Number(item.baseHours || 0);
           const factor = Number(item.factor || 1);
           adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
         }
 
-        // Calculate amounts using determined rates
         const totalAmount = adjustedHours * rate;
         const totalCost = adjustedHours * costRate;
         const margin = totalAmount - totalCost;
         const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
-        // Update the line item with all recalculated fields and normalized factor values
         await storage.updateEstimateLineItem(item.id, {
           rate: String(rate),
           costRate: String(costRate),
@@ -2598,9 +2569,9 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           totalCost: String(totalCost),
           margin: String(margin),
           marginPercent: String(marginPercent),
-          size: size,           // Save normalized value
-          complexity: complexity, // Save normalized value
-          confidence: confidence  // Save normalized value
+          size: size,
+          complexity: complexity,
+          confidence: confidence
         });
 
         updatedCount++;
