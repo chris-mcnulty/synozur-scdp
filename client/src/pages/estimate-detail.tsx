@@ -2189,7 +2189,7 @@ function EstimateDetailContent() {
                       disabled={estimate?.marginOverrideActive === true}
                     />
                     <p className="text-sm text-muted-foreground mt-1">
-                      Internal Total: ${Math.round(totalAmount).toLocaleString()}
+                      Client Total (before commissions): ${Math.round(totalAmount).toLocaleString()}
                     </p>
                   </div>
                   <div>
