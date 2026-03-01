@@ -2194,7 +2194,7 @@ function EstimateDetailContent() {
                     </p>
                   </div>
                   <div>
-                    <Label htmlFor="margin">Rate% (including any commissions)</Label>
+                    <Label htmlFor="margin">Gross Margin %</Label>
                     <Input
                       id="margin"
                       type="number"
@@ -2205,7 +2205,7 @@ function EstimateDetailContent() {
                       className="mt-1 bg-muted"
                     />
                     <p className="text-sm text-muted-foreground mt-1">
-                      Total Cost: ${Math.round(totalCost).toLocaleString()} | 
+                      Resource Cost: ${Math.round(totalCost).toLocaleString()} | 
                       Profit: ${estimate?.presentedTotal ? Math.round(Number(estimate.presentedTotal) - totalCost).toLocaleString() : "N/A"}
                     </p>
                   </div>
@@ -2229,16 +2229,20 @@ function EstimateDetailContent() {
                           <span className="font-semibold">{Number(estimate.marginOverridePercent || 0).toFixed(1)}%</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Total Cost:</span>
+                          <span className="text-muted-foreground">Resource Cost (internal):</span>
                           <span className="font-medium">${Math.round(totalCost).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Adjusted Total:</span>
+                          <span className="text-muted-foreground">Billing Total (adjusted):</span>
                           <span className="font-semibold text-blue-700 dark:text-blue-300">${Math.round(totalAmount).toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Profit:</span>
-                          <span className="font-medium text-green-700 dark:text-green-300">${Math.round(totalAmount - totalCost).toLocaleString()}</span>
+                          <span className="text-muted-foreground">Gross Profit:</span>
+                          <span className={`font-medium ${(totalAmount - totalCost) >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-600 dark:text-red-400'}`}>${Math.round(totalAmount - totalCost).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Actual Margin:</span>
+                          <span className={`font-medium ${(totalAmount - totalCost) >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-600 dark:text-red-400'}`}>{totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount * 100).toFixed(1) : '0.0'}%</span>
                         </div>
                         <p className="text-xs text-muted-foreground italic mt-2">
                           Presented Total is locked while margin override is active. Billing rates on all line items have been adjusted proportionally.
@@ -5351,7 +5355,7 @@ function EstimateDetailContent() {
           <DialogHeader>
             <DialogTitle>Apply Margin Override</DialogTitle>
             <DialogDescription>
-              Set a target profit margin. Billing rates on all line items will be adjusted proportionally to achieve this margin. Hours and cost rates remain unchanged.
+              Set a target gross margin (profit ÷ billing total). Billing rates on all line items will be adjusted proportionally. Hours and cost rates remain unchanged.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -5373,12 +5377,16 @@ function EstimateDetailContent() {
               <div className="p-3 bg-muted rounded-lg space-y-2">
                 <p className="text-sm font-medium">Preview</p>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Current Total:</span>
+                  <span className="text-muted-foreground">Current Billing Total:</span>
                   <span>${Math.round(totalAmount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Cost:</span>
+                  <span className="text-muted-foreground">Resource Cost:</span>
                   <span>${Math.round(totalCost).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Current Margin:</span>
+                  <span>{totalAmount > 0 ? ((totalAmount - totalCost) / totalAmount * 100).toFixed(1) : '0.0'}%</span>
                 </div>
                 {(() => {
                   const target = Number(targetMarginPercent);
@@ -5390,12 +5398,12 @@ function EstimateDetailContent() {
                     <>
                       <div className="border-t pt-2 mt-2" />
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">New Total:</span>
+                        <span className="text-muted-foreground">New Billing Total:</span>
                         <span className="font-semibold text-blue-700 dark:text-blue-300">${Math.round(newTotal).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">New Profit:</span>
-                        <span className="font-medium text-green-700 dark:text-green-300">
+                        <span className="text-muted-foreground">New Gross Profit:</span>
+                        <span className={`font-medium ${newProfit >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-600 dark:text-red-400'}`}>
                           ${Math.round(newProfit).toLocaleString()} (was ${Math.round(currentProfit).toLocaleString()})
                         </span>
                       </div>

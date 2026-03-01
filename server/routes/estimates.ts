@@ -2647,8 +2647,14 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
 
         const currentTotalCost = lineItems.reduce((sum, item) => {
           if (isLineItemSalaried(item)) return sum;
-          return sum + Number(item.totalCost || 0);
+          const costRate = Number(item.costRate || 0);
+          const adjustedHours = Number(item.adjustedHours || 0);
+          return sum + (costRate * adjustedHours);
         }, 0);
+
+        if (currentTotalCost <= 0) {
+          return res.status(400).json({ message: "Cannot apply margin override: no cost rates found on line items. Run 'Recalculate All' first to resolve cost rates." });
+        }
 
         const targetTotal = currentTotalCost / (1 - targetMarginPercent / 100);
         const currentTotalAmount = lineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
@@ -2669,13 +2675,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           const newRate = Number(originalRate) * multiplier;
           const adjustedHours = Number(item.adjustedHours || 0);
           const totalAmount = adjustedHours * newRate;
-          const totalCost = Number(item.totalCost || 0);
+          const itemCostRate = Number(item.costRate || 0);
+          const totalCost = adjustedHours * itemCostRate;
           const margin = totalAmount - totalCost;
           const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
           await storage.updateEstimateLineItem(item.id, {
             rate: String(Math.round(newRate * 100) / 100),
             totalAmount: String(Math.round(totalAmount * 100) / 100),
+            totalCost: String(Math.round(totalCost * 100) / 100),
             margin: String(Math.round(margin * 100) / 100),
             marginPercent: String(Math.round(marginPercent * 100) / 100),
           });
@@ -2691,6 +2699,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           originalRatesSnapshot: snapshot,
           totalHours: String(totalHours),
           totalFees: String(totalFees),
+          presentedTotal: String(Math.round(totalFees * 100) / 100),
           margin: String(targetMarginPercent),
         });
 
@@ -2716,13 +2725,15 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           const rate = Number(originalRate);
           const adjustedHours = Number(item.adjustedHours || 0);
           const totalAmount = adjustedHours * rate;
-          const totalCost = Number(item.totalCost || 0);
+          const itemCostRate = Number(item.costRate || 0);
+          const totalCost = adjustedHours * itemCostRate;
           const margin = totalAmount - totalCost;
           const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
 
           await storage.updateEstimateLineItem(item.id, {
             rate: String(rate),
             totalAmount: String(Math.round(totalAmount * 100) / 100),
+            totalCost: String(Math.round(totalCost * 100) / 100),
             margin: String(Math.round(margin * 100) / 100),
             marginPercent: String(Math.round(marginPercent * 100) / 100),
           });
@@ -2731,7 +2742,11 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         const updatedLineItems = await storage.getEstimateLineItems(estimateId);
         const totalHours = updatedLineItems.reduce((sum, item) => sum + Number(item.adjustedHours || 0), 0);
         const totalFees = updatedLineItems.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
-        const totalCost = updatedLineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+        const totalCost = updatedLineItems.reduce((sum, item) => {
+          const costRate = Number(item.costRate || 0);
+          const hours = Number(item.adjustedHours || 0);
+          return sum + (costRate * hours);
+        }, 0);
         const totalMargin = totalFees - totalCost;
         const overallMarginPercent = totalFees > 0 ? (totalMargin / totalFees) * 100 : 0;
 
@@ -2741,6 +2756,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           originalRatesSnapshot: null,
           totalHours: String(totalHours),
           totalFees: String(totalFees),
+          presentedTotal: String(Math.round(totalFees * 100) / 100),
           margin: String(overallMarginPercent),
         });
 
