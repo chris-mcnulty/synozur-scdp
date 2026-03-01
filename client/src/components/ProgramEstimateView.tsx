@@ -118,181 +118,42 @@ const defaultForm = (): BlockForm => ({
   confidence: "high",
 });
 
-export function ProgramEstimateView({
-  estimate,
-  lineItems,
+interface FormRowProps {
+  f: BlockForm;
+  setF: (f: BlockForm) => void;
+  onSubmit: () => void;
+  onCancel?: () => void;
+  submitLabel: string;
+  epics: any[];
+  stages: any[];
+  roles: any[];
+  users: any[];
+  estimate: Estimate;
+}
+
+const FormRow = ({
+  f,
+  setF,
+  onSubmit,
+  onCancel,
+  submitLabel,
   epics,
   stages,
-  users,
   roles,
-  isEditable,
-  estimateId,
-}: ProgramEstimateViewProps) {
-  const { toast } = useToast();
-  const [form, setForm] = useState<BlockForm>(defaultForm());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingForm, setEditingForm] = useState<BlockForm>(defaultForm());
-  const [view, setView] = useState<"table" | "gantt">("table");
-
-  const programBlocks = useMemo(
-    () => lineItems.filter((li) => li.durationWeeks != null),
-    [lineItems]
-  );
-
-  const epicColorMap = useMemo(() => {
-    const map = new Map<string, string>();
-    epics.forEach((epic, i) => {
-      map.set(epic.id, BLOCK_COLORS[i % BLOCK_COLORS.length]);
-    });
-    return map;
-  }, [epics]);
-
-  const filteredStages = (epicId: string) =>
-    stages.filter((s: any) => s.epicId === epicId);
-
+  users,
+  estimate,
+}: FormRowProps) => {
+  const filteredStages = (epicId: string) => stages.filter((s: any) => s.epicId === epicId);
   const resolveRateFromUser = (userId: string) => {
     const u = users.find((u: any) => u.id === userId);
     return { billingRate: u?.defaultBillingRate || "0", costRate: u?.defaultCostRate || "0" };
   };
-
   const resolveRateFromRole = (roleId: string) => {
     const r = roles.find((r: any) => r.id === roleId);
     return { billingRate: r?.billingRate || r?.defaultRate || "0", costRate: r?.costRate || "0" };
   };
 
-  const buildPayload = (f: BlockForm) => {
-    const durationWeeks = Number(f.durationWeeks) || 1;
-    const utilizationPercent = Number(f.utilizationPercent) || 100;
-    const billingRate = Number(f.billingRate) || 0;
-    const costRate = Number(f.costRate) || 0;
-
-    const adjustedHours = calcAdjustedHours(
-      durationWeeks, utilizationPercent, f.size, f.complexity, f.confidence, estimate
-    );
-    const totalAmount = adjustedHours * billingRate;
-    const totalCost = adjustedHours * costRate;
-    const margin = totalAmount - totalCost;
-    const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
-    const hoursPerWeek = (utilizationPercent / 100) * 40;
-    const baseHoursRaw = durationWeeks * hoursPerWeek;
-
-    const resolvedRole = f.roleId !== "none" ? roles.find((r: any) => r.id === f.roleId) : null;
-    const resolvedUser = f.userId !== "none" ? users.find((u: any) => u.id === f.userId) : null;
-    const roleLabel = resolvedUser?.name || resolvedRole?.name || f.roleFreeText || "Unnamed Role";
-
-    return {
-      description: f.description || roleLabel,
-      epicId: f.epicId === "none" ? null : f.epicId,
-      stageId: f.stageId === "none" ? null : f.stageId,
-      workstream: f.workstream || null,
-      week: Number(f.startWeek) || 1,
-      durationWeeks,
-      utilizationPercent,
-      baseHours: String(baseHoursRaw),
-      factor: "1",
-      rate: String(billingRate),
-      costRate: String(costRate),
-      size: f.size,
-      complexity: f.complexity,
-      confidence: f.confidence,
-      assignedUserId: f.userId !== "none" ? f.userId : null,
-      roleId: f.roleId !== "none" ? f.roleId : null,
-      resourceName: roleLabel,
-      adjustedHours: String(adjustedHours),
-      totalAmount: String(totalAmount),
-      totalCost: String(totalCost),
-      margin: String(margin),
-      marginPercent: String(marginPercent),
-      sortOrder: programBlocks.length,
-    };
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", `/api/estimates/${estimateId}/line-items`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
-      setForm(defaultForm());
-      toast({ title: "Block added" });
-    },
-    onError: () => toast({ title: "Failed to add block", variant: "destructive" }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      apiRequest("PATCH", `/api/estimates/${estimateId}/line-items/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
-      setEditingId(null);
-      toast({ title: "Block updated" });
-    },
-    onError: () => toast({ title: "Failed to update block", variant: "destructive" }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
-      toast({ title: "Block removed" });
-    },
-    onError: () => toast({ title: "Failed to remove block", variant: "destructive" }),
-  });
-
-  const handleAdd = () => {
-    if (!form.roleFreeText && form.roleId === "none" && form.userId === "none") {
-      toast({ title: "Enter a role name or select a role/person", variant: "destructive" });
-      return;
-    }
-    createMutation.mutate(buildPayload(form));
-  };
-
-  const startEdit = (block: EstimateLineItem) => {
-    setEditingId(block.id);
-    setEditingForm({
-      description: block.description || "",
-      epicId: block.epicId || "none",
-      stageId: block.stageId || "none",
-      workstream: block.workstream || "",
-      roleId: block.roleId || "none",
-      roleFreeText: block.resourceName || "",
-      userId: block.assignedUserId || "none",
-      startWeek: String(block.week || 1),
-      durationWeeks: String(block.durationWeeks || 4),
-      utilizationPercent: String(block.utilizationPercent || 100),
-      billingRate: String(block.rate || "0"),
-      costRate: String(block.costRate || "0"),
-      size: block.size || "small",
-      complexity: block.complexity || "small",
-      confidence: block.confidence || "high",
-    });
-  };
-
-  const saveEdit = (block: EstimateLineItem) => {
-    updateMutation.mutate({ id: block.id, data: buildPayload(editingForm) });
-  };
-
-  const totalHours = programBlocks.reduce((s, b) => s + Number(b.adjustedHours || 0), 0);
-  const totalAmount = programBlocks.reduce((s, b) => s + Number(b.totalAmount || 0), 0);
-
-  const ganttMaxWeek = useMemo(() => {
-    if (!programBlocks.length) return 12;
-    return Math.max(...programBlocks.map((b) => (b.week || 1) + (b.durationWeeks || 1) - 1), 12);
-  }, [programBlocks]);
-
-  const ganttWeeks = Array.from({ length: ganttMaxWeek }, (_, i) => i + 1);
-
-  const FormRow = ({
-    f,
-    setF,
-    onSubmit,
-    onCancel,
-    submitLabel,
-  }: {
-    f: BlockForm;
-    setF: (f: BlockForm) => void;
-    onSubmit: () => void;
-    onCancel?: () => void;
-    submitLabel: string;
-  }) => (
+  return (
     <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="col-span-2">
@@ -512,6 +373,157 @@ export function ProgramEstimateView({
       </div>
     </div>
   );
+};
+
+export function ProgramEstimateView({
+  estimate,
+  lineItems,
+  epics,
+  stages,
+  users,
+  roles,
+  isEditable,
+  estimateId,
+}: ProgramEstimateViewProps) {
+  const { toast } = useToast();
+  const [form, setForm] = useState<BlockForm>(defaultForm());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingForm, setEditingForm] = useState<BlockForm>(defaultForm());
+  const [view, setView] = useState<"table" | "gantt">("table");
+
+  const programBlocks = useMemo(
+    () => lineItems.filter((li) => li.durationWeeks != null),
+    [lineItems]
+  );
+
+  const epicColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    epics.forEach((epic, i) => {
+      map.set(epic.id, BLOCK_COLORS[i % BLOCK_COLORS.length]);
+    });
+    return map;
+  }, [epics]);
+
+  const buildPayload = (f: BlockForm) => {
+    const durationWeeks = Number(f.durationWeeks) || 1;
+    const utilizationPercent = Number(f.utilizationPercent) || 100;
+    const billingRate = Number(f.billingRate) || 0;
+    const costRate = Number(f.costRate) || 0;
+
+    const adjustedHours = calcAdjustedHours(
+      durationWeeks, utilizationPercent, f.size, f.complexity, f.confidence, estimate
+    );
+    const totalAmount = adjustedHours * billingRate;
+    const totalCost = adjustedHours * costRate;
+    const margin = totalAmount - totalCost;
+    const marginPercent = totalAmount > 0 ? (margin / totalAmount) * 100 : 0;
+    const hoursPerWeek = (utilizationPercent / 100) * 40;
+    const baseHoursRaw = durationWeeks * hoursPerWeek;
+
+    const resolvedRole = f.roleId !== "none" ? roles.find((r: any) => r.id === f.roleId) : null;
+    const resolvedUser = f.userId !== "none" ? users.find((u: any) => u.id === f.userId) : null;
+    const roleLabel = resolvedUser?.name || resolvedRole?.name || f.roleFreeText || "Unnamed Role";
+
+    return {
+      description: f.description || roleLabel,
+      epicId: f.epicId === "none" ? null : f.epicId,
+      stageId: f.stageId === "none" ? null : f.stageId,
+      workstream: f.workstream || null,
+      week: Number(f.startWeek) || 1,
+      durationWeeks,
+      utilizationPercent,
+      baseHours: String(baseHoursRaw),
+      factor: "1",
+      rate: String(billingRate),
+      costRate: String(costRate),
+      size: f.size,
+      complexity: f.complexity,
+      confidence: f.confidence,
+      assignedUserId: f.userId !== "none" ? f.userId : null,
+      roleId: f.roleId !== "none" ? f.roleId : null,
+      resourceName: roleLabel,
+      adjustedHours: String(adjustedHours),
+      totalAmount: String(totalAmount),
+      totalCost: String(totalCost),
+      margin: String(margin),
+      marginPercent: String(marginPercent),
+      sortOrder: programBlocks.length,
+    };
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", `/api/estimates/${estimateId}/line-items`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
+      setForm(defaultForm());
+      toast({ title: "Block added" });
+    },
+    onError: () => toast({ title: "Failed to add block", variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) =>
+      apiRequest("PATCH", `/api/estimates/${estimateId}/line-items/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
+      setEditingId(null);
+      toast({ title: "Block updated" });
+    },
+    onError: () => toast({ title: "Failed to update block", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
+      toast({ title: "Block removed" });
+    },
+    onError: () => toast({ title: "Failed to remove block", variant: "destructive" }),
+  });
+
+  const handleAdd = () => {
+    if (!form.roleFreeText && form.roleId === "none" && form.userId === "none") {
+      toast({ title: "Enter a role name or select a role/person", variant: "destructive" });
+      return;
+    }
+    createMutation.mutate(buildPayload(form));
+  };
+
+  const startEdit = (block: EstimateLineItem) => {
+    setEditingId(block.id);
+    setEditingForm({
+      description: block.description || "",
+      epicId: block.epicId || "none",
+      stageId: block.stageId || "none",
+      workstream: block.workstream || "",
+      roleId: block.roleId || "none",
+      roleFreeText: block.resourceName || "",
+      userId: block.assignedUserId || "none",
+      startWeek: String(block.week || 1),
+      durationWeeks: String(block.durationWeeks || 4),
+      utilizationPercent: String(block.utilizationPercent || 100),
+      billingRate: String(block.rate || "0"),
+      costRate: String(block.costRate || "0"),
+      size: block.size || "small",
+      complexity: block.complexity || "small",
+      confidence: block.confidence || "high",
+    });
+  };
+
+  const saveEdit = (block: EstimateLineItem) => {
+    updateMutation.mutate({ id: block.id, data: buildPayload(editingForm) });
+  };
+
+  const totalHours = programBlocks.reduce((s, b) => s + Number(b.adjustedHours || 0), 0);
+  const totalAmount = programBlocks.reduce((s, b) => s + Number(b.totalAmount || 0), 0);
+
+  const ganttMaxWeek = useMemo(() => {
+    if (!programBlocks.length) return 12;
+    return Math.max(...programBlocks.map((b) => (b.week || 1) + (b.durationWeeks || 1) - 1), 12);
+  }, [programBlocks]);
+
+  const ganttWeeks = Array.from({ length: ganttMaxWeek }, (_, i) => i + 1);
+
 
   return (
     <div className="space-y-4">
@@ -546,7 +558,17 @@ export function ProgramEstimateView({
       </div>
 
       {isEditable && (
-        <FormRow f={form} setF={setForm} onSubmit={handleAdd} submitLabel="Add Block" />
+        <FormRow
+          f={form}
+          setF={setForm}
+          onSubmit={handleAdd}
+          submitLabel="Add Block"
+          epics={epics}
+          stages={stages}
+          roles={roles}
+          users={users}
+          estimate={estimate}
+        />
       )}
 
       {view === "table" ? (
@@ -592,6 +614,11 @@ export function ProgramEstimateView({
                           onSubmit={() => saveEdit(block)}
                           onCancel={() => setEditingId(null)}
                           submitLabel="Save"
+                          epics={epics}
+                          stages={stages}
+                          roles={roles}
+                          users={users}
+                          estimate={estimate}
                         />
                       </TableCell>
                     </TableRow>
