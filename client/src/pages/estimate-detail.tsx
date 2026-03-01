@@ -2415,6 +2415,30 @@ function EstimateDetailContent() {
               </CardContent>
             </Card>
 
+            {/* Program Blocks — shown here on the Outputs tab for program estimates */}
+            {estimate?.estimateType === 'program' && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Program Blocks</CardTitle>
+                  <CardDescription>
+                    Each block represents a role working for a number of weeks. Hours are derived from duration × utilization × 40 hrs/wk, then adjusted by the three contingency factors.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ProgramEstimateView
+                    estimate={estimate}
+                    lineItems={lineItems}
+                    epics={epics}
+                    stages={stages}
+                    users={users}
+                    roles={roles}
+                    isEditable={isEditable}
+                    estimateId={id!}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Summary by Workstream, Stage, and Epic */}
             <Card>
               <CardHeader>
@@ -2768,29 +2792,6 @@ function EstimateDetailContent() {
             </Card>
           </TabsContent>
           <TabsContent value="inputs" className="space-y-6">
-
-            {estimate?.estimateType === 'program' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Program Blocks</CardTitle>
-                  <CardDescription>
-                    Each block represents a role working for a number of weeks. Hours are derived from duration × utilization × 40 hrs/wk, then adjusted by the three contingency factors.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ProgramEstimateView
-                    estimate={estimate}
-                    lineItems={lineItems}
-                    epics={epics}
-                    stages={stages}
-                    users={users}
-                    roles={roles}
-                    isEditable={isEditable}
-                    estimateId={id!}
-                  />
-                </CardContent>
-              </Card>
-            )}
 
             {estimate?.estimateType !== 'program' && <Card>
           <CardHeader>
