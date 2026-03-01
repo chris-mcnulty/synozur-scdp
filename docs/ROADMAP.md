@@ -187,6 +187,30 @@ The following major features have been delivered and are live in production. See
 
 ---
 
+### 🎯 Priority: Advanced Resource Management — Phases 1-2
+
+**Status:** 🎯 In Progress  
+**Target Completion:** Q1-Q2 2026  
+**Design Document:** `docs/design/advanced-resource-management.md`  
+**Value Proposition:** Multi-role capability mapping and capacity profiles lay the foundation for smart assignment suggestions, cross-project rebalancing, and pipeline-aware capacity planning in later phases.
+
+#### Phase 1: Role Capabilities & Capacity Profiles (~1 week)
+- New `user_role_capabilities` table for many-to-many user-role mapping with proficiency levels (primary/secondary/learning)
+- Optional per-role cost/billing rate overrides per person
+- Per-person `weeklyCapacityHours` (default 40), `capacityNotes`, `capacityEffectiveDate` on users table
+- UI: "Capabilities & Capacity" section on user profile, role badges on user list
+- API: CRUD for role capabilities, capable-users-by-role query
+
+#### Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)
+- Include role name in Planner task title for unassigned allocations
+- Add role name to task notes for context
+- Define sync field whitelist: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
+- Prevents future bidirectional sync from overwriting role context
+
+**Note:** Phases 3-6 (smart suggestions, workload rebalancing, capacity analytics, bulk import) remain on the roadmap for H2 2026, gated on Phases 1-2 completion.
+
+---
+
 ### ✅ Priority: Enhanced Status Reporting
 
 **Status:** ✅ Complete  
@@ -384,12 +408,11 @@ The following major features have been delivered and are live in production. See
 
 ---
 
-## Medium-Term Goals (H2 2026)
-
-### 📊 Advanced Financial Reporting
+### 📊 Priority: Advanced Financial Reporting
 
 **Status:** 🚧 In Progress  
-**Target Timeframe:** Q1-Q4 2026
+**Target Completion:** Q2 2026  
+**Value Proposition:** Complete the financial reporting suite with client contribution analysis, estimate-vs-actual accuracy metrics, and revenue forecasting — giving executives and billing admins the data they need for strategic decisions.
 
 #### ✅ Completed (February 2026)
 
@@ -422,31 +445,13 @@ The following major features have been delivered and are live in production. See
 - Trend analysis over time with improvement tracking
 - Accuracy improvement recommendations
 - Lessons learned repository
-- Predictive accuracy modeling with ML
 
 ---
 
-### 🎨 Advanced Vocabulary Features
+### 🏗️ Priority: Codebase Modularization (Routes & Storage)
 
-**Status:** 🔮 Future  
-**Target Timeframe:** Q4 2026  
-**Note:** Core vocabulary system completed in October 2025
-
-#### Planned Enhancements
-- PDF templates with custom terminology
-- Email notification templates using client vocabulary
-- Excel exports with client-specific column headers
-- Multi-language support with user language preferences
-- Locale-aware terminology
-- Industry preset templates (consulting, IT, professional services)
-- One-click vocabulary template application
-
----
-
-### 🏗️ Codebase Modularization (Routes & Storage)
-
-**Status:** 🔮 Future  
-**Target Timeframe:** Q3-Q4 2026  
+**Status:** 📋 Planned  
+**Target Completion:** Q2 2026  
 **Motivation:** The core backend files `routes.ts` (20,500+ lines, ~396 endpoints) and `storage.ts` (11,600+ lines) have grown to a size that increases maintenance risk, slows developer tooling, and makes isolated testing difficult. Splitting them into domain-focused modules will improve maintainability, reduce merge conflicts, and enable faster development.
 
 #### Current State
@@ -518,37 +523,33 @@ The `IStorage` interface remains unified but its implementation is composed from
 
 ---
 
-### 🎯 Advanced Resource Management
+## Medium-Term Goals (H2 2026)
+
+### 🎨 Advanced Vocabulary Features
+
+**Status:** 🔮 Future  
+**Target Timeframe:** Q4 2026  
+**Note:** Core vocabulary system completed in October 2025
+
+#### Planned Enhancements
+- PDF templates with custom terminology
+- Email notification templates using client vocabulary
+- Excel exports with client-specific column headers
+- Multi-language support with user language preferences
+- Locale-aware terminology
+- Industry preset templates (consulting, IT, professional services)
+- One-click vocabulary template application
+
+---
+
+### 🎯 Advanced Resource Management — Phases 3-6
 
 **Status:** 📋 Planned  
-**Target Timeframe:** Q2-Q3 2026  
-**Note:** Core resource management, capacity planning, and portfolio timeline completed in January 2026  
+**Target Timeframe:** H2 2026  
+**Prerequisites:** Phases 1-2 (advanced to Q1-Q2 2026 Current Focus)  
 **Design Document:** `docs/design/advanced-resource-management.md`
 
-#### Key Concepts
-
-**Multi-Role Capability Mapping**
-- Map each person to multiple generic roles they can fill (e.g., Senior Consultant who can also serve as BA or Project Lead)
-- Proficiency levels: primary, secondary, learning
-- Optional per-role cost/billing rate overrides per person
-- Used to power smart assignment suggestions and rebalancing
-
-**Per-Person Capacity Profiles**
-- Configurable weekly capacity hours (default 40) per person
-- Accounts for part-time staff, day-off schedules, contractual limits
-- Used as utilization denominator in all capacity calculations
-
-#### Planned Phases (~7-8 weeks total)
-
-**Phase 1: Role Capabilities & Capacity Profiles (~1 week)**
-- New `user_role_capabilities` table for many-to-many user-role mapping
-- Per-person `weeklyCapacityHours` on users table
-- UI on user profile and user list pages
-
-**Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)**
-- Preserve roleId on allocations through Planner sync cycles
-- Include role name in Planner task titles for unassigned allocations
-- Define sync field whitelist (Constellation-owned vs Planner-owned fields)
+#### Remaining Phases (~6-7 weeks total)
 
 **Phase 3: Smart Assignment Suggestions (~2 weeks)**
 - Suggestion engine in project assignment module (not during estimate conversion)
@@ -722,11 +723,16 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
-**March 1, 2026 — Program Estimates & CRM Integration**
+**March 1, 2026 — Program Estimates, CRM Integration & Roadmap Advancement**
 - Added Program Estimates & Staffing Blocks to Recently Completed (new "Program" estimate type with week-based blocks, Gantt view, PM Wizard)
 - Added Portfolio Manager Role to Recently Completed (new role tier with cross-project portfolio visibility)
 - Added HubSpot CRM Integration to Recently Completed (OAuth2 connection, deals page, contact import, deal-estimate linking, invoice sync)
 - CRM integration moved from Long-Term Vision (Platform Capabilities & Integrations) to Complete — delivered ahead of 2027+ timeline
+- Advanced Resource Management Phases 1-2 promoted from Medium-Term (H2 2026) to Current Focus (Q1-Q2 2026) — role capabilities & capacity profiles are foundational for later phases
+- Codebase Modularization promoted from Medium-Term (Q3-Q4 2026) to Near-Term (Q2 2026) — unlocks faster development on all other features
+- Advanced Financial Reporting promoted from Medium-Term (H2 2026) to Near-Term (Q2 2026) — YoY already complete, remaining work fills executive reporting gaps
+- Advanced Resource Management Phases 3-6 remain in Medium-Term (H2 2026), gated on Phases 1-2 completion
+- Removed predictive accuracy modeling with ML from estimate analytics (premature)
 - Updated version to 1.2026.03.01
 
 **February 13, 2026 — Project Governance & Portfolio Insights**
