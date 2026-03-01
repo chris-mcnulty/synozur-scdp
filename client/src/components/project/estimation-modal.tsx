@@ -73,7 +73,7 @@ export function EstimationModal({ isOpen, onClose, projectName, projectId }: Est
         };
       }
 
-      const week = lineItem.week || 1;
+      const week = lineItem.week ?? 0;
       const hours = Number(lineItem.adjustedHours || lineItem.baseHours || 0);
       const cost = Number(lineItem.totalAmount || 0);
 

@@ -857,7 +857,7 @@ function EstimateDetailContent() {
     const factor = Number(newItem.factor) || 1;
     const rate = Number(newItem.rate);
     const costRate = Number(newItem.costRate) || 0;
-    const week = newItem.week ? Number(newItem.week) : null;
+    const week = newItem.week !== "" && newItem.week !== undefined ? Number(newItem.week) : null;
     
     if (isNaN(baseHours) || isNaN(factor) || isNaN(rate)) {
       toast({

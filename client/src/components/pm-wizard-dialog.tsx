@@ -197,7 +197,7 @@ export function PMWizardDialog({ estimateId, open, onOpenChange }: PMWizardDialo
                         <TableRow key={item.id}>
                           <TableCell>{item.description}</TableCell>
                           <TableCell>{item.workstream || '-'}</TableCell>
-                          <TableCell>{item.week || '-'}</TableCell>
+                          <TableCell>{item.week ?? '-'}</TableCell>
                           <TableCell>{item.baseHours}</TableCell>
                         </TableRow>
                       ))}
