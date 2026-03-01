@@ -2415,32 +2415,8 @@ function EstimateDetailContent() {
               </CardContent>
             </Card>
 
-            {/* Program Blocks — shown here on the Outputs tab for program estimates */}
-            {estimate?.estimateType === 'program' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Program Blocks</CardTitle>
-                  <CardDescription>
-                    Each block represents a role working for a number of weeks. Hours are derived from duration × utilization × 40 hrs/wk, then adjusted by the three contingency factors.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ProgramEstimateView
-                    estimate={estimate}
-                    lineItems={lineItems}
-                    epics={epics}
-                    stages={stages}
-                    users={users}
-                    roles={roles}
-                    isEditable={isEditable}
-                    estimateId={id!}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Summary by Workstream, Stage, and Epic */}
-            <Card>
+            {/* Summary by Workstream, Stage, and Epic — hidden for program type (shown on Inputs tab instead) */}
+            {estimate?.estimateType !== 'program' && <Card>
               <CardHeader>
                 <CardTitle>Summary by Workstream, {vocabulary.stage} & {vocabulary.epic}</CardTitle>
                 <CardDescription>Effort and billing breakdown</CardDescription>
@@ -2686,10 +2662,10 @@ function EstimateDetailContent() {
                   </TabsContent>
                 </Tabs>
               </CardContent>
-            </Card>
+            </Card>}
 
-            {/* Milestones */}
-            <Card>
+            {/* Milestones — hidden for program type (shown on Inputs tab instead) */}
+            {estimate?.estimateType !== 'program' && <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
@@ -2789,9 +2765,351 @@ function EstimateDetailContent() {
                   </div>
                 )}
               </CardContent>
-            </Card>
+            </Card>}
           </TabsContent>
           <TabsContent value="inputs" className="space-y-6">
+
+            {estimate?.estimateType === 'program' && (
+              <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Program Blocks</CardTitle>
+                  <CardDescription>
+                    Each block represents a role working for a number of weeks. Hours are derived from duration × utilization × 40 hrs/wk, then adjusted by the three contingency factors.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ProgramEstimateView
+                    estimate={estimate}
+                    lineItems={lineItems}
+                    epics={epics}
+                    stages={stages}
+                    users={users}
+                    roles={roles}
+                    isEditable={isEditable}
+                    estimateId={id!}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Summary by Workstream, Stage, and Epic — for program estimates */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Summary by Workstream, {vocabulary.stage} & {vocabulary.epic}</CardTitle>
+                  <CardDescription>Effort and billing breakdown</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="epic">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="epic">By {vocabulary.epic}</TabsTrigger>
+                      <TabsTrigger value="workstream">By Workstream</TabsTrigger>
+                      <TabsTrigger value="stage">By {vocabulary.stage}</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="epic">
+                      {(() => {
+                        const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+                        const epicTotals = lineItems?.reduce((acc: any, item) => {
+                          const epicId = item.epicId || 'unassigned';
+                          const epicData = epics?.find(e => e.id === item.epicId);
+                          if (!acc[epicId]) {
+                            acc[epicId] = {
+                              name: epicData?.name || "Unassigned",
+                              order: epicData?.order ?? 999999,
+                              hours: 0, amount: 0, cost: 0, count: 0,
+                              referralMarkup: 0, quotedAmount: 0
+                            };
+                          }
+                          acc[epicId].hours += Number(item.adjustedHours || 0);
+                          acc[epicId].amount += Number(item.totalAmount || 0);
+                          acc[epicId].cost += Number(item.totalCost || 0);
+                          acc[epicId].referralMarkup += Number(item.referralMarkup || 0);
+                          acc[epicId].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
+                          acc[epicId].count += 1;
+                          return acc;
+                        }, {});
+                        const totalQuotedAmount = Object.values(epicTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
+                        return (
+                          <div className="space-y-3">
+                            {Object.entries(epicTotals || {}).sort(([, a]: [string, any], [, b]: [string, any]) => a.order - b.order).map(([epicId, data]: [string, any]) => (
+                              <div key={epicId} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <div>
+                                  <span className="text-xs text-muted-foreground mr-2">#{data.order}</span>
+                                  <span className="font-medium">{data.name}</span>
+                                  <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
+                                </div>
+                                <div className="flex gap-6 text-right">
+                                  <div><span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span></div>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Cost</span>
+                                    <span className="text-muted-foreground">${Math.round(data.cost).toLocaleString()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="border-t pt-3">
+                              <div className="flex justify-between text-lg font-semibold">
+                                <span>Total</span>
+                                <div className="flex gap-6 text-right">
+                                  <span>{totalHours.toFixed(1)} hrs</span>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Cost</span>
+                                    <span>${Math.round(totalCost).toLocaleString()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span>${Math.round(totalAmount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </TabsContent>
+
+                    <TabsContent value="workstream">
+                      {(() => {
+                        const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+                        const workstreamTotals = lineItems?.reduce((acc: any, item) => {
+                          const workstream = item.workstream || "Unassigned";
+                          if (!acc[workstream]) {
+                            acc[workstream] = { hours: 0, amount: 0, count: 0, quotedAmount: 0 };
+                          }
+                          acc[workstream].hours += Number(item.adjustedHours);
+                          acc[workstream].amount += Number(item.totalAmount);
+                          acc[workstream].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
+                          acc[workstream].count += 1;
+                          return acc;
+                        }, {});
+                        const totalQuotedAmount = Object.values(workstreamTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
+                        return (
+                          <div className="space-y-3">
+                            {Object.entries(workstreamTotals || {}).sort(([a], [b]) => a.localeCompare(b)).map(([workstream, data]: [string, any]) => (
+                              <div key={workstream} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <div>
+                                  <span className="font-medium">{workstream}</span>
+                                  <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
+                                </div>
+                                <div className="flex gap-6 text-right">
+                                  <span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="border-t pt-3">
+                              <div className="flex justify-between text-lg font-semibold">
+                                <span>Total</span>
+                                <div className="flex gap-6 text-right">
+                                  <span>{totalHours.toFixed(1)} hrs</span>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span>${Math.round(totalAmount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </TabsContent>
+
+                    <TabsContent value="stage">
+                      {(() => {
+                        const hasReferralFee = estimate?.referralFeeType && estimate.referralFeeType !== 'none' && Number(estimate?.referralFeeAmount || 0) > 0;
+                        const stageTotals = lineItems?.reduce((acc: any, item) => {
+                          const stageId = item.stageId || 'unassigned';
+                          const stageData = stages?.find(s => s.id === item.stageId);
+                          const epicData = stageData ? epics?.find(e => e.id === stageData.epicId) : null;
+                          if (!acc[stageId]) {
+                            acc[stageId] = {
+                              name: stageData?.name || "Unassigned",
+                              order: stageData?.order ?? 999999,
+                              epicOrder: epicData?.order ?? 999999,
+                              hours: 0, amount: 0, count: 0, quotedAmount: 0
+                            };
+                          }
+                          acc[stageId].hours += Number(item.adjustedHours);
+                          acc[stageId].amount += Number(item.totalAmount);
+                          acc[stageId].quotedAmount += Number(item.totalAmountWithReferral || item.totalAmount || 0);
+                          acc[stageId].count += 1;
+                          return acc;
+                        }, {});
+                        const totalQuotedAmount = Object.values(stageTotals || {}).reduce((sum: number, data: any) => sum + data.quotedAmount, 0);
+                        return (
+                          <div className="space-y-3">
+                            {Object.entries(stageTotals || {}).sort(([, a]: [string, any], [, b]: [string, any]) => {
+                              if (a.epicOrder !== b.epicOrder) return a.epicOrder - b.epicOrder;
+                              return a.order - b.order;
+                            }).map(([stageId, data]: [string, any]) => (
+                              <div key={stageId} className="flex justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <div>
+                                  <span className="text-xs text-muted-foreground mr-2">#{data.order}</span>
+                                  <span className="font-medium">{data.name}</span>
+                                  <span className="text-sm text-muted-foreground ml-2">({data.count} items)</span>
+                                </div>
+                                <div className="flex gap-6 text-right">
+                                  <span className="text-muted-foreground">{data.hours.toFixed(1)} hrs</span>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span className="text-muted-foreground">${Math.round(data.amount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="font-semibold text-amber-600 dark:text-amber-400">${Math.round(data.quotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="border-t pt-3">
+                              <div className="flex justify-between text-lg font-semibold">
+                                <span>Total</span>
+                                <div className="flex gap-6 text-right">
+                                  <span>{totalHours.toFixed(1)} hrs</span>
+                                  <div>
+                                    <span className="text-xs text-muted-foreground block">Base</span>
+                                    <span>${Math.round(totalAmount).toLocaleString()}</span>
+                                  </div>
+                                  {hasReferralFee && (
+                                    <div>
+                                      <span className="text-xs text-muted-foreground block">Quoted</span>
+                                      <span className="text-amber-600 dark:text-amber-400">${Math.round(totalQuotedAmount).toLocaleString()}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+
+              {/* Milestone Payments — for program estimates */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Milestone Payments</CardTitle>
+                      <CardDescription>Customer payment schedule</CardDescription>
+                    </div>
+                    <Button onClick={() => setShowMilestoneDialog(true)} size="sm" disabled={!isEditable}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Milestone
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {milestones.length === 0 ? (
+                    <p className="text-muted-foreground text-sm">No milestones created yet</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {(() => {
+                        const milestoneTotal = milestones.reduce((sum, m) => {
+                          if (m.amount) return sum + Number(m.amount);
+                          else if (m.percentage && estimate?.presentedTotal) return sum + (Number(estimate.presentedTotal) * Number(m.percentage) / 100);
+                          return sum;
+                        }, 0);
+                        const quoteTotal = Number(estimate?.presentedTotal || totalAmount);
+                        const difference = quoteTotal - milestoneTotal;
+                        const isMatching = Math.abs(difference) < 1;
+                        return (
+                          <div className={`p-3 rounded-lg border ${isMatching ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'}`}>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium">
+                                Milestone Total: ${milestoneTotal.toLocaleString()}
+                              </span>
+                              <span className={`text-sm ${isMatching ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                                {isMatching ? '✓ Matches quote total' : `${difference > 0 ? 'Under' : 'Over'} by $${Math.abs(difference).toLocaleString()}`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      <div className="space-y-2">
+                        {milestones.map((milestone) => (
+                          <div key={milestone.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex-1">
+                              <div className="font-medium">{milestone.name}</div>
+                              {milestone.description && (
+                                <div className="text-sm text-muted-foreground">{milestone.description}</div>
+                              )}
+                              <div className="text-sm mt-1">
+                                {milestone.amount ? (
+                                  <span className="font-medium">${Number(milestone.amount).toLocaleString()}</span>
+                                ) : milestone.percentage ? (
+                                  <span className="font-medium">{milestone.percentage}% of total</span>
+                                ) : null}
+                                {milestone.dueDate && (
+                                  <span className="text-muted-foreground ml-2">
+                                    Due: {new Date(milestone.dueDate).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => { setEditingMilestone(milestone); setShowMilestoneEditDialog(true); }}
+                                size="sm"
+                                variant="ghost"
+                                disabled={!isEditable}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                onClick={() => deleteMilestoneMutation.mutate(milestone.id)}
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive"
+                                disabled={!isEditable}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              </>
+            )}
 
             {estimate?.estimateType !== 'program' && <Card>
           <CardHeader>
