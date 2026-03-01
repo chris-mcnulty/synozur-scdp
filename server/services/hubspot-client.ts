@@ -220,11 +220,20 @@ export async function getHubSpotDealsAboveThreshold(tenantId: string, probabilit
   }
 
   const seenIds = new Set<string>();
-  return allDeals.filter(d => {
+  const uniqueDeals = allDeals.filter(d => {
     if (seenIds.has(d.id)) return false;
     seenIds.add(d.id);
     return true;
   });
+
+  // Batch-fetch company associations so companyId is populated for all deals
+  const dealIds = uniqueDeals.map(d => d.id);
+  const companyMap = await getDealCompanyAssociationsBatch(tenantId, dealIds);
+  for (const deal of uniqueDeals) {
+    deal.companyId = companyMap.get(deal.id) || null;
+  }
+
+  return uniqueDeals;
 }
 
 export async function getHubSpotDealById(tenantId: string, dealId: string): Promise<HubSpotDeal | null> {
@@ -406,6 +415,38 @@ export async function getHubSpotDealCompanyAssociations(tenantId: string, dealId
     console.error('[HubSpot] Error fetching deal company associations:', e);
   }
   return null;
+}
+
+// Batch-fetch company associations for multiple deals at once.
+// Returns a Map of dealId -> companyId.
+export async function getDealCompanyAssociationsBatch(tenantId: string, dealIds: string[]): Promise<Map<string, string>> {
+  if (dealIds.length === 0) return new Map();
+  try {
+    const accessToken = await getAccessTokenForTenant(tenantId);
+    const response = await fetch('https://api.hubapi.com/crm/v3/associations/deals/companies/batch/read', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ inputs: dealIds.map(id => ({ id })) }),
+    });
+    if (!response.ok) {
+      console.error('[HubSpot] Batch associations request failed:', response.status);
+      return new Map();
+    }
+    const data = await response.json() as any;
+    const result = new Map<string, string>();
+    for (const item of (data.results || [])) {
+      if (item.from?.id && item.to?.length > 0) {
+        result.set(String(item.from.id), String(item.to[0].id));
+      }
+    }
+    return result;
+  } catch (e) {
+    console.error('[HubSpot] Error batch-fetching deal company associations:', e);
+    return new Map();
+  }
 }
 
 export interface HubSpotCompany {
