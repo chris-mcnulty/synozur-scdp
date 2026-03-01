@@ -3864,11 +3864,11 @@ function EstimateDetailContent() {
 
               if (sortedWeeks.length > 1 || (sortedWeeks.length === 1 && filterWeek === "all")) {
                 return (
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <h4 className="font-semibold mb-2">Subtotals by Week</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {sortedWeeks.map(([week, data]: [string, any]) => (
-                        <div key={week} className="flex justify-between p-2 bg-white rounded border">
+                        <div key={week} className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-700">
                           <span className="font-medium">
                             Week {week}
                           </span>

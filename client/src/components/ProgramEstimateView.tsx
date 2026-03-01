@@ -7,8 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, BarChart3, List, Edit2, Check, X, ChevronDown, ChevronUp, Filter } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Plus, Trash2, BarChart3, List, Check, X, ChevronDown, ChevronUp, ChevronRight, Filter, Wand2, Calculator, AlertTriangle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PMWizardDialog } from "@/components/pm-wizard-dialog";
 import type { Estimate, EstimateLineItem, EstimateEpic, EstimateStage } from "@shared/schema";
 
 interface ProgramEstimateViewProps {
@@ -406,6 +408,8 @@ export function ProgramEstimateView({
   const [editingForm, setEditingForm] = useState<BlockForm>(defaultForm());
   const [view, setView] = useState<"table" | "gantt">("table");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showPMWizard, setShowPMWizard] = useState(false);
+  const [showRecalcDialog, setShowRecalcDialog] = useState(false);
 
   // Filters
   const [filterEpic, setFilterEpic] = useState("all");
@@ -532,6 +536,17 @@ export function ProgramEstimateView({
     onError: () => toast({ title: "Failed to remove block", variant: "destructive" }),
   });
 
+  const recalculateEstimateMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/estimates/${estimateId}/recalculate`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
+      setShowRecalcDialog(false);
+      toast({ title: "Estimate recalculated successfully" });
+    },
+    onError: () => toast({ title: "Failed to recalculate estimate", variant: "destructive" }),
+  });
+
   const handleAdd = () => {
     if (!form.roleFreeText && form.roleId === "none" && form.userId === "none") {
       toast({ title: "Enter a role name or select a role/person", variant: "destructive" });
@@ -588,23 +603,35 @@ export function ProgramEstimateView({
             ${totalAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })} total
           </span>
         </p>
-        <div className="flex gap-1 border rounded-md p-0.5">
-          <Button
-            size="sm"
-            variant={view === "table" ? "default" : "ghost"}
-            className="h-7 px-2"
-            onClick={() => setView("table")}
-          >
-            <List className="h-3.5 w-3.5 mr-1" /> Table
-          </Button>
-          <Button
-            size="sm"
-            variant={view === "gantt" ? "default" : "ghost"}
-            className="h-7 px-2"
-            onClick={() => setView("gantt")}
-          >
-            <BarChart3 className="h-3.5 w-3.5 mr-1" /> Timeline
-          </Button>
+        <div className="flex items-center gap-2">
+          {isEditable && (
+            <Button size="sm" variant="outline" onClick={() => setShowPMWizard(true)}>
+              <Wand2 className="h-3.5 w-3.5 mr-1" /> PM Wizard
+            </Button>
+          )}
+          {isEditable && (
+            <Button size="sm" variant="outline" onClick={() => setShowRecalcDialog(true)}>
+              <Calculator className="h-3.5 w-3.5 mr-1" /> Recalculate All
+            </Button>
+          )}
+          <div className="flex gap-1 border rounded-md p-0.5">
+            <Button
+              size="sm"
+              variant={view === "table" ? "default" : "ghost"}
+              className="h-7 px-2"
+              onClick={() => setView("table")}
+            >
+              <List className="h-3.5 w-3.5 mr-1" /> Table
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "gantt" ? "default" : "ghost"}
+              className="h-7 px-2"
+              onClick={() => setView("gantt")}
+            >
+              <BarChart3 className="h-3.5 w-3.5 mr-1" /> Timeline
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -687,6 +714,7 @@ export function ProgramEstimateView({
           <Table>
             <TableHeader>
               <TableRow>
+                {isEditable && <TableHead className="w-8" />}
                 <TableHead className="text-xs">Role / Resource</TableHead>
                 <TableHead className="text-xs">Epic / Stage</TableHead>
                 <TableHead className="text-xs">Wk</TableHead>
@@ -697,13 +725,13 @@ export function ProgramEstimateView({
                 <TableHead className="text-xs">Rate</TableHead>
                 <TableHead className="text-xs text-right">Total</TableHead>
                 <TableHead className="text-xs">S/C/C</TableHead>
-                {isEditable && <TableHead className="w-16" />}
+                {isEditable && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredBlocks.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={isEditable ? 11 : 10} className="text-center text-muted-foreground text-sm py-8">
+                  <TableCell colSpan={isEditable ? 12 : 10} className="text-center text-muted-foreground text-sm py-8">
                     {hasFilters ? "No blocks match the current filters." : "No blocks yet. Click \"Add Block\" to get started."}
                   </TableCell>
                 </TableRow>
@@ -718,6 +746,18 @@ export function ProgramEstimateView({
                 return (
                   <Fragment key={block.id}>
                     <TableRow className={`text-xs ${isEditing ? "bg-muted/40" : ""}`}>
+                      {isEditable && (
+                        <TableCell className="py-2 pl-2 pr-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => isEditing ? setEditingId(null) : startEdit(block)}
+                            className="h-6 w-6 p-0"
+                          >
+                            {isEditing ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                      )}
                       <TableCell className="py-2">
                         <span className="font-medium">{block.resourceName || "—"}</span>
                         {block.workstream && (
@@ -767,32 +807,22 @@ export function ProgramEstimateView({
                       </TableCell>
                       {isEditable && (
                         <TableCell className="py-2">
-                          <div className="flex gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6"
-                              onClick={() => isEditing ? setEditingId(null) : startEdit(block)}
-                            >
-                              {isEditing ? <ChevronUp className="h-3 w-3" /> : <Edit2 className="h-3 w-3" />}
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-6 w-6 text-destructive hover:text-destructive"
-                              onClick={() => {
-                                if (confirm("Remove this block?")) deleteMutation.mutate(block.id);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-destructive hover:text-destructive"
+                            onClick={() => {
+                              if (confirm("Remove this block?")) deleteMutation.mutate(block.id);
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </TableCell>
                       )}
                     </TableRow>
                     {isEditing && (
                       <TableRow key={`${block.id}-edit`}>
-                        <TableCell colSpan={isEditable ? 11 : 10} className="p-0">
+                        <TableCell colSpan={isEditable ? 12 : 10} className="p-0">
                           <FormRow
                             f={editingForm}
                             setF={setEditingForm}
@@ -885,6 +915,49 @@ export function ProgramEstimateView({
           </div>
         </div>
       )}
+
+      {/* Recalculate Confirmation Dialog */}
+      <Dialog open={showRecalcDialog} onOpenChange={setShowRecalcDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Recalculate All Values?</DialogTitle>
+            <DialogDescription>
+              This will update all blocks with the following changes:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
+              <li>Lookup current billing and cost rates for each assigned resource</li>
+              <li>Reapply size, complexity, and confidence factor multipliers</li>
+              <li>Recalculate adjusted hours, amounts, costs, and margins</li>
+              <li>Update estimate totals</li>
+            </ul>
+            <p className="text-sm font-medium text-orange-600 mt-4">
+              This will overwrite any manual rate adjustments you may have made.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRecalcDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => recalculateEstimateMutation.mutate()}
+              disabled={recalculateEstimateMutation.isPending}
+            >
+              {recalculateEstimateMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Recalculating...</>
+              ) : "Recalculate All"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PM Wizard Dialog */}
+      <PMWizardDialog
+        estimateId={estimateId}
+        open={showPMWizard}
+        onOpenChange={setShowPMWizard}
+      />
     </div>
   );
 }
