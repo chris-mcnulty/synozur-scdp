@@ -158,11 +158,12 @@ const FormRow = ({
   const total = adj * (Number(f.billingRate) || 0);
 
   return (
-    <div className="space-y-3 p-4 border-b bg-muted/20">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div className="space-y-1.5 p-2 border-b bg-muted/20">
+      {/* Row 1: Role / Start Week / Duration */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <div className="col-span-2">
           <Label className="text-xs">Role / Resource *</Label>
-          <div className="flex gap-2 mt-1">
+          <div className="flex gap-1.5 mt-0.5">
             <Select
               value={f.roleId}
               onValueChange={(v) => {
@@ -170,7 +171,7 @@ const FormRow = ({
                 setF({ ...f, roleId: v, ...rates });
               }}
             >
-              <SelectTrigger className="h-8 text-xs flex-1">
+              <SelectTrigger className="h-7 text-xs flex-1">
                 <SelectValue placeholder="Role catalog" />
               </SelectTrigger>
               <SelectContent>
@@ -187,7 +188,7 @@ const FormRow = ({
                 setF({ ...f, userId: v, roleFreeText: v !== "none" ? (users.find((u: any) => u.id === v)?.name || "") : f.roleFreeText, ...rates });
               }}
             >
-              <SelectTrigger className="h-8 text-xs flex-1">
+              <SelectTrigger className="h-7 text-xs flex-1">
                 <SelectValue placeholder="Named person" />
               </SelectTrigger>
               <SelectContent>
@@ -200,7 +201,7 @@ const FormRow = ({
           </div>
           {f.roleId === "none" && f.userId === "none" && (
             <Input
-              className="h-8 text-xs mt-1"
+              className="h-7 text-xs mt-0.5"
               placeholder="Free-text role name (e.g. Principal Architect)"
               value={f.roleFreeText}
               onChange={(e) => setF({ ...f, roleFreeText: e.target.value })}
@@ -211,7 +212,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Start Week</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             type="number"
             min="1"
             value={f.startWeek}
@@ -222,7 +223,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Duration (weeks)</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             type="number"
             min="1"
             value={f.durationWeeks}
@@ -231,11 +232,12 @@ const FormRow = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Row 2: All 8 contingency/rate fields in one dense row */}
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
         <div>
           <Label className="text-xs">Utilization</Label>
           <Select value={f.utilizationPercent} onValueChange={(v) => setF({ ...f, utilizationPercent: v })}>
-            <SelectTrigger className="h-8 text-xs mt-1">
+            <SelectTrigger className="h-7 text-xs mt-0.5">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -247,9 +249,9 @@ const FormRow = ({
         </div>
 
         <div>
-          <Label className="text-xs">Billing Rate ($/hr)</Label>
+          <Label className="text-xs">Billing ($/hr)</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             type="number"
             step="0.01"
             value={f.billingRate}
@@ -258,9 +260,9 @@ const FormRow = ({
         </div>
 
         <div>
-          <Label className="text-xs">Cost Rate ($/hr)</Label>
+          <Label className="text-xs">Cost ($/hr)</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             type="number"
             step="0.01"
             value={f.costRate}
@@ -271,7 +273,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Epic</Label>
           <Select value={f.epicId} onValueChange={(v) => setF({ ...f, epicId: v, stageId: "none" })}>
-            <SelectTrigger className="h-8 text-xs mt-1">
+            <SelectTrigger className="h-7 text-xs mt-0.5">
               <SelectValue placeholder="None" />
             </SelectTrigger>
             <SelectContent>
@@ -282,13 +284,11 @@ const FormRow = ({
             </SelectContent>
           </Select>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div>
           <Label className="text-xs">Stage</Label>
           <Select value={f.stageId} onValueChange={(v) => setF({ ...f, stageId: v })} disabled={f.epicId === "none"}>
-            <SelectTrigger className="h-8 text-xs mt-1">
+            <SelectTrigger className="h-7 text-xs mt-0.5">
               <SelectValue placeholder="None" />
             </SelectTrigger>
             <SelectContent>
@@ -303,7 +303,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Workstream</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             placeholder="Optional"
             value={f.workstream}
             onChange={(e) => setF({ ...f, workstream: e.target.value })}
@@ -311,9 +311,9 @@ const FormRow = ({
         </div>
 
         <div>
-          <Label className="text-xs">Size (contingency)</Label>
+          <Label className="text-xs">Size</Label>
           <Select value={f.size} onValueChange={(v) => setF({ ...f, size: v })}>
-            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue /></SelectTrigger>
             <SelectContent>
               {SIZE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
@@ -323,7 +323,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Complexity</Label>
           <Select value={f.complexity} onValueChange={(v) => setF({ ...f, complexity: v })}>
-            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue /></SelectTrigger>
             <SelectContent>
               {COMPLEXITY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
@@ -331,11 +331,12 @@ const FormRow = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+      {/* Row 3: Confidence / Description / preview / buttons */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
         <div>
           <Label className="text-xs">Confidence</Label>
           <Select value={f.confidence} onValueChange={(v) => setF({ ...f, confidence: v })}>
-            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue /></SelectTrigger>
             <SelectContent>
               {CONFIDENCE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
@@ -345,7 +346,7 @@ const FormRow = ({
         <div>
           <Label className="text-xs">Description (optional)</Label>
           <Input
-            className="h-8 text-xs mt-1"
+            className="h-7 text-xs mt-0.5"
             placeholder="Block notes"
             value={f.description}
             onChange={(e) => setF({ ...f, description: e.target.value })}
