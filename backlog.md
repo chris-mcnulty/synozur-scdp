@@ -1,1241 +1,322 @@
 # Constellation Product Backlog
 
-## 🐛 Active Bugs
-
-### Export PDF Bug for Expense Reports (February 2026) — FIXED
-- **User Feedback:** Identified in February 2026 feedback session as the top quick win (high impact, low effort in 2×2 priority matrix).
-- **Fix:** Resolved expense report PDF export formatting issues.
-- **Status:** Complete.
-
-### What's New Feature Dialog Not Showing in Production (February 8, 2026) — FIXED
-- **Root cause**: Server reads `CHANGELOG.md` from `client/public/docs/` which only exists in the dev source tree. In production, the Vite build outputs to `dist/public/` and the `docs/` subdirectory was missing from the build.
-- **Fix**: Added `resolveChangelogPath()` helper that checks multiple candidate paths (`client/public/docs/`, `dist/public/docs/`, `docs/`) so the server finds the file in both dev and production environments.
-- **Impact**: `seedChangelogVersion()` was silently failing at startup, so `CURRENT_CHANGELOG_VERSION` was never set, causing the modal to return `showModal: false` for all users.
+**Last Updated**: March 1, 2026
+**Version**: 4.0 — Cleaned up completed items, reprioritized based on current state.
 
 ---
 
-## ✅ Recently Completed (February 13, 2026)
+## ✅ Recently Completed (March 1, 2026)
+
+### Program Estimate Type ✅ COMPLETE
+- [x] New "Program" estimate type for large-scale engagements
+- [x] Week-based staffing blocks (role x weeks x utilization %)
+- [x] Gantt timeline view for program blocks
+- [x] PM Wizard for guided block creation
+- [x] Accordion-based block editor with compact data entry
+- [x] Weekly subtotals and totals display
+- [x] Auto-populate rates from role catalog
+- [x] CSV/Excel import and export for program blocks
+- [x] Three-factor contingency system (size, complexity, confidence)
+- [x] Week 0 support for pre-project activities
+
+### Portfolio Manager Role ✅ COMPLETE
+- [x] New "portfolio-manager" role (6th tier in hierarchy)
+- [x] PM-level access to ALL projects (not scoped to assigned projects)
+- [x] View-only expense access
+- [x] External resource cost rates hidden
+
+### HubSpot CRM Integration ✅ COMPLETE
+- [x] Per-tenant OAuth 2.0 connection
+- [x] CRM Deals page with date range and deal stage filters
+- [x] Estimate-to-deal linking with client names and stages
+- [x] Won/Lost deal linking
+- [x] Contact search and import from HubSpot
+- [x] Company-to-client linking
+- [x] Auto-refresh tokens with 5-minute buffer
+
+### Estimate Bug Fixes ✅ COMPLETE
+- [x] Cost rate resolution: full precedence chain (manual override → estimate → client → user → role default)
+- [x] Copied estimates inherit tenant ID (fixes orphaned estimates)
+- [x] Estimate name editing regardless of status
+- [x] Stable sort order: week first, then sort order as tiebreaker
+
+---
+
+## ✅ Previously Completed (February 13, 2026)
 
 ### RAIDD Log ✅ COMPLETE
 - [x] Dedicated RAIDD tab within project detail page
 - [x] Five entry types: Risk, Issue, Action Item, Dependency, Decision
-- [x] Full lifecycle management with status workflow (Open → In Progress → Mitigated/Resolved/Closed/Deferred/Superseded)
-- [x] Color-coded priority indicators (Critical, High, Medium, Low)
-- [x] Impact and likelihood assessment for risk entries
-- [x] Owner and assignee tracking with due date management and overdue highlighting
-- [x] Governance rules: decisions immutable after status change, risks convert to issues with lineage
-- [x] Category tagging, reference numbering, mitigation plans
-- [x] Export RAIDD log as Excel spreadsheet
-- [x] AI integration: RAIDD data included in status reports with critical/overdue warnings
+- [x] Full lifecycle management, governance rules, Excel export
+- [x] AI integration in status reports
 
 ### Portfolio RAIDD Dashboard ✅ COMPLETE
-- [x] Cross-project RAIDD view at `/portfolio/raidd`
-- [x] Summary cards: open risks, issues, action items, dependencies, critical/high counts, overdue items, closed this month
-- [x] Filterable by status, type, priority, and project
-- [x] Grouping by project, type, priority, or status with count headers
-- [x] XLSX export for stakeholder reporting
-- [x] Role-restricted access (admin, PM, executive)
-- [x] Tenant-scoped data isolation
+- [x] Cross-project RAIDD view with summary cards, filters, grouping, XLSX export
 
 ### AI-Powered Project Status Reports ✅ COMPLETE
-- [x] Status report generation dialog on project detail page
-- [x] AI-generated narrative summaries from project activity data
-- [x] Weekly and monthly period selection
-- [x] Configurable summary style (executive brief, detailed update, client-facing)
-- [x] RAIDD integration: includes open risks, issues, action items, dependencies, decisions
-- [x] Critical and overdue items highlighted, RAIDD counts in metadata bar
-- [x] Copy-to-clipboard and download as formatted text
+- [x] AI-generated narrative summaries, weekly/monthly periods, RAIDD integration, copy/download
+
+### "What's New" Changelog Modal ✅ COMPLETE
+- [x] AI-generated summaries on login, per-user dismiss tracking, tenant admin toggle, mobile responsive
+
+### Per Diem & Expense Automation ✅ COMPLETE
+- [x] GSA Per Diem API (CONUS), OCONUS DoD rates, airport codes, exchange rates, travel day calculations
 
 ### Invoice Report Enhancements ✅ COMPLETE
-- [x] Client filter dropdown on Report and YoY Comparison views
-- [x] Three-year data support for broader historical analysis
-- [x] Batch type filtering and improved date handling
+- [x] Client filter, three-year data, YoY comparison, batch type filtering
 
-### Billing & Invoice Improvements ✅ COMPLETE
-- [x] Enhanced batch detail page with improved layout and action buttons
-- [x] Client filtering and default sorting on billing invoices list
-- [x] Improved invoice review and finalize state management
-- [x] Condensed payment details display
-- [x] Removed cents from invoice report summary amounts
-- [x] Fixed invoice PDF generation error (Handlebars import)
-
-### Expense Management Improvements ✅ COMPLETE
-- [x] Updated expense report calculations to use item-level amounts
-- [x] Enhanced per diem city lookup with improved GSA API integration
-- [x] Airport code reference data for travel location selection
-- [x] OCONUS per diem rate support for international travel
-- [x] Exchange rate integration for multi-currency expense reporting
-
-### Estimate Enhancements ✅ COMPLETE
-- [x] Margin override apply/remove on estimates
-- [x] Increased AI narrative generation token limit
-- [x] Improved AI prompt size limits
+### Expense Report PDF Export ✅ COMPLETE (Quick Win)
 
 ---
 
-## ✅ Previously Completed (January 31, 2026)
+## ✅ Previously Completed (January 2026)
 
-### Scheduled Jobs Monitoring System ✅ COMPLETE
-- [x] Created `scheduled_job_runs` database table for job execution tracking
-- [x] Storage methods for creating, updating, and querying job runs
-- [x] Admin UI at `/admin/scheduled-jobs` with:
-  - [x] Overview cards showing job statistics
-  - [x] Run history with filtering by job type
-  - [x] Status badges (success, failed, running)
-  - [x] Manual trigger buttons for each job type
-- [x] Three scheduled job types tracked:
-  - [x] Expense Reminders (tenant-configurable, weekly)
-  - [x] Time Reminders (system-wide, weekly) 
-  - [x] Planner Sync (automatic, every 30 minutes)
-- [x] Job run logging includes trigger type (scheduled vs manual), user who triggered, result summary, and errors
-- [x] Navigation integrated into admin sidebar and mobile menu
+### Multi-Tenancy Architecture ✅ COMPLETE (Phases 1-4, 6)
+- [x] UUID-based tenant IDs, data isolation, service plans, self-service signup
+- [x] Plan lifecycle enforcement, grace periods, scheduled expiration
+- [x] Platform admin UI, tenant switcher, automatic assignment
+- [ ] Phase 5: Subdomain routing — DEFERRED (needs custom DNS + wildcard SSL)
+- [ ] Phase 7: Security audit, data retention enforcement — ONGOING
 
-### Microsoft Planner Automatic Sync ✅ COMPLETE
-- [x] Planner sync scheduler service running every 30 minutes
-- [x] Automatic sync of all projects with `syncEnabled=true`
-- [x] Handles deleted Planner tasks by recreating them
-- [x] Task creation with proper bucket mapping (by stage)
-- [x] User assignment mapping (Constellation user → Azure AD user)
-- [x] Status synchronization (open/in_progress/completed → percent complete)
-- [x] Date synchronization (planned start/end dates)
-- [x] Task notes include Constellation link and hours allocation
-- [x] Comprehensive error handling and logging
-- [x] Manual trigger endpoint for on-demand sync
-- [x] Job run history visible in admin UI
-
-### QBO Export Enhancements ✅ COMPLETE
-- [x] 13-column QBO Invoice IIF format with Terms, Billing Address, Service Date
-- [x] Hierarchical Product/Service format (Project:Type:Category)
-- [x] Improved descriptions matching printed invoice format
-- [x] Custom transaction number support (requires QBO settings enabled)
+### Retainer Estimates & Rate Overrides ✅ COMPLETE
+### Resource Management & Capacity Planning ✅ COMPLETE
+### Financial Reporting ✅ COMPLETE
+### Microsoft Planner Integration (Phase 1) ✅ COMPLETE
+### Scheduled Jobs System ✅ COMPLETE
+### Mobile Web Optimization ✅ COMPLETE
+### AI Help Chat & In-App Docs ✅ COMPLETE
 
 ---
 
-## ✅ Previously Completed (Week of Oct 7-11, 2025)
+## 🚨 P1 - HIGH PRIORITY
 
-### Days 1-3: Foundation & Vocabulary System
-- [x] Fixed 11 TypeScript errors in server/storage.ts (schema alignment)
-- [x] Created test.md for test backlog tracking and sprint management
-- [x] Archived 29 legacy files (PowerShell scripts, one-time recovery scripts, corrupted files)
-- [x] Merged dev commands to replit.md
-- [x] Established organized archive structure
+### QuickBooks Online Integration
+**Status:** Planned — #1 user-requested feature (94 marketplace coins, Feb 2026 feedback)
+**Effort:** High (8-12 weeks)
 
-### Days 2-3: Vocabulary Customization System ✅ COMPLETE
-- [x] Organization-level vocabulary defaults with admin UI
-- [x] Client and project-level vocabulary overrides
-- [x] Vocabulary context API and VocabularyProvider/useVocabulary hook
-- [x] Cascading hierarchy (Project → Client → Organization → System defaults)
-- [x] Complete integration across all modules:
-  - [x] Estimates module (55 dynamic vocabulary references)
-  - [x] Projects module with inheritance on creation
-  - [x] Time entry module
-  - [x] Invoice module
-  - [x] Expense module
-
-### Days 4-5: Project Assignments & Resource Management ✅ COMPLETE
-- [x] Backend API endpoints for assignment CRUD operations
-- [x] Assignment status workflow (open → in_progress → completed → cancelled)
-- [x] Manual assignment UI in Project Detail page
-  - [x] Add/Edit/Delete assignments with dialog
-  - [x] Assign people with role, workstream, epic, hours allocation
-  - [x] Set pricing mode and billing rates
-  - [x] Define assignment dates and notes
-- [x] My Assignments page for employees
-  - [x] View all assignments across active projects
-  - [x] Update assignment status inline
-  - [x] List and Kanban views with filtering
-- [x] Fixed API endpoints and validation for manual assignments
-- [x] Documentation updated in replit.md
-
-## 🚨 P0 - CRITICAL GAPS (This Week - Oct 11, 2025)
-
-### Project Reporting & Analytics (Day 6) - REMAINING THIS WEEK
-**Status:** ESSENTIAL - Data exists but no comprehensive reporting API
-
-**Why P0:** Leaders need visibility into project performance, resource allocation, and financial health.
-
-**Scope:**
-- [ ] **Day 6: Comprehensive Reporting API**
-  - Project list with filters (status, date range, PM, client)
-  - Cost vs revenue analysis (excluding cost rates for non-admins)
-  - Budget utilization metrics
-  - Resource allocation summaries
-  - Time entry aggregations by project/person/period
-  - Uses vocabulary labels dynamically
-  
-**Timeline:** Day 6 (this week)
-
----
-
-## 🔔 P1 - HIGH PRIORITY (Weeks 3-4)
-
-### QuickBooks Online Integration for Consultants
-**Status:** ELEVATED — Ranked #1 in February 2026 user feedback session  
-**Priority:** P1 — Elevated from P2 based on stack ranking (#1 Borda score, 94 marketplace coins)
-
-**Why P1:** Strongest user consensus of any proposed feature. Two QuickBooks-related ideas (Accounting Integration and Tool Integrations) collectively dominated the feedback session. The 2×2 priority matrix rated it as high impact but high effort — detailed scoping and resource allocation plan recommended before implementation.
-
-**Scope:**
-- [ ] OAuth2 authentication setup with QuickBooks
+- [ ] OAuth2 authentication with QuickBooks Online
 - [ ] Client → QBO Customer mapping interface
-- [ ] Role/Service → QBO Items (Service) mapping
+- [ ] Role/Service → QBO Items mapping
 - [ ] Expense categories → QBO Account mappings
-- [ ] Invoice Batch → QBO Invoice (Draft) creation with:
-  - Service lines with qty/hours × rate
-  - Discount lines and zero-charge lines
-  - Billable expenses as invoice lines
-- [ ] Batch ID deduplication to prevent duplicate exports
-- [ ] Retry mechanism and validation error handling
-- [ ] Webhook integration for bi-directional sync status
-- [ ] QBO sync status dashboard
+- [ ] Invoice Batch → QBO Invoice (Draft) creation
+- [ ] Batch ID deduplication to prevent duplicates
+- [ ] Webhook integration for sync status
+- [ ] QBO sync dashboard with error reporting
+- [ ] Retry mechanism for failed syncs
+
+### Advanced Resource Management
+**Status:** Planned — Design complete (`docs/design/advanced-resource-management.md`)
+**Effort:** High (~7-8 weeks, 6 phases)
+
+- [ ] Phase 1: Multi-role capability mapping & per-person capacity profiles (~1 week)
+- [ ] Phase 2: Planner sync protection for generic roles (~2-3 days)
+- [ ] Phase 3: Smart assignment suggestions with cost variance (~2 weeks)
+- [ ] Phase 4: Cross-project workload view & rebalancing dashboard (~2 weeks)
+- [ ] Phase 5: Capacity planning analytics & KPIs (~1-2 weeks)
+- [ ] Phase 6: Bulk import & polish (~1 week)
+
+### Microsoft 365 Teams Integration
+**Status:** Partially complete — Planner done, Teams pending
+**Effort:** Medium (4-6 weeks remaining)
+
+- [x] Planner one-way sync ✅
+- [x] Database schema for Teams/Channels/Planner ✅
+- [ ] Automatic Team creation for new clients
+- [ ] Channel creation for subsequent projects
+- [ ] SharePoint site provisioning with Team
+- [ ] Team member management (add/remove from assignments)
+- [ ] Planner Phase 2: Bidirectional sync via Graph webhooks
+- [ ] Project creation UI with M365 options
+
+### Codebase Modularization
+**Status:** Planned — Pattern established with `platform.ts` extraction
+**Effort:** Medium (4-6 weeks)
+
+- [ ] Phase 1: Route extraction (13 domain modules from routes.ts)
+- [ ] Phase 2: Storage layer extraction (8 domain modules from storage.ts)
+- [ ] Phase 3: Shared middleware & utilities extraction
 
 ---
 
-### Comprehensive Notifications System (Deprioritized)
-**Status:** DEPRIORITIZED — Ranked lower in February 2026 user feedback session  
-**Priority:** Moved from P1 to P2 per user feedback. Will be revisited in future sessions.
-
-**Why Deprioritized:** User feedback session ranked Notifications and Alerts lower than accounting integration and AI-driven status reporting, reflecting lower perceived urgency relative to current organizational goals.
-
-**Summary:**
-- In-app notification center with bell icon, dropdown, and full page view
-- Email notifications via SendGrid integration
-- User preferences with granular controls per notification type
-- System-wide admin controls to enable/disable notification types globally
-
-**Key Features:**
-- Time entry reminders (requires project staffing feature)
-- Expense approval requests ($500+ threshold)
-- Expense status updates (approved/rejected)
-- Invoice batch status notices
-- Budget threshold alerts
-- Project deadline reminders
-
-**Timeline:** 4-6 weeks (see detailed plan for phased approach)
-
-**[→ View Full Implementation Plan](./notifications-plan.md)**
-
-### Commercial Schemes Implementation
-*Note: Database fields exist but business logic is missing*
-
-- [ ] **Retainer/Drawdown Tracking**
-  - Pre-paid retainer balance management
-  - Post-paid retainer invoicing
-  - Automatic drawdown from time/expenses
-  - Balance threshold alerts
-  - Top-up change order support
-  - Monthly retainer reconciliation reports
-  - Retainer aging analysis
-  
-- [ ] **Milestone Fixed Fee Management**
-  - Milestone definition with acceptance criteria
-  - Percentage complete tracking
-  - Milestone payment scheduling
-  - Partial milestone billing support
-  - Milestone variance reporting
-  - Client acceptance workflow
-  
-- [ ] **Time & Materials (T&M) Billing**
-  - Rate calculation at service date
-  - Rate precedence rules implementation
-  - Effective discount display
-  - Not-to-exceed (NTE) budget tracking
-  - T&M profitability analysis
-  - Progress-to-budget reporting
-
-### Pricing Privacy & Rate Management
-- [ ] **Rack vs Charge Rates**
-  - Separate rack rates (internal) from charge rates (client-facing)
-  - Rate margin calculations
-  - Discount percentage tracking
-  - Effective rate reporting
-  
-- [ ] **Rate Precedence System**
-  - Project-specific rates (highest priority)
-  - Client-specific rates
-  - Role-based standard rates (lowest priority)
-  - Effective date management
-  - Rate grandfathering for existing engagements
-  
-- [ ] **Field-Level Security**
-  - Hide cost rates from non-admin roles
-  - Restrict margin visibility
-  - Protect rack rates from client-facing reports
-  - Audit trail for rate changes
-
-### Advanced Vocabulary Features (Future)
-*Note: Core vocabulary system with org/client/project overrides completed in P0 Days 2-3*
-
-- [ ] **Advanced Export & Template Customization**
-  - PDF templates with custom terminology
-  - Email notification templates using client vocabulary
-  - Excel exports with client-specific column headers
-  
-- [ ] **Multi-Language Support**
-  - Translate vocabulary terms to multiple languages
-  - Language preference per user
-  - Locale-aware terminology
-  
-- [ ] **Industry Preset Templates**
-  - Pre-configured vocabulary sets for different industries
-  - One-click vocabulary template application
-  - Industry-specific best practices
-
-### Advanced Resource Management & Balancing
-**Status:** PLANNED — Design complete, ready for implementation  
-**Priority:** P1 — High priority for consulting operations  
-**Added:** October 2025 | **Last Updated:** February 2026  
-**Design Document:** `docs/design/advanced-resource-management.md`
-
-**Why P1:** Advanced multi-project resource optimization features that enhance the foundational assignment management completed in P0. Enables intelligent staffing decisions, cost variance visibility, and cross-project capacity planning.
-
-**Prerequisites:** P0 project assignments (Days 4-5) — COMPLETE
-
-**Key Design Decisions:**
-- **Estimate-to-project conversion stays fast** — no assignment suggestions at conversion time. Generic roles flow through unchanged. Smart suggestions happen later in the project's assignment module.
-- **Planner sync protects generic roles** — allocations with roleId but no personId preserve their role context through sync cycles. Inbound sync limited to status/dates/percentComplete only.
-- **Per-person capacity limits** — configurable weekly hours (default 40) accounts for part-time staff and day-off schedules. Used as utilization denominator.
-- **Cost variance drives staffing** — suggestions show financial impact of each candidate vs the estimate's budgeted cost rate.
-
-**Scope (6 Phases, ~7-8 weeks total):**
-
-- [ ] **Phase 1: Role Capabilities & Capacity Profiles (~1 week)**
-  - New `user_role_capabilities` table: map people to multiple generic roles with proficiency levels (primary/secondary/learning)
-  - Optional per-role cost/billing rate overrides per person
-  - Per-person `weeklyCapacityHours` (default 40), `capacityNotes`, `capacityEffectiveDate` on users table
-  - UI: "Capabilities & Capacity" section on user profile, role badges on user list
-  - API: CRUD for role capabilities, capable-users-by-role query
-
-- [ ] **Phase 2: Planner Sync Protection for Generic Roles (~2-3 days)**
-  - Include role name in Planner task title for unassigned allocations: `"[Senior Consultant] Week 3 — Task"`
-  - Add role name to task notes
-  - Define sync field whitelist: Constellation owns role/person/rates; Planner owns status/dates/percentComplete
-  - Prevents future bidirectional sync from overwriting role context
-
-- [ ] **Phase 3: Smart Assignment Suggestions (~2 weeks)**
-  - Suggestion engine in project assignment module (NOT during estimate conversion)
-  - Candidate ranking: role proficiency match + availability vs capacity + cost variance vs budget + salaried bonus + current utilization
-  - Cost variance display per candidate ($ and % vs estimate's cost rate)
-  - Bulk assignment: select multiple generic-role allocations → auto-suggest → review → confirm
-  - Original roleId preserved on allocation after person is assigned
-
-- [ ] **Phase 4: Cross-Project Workload View & Rebalancing (~2 weeks)**
-  - `/resource-planning` dashboard with timeline view and utilization heat map
-  - Utilization = allocated hours / weeklyCapacityHours (per person per week)
-  - Color coding: green (60-80%), yellow (80-100%), red (>100%), grey (<40%)
-  - "Find Replacement" rebalancing with cost impact analysis and margin impact preview
-  - Filters by role capability, project, date range, utilization threshold
-
-- [ ] **Phase 5: Capacity Planning Analytics (~1-2 weeks)**
-  - `/resource-planning/capacity` dashboard with KPI cards
-  - Bench list (people <20% utilization with role capabilities)
-  - Role demand vs supply gap analysis
-  - Forecast tool: "If we win Proposal X, utilization goes from 72% to 91%"
-  - Cost variance trends over time
-
-- [ ] **Phase 6: Bulk Import & Polish (~1 week)**
-  - CSV/Excel templates for bulk role capability and capacity profile imports
-  - Validation and error reporting
-  - Performance optimization for large teams
-  - Historical utilization trend charts
-
-### Microsoft 365 Project Integration - PARTIALLY COMPLETE
-**Status:** Planner sync implemented, Teams integration pending  
-**Priority:** P1 - High priority for collaboration  
-**Added:** January 2026  
-**Design Document:** `docs/design/microsoft-365-project-integration.md`
-
-**Why P1:** Seamless Microsoft 365 integration enhances team collaboration, centralizes project communications, and enables future task synchronization between Constellation and Microsoft Planner.
-
-**Prerequisites:**
-- Azure AD tenant admin approval for Graph API permissions
-- Microsoft 365 Business license for Teams/Planner
-- Existing Outlook connector extended or new Teams connector
-
-**Scope:**
-
-- [ ] **Administrative Settings**
-  - System settings table additions for M365 integration toggles
-  - Master toggle to enable/disable M365 integration
-  - Separate toggles for Teams creation and Planner sync
-  - Default Team template selection
-  - Test connection functionality
-
-- [x] **Database Schema** ✅ COMPLETE
-  - `clientTeams` table: Maps clients to Microsoft Teams
-  - `projectChannels` table: Maps projects to channels and Planner plans
-  - `userAzureMapping` table: Links Constellation users to Azure AD accounts
-  - `plannerTaskSync` table: Tracks task sync status per allocation
-
-- [ ] **Microsoft Teams Integration**
-  - Automatic Team creation for new clients (first project)
-  - Channel creation for subsequent projects in existing client Teams
-  - SharePoint site provisioning with Team
-  - Team member management (add/remove based on assignments)
-
-- [x] **Microsoft Planner Integration (Phase 1: One-Way Sync)** ✅ COMPLETE
-  - Create Planner plan per project
-  - Stage-based buckets (not weekly - based on project stages)
-  - Task creation from allocations (one task per assignment)
-  - Sync status tracking and error handling
-  - Automatic 30-minute sync scheduler for enabled projects
-  - Manual sync trigger via admin UI
-  - Deleted task detection and recreation
-
-- [ ] **Microsoft Planner Integration (Phase 2: Bidirectional Sync)**
-  - Microsoft Graph webhooks for change notifications
-  - Planner-to-Constellation sync logic
-  - Conflict resolution for simultaneous edits
-  - Audit trail for sync activities
-
-- [ ] **Project Creation UI Enhancement**
-  - M365 integration options in project creation dialog
-  - Smart detection: "First project for client" vs "Add to existing Team"
-  - Checkbox options for Teams, Planner, auto-member management
-  - Visual preview of what will be created
-
-- [x] **Project Detail M365 Tab** ✅ PARTIAL
-  - Links to Team, Channel, SharePoint site, Planner
-  - Sync status display with manual sync button
-  - [x] Planner connection UI with sync toggle
-  - [ ] Team member mapping status with retry for failures
-  - [ ] External user handling for non-Azure AD consultants
-
-**Dependencies:**
-- Extended Microsoft Graph permissions (Team.Create, Channel.Create, Tasks.ReadWrite, etc.)
-- Existing Outlook connector or new Teams connector
-- User email matching between Constellation and Azure AD
-
-**Timeline:** 4-6 weeks remaining (Teams integration only)  
-**Complexity:** High (multiple Microsoft Graph APIs, sync logic, error handling)
-
-### Multi-Tenancy Architecture
-**Status:** PHASES 1-4, 6 COMPLETE — Phase 5 deferred, Phase 7 ongoing  
-**Priority:** P1 - High priority for SaaS enablement  
-**Added:** January 2026 | **Last Updated:** February 2026  
-**Design Document:** `docs/design/multi-tenancy-design.md`
-
-**Why P1:** Converts Constellation from single-tenant to multi-tenant SaaS platform, enabling software subscription offerings in 6-12 months. Modeled after Vega's proven multi-tenant architecture.
-
-**Service Plans (Seeded):**
-| Plan | Users | Billing | Features |
-|------|-------|---------|----------|
-| Trial | 5 | 30-day free | Core features, AI, basic branding |
-| Team | 15 | $49/mo | Full features, co-branding, SharePoint |
-| Enterprise | 50 | $149/mo annual | SSO, custom subdomain, priority support |
-| Unlimited | Unlimited | Internal | Synozur + priority accounts |
-
-**Key Design Decisions:**
-- **Data Retention**: 60 days after trial/subscription expiration
-- **Co-Branding**: Supported on all paying plans (logo, colors)
-- **Subdomain Routing**: Deferred — requires custom DNS + wildcard SSL (not feasible on Replit). Using slug-based tenant context instead.
-- **Migration Strategy**: Remix codebase for parallel development, data migration path maintains production continuity
-
-**Completed Phases:**
-
-- [x] **Phase 1: Foundation** ✅ COMPLETE
-  - Multi-tenant schema tables (tenants, tenantUsers, servicePlans, consultantAccess)
-  - tenantId column on all data tables
-  - Synozur as initial tenant with data backfilled
-  - Tenant middleware and context resolution
-
-- [x] **Phase 2: User & Auth** ✅ COMPLETE
-  - tenantUsers table for multi-tenant membership
-  - Platform roles (user, constellation_consultant, constellation_admin, global_admin)
-  - Authentication flow with automatic tenant context resolution
-  - Tenant switcher UI in header (dropdown for multi-membership users)
-  - Session-based active tenant override (`activeTenantId` on sessions)
-
-- [x] **Phase 3: Tenant Admin** ✅ COMPLETE
-  - Tenant admin settings pages (company info, branding)
-  - Per-tenant vocabulary customization
-  - Invoice footer and email branding
-  - User invitation system
-
-- [x] **Phase 4: Platform Admin** ✅ COMPLETE
-  - Platform admin pages (`/platform/tenants`, `/platform/service-plans`, `/platform/users`, `/platform/airports`, `/platform/oconus`)
-  - Service plan CRUD management
-  - Tenant monitoring and management
-  - Blocked domains management
-  - Consultant access management
-
-- [x] **Phase 6: Self-Service & Plans** ✅ COMPLETE
-  - Self-service signup flow (3-step wizard: org info, admin account, plan selection)
-  - Auto-slug generation from organization name
-  - Blocked email domain validation
-  - Atomic tenant + admin user + membership creation
-  - Password hashing with bcryptjs (12 rounds)
-  - Plan lifecycle enforcement middleware (blocks writes for expired tenants)
-  - Grace period (14 days) with warning banners
-  - PlanStatusBanner component (trial countdown, grace period alerts, expired notices)
-  - Scheduled job for daily plan expiration checks (2:00 AM)
-  - Job catchup integration for missed plan expiration runs
-
-**Remaining / Deferred:**
-
-- [ ] **Phase 5: Subdomain Routing** — DEFERRED
-  - Requires custom DNS + wildcard SSL configuration
-  - Not feasible on current Replit hosting
-  - Using slug-based tenant context instead
-  - Revisit when self-hosted or on infrastructure supporting wildcard domains
-
-- [ ] **Phase 7: Polish & Testing (ongoing)**
-  - Security audit (tenant isolation)
-  - Performance optimization
-  - Data retention enforcement (60-day auto-cleanup after expiration)
-  - Documentation updates
-
-**Migration Strategy:**
-1. **Remix Approach**: Fork codebase for parallel multi-tenant development
-2. **Schema First**: Add nullable tenantId columns (backward compatible)
-3. **Data Migration**: Backfill existing data to Synozur tenant
-4. **Code Cutover**: Deploy multi-tenant version with minimal disruption
-5. **Rollback Ready**: 15-minute rollback if issues arise
-
-**Dependencies:**
-- Vega architecture reference
-- Database schema planning complete
-- Production continuity requirements
-
-**Timeline:** 13-17 weeks (phased implementation)  
-**Complexity:** Very High (schema changes, auth refactoring, data migration, production continuity)
-
----
-
-## 📊 P2 - IMPORTANT FEATURES (Weeks 5-8)
-
-### "What's New" Changelog Modal - NEW
-**Status:** BACKLOG - Designed, Ready for Implementation  
-**Added:** February 7, 2026  
-**Priority:** P2 - Important UX Enhancement  
-**Complexity:** Medium (schema changes, frontend modal, admin setting, AI summary generation)
-
-**Overview:**  
-Present users with a formatted summary of new features/changes on their next login after a changelog update. Users dismiss the modal once and don't see it again until the next notable update. Controlled by a tenant-level admin setting (on by default, can be switched off).
-
-**Design:**
-
-#### Database Schema Changes
-
-**Table: `users` — New column:**
-- [ ] `lastDismissedChangelogVersion` (varchar, nullable) — Stores the changelog version string (e.g., "1.2026.02.07") the user last dismissed. When `null`, the user hasn't dismissed any changelog modal yet.
-
-**Table: `tenants` — New column:**
-- [ ] `showChangelogOnLogin` (boolean, default `true`) — Tenant-level toggle. When `true`, users in this tenant see the What's New modal. Tenant admins can switch it off in System Settings.
-
-**Table: `system_settings` — New entry:**
-- [ ] `CURRENT_CHANGELOG_VERSION` (string) — The current changelog version string (e.g., "1.2026.02.07"). Updated when a new release is published. This is the source of truth for comparison against each user's `lastDismissedChangelogVersion`.
-
-#### Backend API Endpoints
-
-- [ ] `GET /api/changelog/whats-new` — Returns the What's New content for the current user:
-  - Checks tenant's `showChangelogOnLogin` flag — if `false`, returns `{ show: false }`
-  - Compares `CURRENT_CHANGELOG_VERSION` against user's `lastDismissedChangelogVersion` — if they match, returns `{ show: false }`
-  - If new version available: parses `CHANGELOG.md` to extract the current version section, uses AI (`aiService.customPrompt()`) to generate a user-friendly summary, and returns `{ show: true, version: string, date: string, summary: string, highlights: string[] }`
-  - Cache the AI-generated summary in `system_settings` as `CHANGELOG_SUMMARY_<VERSION>` to avoid regenerating on every user login
-- [ ] `POST /api/changelog/dismiss` — Marks the current changelog version as dismissed for the user:
-  - Updates `users.lastDismissedChangelogVersion` to current version
-  - Returns `{ success: true }`
-- [ ] `PATCH /api/tenants/:id/settings` — Already exists; extend to support `showChangelogOnLogin` toggle
-
-#### Frontend Components
-
-- [ ] **WhatsNewModal** (`client/src/components/WhatsNewModal.tsx`):
-  - Modal dialog using existing shadcn `Dialog` component
-  - Header: "What's New in Constellation" with version number and release date
-  - Body: AI-generated summary with formatted highlights (bullet points, bold labels)
-  - Footer: "Got it" dismiss button + optional "View Full Changelog" link to `/changelog`
-  - Triggered on app load via `useQuery` to `GET /api/changelog/whats-new`
-  - On dismiss: calls `POST /api/changelog/dismiss`, invalidates query cache
-  - Only renders when `show: true` in response
-  - **Mobile responsive design:**
-    - On desktop: centered modal with `max-w-lg` width, comfortable padding
-    - On mobile (<640px): full-width bottom sheet style using `sm:max-w-lg w-[calc(100vw-2rem)]` with reduced padding (`p-4` vs `p-6`)
-    - Scrollable body with `max-h-[60vh]` so long summaries don't push the dismiss button off-screen
-    - Footer buttons stack vertically on mobile (`flex-col sm:flex-row`) with full-width "Got it" button for easy thumb reach
-    - Text sizes scale down on mobile: header `text-lg sm:text-xl`, body `text-sm sm:text-base`
-    - Highlight bullets use compact spacing on mobile (`gap-2 sm:gap-3`)
-    - Touch-friendly dismiss button with minimum 44px tap target height
-
-- [ ] **Layout Integration** (`client/src/components/layout/layout.tsx`):
-  - Add `<WhatsNewModal />` component alongside existing `<HelpChat />`
-  - Only shown to authenticated users (same pattern as HelpChat)
-
-- [ ] **Admin Setting** (System Settings page):
-  - Add toggle: "Show 'What's New' to users on login" under a Notifications or Features section
-  - Bound to `tenants.showChangelogOnLogin`
-  - Include helper text: "When enabled, users will see a summary of new features after each platform update"
-
-#### AI Summary Generation
-
-- [ ] On first request for a new changelog version, parse `CHANGELOG.md` to extract the latest version section
-- [ ] Send to `aiService.customPrompt()` with system prompt:
-  - "Summarize these release notes into a friendly, non-technical overview for end users. Group into 3-5 highlights. Use simple language. Format as JSON: `{ summary: string, highlights: string[] }`"
-- [ ] Cache the result in `system_settings` to avoid repeated AI calls
-- [ ] Invalidate cache when `CURRENT_CHANGELOG_VERSION` changes
-
-#### Version Lifecycle
-
-1. Developer updates `CHANGELOG.md` with new version section
-2. Developer/admin updates `CURRENT_CHANGELOG_VERSION` in system_settings (could be automated on deploy)
-3. On next login, each user's `lastDismissedChangelogVersion` is compared against current
-4. If different → modal shown with AI-generated summary
-5. User clicks "Got it" → `lastDismissedChangelogVersion` updated to current version
-6. User won't see modal again until next version change
-
-#### Edge Cases & Considerations
-
-- [ ] New users (no `lastDismissedChangelogVersion`): Show modal on first login after feature goes live
-- [ ] Tenant admin disables feature: No modal for any users in that tenant, regardless of version mismatch
-- [ ] AI service unavailable: Fall back to raw changelog excerpt (first 500 chars of current version section)
-- [ ] Multiple rapid releases: Only the latest version matters; users who skip versions see only the current summary
-- [ ] Mobile responsiveness: Full-width bottom-sheet layout on small screens, scrollable body, stacked buttons, touch-friendly tap targets (44px+), tested on 375px and 390px widths (iPhone SE / iPhone 14 equivalents)
-
-**Estimated Effort:** 2-3 days  
-**Dependencies:** AI service (already integrated), existing Dialog component, tenant settings infrastructure
-
----
-
-### Mobile Web Interface Optimization
-**Status:** Deferred - Downgraded from P0
-
-**Why Deferred:** Will implement after core UX streamlined (~1 month out). Mobile optimization makes sense once desktop experience is polished.
-
-**Scope:**
-- [ ] Touch-first time entry with large touch targets
-- [ ] Quick time tracking with start/stop buttons
-- [ ] Timer-based time tracking for real-time capture
-- [ ] Mobile expense capture with camera integration
-- [ ] Offline capability with sync when connected
-- [ ] Swipe gestures for common actions
-- [ ] Mobile-optimized navigation patterns
-- [ ] Location-based automatic project detection
-- [ ] Voice notes for descriptions
-
-### SharePoint Embedded UI & Admin Workflows
-*Note: Backend and middleware are implemented, UI and admin workflows are missing*
-
-- [ ] Container management UI implementation
-- [ ] Document metadata templates interface
-- [ ] Custom column configuration UI
-- [ ] Permission management interface
-- [ ] Container provisioning workflow UI
-- [ ] Document search interface with metadata filtering
-- [ ] Bulk document operations UI
-- [ ] Version history viewer
-- [ ] Document approval workflow UI
-
-### Project Status Report Generation - NEW
-**Status:** PLANNING - Essential for project visibility and communication
-
-**Why P2:** Important for stakeholder communication and project tracking, but core operations can function without it initially.
-
-**Scope:**
-- [ ] **Comprehensive Status Reports**
-  - Project overview with vision/description
-  - Milestone progress (target vs actual dates)
-  - Assignment completion rates by person/role
-  - Budget vs actual (time and expenses)
-  - Variance analysis and trending
-  
-- [ ] **Date Range Filtering**
-  - Generate reports for specific periods
-  - Weekly, monthly, quarterly options
-  - Custom date ranges
-  - Point-in-time snapshots
-  
-- [ ] **Report Templates**
-  - Executive summary format
-  - Detailed technical format
-  - Client-facing format (hide internal costs)
-  - Custom template builder
-  
-- [ ] **Export Options**
-  - PDF generation with branding
-  - Excel export with raw data
-  - Email distribution lists
-  - Scheduled report generation
-
-**Timeline:** 3-4 weeks (after assignment management complete)
+## 📊 P2 - IMPORTANT FEATURES
 
 ### Advanced Financial Reporting
+**Status:** Partially complete — YoY and client filter done
+**Effort:** Medium (4-6 weeks)
 
-#### Annual Invoice Reporting - PARTIALLY COMPLETE
-- [x] Year-over-year revenue analysis ✅ (February 2026)
-- [x] Monthly/quarterly/annual comparisons ✅ (February 2026)
-- [ ] Client contribution analysis
+- [x] Year-over-year revenue analysis ✅
+- [x] Client filter on reports ✅
+- [ ] Client contribution analysis and rankings
 - [ ] Service line revenue breakdown
-- [ ] Growth rate calculations
-- [ ] Revenue forecasting
-- [ ] Seasonal trend analysis
+- [ ] Revenue forecasting based on pipeline
+- [ ] Estimate vs Actual accuracy metrics (portfolio-wide)
+- [ ] Variance analysis by project type, client, team member
 - [ ] Interactive dashboard with drill-down
 
-#### Estimate vs Actual Aggregate Reporting - MISSING
-- [ ] Portfolio-wide accuracy metrics
-- [ ] Variance analysis by:
-  - Project type
-  - Client industry
-  - Team member
-  - Service line
-- [ ] Trend analysis over time
-- [ ] Accuracy improvement tracking
-- [ ] Lessons learned repository
-- [ ] Predictive accuracy modeling
+### Commercial Schemes: Milestone Fixed Fee
+**Status:** Planned
+**Effort:** Medium (3-4 weeks)
 
-### Per Diem Expense Calculation - NEW
-**Status:** PLANNING - Extension to existing expense workflow  
-**Priority:** P2 - Important but not blocking operations  
-**Added:** January 2025
+- [ ] Milestone definition with acceptance criteria
+- [ ] Percentage complete tracking
+- [ ] Milestone payment scheduling & partial billing
+- [ ] Client acceptance workflow with digital sign-off
+- [ ] Milestone variance reporting
 
-**Why P2:** Enhances expense reimbursement accuracy and compliance with GSA standards, but existing expense system functions without it.
+### Commercial Schemes: Enhanced T&M
+**Status:** Planned
+**Effort:** Medium (2-3 weeks)
 
-**Scope:**
-- [ ] **GSA Per Diem Integration**
-  - Real-time GSA API integration (https://www.gsa.gov/travel/plan-a-trip/per-diem-rates/per-diem-files)
-  - Location lookup by city/state
-  - Automatic rate determination (5 tiers: $68, $74, $80, $86, $92)
-  - FY 2025/2026 rate support with automatic updates
-  - Fallback to standard $68 rate if location not found
-  
-- [ ] **Per Diem Calculation Engine**
-  - Formula: `Full days × daily rate + (arrival/departure days × 75% rate)`
-  - Breakdown storage: breakfast, lunch, dinner, incidentals
-  - Date range validation (start date ≤ end date)
-  - Multi-day trip support
-  - First/last day 75% discount application
-  
-- [ ] **Expense Form Integration**
-  - New expense type: "Per Diem"
-  - Per diem-specific form fields:
-    - Start date picker
-    - End date picker  
-    - Location autocomplete (city, state)
-    - Calculated amount display (read-only)
-    - Breakdown display (B/L/D/I amounts per GSA tiers)
-  - Seamless integration with existing expense workflow
-  
-- [ ] **Data Model Extensions**
-  - Add to `expenses` table:
-    - `perDiemStartDate`, `perDiemEndDate`
-    - `perDiemLocation` (city, state)
-    - `perDiemTier` (cached M&IE rate)
-    - `perDiemBreakdown` (JSON: breakfast/lunch/dinner/incidentals)
-  - No changes to approval workflow (uses existing)
-  
-- [ ] **GSA Rate Caching**
-  - Cache rates locally for performance
-  - Rate validity period tracking
-  - Automatic refresh mechanism
-  - Handle rate changes mid-fiscal year
-  
-- [ ] **Reporting & Compliance**
-  - Per diem expense reports by employee
-  - Location-based per diem analysis
-  - GSA compliance verification
-  - Export for tax documentation
+- [ ] Rate calculation at service date
+- [ ] Not-to-exceed (NTE) budget tracking with alerts
+- [ ] T&M profitability analysis
+- [ ] Progress-to-budget real-time reporting
 
-**Dependencies:**
-- Existing expense system (complete)
-- Existing expense approval workflow (complete)
-- GSA Per Diem API availability
-- SharePoint document storage (for GSA rate cache files)
+### Pricing Privacy & Rate Management
+**Status:** Planned
+**Effort:** Medium (2-3 weeks)
 
-**Timeline:** 2-3 weeks  
-**Complexity:** Medium (API integration, calculation logic, UI enhancements)
+- [ ] Separate rack rates (internal) from charge rates (client-facing)
+- [ ] Rate margin calculations and reporting
+- [ ] Field-level security to hide cost data from non-admin roles
+- [ ] Rate grandfathering for existing engagements
 
-### Excel Import/Export Redevelopment
-**Status:** HIDDEN FROM UI - Security review required
-**Date Hidden:** October 8, 2025
+### Notifications System
+**Status:** Deprioritized per Feb 2026 user feedback
+**Effort:** Medium (4-6 weeks)
 
-**Why Hidden:** Excel export/import previously exposed cost-sensitive fields (cost rates, margins, profit) that should not be shared externally. Feature hidden pending redevelopment with proper field filtering.
-
-**Decision Options:**
-1. **Redevelop with Security Controls**
-   - Implement role-based field filtering for Excel exports
-   - Remove cost-sensitive columns for non-admin/non-executive users
-   - Add clear warnings about data sensitivity
-   - Match CSV export security model (cost fields completely hidden)
-   
-2. **Deprecate Feature**
-   - Remove Excel functionality entirely
-   - Standardize on CSV for bulk operations (simpler, more secure)
-   - Clean up Excel-related code and dependencies
-   - Update documentation to reflect CSV-only approach
-
-**Current Status:**
-- Excel buttons commented out in estimate detail UI
-- Excel backend endpoints still exist but inaccessible from UI
-- CSV import/export fully functional with cost-sensitive fields removed
-- Users can use CSV for bulk operations without exposing sensitive data
-
-**Recommendation:** Evaluate usage patterns and user feedback before deciding. If Excel offers no significant advantages over CSV, deprecation may be simpler and more maintainable.
-
-### Document Management Enhancements
-- [ ] MSA document upload with metadata
-- [ ] NDA tracking with expiration alerts
-- [ ] Contract document repository
-- [ ] Document versioning system
-- [ ] Approval workflow for documents
-- [ ] Document templates library
-- [ ] E-signature integration
-- [ ] Document access logging
-
-### Advanced Dashboard Features
-- [ ] Customizable dashboard widgets
-- [ ] Real-time KPI updates
-- [ ] Drill-down capabilities
-- [ ] Export dashboard as PDF
-- [ ] Scheduled dashboard emails
-- [ ] Mobile dashboard optimization
-- [ ] Executive dashboard view
-- [ ] Team performance dashboards
-
-### Time Tracking UX Improvements
-- [ ] **User-Scoped Time Entry View**
-  - Default view: show only current user's time entries
-  - Admin/PM/Executive roles: "Show All/Hide All" toggle
-  - Persist view preference per user
-  - Clear indicator of current filter state
-  - Quick switch between "My Time" and "All Time"
+- [ ] In-app notification center (bell icon, dropdown, full page)
+- [ ] Email notifications via SendGrid
+- [ ] User preferences with granular per-type controls
+- [ ] Time entry reminders, expense approvals, budget alerts, deadline reminders
 
 ### Estimate Adjustment Factors - System Defaults
-- [ ] **System-Wide Default Adjustment Factors**
-  - Admin UI for setting default Size, Complexity, and Confidence factors
-  - Stored in system settings table
-  - Applied to all new estimates by default
-  
-- [ ] **Estimate-Level Factor Overrides**
-  - Toggle on estimate to enable/disable override
-  - When override OFF: estimate inherits system defaults (prevents zeroing out)
-  - When override ON: estimate uses custom factors
-  - Clear visual indicator of which factor source is active
-  
-- [ ] **Factor Management Interface**
-  - Settings page for system-wide factors
-  - Estimate detail page override controls
-  - Historical tracking of factor changes
-  - Impact preview before applying changes
+**Status:** Planned
+**Effort:** Low (1 week)
+
+- [ ] Admin UI for default Size, Complexity, and Confidence factors
+- [ ] Estimate-level override toggle (inherit vs custom)
+- [ ] Impact preview before applying changes
+
+### SharePoint Embedded UI
+**Status:** Backend complete, UI pending
+**Effort:** Medium (3-4 weeks)
+
+- [ ] Container management interface
+- [ ] Document metadata templates and custom columns
+- [ ] Permission management interface
+- [ ] Document search with metadata filtering
+- [ ] Bulk document operations
+- [ ] Version history viewer
+- [ ] Document approval workflow
+
+### Document Management Enhancements
+**Status:** Planned
+**Effort:** Medium (3-4 weeks)
+
+- [ ] MSA/NDA document tracking with expiration alerts
+- [ ] Contract document repository with versioning
+- [ ] Document templates library
+- [ ] E-signature integration (DocuSign)
+
+### Advanced Dashboard Features
+**Status:** Planned
+**Effort:** Medium (2-3 weeks)
+
+- [ ] Customizable dashboard widgets
+- [ ] Executive dashboard view
+- [ ] Drill-down capabilities
+- [ ] Scheduled dashboard emails
+
+### Time Tracking UX Improvements
+**Status:** Planned
+**Effort:** Low (1-2 weeks)
+
+- [ ] User-scoped default view (my time vs all time)
+- [ ] Timer-based tracking with start/stop
+- [ ] Missing entry detection
+- [ ] Persist view preferences per user
 
 ---
 
-## 🤖 P3 - AI & AUTOMATION (Weeks 9-12)
-
-### AI Chat Interface - COMPLETELY MISSING
-- [ ] Database schema (aiChatSessions, aiChatMessages, aiActionProposals)
-- [ ] Azure OpenAI (GPT-5) or Claude integration
-- [ ] Chat API with SSE streaming
-- [ ] Contextual chat UI components
-- [ ] Human-in-the-loop approval workflow
-- [ ] Chat history management
-- [ ] Context preservation across sessions
-- [ ] Multi-turn conversation support
-
-### MCP Server for Agentic AI - COMPLETELY MISSING
-- [ ] MCP server infrastructure
-- [ ] RBAC-enforced AI tools:
-  - `create_time_entry()` - AI-assisted time entry
-  - `create_expense_from_receipt()` - OCR + categorization
-  - `draft_invoice()` - Intelligent invoice generation
-  - `generate_estimate_from_prompt()` - Natural language estimates
-  - `summarize_variance()` - Performance analysis
-  - `suggest_resource_allocation()` - Optimal staffing
-- [ ] Audit logging for AI interactions
-- [ ] Action proposal system
-- [ ] AI confidence scoring
-- [ ] Feedback loop for improvement
+## 🤖 P3 - AI & AUTOMATION
 
 ### AI-Enhanced Workflows
-- [ ] **Smart Time Entry**
-  - Weekly entry suggestions based on patterns
-  - Missing entry detection
-  - Anomaly detection for unusual entries
-  - Auto-description generation
-  
-- [ ] **Intelligent Expenses**
-  - Receipt OCR with auto-extraction
-  - Category prediction
-  - Policy violation detection
-  - Duplicate expense detection
-  
-- [ ] **Estimate Intelligence**
-  - Similar project suggestions
-  - Risk factor identification
-  - Margin optimization recommendations
-  - Resource availability checking
+**Status:** Future
+**Effort:** High (8-12 weeks)
+
+- [ ] Receipt OCR with auto-extraction and category prediction
+- [ ] Weekly time entry suggestions based on patterns
+- [ ] Anomaly and duplicate detection
+- [ ] Estimate intelligence: similar project suggestions, risk identification
+- [ ] MCP server infrastructure with RBAC-enforced AI tools
 
 ---
 
 ## 🔗 P4 - PLATFORM CAPABILITIES (2026+)
 
-### Extended Integrations Ecosystem
+### Accounts Payable (AP) - Contractor Payment Management
+**Status:** Planned
+**Effort:** Very High (8-13 weeks, 6 phases)
 
-#### HubSpot Integration - LOWER PRIORITY
-*Note: Focus on exposing SCDP data to HubSpot rather than deep bidirectional sync*
+- [ ] Contractor invoice submission, matching, and payment tracking
+- [ ] Finance menu restructure (AR + AP)
+- [ ] PDF upload with SharePoint storage
+- [ ] Split-view invoice matching interface
+- [ ] Cost rate validation with variance alerts
+- [ ] Approval and payment workflow
+- [ ] AP reporting (payment history, pending invoices, aging)
 
-- [ ] **Core HubSpot Features**
-  - Contact synchronization (SCDP clients ↔ HubSpot contacts)
-  - Expose proposals/estimates to HubSpot deals
-  - Expose projects to HubSpot as custom objects
-  - Expose invoices to HubSpot for visibility
-  
-- [ ] **Automated Deal-to-Project Flow**
-  - Auto-create SCDP client when HubSpot deal reaches specified percentage
-  - Auto-generate estimate from deal properties
-  - Deal stage triggers for project creation
-  - Sync deal value to estimate amount
+### Extended Integrations
+**Status:** Future
 
-- [ ] **Data Exposure (Read-Only in HubSpot)**
-  - Project status and milestones
-  - Invoice status and payment tracking
-  - Estimate/proposal documents as attachments
-  - Budget vs actual visibility
+- [ ] Salesforce CRM integration
+- [ ] Xero / NetSuite accounting
+- [ ] Slack notifications and commands
+- [ ] Jira / Azure DevOps linking
 
-*Not recommended: Resource planning sync, activity tracking sync, time tracking integration (poor conceptual mesh with HubSpot)*
+### API Platform
+**Status:** Future
 
-- [ ] **Other CRM Integrations**
-  - Salesforce bi-directional sync
-  - Microsoft Dynamics 365
-  - Custom CRM webhooks
-  
-- [ ] **Accounting Systems**
-  - Xero integration
-  - NetSuite connector
-  - SAP interface
-  - Sage integration
-  
-- [ ] **Communication Platforms**
-  - Slack notifications and commands
-  - Microsoft Teams integration
-  - Email parsing for time entry
-  
-- [ ] **Project Management**
-  - Jira synchronization
-  - Asana integration
-  - Monday.com connector
-  - Azure DevOps linking
-
-### Accounts Payable (AP) - Contractor Payment Management - NEW
-**Status:** PLANNING - New finance module  
-**Priority:** P4 - Lower priority, dependent on SharePoint stability  
-**Added:** January 2025
-
-**Why P4:** Important for contractor management but not blocking core consulting operations. SharePoint integration must be stable first.
-
-**Overview:** Complete contractor invoice submission, matching, and payment tracking system separate from client AR billing.
-
-**Scope:**
-
-- [ ] **Navigation Restructure - Finance Menu**
-  - Create new "Finance" top-level menu (admin/billing-admin/executive only)
-  - Move "Billing" (AR) under Finance menu
-  - Add "Accounts Payable" (AP) under Finance menu
-  - Maintain separate AR and AP workflows
-
-- [ ] **Database Schema - Contractor Invoices**
-  - New table: `contractor_invoices`
-    - Invoice number, date, due date, total amount
-    - Contractor (user) reference
-    - PDF file ID (SharePoint reference)
-    - Status: submitted → approved → paid
-    - Approval and payment tracking fields
-    - Payment method, payment reference, notes
-  - New table: `contractor_invoice_line_items`
-    - Links to time entries and/or expenses
-    - Amount, description
-    - Expected amount (from cost rate calculation)
-    - Variance amount and override reason (for fixed-fee)
-    - Matching status
-  
-- [ ] **User Management Extensions**
-  - Add to `users` table:
-    - `employment_type` (employee | contractor)
-    - `is_ap_eligible` (boolean - can submit AP invoices)
-    - Cost rate history tracking (leverage existing `user_rate_schedules`)
-  - Low priority compliance fields (future):
-    - `w9_on_file`, `operating_agreement_file_id`, `taxpayer_id`
-  
-- [ ] **Time/Expense Matching Enhancements**
-  - Add to `time_entries` table:
-    - `ap_invoice_line_id` (FK to contractor_invoice_line_items)
-    - `ap_matched_date`
-  - Add to `expenses` table:
-    - `ap_invoice_line_id` (FK to contractor_invoice_line_items)
-    - `ap_matched_date`
-  - Prevent double-matching business logic
-  
-- [ ] **AP Invoice Upload & Storage**
-  - PDF upload interface (admin/billing-admin only)
-  - SharePoint storage: `/ap-invoices/{contractor_name}/{year}/INV-{number}.pdf`
-  - Invoice metadata form (number, date, amount, contractor)
-  - Creates invoice in "submitted" status
-  
-- [ ] **Invoice Matching Interface**
-  - Split-view layout:
-    - Left: PDF viewer
-    - Right: Matching controls
-  - Display unbilled time entries for contractor
-    - Filter by date range, project
-    - Show: Date, Project, Client, Hours, Cost Rate, Amount
-    - Manual selection for matching
-  - Display unbilled expenses for contractor
-    - Filter by date range
-    - Show: Date, Project, Description, Amount
-    - Manual selection for matching
-  - Invoice line items management
-    - Add/edit line items
-    - Match to selected time/expenses
-    - Calculate expected amount (hours × cost_rate)
-    - Show variance (invoice amount - expected)
-    - Alert if variance > 5%
-    - Allow override with required reason field
-  
-- [ ] **Cost Rate Validation**
-  - Calculate expected cost: `hours × contractor_cost_rate` (at time entry date)
-  - Variance threshold: 5%
-  - Warning indicators for mismatches
-  - Override toggle with reason field (for fixed-fee arrangements)
-  - Validation summary before approval
-  
-- [ ] **Approval & Payment Workflow**
-  - Status transitions: submitted → approved → paid
-  - Approval button (admin/billing-admin only)
-  - Validation rules:
-    - Must have at least one matched line item
-    - All variances must be reviewed
-    - All matched items must be unbilled
-  - Payment tracking:
-    - Payment date picker
-    - Payment method dropdown (check, ACH, wire, etc.)
-    - Payment reference field (check #, transaction ID)
-    - Payment notes
-  - Lock matched time/expense entries (prevent future matching)
-  
-- [ ] **AP Invoice List & Dashboard**
-  - Browse all contractor invoices
-  - Filter by contractor, status, date range
-  - Status badges and quick stats
-  - Sortable table: Invoice #, Contractor, Date, Amount, Status
-  - Actions: View, Edit (if not paid), Delete (if not approved)
-  
-- [ ] **User Profile - Contractor Tab**
-  - New tab on user detail page (contractors only)
-  - Employment settings section:
-    - Employment type toggle
-    - AP invoice eligible checkbox
-    - Current cost rate display + history link
-  - Compliance section (future - grayed out):
-    - W9 on file checkbox
-    - Operating agreement upload
-    - Taxpayer ID (encrypted)
-  - Invoice history table:
-    - All invoices for this contractor
-    - Filter by status, date range
-    - Quick link to invoice detail
-  
-- [ ] **AP Reporting**
-  - Payment History Report:
-    - Filter by contractor, date range
-    - Columns: Contractor, Invoice #, Date, Amount, Approved By, Paid Date, Payment Method
-    - Subtotals by contractor
-    - CSV export
-  - Pending AP Invoices Report:
-    - All submitted/approved invoices not yet paid
-    - Aging buckets (0-30, 31-60, 61-90, 90+ days)
-    - Total pending by contractor
-    - CSV export
-  - Cost Variance Report (nice-to-have):
-    - Compare invoiced amounts to expected costs
-    - Identify contractors with frequent overrides
-    - Spot rate discrepancies
-  
-- [ ] **Business Rules & Validation**
-  - Matching rules:
-    - Time/expense can match only ONE invoice line
-    - Once matched and approved, entry is locked
-    - Unbilled = no AR invoice AND no AP match
-  - Approval rules:
-    - Only admin/billing-admin can approve
-    - Must have matched items
-    - Variances reviewed (or override reason provided)
-  - Payment rules:
-    - Can only mark paid if status = approved
-    - Requires payment date and method
-    - Payment reference optional
-  - Contractor eligibility:
-    - Only users with `employment_type = contractor` AND `is_ap_eligible = true`
-    - Dropdown filters show only eligible contractors
-
-**Dependencies:**
-- SharePoint Online document storage (stable)
-- Existing user management system
-- Role-based access control (billing-admin role)
-- Time entries and expenses tables
-- Cost rate tracking in user profiles
-
-**Implementation Phases:**
-
-**Phase 1: Foundation** (1-2 weeks)
-- Database schema migration
-- User employment type and AP eligibility fields
-- Navigation restructure (Finance menu)
-
-**Phase 2: Core Invoice Management** (2-3 weeks)
-- AP invoice list page
-- Invoice upload functionality
-- PDF storage in SharePoint
-- Basic invoice status tracking
-
-**Phase 3: Matching Interface** (3-4 weeks)
-- Invoice detail page with PDF viewer
-- Unbilled time/expense fetching
-- Manual matching interface
-- Cost rate variance calculation
-
-**Phase 4: Approval Workflow** (1-2 weeks)
-- Approval logic and status transitions
-- Payment tracking
-- Lock matched entries
-
-**Phase 5: Reporting & User Management** (1-2 weeks)
-- Payment history report
-- Pending invoices report
-- Contractor invoices tab in user management
-
-**Phase 6: Enhancements** (Future - P5)
-- W9 and compliance tracking
-- Cost variance reports
-- Email notifications for approvals
-- Batch payment processing
-
-**Total Timeline:** 8-13 weeks  
-**Complexity:** High (new module, complex matching logic, SharePoint integration)
-
-### API Platform Development
-- [ ] **Public API**
-  - RESTful API v2
-  - GraphQL endpoint
-  - OpenAPI/Swagger documentation
-  - Interactive API explorer
-  
-- [ ] **Developer Experience**
-  - API key management UI
-  - Rate limiting and quotas
-  - Usage analytics dashboard
-  - Webhook management interface
-  - SDK generation (Python, JS, Ruby)
-  - Developer portal with guides
-  
-- [ ] **Security & Governance**
-  - OAuth2 server implementation
-  - Scope-based permissions
-  - API versioning strategy
-  - Deprecation notices
+- [ ] Public REST API v2 with OpenAPI docs
+- [ ] API key management and rate limiting
+- [ ] Webhook management
+- [ ] Developer portal with SDKs
 
 ### Internationalization & Localization
-- [ ] **Multi-Language Support**
-  - Spanish, French, German translations
-  - RTL language support (Arabic, Hebrew)
-  - Language detection and switching
-  - Translation management system
-  
-- [ ] **Multi-Currency**
-  - Real-time FX rate updates
-  - Dual ledger accounting
-  - Currency conversion at invoice time
-  - Multi-currency reporting
-  
-- [ ] **Regional Compliance**
-  - GDPR compliance tools
-  - Regional tax calculations
-  - Local date/time formats
-  - Regional invoice requirements
+**Status:** Future
 
-### Performance & Scalability
-- [ ] **Data Optimization**
-  - Implement data pagination
-  - Lazy loading for large datasets
-  - Query optimization
-  - Database indexing strategy
-  
-- [ ] **Real-time Features**
-  - WebSocket implementation
-  - Live collaboration features
-  - Real-time notifications
-  - Activity feeds
-  
-- [ ] **Caching & CDN**
-  - Redis caching layer
-  - CDN for static assets
-  - Edge computing for global users
-  - Response caching strategies
+- [ ] Multi-language support (Spanish, French, German)
+- [ ] Multi-currency with real-time FX
+- [ ] Regional compliance (GDPR, local tax)
 
 ### Advanced Security & Compliance
-- [ ] **Enterprise Security**
-  - SOC 2 Type II preparation
-  - Penetration testing
-  - Security audit logging
-  - Data encryption enhancements
-  
-- [ ] **Compliance Features**
-  - Data retention policies
-  - Right to be forgotten
-  - Data portability tools
-  - Compliance reporting
-  
-- [ ] **Advanced Authentication**
-  - Biometric authentication
-  - Hardware key support (FIDO2)
-  - Passwordless authentication
-  - Risk-based authentication
+**Status:** Future
 
-### Client Portal - DEPRIORITIZED
-- [ ] Client project dashboard
-- [ ] Invoice viewing and payment
-- [ ] Document sharing
-- [ ] Time entry approval
-- [ ] Change request submission
-- [ ] Project status tracking
-- [ ] Client reporting access
-- [ ] Secure messaging
+- [ ] SOC 2 Type II preparation
+- [ ] Data retention policies and right-to-be-forgotten
+- [ ] Passwordless / FIDO2 authentication
+
+### Client Portal
+**Status:** Deprioritized
+
+- [ ] Client project dashboard, invoice viewing, document sharing
+- [ ] Change request submission, secure messaging
 
 ---
 
 ## 📋 SUMMARY
 
-**Total Features**: ~107 genuinely missing features across 16 categories
+### Active Backlog by Priority
 
-### Implementation Roadmap
+| Priority | Items | Est. Effort |
+|----------|-------|-------------|
+| P1 - High | 4 items | 24-32 weeks |
+| P2 - Important | 10 items | 24-34 weeks |
+| P3 - AI/Automation | 1 item | 8-12 weeks |
+| P4 - Platform | 6 items | 30+ weeks |
 
-**Phase 1 (Q4 2025)**: Critical Infrastructure
-- QuickBooks Online integration (P0)
-- Mobile optimization (P0)
-- Core notifications system (P1)
-
-**Phase 2 (Q1 2026)**: Business Logic
-- Commercial schemes (P1)
-- Pricing privacy (P1)
-- Vocabulary customization (P1)
-- SPE UI/admin workflows (P2)
-- Per Diem expense calculation (P2)
-
-**Phase 3 (Q2 2026)**: Intelligence & Reporting
-- Advanced reporting suite (P2)
-- AI chat interface (P3)
-- MCP server implementation (P3)
-
-**Phase 4 (Q3-Q4 2026+)**: Platform Evolution
-- Extended integrations (P4)
-- Accounts Payable module (P4)
-- API platform (P4)
-- Internationalization (P4)
-- Performance optimizations (P4)
-
----
-
-**Last Updated**: February 2026
-**Version**: 3.0 - Reprioritized based on February 2026 user feedback session (stack ranking, marketplace coins, 2×2 priority matrix). QuickBooks elevated to P1, Notifications deprioritized, expense PDF bug fixed.
-
-## Notes on Already Implemented Features (NOT in backlog)
+### Notes on Already Implemented Features (NOT in backlog)
 - ✅ Expense bulk upload with CSV/Excel
 - ✅ MFA via Azure Entra ID
 - ✅ Project and estimate milestones
@@ -1248,4 +329,9 @@ Present users with a formatted summary of new features/changes on their next log
 - ✅ Invoice batch PDF generation
 - ✅ Financial reports API endpoints
 - ✅ Dashboard KPIs
-- ✅ Company branding settings
+- ✅ Program estimates with Gantt view
+- ✅ HubSpot CRM integration
+- ✅ Portfolio Manager role
+- ✅ Per Diem (CONUS + OCONUS)
+- ✅ "What's New" changelog modal
+- ✅ AI status reports with RAIDD

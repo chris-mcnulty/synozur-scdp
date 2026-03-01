@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.3 | Last Updated: February 13, 2026
+Version 1.4 | Last Updated: March 1, 2026
 
 ---
 
@@ -18,10 +18,11 @@ Version 1.3 | Last Updated: February 13, 2026
 8. [User Roles](#user-roles)
 9. [Common Workflows](#common-workflows)
 10. [Microsoft 365 Integration](#microsoft-365-integration)
-11. [Settings & Preferences](#settings--preferences)
-12. [Tips & Best Practices](#tips--best-practices)
-13. [Troubleshooting](#troubleshooting)
-14. [Detailed Documentation](#detailed-documentation)
+11. [HubSpot CRM Integration](#hubspot-crm-integration)
+12. [Settings & Preferences](#settings--preferences)
+13. [Tips & Best Practices](#tips--best-practices)
+14. [Troubleshooting](#troubleshooting)
+15. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -39,7 +40,8 @@ Constellation is a comprehensive Consulting Delivery Platform designed to help o
 - **Financial Management**: Invoice generation, expense reimbursement, and financial reporting
 - **Client Management**: Organize clients with custom vocabulary and branding
 - **Microsoft 365 Integration**: Seamless integration with Teams, Planner, SharePoint, and Azure AD
-- **Role-Based Access**: Five-tier permission system tailored to your responsibilities
+- **Role-Based Access**: Six-tier permission system tailored to your responsibilities
+- **HubSpot CRM Integration**: Connect your sales pipeline with project delivery
 - **Vocabulary Customization**: Use your organization's terminology throughout the platform
 
 ### Who Should Use This Guide?
@@ -273,7 +275,40 @@ The Dashboard is your central hub for tracking work and priorities.
 - Discounts and adjustments
 - Payment terms and due dates
 
-### 6. Invoice Report & Financial Analytics
+### 6. Program Estimates
+
+Program Estimates are a specialized estimate type designed for large, multi-phase engagements that span multiple workstreams or delivery tracks.
+
+**Creating a Program Estimate:**
+1. Navigate to the Estimates page
+2. Click **New Estimate**
+3. Select **Program** as the estimate type
+4. Enter program details (name, client, description)
+5. Define staffing blocks with roles, hours, and rates
+6. Use the PM Wizard to auto-generate project structure
+
+**Estimate Types:**
+Constellation supports four estimate types:
+- **T&M (Time & Materials)**: Billed based on actual hours worked at agreed rates
+- **Fixed Price**: Billed against defined milestones and deliverables
+- **Retainer**: Ongoing monthly engagement with reserved capacity
+- **Program**: Large-scale engagements with multiple phases, staffing blocks, and Gantt visualization
+
+**Program Estimate Features:**
+- **Staffing Blocks**: Define resource allocation blocks with specific roles, team members, start/end dates, and hours per block
+- **Gantt View**: Visual timeline showing all staffing blocks across the program duration with drag-and-drop scheduling
+- **PM Wizard**: Automated project setup wizard that converts a program estimate into a fully configured project with stages, epics, and assignments
+- **Phase Management**: Organize work into distinct phases with separate budgets and timelines
+- **Block Editing**: Add, modify, or remove staffing blocks with real-time total recalculation
+
+**Converting a Program Estimate to a Project:**
+1. Open the program estimate
+2. Click **Convert to Project** or use the **PM Wizard**
+3. The wizard creates project stages from estimate phases
+4. Staffing blocks become resource assignments
+5. Budget and rate information carries over automatically
+
+### 7. Invoice Report & Financial Analytics
 
 The Invoice Report provides a comprehensive view of all finalized invoices with powerful filtering and comparison tools.
 
@@ -444,7 +479,7 @@ The Portfolio RAIDD page (`/portfolio/raidd`) provides a cross-project view of a
 
 ## User Roles
 
-Constellation uses a five-tier role hierarchy. Each role inherits lower-tier capabilities and adds new permissions.
+Constellation uses a six-tier role hierarchy. Each role inherits lower-tier capabilities and adds new permissions.
 
 ### Employee (Tier 1)
 **Can:**
@@ -472,7 +507,23 @@ Constellation uses a five-tier role hierarchy. Each role inherits lower-tier cap
 
 **Typical Users:** Project Managers, Delivery Leads
 
-### Billing Administrator (Tier 3)
+### Portfolio Manager (Tier 3)
+**Everything Project Manager can do, PLUS:**
+- View all projects across the portfolio
+- Access Portfolio Timeline and Portfolio RAIDD dashboards
+- Monitor cross-project resource allocation
+- View financial summaries and project health metrics
+- Generate portfolio-level status reports
+
+**Cannot:**
+- Create or manage invoices
+- Approve expense reports
+- Manage billing rates or system settings
+- Administer user accounts
+
+**Typical Users:** Program Managers, Portfolio Directors, Delivery Managers
+
+### Billing Administrator (Tier 4)
 **Everything Employee can do, PLUS:**
 - Create and manage invoices
 - Process reimbursement batches
@@ -482,7 +533,7 @@ Constellation uses a five-tier role hierarchy. Each role inherits lower-tier cap
 
 **Typical Users:** Finance Team, Accounting
 
-### Executive (Tier 4)
+### Executive (Tier 5)
 **Everything Employee can do, PLUS:**
 - Approve high-value expenses ($500+)
 - View organization-wide reports
@@ -492,7 +543,7 @@ Constellation uses a five-tier role hierarchy. Each role inherits lower-tier cap
 
 **Typical Users:** C-Level, Directors, VP
 
-### Administrator (Tier 5)
+### Administrator (Tier 6)
 **Everything, including:**
 - Manage user accounts
 - Configure system settings
@@ -650,6 +701,60 @@ Constellation integrates seamlessly with your Microsoft 365 environment to enhan
 - Check that Graph API permissions include Tasks.ReadWrite
 - Ensure project has "Sync Enabled" toggled on
 - Review scheduled jobs log for error messages
+
+---
+
+## HubSpot CRM Integration
+
+### Overview
+
+Constellation integrates with HubSpot CRM to bridge the gap between sales pipeline and project delivery. This integration allows you to view CRM deals, import contacts, and link deals to Constellation projects.
+
+### CRM Deals Page
+
+The CRM Deals page (`/crm/deals`) provides a unified view of your HubSpot pipeline within Constellation.
+
+**Accessing CRM Deals:**
+1. Navigate to **CRM Deals** from the sidebar (available to Project Managers, Executives, and Administrators)
+2. View all active deals from your HubSpot pipeline
+3. Filter deals by stage, owner, or amount
+
+**Deal Information Displayed:**
+- Deal name and pipeline stage
+- Deal amount and close date
+- Associated contacts and company
+- Deal owner and last activity date
+- Link to the full deal in HubSpot
+
+### Contact Import
+
+Import HubSpot contacts as Constellation client contacts to avoid duplicate data entry.
+
+**Importing Contacts:**
+1. Open a deal on the CRM Deals page
+2. Click **Import Contacts** to pull associated contacts from HubSpot
+3. Review and confirm the contact details
+4. Contacts are added to the linked Constellation client record
+
+### Deal-to-Project Linking
+
+Link HubSpot deals to Constellation projects for end-to-end visibility from sales to delivery.
+
+**Linking a Deal:**
+1. Navigate to CRM Deals
+2. Select a deal from the list
+3. Click **Link to Project** and choose an existing Constellation project (or create a new one)
+4. Once linked, the project detail page shows the associated deal information
+5. Deal stage changes in HubSpot are reflected in Constellation
+
+### Configuration
+
+**For Administrators:**
+1. Navigate to **Admin Settings → Integrations**
+2. Enter your HubSpot API key or connect via OAuth
+3. Configure sync frequency and field mappings
+4. Test the connection with a sample deal pull
+5. Enable the CRM Deals sidebar item for appropriate roles
 
 ---
 
@@ -978,6 +1083,8 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 **Estimate**: Preliminary project scope, timeline, and cost calculation created during the sales process.
 
+**Program Estimate**: A specialized estimate type for large, multi-phase engagements with staffing blocks, Gantt visualization, and PM Wizard conversion.
+
 **Invoice Batch**: Collection of time entries and expenses grouped together for client billing.
 
 **Non-Billable**: Time or expenses that cannot be invoiced to the client (internal, administrative, or overhead).
@@ -996,7 +1103,7 @@ This guide provides an overview of Constellation's key features and workflows. F
 
 ---
 
-*Last Updated: February 13, 2026*  
-*Version: 1.3*  
+*Last Updated: March 1, 2026*  
+*Version: 1.4*  
 *Maintained by: Synozur IT Team*  
 *Questions? Contact ITHelp@synozur.com*

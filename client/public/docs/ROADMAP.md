@@ -142,6 +142,36 @@ The following major features have been delivered and are live in production. See
 - Manual trigger buttons for on-demand execution
 - Multi-tenant scoping for job configuration
 
+### ✅ Program Estimates & Staffing Blocks
+**Completed:** March 2026
+- New "Program" estimate type with week-based staffing blocks
+- Block-level fields: start week, duration (weeks), utilization percent (20/40/60/80/100%)
+- Gantt-style timeline view for visualizing staffing blocks across program duration
+- PM Wizard for guided program estimate creation
+- Program vocabulary mapping (epics displayed as "Programs")
+- Seamless integration with existing estimate workflows (conversion to project, milestones, billing)
+
+### ✅ Portfolio Manager Role
+**Completed:** March 2026
+- New "portfolio-manager" role tier between PM and executive
+- Cross-project visibility for assigned portfolio of projects
+- Access to portfolio timeline, resource management, and financial reporting
+- Role-based sidebar navigation with portfolio-scoped views
+- Restricted from platform admin and tenant administration functions
+- Tenant-scoped role assignment via user management
+
+### ✅ HubSpot CRM Integration
+**Completed:** March 2026
+- OAuth2 authentication flow with HubSpot (tenant-scoped CRM connections)
+- CRM Deals page for browsing and filtering HubSpot deals above configurable threshold
+- Pipeline and deal stage visibility with amount tracking
+- Deal-to-estimate linking with bidirectional object mapping
+- Contact import from HubSpot deals and companies
+- Company association mapping between Constellation clients and HubSpot companies
+- Automatic deal notes posted on invoice finalization
+- CRM sync status tracking with error reporting
+- Company contact search and import capabilities
+
 ---
 
 ## Current Focus (Q1 2026)
@@ -692,6 +722,13 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ## Recent Roadmap Updates
 
+**March 1, 2026 — Program Estimates & CRM Integration**
+- Added Program Estimates & Staffing Blocks to Recently Completed (new "Program" estimate type with week-based blocks, Gantt view, PM Wizard)
+- Added Portfolio Manager Role to Recently Completed (new role tier with cross-project portfolio visibility)
+- Added HubSpot CRM Integration to Recently Completed (OAuth2 connection, deals page, contact import, deal-estimate linking, invoice sync)
+- CRM integration moved from Long-Term Vision (Platform Capabilities & Integrations) to Complete — delivered ahead of 2027+ timeline
+- Updated version to 1.2026.03.01
+
 **February 13, 2026 — Project Governance & Portfolio Insights**
 - Marked Enhanced Status Reporting as ✅ Complete (Phase 1: interactive generation with AI narratives, RAIDD integration, copy/download)
 - Marked RAIDD Log as ✅ Complete (full register, governance rules, AI integration, Excel export, portfolio dashboard)
@@ -746,6 +783,6 @@ We welcome feedback from users, administrators, and stakeholders on roadmap prio
 
 ---
 
-*Last Updated: February 13, 2026*  
+*Last Updated: March 1, 2026*  
 *Maintained by: Synozur Product Team*  
 *Questions or suggestions? Contact: ITHelp@synozur.com*
