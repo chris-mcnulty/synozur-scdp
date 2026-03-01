@@ -452,7 +452,10 @@ export function ProgramEstimateView({
   };
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", `/api/estimates/${estimateId}/line-items`, data),
+    mutationFn: (data: any) => apiRequest(`/api/estimates/${estimateId}/line-items`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
       setForm(defaultForm());
@@ -463,7 +466,10 @@ export function ProgramEstimateView({
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) =>
-      apiRequest("PATCH", `/api/estimates/${estimateId}/line-items/${id}`, data),
+      apiRequest(`/api/estimates/${estimateId}/line-items/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
       setEditingId(null);
@@ -473,7 +479,9 @@ export function ProgramEstimateView({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${id}`),
+    mutationFn: (id: string) => apiRequest(`/api/estimates/${estimateId}/line-items/${id}`, {
+      method: "DELETE",
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId, "line-items"] });
       toast({ title: "Block removed" });
