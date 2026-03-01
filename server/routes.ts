@@ -503,11 +503,24 @@ export async function registerRoutes(app: Express): Promise<void> {
           return res.status(403).json({ message: "You can only edit users within your organization" });
         }
       }
-      
-      const user = await storage.updateUser(req.params.id, req.body);
+
+      // Sanitize body: convert empty strings to null for numeric fields
+      const body = { ...req.body };
+      if (body.defaultBillingRate === '' || body.defaultBillingRate === undefined) body.defaultBillingRate = null;
+      if (body.defaultCostRate === '' || body.defaultCostRate === undefined) body.defaultCostRate = null;
+      // Strip any fields not in the users table to avoid Drizzle errors
+      const allowedFields = ['name', 'firstName', 'lastName', 'initials', 'email', 'role', 'canLogin',
+        'isAssignable', 'defaultBillingRate', 'defaultCostRate', 'isSalaried', 'isActive', 'title',
+        'customRole', 'roleId', 'contractorBusinessName', 'contractorBusinessAddress',
+        'contractorBillingId', 'contractorPhone', 'contractorEmail', 'platformRole',
+        'receiveTimeReminders', 'receiveExpenseReminders', 'primaryTenantId'];
+      const safeBody = Object.fromEntries(Object.entries(body).filter(([k]) => allowedFields.includes(k)));
+
+      const user = await storage.updateUser(req.params.id, safeBody as any);
       res.json(user);
     } catch (error) {
-      res.status(500).json({ message: "Failed to update user" });
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user", detail: error instanceof Error ? error.message : String(error) });
     }
   });
 
