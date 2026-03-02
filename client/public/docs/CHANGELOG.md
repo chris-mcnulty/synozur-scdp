@@ -23,7 +23,7 @@ Version history and release notes for Constellation, organized from newest to ol
 **Status:** Production Release  
 **Codename:** Program Estimates & CRM Integration
 
-This release introduces the Program estimate type with staffing blocks and Gantt visualization, the Portfolio Manager role for cross-project oversight, HubSpot CRM integration for deal pipeline management, user management improvements, estimate fixes, and financial reporting enhancements.
+This release introduces the Program estimate type with staffing blocks and Gantt visualization, the Portfolio Manager role for cross-project oversight, HubSpot CRM integration for deal pipeline management, estimate sharing with read-only access, user management improvements, estimate fixes, and financial reporting enhancements.
 
 #### ✨ New Features
 
@@ -60,6 +60,14 @@ This release introduces the Program estimate type with staffing blocks and Gantt
 - Portfolio Manager role available in user role assignment
 - Improved role hierarchy enforcement for user creation and editing
 
+**Estimate Sharing**
+- Share estimates with individual users for read-only access via the Share button on estimate detail
+- Shared viewers see line items and Gantt but cost rates and margin data are hidden
+- Users with higher roles (admin, billing-admin, PM, portfolio-manager) retain full access when shared
+- "Shared" badge displayed on the estimates list for shared estimates
+- Read-only banner shown to shared viewers on the estimate detail page
+- Only admins, billing admins, PMs, and portfolio managers can grant or revoke shares
+
 **Financial Reporting Enhancements**
 - Client revenue report with detailed breakdown by project and time period
 - Improved financial report filtering and export options
@@ -76,6 +84,7 @@ This release introduces the Program estimate type with staffing blocks and Gantt
 - Updated changelog, roadmap, and user guide for new version
 - Added HubSpot CRM integration documentation
 - Updated role hierarchy documentation to include Portfolio Manager
+- Added estimate sharing documentation to user guide
 
 ---
 

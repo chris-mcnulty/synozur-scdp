@@ -308,7 +308,37 @@ Constellation supports four estimate types:
 4. Staffing blocks become resource assignments
 5. Budget and rate information carries over automatically
 
-### 7. Invoice Report & Financial Analytics
+### 7. Estimate Sharing
+
+You can share estimates with other users to give them read-only access. This is useful for letting stakeholders review an estimate without granting them full project access.
+
+**Sharing an Estimate:**
+1. Open the estimate you want to share
+2. Click the **Share** button in the toolbar
+3. Search for and select the user you want to share with
+4. The user will now see the estimate in their estimates list with a "Shared" badge
+
+**What Shared Viewers Can See:**
+- All line items, phases, and structure of the estimate
+- Gantt timeline view (for program estimates)
+- Total hours and billing amounts
+
+**What Shared Viewers Cannot See:**
+- Cost rates and total cost
+- Margin and margin percentage
+- Shared viewers cannot edit the estimate
+
+**Important:** If a shared user already has a higher-level role (admin, billing admin, PM, or portfolio manager), their existing permissions are preserved — sharing does not restrict their access.
+
+**Revoking Access:**
+1. Open the estimate
+2. Click the **Share** button
+3. Find the user in the current shares list
+4. Click **Revoke** to remove their access
+
+Only admins, billing admins, PMs, and portfolio managers can share or revoke estimate access.
+
+### 8. Invoice Report & Financial Analytics
 
 The Invoice Report provides a comprehensive view of all finalized invoices with powerful filtering and comparison tools.
 
@@ -460,7 +490,7 @@ The Portfolio RAIDD page (`/portfolio/raidd`) provides a cross-project view of a
 
 ---
 
-### 7. Client Management
+### 9. Client Management
 
 **Client Records:**
 - Basic information (name, address, contacts)
