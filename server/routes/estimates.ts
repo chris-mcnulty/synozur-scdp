@@ -2512,14 +2512,27 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
         // Use the full RateResolver precedence chain:
         // Manual override (skipped above) > Estimate override > Client override > User default > Role default
         let resolvedRoleId = item.roleId || undefined;
+        let matchedRole: typeof allRoles[number] | undefined;
 
         // For items without roleId, try matching by resourceName to the role catalog
         if (!resolvedRoleId && item.resourceName && !item.assignedUserId) {
           const lookupKey = item.resourceName.toLowerCase().trim();
-          const matchedRole = roleNameMap.get(lookupKey);
+          matchedRole = roleNameMap.get(lookupKey);
           if (matchedRole) {
             resolvedRoleId = matchedRole.id;
           }
+        }
+
+        // Check salaried status: assigned user isSalaried OR matched role isAlwaysSalaried
+        let isSalaried = false;
+        if (item.assignedUserId) {
+          const [assignedUser] = await db.select().from(users).where(eq(users.id, item.assignedUserId));
+          if (assignedUser?.isSalaried) isSalaried = true;
+        } else if (matchedRole?.isAlwaysSalaried) {
+          isSalaried = true;
+        } else if (resolvedRoleId && !matchedRole) {
+          const [resolvedRole] = await db.select().from(roles).where(eq(roles.id, resolvedRoleId));
+          if (resolvedRole?.isAlwaysSalaried) isSalaried = true;
         }
 
         const effectiveRates = await RateResolver.resolveRates({
@@ -2538,23 +2551,24 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
           }
         }
 
+        // Salaried resources have zero project cost — their compensation comes from firm profit
+        if (isSalaried) {
+          costRate = 0;
+        }
+
         // FALLBACK: If resolver found no rates and we have a billing rate but no cost rate,
         // calculate cost rate using the default cost ratio (from "All" role or 75% default)
-        if (effectiveRates.precedence === 'none' && rate > 0 && costRate === 0) {
+        if (!isSalaried && effectiveRates.precedence === 'none' && rate > 0 && costRate === 0) {
           costRate = rate * defaultCostRatio;
         }
 
-        // Calculate adjusted hours — program blocks use durationWeeks × utilization formula
+        // Calculate adjusted hours — always use baseHours × factor × contingency
+        // Program blocks store duration/utilization for scheduling display, but baseHours
+        // is the authored effort value and takes precedence for financial calculations
+        const baseHours = Number(item.baseHours || 0);
+        const factor = Number(item.factor || 1);
         let adjustedHours: number;
-        if (item.durationWeeks != null && item.utilizationPercent != null) {
-          const hoursPerWeek = (Number(item.utilizationPercent) / 100) * 40;
-          const rawHours = Number(item.durationWeeks) * hoursPerWeek;
-          adjustedHours = rawHours * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
-        } else {
-          const baseHours = Number(item.baseHours || 0);
-          const factor = Number(item.factor || 1);
-          adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
-        }
+        adjustedHours = baseHours * factor * sizeMultiplier * complexityMultiplier * confidenceMultiplier;
 
         const totalAmount = adjustedHours * rate;
         const totalCost = adjustedHours * costRate;
