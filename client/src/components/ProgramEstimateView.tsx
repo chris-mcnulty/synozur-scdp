@@ -413,8 +413,16 @@ export function ProgramEstimateView({
 
   // Filters
   const [filterEpic, setFilterEpic] = useState("all");
+  const [filterStage, setFilterStage] = useState("all");
+  const [filterWeek, setFilterWeek] = useState("all");
   const [filterResource, setFilterResource] = useState("all");
+  const [filterWorkstream, setFilterWorkstream] = useState("");
   const [filterText, setFilterText] = useState("");
+  const [showSummary, setShowSummary] = useState(false);
+  const [bulkEditDialog, setBulkEditDialog] = useState(false);
+  const [bulkEditData, setBulkEditData] = useState({
+    epicId: "", stageId: "", workstream: "", size: "", complexity: "", confidence: "", rate: "", costRate: "",
+  });
 
   const programBlocks = useMemo(
     () => lineItems
