@@ -55,6 +55,7 @@ interface Estimate {
   archived: boolean;
   createdAt: string;
   validUntil: string;
+  isSharedWithMe?: boolean;
 }
 
 export default function Estimates() {
@@ -416,7 +417,14 @@ export default function Estimates() {
                 <TableBody>
                   {estimates.map((estimate) => (
                     <TableRow key={estimate.id} data-testid={`estimate-row-${estimate.id}`}>
-                      <TableCell className="font-medium">{estimate.name}</TableCell>
+                      <TableCell className="font-medium">
+                        {estimate.name}
+                        {estimate.isSharedWithMe && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+                            Shared
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>{estimate.clientName}</TableCell>
                       <TableCell>{estimate.projectName || "-"}</TableCell>
                       <TableCell>

@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Download, Upload, Save, FileDown, Edit, Split, Check, X, FileCheck, Briefcase, FileText, Wand2, Calculator, Pencil, ChevronDown, ChevronRight, ChevronUp, ArrowUp, ArrowDown, Sparkles, Copy, Loader2, AlertCircle, AlertTriangle, RefreshCw, Calendar, Share2, UserPlus, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import type { EstimateLineItem, Estimate, EstimateEpic, EstimateStage, EstimateMilestone, Project } from "@shared/schema";
@@ -148,8 +148,42 @@ function EstimateDetailContent() {
     retry: 1,
   });
 
-  // Check if estimate is editable (only draft estimates can be modified)
-  const isEditable = estimate?.status === 'draft';
+  // Check if estimate is editable (only draft estimates can be modified, and shared-read-only users cannot edit)
+  const isSharedReadOnly = (estimate as any)?.isSharedReadOnly === true;
+  const isEditable = estimate?.status === 'draft' && !isSharedReadOnly;
+
+  // Share dialog state
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareUserId, setShareUserId] = useState("");
+
+  const { data: estimateShares = [] } = useQuery<any[]>({
+    queryKey: ['/api/estimates', id, 'shares'],
+    enabled: !!id,
+  });
+
+  const addShareMutation = useMutation({
+    mutationFn: (userId: string) => apiRequest(`/api/estimates/${id}/shares`, {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'shares'] });
+      setShareUserId("");
+      toast({ title: "Estimate shared successfully" });
+    },
+    onError: () => toast({ title: "Failed to share estimate", variant: "destructive" }),
+  });
+
+  const removeShareMutation = useMutation({
+    mutationFn: (userId: string) => apiRequest(`/api/estimates/${id}/shares/${userId}`, {
+      method: "DELETE",
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', id, 'shares'] });
+      toast({ title: "Share access removed" });
+    },
+    onError: () => toast({ title: "Failed to remove share", variant: "destructive" }),
+  });
 
   const { data: lineItems = [], isLoading, error: lineItemsError } = useQuery<EstimateLineItem[]>({
     queryKey: ['/api/estimates', id, 'line-items'],
@@ -1443,6 +1477,12 @@ function EstimateDetailContent() {
             </Button>
             <div>
               <h1 className="text-3xl font-bold">Estimate Details</h1>
+              {isSharedReadOnly && (
+                <div className="flex items-center gap-2 mt-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 rounded-md text-sm text-indigo-700 dark:text-indigo-300">
+                  <Share2 className="h-4 w-4" />
+                  Shared with you (read-only) — cost rates and margin data are hidden
+                </div>
+              )}
               <p className="text-muted-foreground cursor-pointer" onClick={() => {
                 setEditingField('estimate-name');
                 setEditingEstimateName(estimate?.name || "");
@@ -1706,6 +1746,20 @@ function EstimateDetailContent() {
                 </Button>
               )}
             </div>
+            
+            {!isSharedReadOnly && (
+              <Button
+                onClick={() => setShareDialogOpen(true)}
+                variant="outline"
+                size="sm"
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                Share
+                {estimateShares.length > 0 && (
+                  <Badge variant="secondary" className="ml-1.5 px-1.5 py-0 text-xs">{estimateShares.length}</Badge>
+                )}
+              </Button>
+            )}
             
             <input
               ref={fileInputRef}
@@ -5541,6 +5595,75 @@ function EstimateDetailContent() {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Share Estimate
+            </DialogTitle>
+            <DialogDescription>
+              Grant read-only access to this estimate. Shared users can view the estimate details, line items, and Gantt but cannot see cost rates or margin data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Select value={shareUserId} onValueChange={setShareUserId}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="Select a person to share with..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {users
+                    .filter((u: any) => u.isActive && !estimateShares.some((s: any) => s.userId === u.id))
+                    .map((u: any) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}{u.email ? ` (${u.email})` : ''}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={() => shareUserId && addShareMutation.mutate(shareUserId)}
+                disabled={!shareUserId || addShareMutation.isPending}
+                size="sm"
+              >
+                {addShareMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            {estimateShares.length > 0 && (
+              <div className="border rounded-md divide-y">
+                {estimateShares.map((share: any) => (
+                  <div key={share.id} className="flex items-center justify-between px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{share.user?.name || 'Unknown'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {share.user?.email || ''}
+                        {share.grantedByUser && ` · Shared by ${share.grantedByUser.name}`}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                      onClick={() => removeShareMutation.mutate(share.userId)}
+                      disabled={removeShareMutation.isPending}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {estimateShares.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No one has been granted access yet. Select a person above to share this estimate.
+              </p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

@@ -1861,7 +1861,13 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
   app.get("/api/estimates/:id/line-items", requireAuth, async (req, res) => {
     try {
       const lineItems = await storage.getEstimateLineItems(req.params.id);
-      const filteredLineItems = filterSensitiveData(lineItems, req.user?.role || '');
+      const userRole = req.user?.role || '';
+      const isSharedViewer = await storage.hasEstimateShareAccess(req.params.id, req.user?.id || '');
+      const isEstimateOwnerRole = ['admin', 'billing-admin', 'pm', 'portfolio-manager', 'executive'].includes(userRole);
+      const shouldStripCosts = isSharedViewer && !isEstimateOwnerRole;
+      const filteredLineItems = shouldStripCosts
+        ? filterSensitiveData(lineItems, 'employee')
+        : filterSensitiveData(lineItems, userRole);
       res.json(filteredLineItems);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch line items" });
@@ -2845,6 +2851,45 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to delete milestone" });
+    }
+  });
+
+  // Estimate shares (read-only access grants)
+  app.get("/api/estimates/:id/shares", requireAuth, async (req, res) => {
+    try {
+      const shares = await storage.getEstimateShares(req.params.id);
+      res.json(shares);
+    } catch (error) {
+      console.error("Error fetching estimate shares:", error);
+      res.status(500).json({ message: "Failed to fetch estimate shares" });
+    }
+  });
+
+  app.post("/api/estimates/:id/shares", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+      const share = await storage.createEstimateShare({
+        estimateId: req.params.id,
+        userId,
+        grantedBy: req.user!.id,
+      });
+      res.json(share);
+    } catch (error) {
+      console.error("Error creating estimate share:", error);
+      res.status(500).json({ message: "Failed to share estimate" });
+    }
+  });
+
+  app.delete("/api/estimates/:estimateId/shares/:userId", requireAuth, requireRole(["admin", "billing-admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      await storage.deleteEstimateShare(req.params.estimateId, req.params.userId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing estimate share:", error);
+      res.status(500).json({ message: "Failed to remove estimate share" });
     }
   });
 
@@ -4608,7 +4653,25 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       console.log("[DEBUG] Fetching estimates...");
       const includeArchived = req.query.includeArchived === 'true';
       const tenantId = req.user?.tenantId;
+      const userId = req.user?.id || '';
+      const userRole = req.user?.role || '';
+      const isEstimateOwnerRole = ['admin', 'billing-admin', 'pm', 'portfolio-manager', 'executive'].includes(userRole);
+
       const estimates = await storage.getEstimates(includeArchived, tenantId);
+
+      // For users without an estimate-owner role, also include shared estimates
+      const sharedEstimateIds = new Set<string>();
+      if (!isEstimateOwnerRole && userId) {
+        const shares = await storage.getEstimateSharesForUser(userId);
+        shares.forEach(s => sharedEstimateIds.add(s.estimateId));
+      }
+
+      // Also get shared IDs for owner-role users (to show the badge)
+      if (isEstimateOwnerRole && userId) {
+        const shares = await storage.getEstimateSharesForUser(userId);
+        shares.forEach(s => sharedEstimateIds.add(s.estimateId));
+      }
+
       console.log('[DEBUG] Found ' + estimates.length + ' estimates (includeArchived: ' + includeArchived + ')');
 
       // Calculate totals from line items for each estimate
@@ -4665,10 +4728,10 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             validUntil: est.validUntil || null,
             archived: est.archived || false,
             createdAt: est.createdAt,
+            isSharedWithMe: sharedEstimateIds.has(est.id),
           };
         } catch (estError) {
           console.error('[ERROR] Failed to process estimate ' + est.id + ':', estError);
-          // Return a minimal estimate object if processing fails
           return {
             id: est.id,
             name: est.name || 'Error Loading Estimate',
@@ -4684,6 +4747,7 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
             validUntil: null,
             archived: est.archived || false,
             createdAt: est.createdAt || new Date().toISOString(),
+            isSharedWithMe: false,
           };
         }
       }));
@@ -4706,7 +4770,16 @@ export function registerEstimateRoutes(app: Express, deps: EstimateRouteDeps) {
       if (!estimate) {
         return res.status(404).json({ message: "Estimate not found" });
       }
-      res.json(estimate);
+      const userId = req.user?.id || '';
+      const isSharedWithMe = await storage.hasEstimateShareAccess(req.params.id, userId);
+      const userRole = req.user?.role || '';
+      const isEstimateOwnerRole = ['admin', 'billing-admin', 'pm', 'portfolio-manager', 'executive'].includes(userRole);
+      const response: any = { ...estimate, isSharedWithMe };
+      if (isSharedWithMe && !isEstimateOwnerRole) {
+        delete response.margin;
+        response.isSharedReadOnly = true;
+      }
+      res.json(response);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch estimate" });
     }

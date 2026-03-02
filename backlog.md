@@ -91,17 +91,17 @@
 ## 🚨 P1 - HIGH PRIORITY
 
 ### Estimate-Level Sharing (Read-Only ACL)
-**Status:** Planned
+**Status:** Complete
 **Effort:** Medium (2-3 days)
 
-- [ ] "Share" button on estimates for PMs to invite specific users with read-only access
-- [ ] New `estimate_shares` table (estimate_id, user_id, granted_by, granted_at)
-- [ ] Shared estimates appear in the user's estimate list (read-only badge)
-- [ ] API-level permission checks: shared users can GET estimate data but not POST/PATCH/DELETE
-- [ ] Cost/chargeback rate columns hidden from shared viewers (API response filtering)
-- [ ] No expense data visibility for shared viewers
-- [ ] Share management UI: grant, revoke, view current shares
-- [ ] Shared viewer sees estimate detail, line items, totals, and Gantt — but not cost rates or margin data
+- [x] "Share" button on estimates for PMs to invite specific users with read-only access
+- [x] New `estimate_shares` table (estimate_id, user_id, granted_by, granted_at)
+- [x] Shared estimates appear in the user's estimate list (read-only badge)
+- [x] API-level permission checks: shared users can GET estimate data but not POST/PATCH/DELETE
+- [x] Cost/chargeback rate columns hidden from shared viewers (API response filtering)
+- [x] Share management UI: grant, revoke, view current shares
+- [x] Shared viewer sees estimate detail, line items, totals, and Gantt — but not cost rates or margin data
+- [x] Read-only banner shown to shared viewers on estimate detail page
 
 ### QuickBooks Online Integration
 **Status:** Planned — #1 user-requested feature (94 marketplace coins, Feb 2026 feedback)

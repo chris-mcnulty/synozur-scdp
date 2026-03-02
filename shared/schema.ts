@@ -599,6 +599,17 @@ export const estimateMilestones = pgTable("estimate_milestones", {
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
 
+// Estimate Shares (read-only access grants)
+export const estimateShares = pgTable("estimate_shares", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  estimateId: varchar("estimate_id").notNull().references(() => estimates.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: varchar("granted_by").notNull().references(() => users.id),
+  grantedAt: timestamp("granted_at").notNull().default(sql`now()`),
+}, (table) => ({
+  uniqueShare: index("estimate_shares_unique_idx").on(table.estimateId, table.userId),
+}));
+
 // Estimate hierarchy: Epic -> Stage -> Activity
 export const estimateEpics = pgTable("estimate_epics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1752,6 +1763,11 @@ export const insertEstimateMilestoneSchema = createInsertSchema(estimateMileston
   createdAt: true,
 });
 
+export const insertEstimateShareSchema = createInsertSchema(estimateShares).omit({
+  id: true,
+  grantedAt: true,
+});
+
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,
   createdAt: true,
@@ -1929,6 +1945,9 @@ export type InsertEstimateRateOverride = z.infer<typeof insertEstimateRateOverri
 
 export type EstimateMilestone = typeof estimateMilestones.$inferSelect;
 export type InsertEstimateMilestone = z.infer<typeof insertEstimateMilestoneSchema>;
+
+export type EstimateShare = typeof estimateShares.$inferSelect;
+export type InsertEstimateShare = z.infer<typeof insertEstimateShareSchema>;
 
 export type EstimateEpic = typeof estimateEpics.$inferSelect;
 export type EstimateStage = typeof estimateStages.$inferSelect;

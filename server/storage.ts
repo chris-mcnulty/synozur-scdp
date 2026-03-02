@@ -1,6 +1,6 @@
 import { 
   users, clients, projects, roles, estimates, estimateLineItems, estimateEpics, estimateStages, 
-  estimateMilestones, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
+  estimateMilestones, estimateShares, clientRateOverrides, estimateRateOverrides, estimateActivities, estimateAllocations, timeEntries, expenses, expenseAttachments, pendingReceipts, changeOrders,
   invoiceBatches, invoiceLines, invoiceAdjustments, rateOverrides, sows, projectBudgetHistory,
   projectEpics, projectStages, projectActivities, projectWorkstreams, projectAllocations, projectEngagements,
   projectMilestones, projectRateOverrides, userRateSchedules, systemSettings, airportCodes, oconusPerDiemRates,
@@ -12,6 +12,7 @@ import {
   type Project, type InsertProject, type Role, type InsertRole,
   type Estimate, type InsertEstimate, type EstimateLineItem, type InsertEstimateLineItem, type EstimateLineItemWithJoins,
   type EstimateEpic, type EstimateStage, type EstimateMilestone, type InsertEstimateMilestone,
+  type EstimateShare, type InsertEstimateShare,
   type ClientRateOverride, type InsertClientRateOverride,
   type EstimateRateOverride, type InsertEstimateRateOverride,
   type TimeEntry, type InsertTimeEntry,
@@ -332,6 +333,13 @@ export interface IStorage {
   updateEstimateMilestone(id: string, milestone: Partial<InsertEstimateMilestone>): Promise<EstimateMilestone>;
   deleteEstimateMilestone(id: string): Promise<void>;
   
+  // Estimate Shares (read-only access)
+  getEstimateShares(estimateId: string): Promise<(EstimateShare & { user: { id: string; name: string; email: string | null }; grantedByUser: { id: string; name: string } })[]>;
+  getEstimateSharesForUser(userId: string): Promise<EstimateShare[]>;
+  createEstimateShare(share: InsertEstimateShare): Promise<EstimateShare>;
+  deleteEstimateShare(estimateId: string, userId: string): Promise<void>;
+  hasEstimateShareAccess(estimateId: string, userId: string): Promise<boolean>;
+
   // Client Rate Overrides
   getClientRateOverrides(clientId: string): Promise<ClientRateOverride[]>;
   createClientRateOverride(override: InsertClientRateOverride): Promise<ClientRateOverride>;
@@ -2271,6 +2279,51 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEstimateMilestone(id: string): Promise<void> {
     await db.delete(estimateMilestones).where(eq(estimateMilestones.id, id));
+  }
+
+  // Estimate Share methods
+  async getEstimateShares(estimateId: string): Promise<(EstimateShare & { user: { id: string; name: string; email: string | null }; grantedByUser: { id: string; name: string } })[]> {
+    const grantedByUsers = alias(users, 'grantedByUsers');
+    const shares = await db.select({
+      share: estimateShares,
+      user: { id: users.id, name: users.name, email: users.email },
+      grantedByUser: { id: grantedByUsers.id, name: grantedByUsers.name },
+    })
+      .from(estimateShares)
+      .innerJoin(users, eq(estimateShares.userId, users.id))
+      .innerJoin(grantedByUsers, eq(estimateShares.grantedBy, grantedByUsers.id))
+      .where(eq(estimateShares.estimateId, estimateId))
+      .orderBy(estimateShares.grantedAt);
+    return shares.map(s => ({ ...s.share, user: s.user, grantedByUser: s.grantedByUser }));
+  }
+
+  async getEstimateSharesForUser(userId: string): Promise<EstimateShare[]> {
+    return await db.select()
+      .from(estimateShares)
+      .where(eq(estimateShares.userId, userId));
+  }
+
+  async createEstimateShare(share: InsertEstimateShare): Promise<EstimateShare> {
+    const existing = await db.select()
+      .from(estimateShares)
+      .where(and(eq(estimateShares.estimateId, share.estimateId), eq(estimateShares.userId, share.userId)))
+      .limit(1);
+    if (existing.length > 0) return existing[0];
+    const [created] = await db.insert(estimateShares).values(share).returning();
+    return created;
+  }
+
+  async deleteEstimateShare(estimateId: string, userId: string): Promise<void> {
+    await db.delete(estimateShares)
+      .where(and(eq(estimateShares.estimateId, estimateId), eq(estimateShares.userId, userId)));
+  }
+
+  async hasEstimateShareAccess(estimateId: string, userId: string): Promise<boolean> {
+    const result = await db.select({ id: estimateShares.id })
+      .from(estimateShares)
+      .where(and(eq(estimateShares.estimateId, estimateId), eq(estimateShares.userId, userId)))
+      .limit(1);
+    return result.length > 0;
   }
 
   // Client Rate Override methods
