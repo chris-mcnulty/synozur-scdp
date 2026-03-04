@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Trash2, BarChart3, List, Check, X, ChevronDown, ChevronUp, ChevronRight, Filter, Wand2, Calculator, AlertTriangle, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Trash2, BarChart3, List, Check, X, ChevronDown, ChevronUp, ChevronRight, Filter, Wand2, Calculator, AlertTriangle, Loader2, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PMWizardDialog } from "@/components/pm-wizard-dialog";
 import type { Estimate, EstimateLineItem, EstimateEpic, EstimateStage } from "@shared/schema";
@@ -421,8 +422,11 @@ export function ProgramEstimateView({
   const [showSummary, setShowSummary] = useState(false);
   const [bulkEditDialog, setBulkEditDialog] = useState(false);
   const [bulkEditData, setBulkEditData] = useState({
-    epicId: "", stageId: "", workstream: "", size: "", complexity: "", confidence: "", rate: "", costRate: "",
+    epicId: "", stageId: "", workstream: "", week: "", size: "", complexity: "", confidence: "", rate: "", costRate: "",
   });
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [assignRolesDialog, setAssignRolesDialog] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState("");
 
   const programBlocks = useMemo(
     () => lineItems
@@ -436,25 +440,39 @@ export function ProgramEstimateView({
     [lineItems]
   );
 
-  // Unique resource names for filter dropdown
   const resourceNames = useMemo(() => {
     const names = new Set<string>();
     programBlocks.forEach((b) => { if (b.resourceName) names.add(b.resourceName); });
     return Array.from(names).sort();
   }, [programBlocks]);
 
+  const weekNumbers = useMemo(() => {
+    const weeks = new Set<number>();
+    programBlocks.forEach((b) => { if (b.week != null) weeks.add(b.week); });
+    return Array.from(weeks).sort((a, b) => a - b);
+  }, [programBlocks]);
+
+  const workstreamNames = useMemo(() => {
+    const names = new Set<string>();
+    programBlocks.forEach((b) => { if (b.workstream) names.add(b.workstream); });
+    return Array.from(names).sort();
+  }, [programBlocks]);
+
   const filteredBlocks = useMemo(() => {
     return programBlocks.filter((b) => {
       const matchesEpic = filterEpic === "all" || b.epicId === filterEpic;
+      const matchesStage = filterStage === "all" || b.stageId === filterStage;
+      const matchesWeek = filterWeek === "all" || String(b.week ?? 0) === filterWeek;
       const matchesResource = filterResource === "all" || b.resourceName === filterResource;
+      const matchesWorkstream = !filterWorkstream || (b.workstream || "").toLowerCase().includes(filterWorkstream.toLowerCase());
       const matchesText = !filterText ||
         (b.description || "").toLowerCase().includes(filterText.toLowerCase()) ||
         (b.resourceName || "").toLowerCase().includes(filterText.toLowerCase());
-      return matchesEpic && matchesResource && matchesText;
+      return matchesEpic && matchesStage && matchesWeek && matchesResource && matchesWorkstream && matchesText;
     });
-  }, [programBlocks, filterEpic, filterResource, filterText]);
+  }, [programBlocks, filterEpic, filterStage, filterWeek, filterResource, filterWorkstream, filterText]);
 
-  const hasFilters = filterEpic !== "all" || filterResource !== "all" || filterText !== "";
+  const hasFilters = filterEpic !== "all" || filterStage !== "all" || filterWeek !== "all" || filterResource !== "all" || filterWorkstream !== "" || filterText !== "";
 
   const epicColorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -549,6 +567,30 @@ export function ProgramEstimateView({
       toast({ title: "Block removed" });
     },
     onError: () => toast({ title: "Failed to remove block", variant: "destructive" }),
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async ({ itemIds, updates }: { itemIds: string[]; updates: any }) => {
+      const promises = itemIds.map(itemId =>
+        apiRequest(`/api/estimates/${estimateId}/line-items/${itemId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        })
+      );
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/estimates', estimateId, 'line-items'] });
+      setSelectedItems(new Set());
+      setBulkEditDialog(false);
+      setAssignRolesDialog(false);
+      setBulkEditData({ epicId: "", stageId: "", workstream: "", week: "", size: "", complexity: "", confidence: "", rate: "", costRate: "" });
+      setSelectedUserId("");
+      toast({ title: "Bulk update completed successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to bulk update", description: error.message || "Please try again", variant: "destructive" });
+    }
   });
 
   const recalculateEstimateMutation = useMutation({
@@ -655,43 +697,80 @@ export function ProgramEstimateView({
         </div>
       </div>
 
-      {/* Filter + Add row */}
+      {/* Filter toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
         <Input
           className="h-7 text-xs w-36"
-          placeholder="Search..."
+          placeholder="Search descriptions..."
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
         />
         <Select value={filterEpic} onValueChange={setFilterEpic}>
-          <SelectTrigger className="h-7 text-xs w-36">
-            <SelectValue placeholder="Epic" />
+          <SelectTrigger className="h-7 text-xs w-32">
+            <SelectValue placeholder="All Epics" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All epics</SelectItem>
+            <SelectItem value="all">All Epics</SelectItem>
             {epics.map((e) => (
               <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterResource} onValueChange={setFilterResource}>
-          <SelectTrigger className="h-7 text-xs w-40">
-            <SelectValue placeholder="Resource" />
+        <Select value={filterStage} onValueChange={setFilterStage}>
+          <SelectTrigger className="h-7 text-xs w-32">
+            <SelectValue placeholder="All Stages" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All resources</SelectItem>
+            <SelectItem value="all">All Stages</SelectItem>
+            {stages.map((s) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterWeek} onValueChange={setFilterWeek}>
+          <SelectTrigger className="h-7 text-xs w-28">
+            <SelectValue placeholder="All Weeks" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Weeks</SelectItem>
+            {weekNumbers.map((w) => (
+              <SelectItem key={w} value={String(w)}>Week {w}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterResource} onValueChange={setFilterResource}>
+          <SelectTrigger className="h-7 text-xs w-36">
+            <SelectValue placeholder="All Resources" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Resources</SelectItem>
             {resourceNames.map((r) => (
               <SelectItem key={r} value={r}>{r}</SelectItem>
             ))}
           </SelectContent>
         </Select>
+        <Input
+          className="h-7 text-xs w-28 hidden md:block"
+          placeholder="Workstream..."
+          value={filterWorkstream}
+          onChange={(e) => setFilterWorkstream(e.target.value)}
+        />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+          <input
+            type="radio"
+            checked={showSummary}
+            onChange={() => setShowSummary(!showSummary)}
+            className="accent-primary"
+          />
+          Summary
+        </label>
         {hasFilters && (
           <Button
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-xs"
-            onClick={() => { setFilterEpic("all"); setFilterResource("all"); setFilterText(""); }}
+            onClick={() => { setFilterEpic("all"); setFilterStage("all"); setFilterWeek("all"); setFilterResource("all"); setFilterWorkstream(""); setFilterText(""); }}
           >
             <X className="h-3 w-3 mr-1" /> Clear
           </Button>
@@ -710,6 +789,26 @@ export function ProgramEstimateView({
           )}
         </div>
       </div>
+
+      {/* Selection bar */}
+      {selectedItems.size > 0 && (
+        <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-sm">{selectedItems.size} items selected</span>
+            <div className="flex gap-2">
+              <Button onClick={() => setBulkEditDialog(true)} size="sm" disabled={!isEditable}>
+                Bulk Edit
+              </Button>
+              <Button onClick={() => setAssignRolesDialog(true)} size="sm" variant="outline" disabled={!isEditable}>
+                <Users className="h-3.5 w-3.5 mr-1" /> Assign Roles/Users
+              </Button>
+              <Button onClick={() => setSelectedItems(new Set())} variant="outline" size="sm">
+                Clear Selection
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Collapsible add form */}
       {showAddForm && isEditable && (
@@ -735,14 +834,24 @@ export function ProgramEstimateView({
             <TableHeader>
               <TableRow>
                 {isEditable && <TableHead className="w-8" />}
-                <TableHead className="text-xs">Role / Resource</TableHead>
+                <TableHead className="w-10 px-2">
+                  <Checkbox
+                    checked={filteredBlocks.length > 0 && filteredBlocks.every(b => selectedItems.has(b.id))}
+                    onCheckedChange={(checked) => {
+                      const newSelection = new Set(selectedItems);
+                      if (checked) {
+                        filteredBlocks.forEach(b => newSelection.add(b.id));
+                      } else {
+                        filteredBlocks.forEach(b => newSelection.delete(b.id));
+                      }
+                      setSelectedItems(newSelection);
+                    }}
+                  />
+                </TableHead>
+                <TableHead className="text-xs">Description</TableHead>
                 <TableHead className="text-xs">Epic / Stage</TableHead>
-                <TableHead className="text-xs">Wk</TableHead>
-                <TableHead className="text-xs">Dur.</TableHead>
-                <TableHead className="text-xs">Util.</TableHead>
-                <TableHead className="text-xs">Hrs/Wk</TableHead>
-                <TableHead className="text-xs">Adj. Hrs</TableHead>
-                <TableHead className="text-xs">Rate</TableHead>
+                <TableHead className="text-xs">Resource</TableHead>
+                <TableHead className="text-xs">Hours</TableHead>
                 <TableHead className="text-xs text-right">Total</TableHead>
                 <TableHead className="text-xs">S/C/C</TableHead>
                 {isEditable && <TableHead className="w-10" />}
@@ -758,14 +867,14 @@ export function ProgramEstimateView({
               )}
               {filteredBlocks.map((block) => {
                 const isEditing = editingId === block.id;
-                const hoursPerWeek = ((block.utilizationPercent || 100) / 100) * 40;
                 const epic = epics.find((e) => e.id === block.epicId);
                 const stage = stages.find((s) => s.id === block.stageId);
                 const epicColor = epic ? epicColorMap.get(epic.id) : undefined;
+                const isSelected = selectedItems.has(block.id);
 
                 return (
                   <Fragment key={block.id}>
-                    <TableRow className={`text-xs ${isEditing ? "bg-muted/40" : ""}`}>
+                    <TableRow className={`text-xs ${isEditing ? "bg-muted/40" : ""} ${isSelected ? "bg-blue-50 dark:bg-blue-950/30" : ""}`}>
                       {isEditable && (
                         <TableCell className="py-2 pl-2 pr-0">
                           <Button
@@ -778,11 +887,22 @@ export function ProgramEstimateView({
                           </Button>
                         </TableCell>
                       )}
+                      <TableCell className="py-2 px-2">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            const newSelected = new Set(selectedItems);
+                            if (checked) { newSelected.add(block.id); } else { newSelected.delete(block.id); }
+                            setSelectedItems(newSelected);
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="py-2">
-                        <span className="font-medium">{block.resourceName || "—"}</span>
+                        <span className="font-medium">{block.description || block.resourceName || "—"}</span>
                         {block.workstream && (
-                          <span className="block text-muted-foreground">{block.workstream}</span>
+                          <span className="block text-muted-foreground">Week {block.week ?? 0}</span>
                         )}
+                        {!block.workstream && <span className="block text-muted-foreground">Week {block.week ?? 0}</span>}
                       </TableCell>
                       <TableCell className="py-2">
                         {epic && (
@@ -792,14 +912,16 @@ export function ProgramEstimateView({
                           </div>
                         )}
                         {stage && <span className="text-muted-foreground block">{stage.name}</span>}
-                        {!epic && !stage && <span className="text-muted-foreground">—</span>}
+                        {block.workstream && <span className="text-muted-foreground block">{block.workstream}</span>}
+                        {!epic && !stage && !block.workstream && <span className="text-muted-foreground">—</span>}
                       </TableCell>
-                      <TableCell className="py-2">{block.week ?? "—"}</TableCell>
-                      <TableCell className="py-2">{block.durationWeeks}w</TableCell>
-                      <TableCell className="py-2">{block.utilizationPercent}%</TableCell>
-                      <TableCell className="py-2">{hoursPerWeek.toFixed(0)}</TableCell>
+                      <TableCell className="py-2">
+                        <span className="font-medium">{block.resourceName || "—"}</span>
+                        {block.roleId && (
+                          <Badge variant="outline" className="ml-1 text-xs px-1 py-0">Role</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="py-2">{Number(block.adjustedHours || 0).toFixed(1)}</TableCell>
-                      <TableCell className="py-2">${Number(block.rate || 0).toLocaleString()}</TableCell>
                       <TableCell className="py-2 text-right font-medium">
                         ${Number(block.totalAmount || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </TableCell>
@@ -842,7 +964,7 @@ export function ProgramEstimateView({
                     </TableRow>
                     {isEditing && (
                       <TableRow key={`${block.id}-edit`}>
-                        <TableCell colSpan={isEditable ? 12 : 10} className="p-0">
+                        <TableCell colSpan={isEditable ? 10 : 8} className="p-0">
                           <FormRow
                             f={editingForm}
                             setF={setEditingForm}
@@ -936,8 +1058,8 @@ export function ProgramEstimateView({
         </div>
       )}
 
-      {/* Week Subtotals */}
-      {(() => {
+      {/* Summary view */}
+      {showSummary && (() => {
         const weekTotals = filteredBlocks.reduce((acc: any, block) => {
           const week = (block.week ?? 0).toString();
           if (!acc[week]) {
@@ -952,29 +1074,64 @@ export function ProgramEstimateView({
 
         const sortedWeeks = Object.entries(weekTotals).sort(([a], [b]) => Number(a) - Number(b));
 
-        if (sortedWeeks.length > 1) {
-          return (
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
-              <h4 className="font-semibold mb-2">Subtotals by Week</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {sortedWeeks.map(([week, data]: [string, any]) => (
-                  <div key={week} className="flex justify-between p-2 bg-white dark:bg-gray-800 rounded border dark:border-gray-700">
-                    <span className="font-medium">Week {week}</span>
-                    <div className="text-right">
-                      <div className="text-sm text-muted-foreground">
-                        {Math.round(data.hours)} hrs ({data.count} blocks)
-                      </div>
-                      <div className="font-semibold">
-                        ${Math.round(data.amount).toLocaleString()}
+        const epicTotals = filteredBlocks.reduce((acc: any, block) => {
+          const epicName = epics.find((e) => e.id === block.epicId)?.name || "Unassigned";
+          if (!acc[epicName]) { acc[epicName] = { hours: 0, amount: 0, count: 0 }; }
+          acc[epicName].hours += Number(block.adjustedHours || 0);
+          acc[epicName].amount += Number(block.totalAmount || 0);
+          acc[epicName].count += 1;
+          return acc;
+        }, {});
+
+        const resourceTotals = filteredBlocks.reduce((acc: any, block) => {
+          const name = block.resourceName || "Unassigned";
+          if (!acc[name]) { acc[name] = { hours: 0, amount: 0, count: 0 }; }
+          acc[name].hours += Number(block.adjustedHours || 0);
+          acc[name].amount += Number(block.totalAmount || 0);
+          acc[name].count += 1;
+          return acc;
+        }, {});
+
+        return (
+          <div className="space-y-4">
+            {sortedWeeks.length > 1 && (
+              <div className="p-4 bg-muted/30 rounded-lg border">
+                <h4 className="font-semibold mb-2 text-sm">Subtotals by Week</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {sortedWeeks.map(([week, data]: [string, any]) => (
+                    <div key={week} className="flex justify-between p-2 bg-background rounded border">
+                      <span className="font-medium text-sm">Week {week}</span>
+                      <div className="text-right">
+                        <div className="text-xs text-muted-foreground">{Math.round(data.hours)} hrs ({data.count} blocks)</div>
+                        <div className="font-semibold text-sm">${Math.round(data.amount).toLocaleString()}</div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-4 bg-muted/30 rounded-lg border">
+                <h4 className="font-semibold mb-2 text-sm">By Epic</h4>
+                {Object.entries(epicTotals).map(([name, data]: [string, any]) => (
+                  <div key={name} className="flex justify-between py-1 border-b last:border-b-0">
+                    <span className="text-sm">{name}</span>
+                    <span className="text-sm font-medium">{Math.round(data.hours)} hrs · ${Math.round(data.amount).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-4 bg-muted/30 rounded-lg border">
+                <h4 className="font-semibold mb-2 text-sm">By Resource</h4>
+                {Object.entries(resourceTotals).map(([name, data]: [string, any]) => (
+                  <div key={name} className="flex justify-between py-1 border-b last:border-b-0">
+                    <span className="text-sm">{name}</span>
+                    <span className="text-sm font-medium">{Math.round(data.hours)} hrs · ${Math.round(data.amount).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
             </div>
-          );
-        }
-        return null;
+          </div>
+        );
       })()}
 
       {/* Totals Summary */}
@@ -991,7 +1148,7 @@ export function ProgramEstimateView({
               <div className="text-sm text-muted-foreground">
                 Blocks Total: ${Math.round(totalAmount).toLocaleString()}
               </div>
-              <div className="text-lg font-semibold text-blue-600">
+              <div className="text-lg font-semibold text-blue-600 dark:text-blue-400">
                 Quote Total: ${Math.round(Number(estimate.presentedTotal)).toLocaleString()}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -1022,7 +1179,7 @@ export function ProgramEstimateView({
               <li>Recalculate adjusted hours, amounts, costs, and margins</li>
               <li>Update estimate totals</li>
             </ul>
-            <p className="text-sm font-medium text-orange-600 mt-4">
+            <p className="text-sm font-medium text-orange-600 dark:text-orange-400 mt-4">
               This will overwrite any manual rate adjustments you may have made.
             </p>
           </div>
@@ -1037,6 +1194,196 @@ export function ProgramEstimateView({
               {recalculateEstimateMutation.isPending ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Recalculating...</>
               ) : "Recalculate All"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Edit Dialog */}
+      <Dialog open={bulkEditDialog} onOpenChange={setBulkEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk Edit Blocks</DialogTitle>
+            <DialogDescription>
+              Edit {selectedItems.size} selected blocks. Only fields with values will be updated.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Epic</Label>
+                <Select value={bulkEditData.epicId} onValueChange={(v) => setBulkEditData({...bulkEditData, epicId: v})}>
+                  <SelectTrigger><SelectValue placeholder="Keep current" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Epic</SelectItem>
+                    {epics.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Stage</Label>
+                <Select value={bulkEditData.stageId} onValueChange={(v) => setBulkEditData({...bulkEditData, stageId: v})}>
+                  <SelectTrigger><SelectValue placeholder="Keep current" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Stage</SelectItem>
+                    {stages.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Workstream</Label>
+                <Input placeholder="Keep current" value={bulkEditData.workstream} onChange={(e) => setBulkEditData({...bulkEditData, workstream: e.target.value})} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Week</Label>
+                <Input type="number" placeholder="Keep current" value={bulkEditData.week} onChange={(e) => setBulkEditData({...bulkEditData, week: e.target.value})} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label>Size</Label>
+                <Select value={bulkEditData.size} onValueChange={(v) => setBulkEditData({...bulkEditData, size: v})}>
+                  <SelectTrigger><SelectValue placeholder="Keep current" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">Small</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="large">Large</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Complexity</Label>
+                <Select value={bulkEditData.complexity} onValueChange={(v) => setBulkEditData({...bulkEditData, complexity: v})}>
+                  <SelectTrigger><SelectValue placeholder="Keep current" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">Simple</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="large">Complex</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Confidence</Label>
+                <Select value={bulkEditData.confidence} onValueChange={(v) => setBulkEditData({...bulkEditData, confidence: v})}>
+                  <SelectTrigger><SelectValue placeholder="Keep current" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Rate ($)</Label>
+                <Input type="number" placeholder="Keep current" value={bulkEditData.rate} onChange={(e) => setBulkEditData({...bulkEditData, rate: e.target.value})} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Cost Rate ($)</Label>
+                <Input type="number" placeholder="Keep current" value={bulkEditData.costRate} onChange={(e) => setBulkEditData({...bulkEditData, costRate: e.target.value})} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkEditDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                const updates: any = {};
+                if (bulkEditData.epicId) updates.epicId = bulkEditData.epicId === "none" ? null : bulkEditData.epicId;
+                if (bulkEditData.stageId) updates.stageId = bulkEditData.stageId === "none" ? null : bulkEditData.stageId;
+                if (bulkEditData.workstream) updates.workstream = bulkEditData.workstream;
+                if (bulkEditData.week) updates.week = String(bulkEditData.week);
+                if (bulkEditData.size) updates.size = bulkEditData.size;
+                if (bulkEditData.complexity) updates.complexity = bulkEditData.complexity;
+                if (bulkEditData.confidence) updates.confidence = bulkEditData.confidence;
+                if (bulkEditData.rate) updates.rate = String(bulkEditData.rate);
+                if (bulkEditData.costRate) updates.costRate = String(bulkEditData.costRate);
+                if (Object.keys(updates).length > 0) {
+                  bulkUpdateMutation.mutate({ itemIds: Array.from(selectedItems), updates });
+                }
+              }}
+              disabled={!isEditable || bulkUpdateMutation.isPending || Object.values(bulkEditData).every(v => !v)}
+            >
+              {bulkUpdateMutation.isPending ? "Updating..." : "Update Selected"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Roles/Users Dialog */}
+      <Dialog open={assignRolesDialog} onOpenChange={setAssignRolesDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Roles/Users</DialogTitle>
+            <DialogDescription>
+              Select a role or user to assign to {selectedItems.size} selected blocks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Resource Assignment</Label>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger><SelectValue placeholder="Select role or user" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Generic Roles</div>
+                  {roles.map((role: any) => (
+                    <SelectItem key={`role-${role.id}`} value={`role-${role.id}`}>
+                      {role.name} (${role.defaultRackRate}/hr)
+                    </SelectItem>
+                  ))}
+                  <div className="px-2 py-1 text-xs font-semibold text-muted-foreground">Specific Staff</div>
+                  {users.filter((u: any) => u.isAssignable).map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name} - {u.role} (${u.defaultBillingRate}/hr)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignRolesDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!selectedUserId) return;
+                let updates: any = {};
+                if (selectedUserId === "unassigned") {
+                  updates = { assignedUserId: null, roleId: null, resourceName: null, rate: "0", costRate: "0" };
+                } else if (selectedUserId.startsWith("role-")) {
+                  const roleId = selectedUserId.substring(5);
+                  const selectedRole = roles.find((r: any) => r.id === roleId);
+                  if (selectedRole) {
+                    updates = {
+                      assignedUserId: null, roleId: selectedRole.id, resourceName: selectedRole.name,
+                      rate: selectedRole.defaultRackRate?.toString() || "0", costRate: selectedRole.defaultCostRate?.toString() || "0"
+                    };
+                  }
+                } else {
+                  const selectedUser = users.find((u: any) => u.id === selectedUserId);
+                  if (selectedUser) {
+                    updates = {
+                      assignedUserId: selectedUser.id, roleId: null, resourceName: selectedUser.name,
+                      rate: selectedUser.defaultBillingRate?.toString() || "0", costRate: selectedUser.defaultCostRate?.toString() || "0"
+                    };
+                  }
+                }
+                if (Object.keys(updates).length > 0) {
+                  bulkUpdateMutation.mutate({ itemIds: Array.from(selectedItems), updates });
+                  setAssignRolesDialog(false);
+                  setSelectedUserId("");
+                }
+              }}
+              disabled={!isEditable || !selectedUserId || bulkUpdateMutation.isPending}
+            >
+              {bulkUpdateMutation.isPending ? "Assigning..." : "Assign"}
             </Button>
           </DialogFooter>
         </DialogContent>
