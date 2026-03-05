@@ -11266,8 +11266,7 @@ Return valid JSON in this exact format:
 
 ${narrative}${existingNote}`;
 
-      const { AIService } = await import('./services/ai-service.js');
-      const aiService = new AIService();
+      const { aiService } = await import('./services/ai-service.js');
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         responseFormat: 'json',
         maxTokens: 2048,
