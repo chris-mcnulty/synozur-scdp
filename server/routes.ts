@@ -3859,18 +3859,33 @@ export async function registerRoutes(app: Express): Promise<void> {
       const srPriorActivities: string[] = [];
       const srCurrentActivities: string[] = [];
       const srUpcomingActivities: string[] = [];
-      const srSortedEpics = Array.from(srEpicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
-      for (const epic of srSortedEpics) {
-        for (const stage of epic.stages) {
-          if (!stage.startDate) continue;
-          const label = `${epic.epicName} > ${stage.name}${stage.assignees.length > 0 ? ` (${stage.assignees.join(', ')})` : ''} [${stage.startDate} to ${stage.endDate}]`;
-          if (stage.endDate < startDate) {
-            srPriorActivities.push(label);
-          } else if (stage.startDate > endDate) {
-            srUpcomingActivities.push(label);
-          } else {
-            srCurrentActivities.push(label);
-          }
+      for (const alloc of allocations) {
+        const taskDesc = (alloc as any).taskDescription || (alloc as any).activity?.name || '';
+        const epicName = (alloc as any).epic?.name || '';
+        const stageName = (alloc as any).stage?.name || '';
+        const personName = (alloc as any).person?.name || (alloc as any).resourceName || '';
+        const roleName = (alloc as any).role?.name || '';
+        const allocStatus = (alloc as any).status || 'open';
+        const allocStart = (alloc as any).plannedStartDate || '';
+        const allocEnd = (alloc as any).plannedEndDate || allocStart;
+        const completedDate = (alloc as any).completedDate || '';
+
+        if (!taskDesc && !epicName) continue;
+
+        const taskLabel = taskDesc || `${epicName}${stageName ? ' > ' + stageName : ''}`;
+        const who = personName ? ` (${personName}${roleName ? ', ' + roleName : ''})` : (roleName ? ` (${roleName})` : '');
+        const dateInfo = allocStart ? ` [${allocStart} to ${allocEnd}]` : '';
+        const context = epicName && taskDesc ? ` — ${epicName}${stageName ? ' > ' + stageName : ''}` : '';
+        const label = `${taskLabel}${who}${context}${dateInfo}`;
+
+        if (allocStatus === 'completed' || (completedDate && completedDate <= endDate)) {
+          srPriorActivities.push(label);
+        } else if (allocStatus === 'in_progress' || (allocStart && allocStart <= endDate && allocEnd >= startDate)) {
+          srCurrentActivities.push(label);
+        } else if (allocStart && allocStart > endDate) {
+          srUpcomingActivities.push(label);
+        } else if (allocStart && allocEnd < startDate) {
+          srPriorActivities.push(label);
         }
       }
 
@@ -3897,7 +3912,7 @@ Format the output as clean markdown with headers (##), bullet points, and bold t
 
 CRITICAL: The RAIDD log (Risks, Action Items, Issues, Decisions, Dependencies) section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items even if the rest of the report is brief.
 
-CRITICAL: Use the PROJECT PLAN and PHASES/STAGES data to populate accomplishments and upcoming activities. Stages completed before or during this period ARE accomplishments — describe them as completed work with business value. Stages scheduled after this period ARE upcoming activities. Even if time entries are sparse, the project plan tells you what work was done and what is planned. NEVER say "no accomplishments" or "no upcoming activities" when project plan data is available.`;
+CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate accomplishments and upcoming activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. Group related tasks into coherent narrative descriptions with business value. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
 
       const userMessage = `Generate a status report for the following project activity:
 
@@ -3929,14 +3944,14 @@ ${completedMilestones}
 PROJECT PLAN (Epics & Stages with scheduled dates):
 ${srProjectPlanSummary}
 
-PHASES/STAGES COMPLETED BEFORE THIS PERIOD (${srPriorActivities.length}):
-${srPriorActivities.length > 0 ? srPriorActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+COMPLETED TASKS — finished before or during this period (${srPriorActivities.length}):
+${srPriorActivities.length > 0 ? srPriorActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
-PHASES/STAGES ACTIVE DURING THIS PERIOD (${srCurrentActivities.length}):
-${srCurrentActivities.length > 0 ? srCurrentActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+IN-PROGRESS TASKS — active during this period (${srCurrentActivities.length}):
+${srCurrentActivities.length > 0 ? srCurrentActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
-PHASES/STAGES UPCOMING AFTER THIS PERIOD (${srUpcomingActivities.length}):
-${srUpcomingActivities.length > 0 ? srUpcomingActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+UPCOMING TASKS — scheduled after this period (${srUpcomingActivities.length}):
+${srUpcomingActivities.length > 0 ? srUpcomingActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
 DELIVERABLES (${deliverables.length} total):
 ${deliverables.length > 0 ? deliverables.map(d => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
@@ -7470,18 +7485,33 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const currentActivities: string[] = [];
       const upcomingActivities: string[] = [];
 
-      const sortedEpics = Array.from(epicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
-      for (const epic of sortedEpics) {
-        for (const stage of epic.stages) {
-          if (!stage.startDate) continue;
-          const label = `${epic.epicName} > ${stage.name}${stage.assignees.length > 0 ? ` (${stage.assignees.join(', ')})` : ''} [${stage.startDate} to ${stage.endDate}]`;
-          if (stage.endDate < periodStart) {
-            priorActivities.push(label);
-          } else if (stage.startDate > periodEnd) {
-            upcomingActivities.push(label);
-          } else {
-            currentActivities.push(label);
-          }
+      for (const alloc of allocations) {
+        const taskDesc = (alloc as any).taskDescription || (alloc as any).activity?.name || '';
+        const epicName = (alloc as any).epic?.name || '';
+        const stageName = (alloc as any).stage?.name || '';
+        const personName = (alloc as any).person?.name || (alloc as any).resourceName || '';
+        const roleName = (alloc as any).role?.name || '';
+        const allocStatus = (alloc as any).status || 'open';
+        const allocStart = (alloc as any).plannedStartDate || '';
+        const allocEnd = (alloc as any).plannedEndDate || allocStart;
+        const completedDate = (alloc as any).completedDate || '';
+
+        if (!taskDesc && !epicName) continue;
+
+        const taskLabel = taskDesc || `${epicName}${stageName ? ' > ' + stageName : ''}`;
+        const who = personName ? ` (${personName}${roleName ? ', ' + roleName : ''})` : (roleName ? ` (${roleName})` : '');
+        const dateInfo = allocStart ? ` [${allocStart} to ${allocEnd}]` : '';
+        const context = epicName && taskDesc ? ` — ${epicName}${stageName ? ' > ' + stageName : ''}` : '';
+        const label = `${taskLabel}${who}${context}${dateInfo}`;
+
+        if (allocStatus === 'completed' || (completedDate && completedDate <= periodEnd)) {
+          priorActivities.push(label);
+        } else if (allocStatus === 'in_progress' || (allocStart && allocStart <= periodEnd && allocEnd >= periodStart)) {
+          currentActivities.push(label);
+        } else if (allocStart && allocStart > periodEnd) {
+          upcomingActivities.push(label);
+        } else if (allocStart && allocEnd < periodStart) {
+          priorActivities.push(label);
         }
       }
 
@@ -7597,7 +7627,7 @@ Format the output as clean markdown with headers (##), bullet points (- ), and *
 
 CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items. Use subsections (- Risks, - Issues, - Decisions, - Action Items, - Dependencies) within the RAIDD section.
 
-CRITICAL: Use the PROJECT PLAN and PHASES/STAGES data to populate Key Accomplishments and Upcoming Activities. Stages completed before or during this period ARE accomplishments — describe them as completed work with business value. Stages scheduled after this period ARE upcoming activities. Even if time entries are sparse, the project plan tells you what work was done and what is planned. NEVER say "no accomplishments" or "no upcoming activities" when project plan data is available.`;
+CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
 
       const userMessage = `Generate a status report for the following project activity:
 
@@ -7629,14 +7659,14 @@ ${completedMilestonesSummary}
 PROJECT PLAN (Epics & Stages with scheduled dates):
 ${projectPlanSummary}
 
-PHASES/STAGES COMPLETED BEFORE THIS PERIOD (${priorActivities.length}):
-${priorActivities.length > 0 ? priorActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+COMPLETED TASKS — finished before or during this period (${priorActivities.length}):
+${priorActivities.length > 0 ? priorActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
-PHASES/STAGES ACTIVE DURING THIS PERIOD (${currentActivities.length}):
-${currentActivities.length > 0 ? currentActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+IN-PROGRESS TASKS — active during this period (${currentActivities.length}):
+${currentActivities.length > 0 ? currentActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
-PHASES/STAGES UPCOMING AFTER THIS PERIOD (${upcomingActivities.length}):
-${upcomingActivities.length > 0 ? upcomingActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+UPCOMING TASKS — scheduled after this period (${upcomingActivities.length}):
+${upcomingActivities.length > 0 ? upcomingActivities.map(a => `- ${a}`).join('\n') : 'None.'}
 
 DELIVERABLES (${pptxDeliverables.length} total):
 ${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}

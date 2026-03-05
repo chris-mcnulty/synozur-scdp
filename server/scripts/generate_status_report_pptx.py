@@ -369,28 +369,38 @@ def create_accomplishments_slide(prs, data, sections, primary_color, secondary_c
                     p = tf.add_paragraph()
                 p.space_before = Pt(6)
                 run = p.add_run()
-                run.text = "Completed Prior to This Period"
+                run.text = f"Completed Tasks ({len(prior)})"
                 set_font(run, size=13, bold=True, color=primary_color)
-                for act in prior:
+                for act in prior[:15]:
                     p2 = tf.add_paragraph()
                     p2.space_before = Pt(3)
                     p2.space_after = Pt(2)
                     run2 = p2.add_run()
-                    run2.text = f"  • {act}"
-                    set_font(run2, size=10)
+                    run2.text = f"  \u2713 {act}"
+                    set_font(run2, size=9)
+                if len(prior) > 15:
+                    p2 = tf.add_paragraph()
+                    run2 = p2.add_run()
+                    run2.text = f"    ... and {len(prior) - 15} more completed tasks"
+                    set_font(run2, size=9, italic=True, color='#666666')
             if current:
                 p = tf.add_paragraph()
                 p.space_before = Pt(10)
                 run = p.add_run()
-                run.text = "Active During This Period"
+                run.text = f"In Progress ({len(current)})"
                 set_font(run, size=13, bold=True, color=primary_color)
-                for act in current:
+                for act in current[:15]:
                     p2 = tf.add_paragraph()
                     p2.space_before = Pt(3)
                     p2.space_after = Pt(2)
                     run2 = p2.add_run()
-                    run2.text = f"  • {act}"
-                    set_font(run2, size=10)
+                    run2.text = f"  \u25B8 {act}"
+                    set_font(run2, size=9)
+                if len(current) > 15:
+                    p2 = tf.add_paragraph()
+                    run2 = p2.add_run()
+                    run2.text = f"    ... and {len(current) - 15} more in-progress tasks"
+                    set_font(run2, size=9, italic=True, color='#666666')
         else:
             p = tf.paragraphs[0]
             run = p.add_run()
@@ -819,18 +829,22 @@ def create_upcoming_slide(prs, data, sections, primary_color, secondary_color):
         activities = data.get('projectActivities', {})
         upcoming = activities.get('upcoming', [])
         if upcoming:
-            first = True
-            for act in upcoming:
-                if first:
-                    p = tf.paragraphs[0]
-                    first = False
-                else:
-                    p = tf.add_paragraph()
-                p.space_before = Pt(5)
-                p.space_after = Pt(2)
-                run = p.add_run()
-                run.text = f"• {act}"
-                set_font(run, size=11)
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = f"Scheduled Tasks ({len(upcoming)})"
+            set_font(run, size=13, bold=True, color=primary_color)
+            for act in upcoming[:18]:
+                p2 = tf.add_paragraph()
+                p2.space_before = Pt(3)
+                p2.space_after = Pt(2)
+                run2 = p2.add_run()
+                run2.text = f"  \u25B8 {act}"
+                set_font(run2, size=9)
+            if len(upcoming) > 18:
+                p2 = tf.add_paragraph()
+                run2 = p2.add_run()
+                run2.text = f"    ... and {len(upcoming) - 18} more scheduled tasks"
+                set_font(run2, size=9, italic=True, color='#666666')
         else:
             p = tf.paragraphs[0]
             run = p.add_run()
