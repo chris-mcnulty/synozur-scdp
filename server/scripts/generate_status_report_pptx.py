@@ -57,8 +57,41 @@ def add_accent_bar(slide, primary_color, left=0, top=0, width=None, height=Inche
     shape.line.fill.background()
     return shape
 
+SECTION_ALIASES = {
+    'Key Accomplishments': [
+        'key accomplishments', 'accomplishments', 'progress & accomplishments',
+        'progress and accomplishments', 'work completed', 'completed work',
+        'key highlights', 'highlights', 'achievements',
+    ],
+    'Progress Summary': [
+        'progress summary', 'executive summary', 'summary', 'overview',
+        'project summary', 'status summary',
+    ],
+    'Upcoming Activities': [
+        'upcoming activities', 'next steps', 'upcoming', 'looking ahead',
+        'next period', 'planned activities', 'upcoming work',
+    ],
+    'Risks, Issues & Key Decisions (RAIDD)': [
+        'risks, issues & key decisions', 'raidd', 'risks and issues',
+        'risks, issues & key decisions (raidd)', 'risk summary',
+        'raidd summary', 'raidd log',
+    ],
+}
+
+def _normalize_section_name(raw_name):
+    """Map a raw AI section header to a canonical section name."""
+    lower = raw_name.lower().strip()
+    lower = re.sub(r'\s*\(.*?\)\s*$', '', lower).strip()
+    for canonical, aliases in SECTION_ALIASES.items():
+        if lower in aliases:
+            return canonical
+        for alias in aliases:
+            if alias in lower or lower in alias:
+                return canonical
+    return raw_name
+
 def parse_markdown_sections(md_text):
-    """Parse AI-generated markdown into structured sections."""
+    """Parse AI-generated markdown into structured sections with fuzzy header matching."""
     sections = {}
     current_section = None
     current_content = []
@@ -67,7 +100,8 @@ def parse_markdown_sections(md_text):
         if line.startswith('## '):
             if current_section:
                 sections[current_section] = '\n'.join(current_content).strip()
-            current_section = line[3:].strip()
+            raw_name = line[3:].strip()
+            current_section = _normalize_section_name(raw_name)
             current_content = []
         else:
             current_content.append(line)
@@ -75,6 +109,7 @@ def parse_markdown_sections(md_text):
     if current_section:
         sections[current_section] = '\n'.join(current_content).strip()
 
+    print(f"[PPTX] Parsed AI sections: {list(sections.keys())}", file=sys.stderr)
     return sections
 
 def parse_bullet_items(text):

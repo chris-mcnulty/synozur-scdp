@@ -7712,6 +7712,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           groundingContext: groundingCtx,
         });
         aiReport = result.content;
+        console.log(`[PPTX] AI report generated: ${aiReport.length} chars, first 200: ${aiReport.substring(0, 200)}`);
       } catch (aiError: any) {
         console.error("AI generation failed for PPTX, using fallback:", aiError.message);
       }
