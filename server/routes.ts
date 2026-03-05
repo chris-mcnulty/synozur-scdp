@@ -3708,12 +3708,13 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(404).json({ message: "Project not found" });
       }
 
-      const [timeEntryData, expenseData, allocations, milestones, raiddData] = await Promise.all([
+      const [timeEntryData, expenseData, allocations, milestones, raiddData, deliverables] = await Promise.all([
         storage.getTimeEntries({ projectId, startDate, endDate }),
         storage.getExpenses({ projectId, startDate, endDate }),
         storage.getProjectAllocations(projectId),
         storage.getProjectMilestones(projectId),
         storage.getRaiddEntries(projectId, {}),
+        storage.getProjectDeliverables(projectId),
       ]);
 
       const totalHours = timeEntryData.reduce((sum, te) => sum + Number(te.hours || 0), 0);
@@ -3845,6 +3846,9 @@ ${activeMilestones}
 
 MILESTONES — Completed:
 ${completedMilestones}
+
+DELIVERABLES (${deliverables.length} total):
+${deliverables.length > 0 ? deliverables.map(d => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
 
 RAIDD LOG — Active Risks (${activeRisks.length}):
 ${riskSummary}
@@ -7250,7 +7254,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const effectiveEndDate = endDate || new Date().toISOString().split('T')[0];
 
       const tenantId = req.user!.tenantId || (project as any).tenantId;
-      const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData, epics] = await Promise.all([
+      const [milestones, raiddEntries, allocations, tenant, timeEntries, expenseData, epics, pptxDeliverables] = await Promise.all([
         storage.getProjectMilestones(req.params.id),
         storage.getRaiddEntries(req.params.id, {}),
         storage.getProjectAllocations(req.params.id),
@@ -7258,6 +7262,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         storage.getTimeEntries({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
         storage.getExpenses({ projectId: req.params.id, startDate: effectiveStartDate, endDate: effectiveEndDate }),
         storage.getProjectEpics(req.params.id),
+        storage.getProjectDeliverables(req.params.id),
       ]);
       const epicIds = epics.map(e => e.id);
       const stagesMap = epicIds.length > 0 ? await storage.getProjectStagesByEpicIds(epicIds) : new Map();
@@ -7459,6 +7464,9 @@ ${activeMilestones}
 MILESTONES — Completed:
 ${completedMilestonesSummary}
 
+DELIVERABLES (${pptxDeliverables.length} total):
+${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
+
 RAIDD LOG — Active Risks (${activeRisks.length}):
 ${riskSummary}
 
@@ -7570,6 +7578,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           endDate: m.endDate || '',
         })),
         raidd: raiddData,
+        deliverables: pptxDeliverables.map((d: any) => ({
+          name: d.name,
+          status: d.status || 'not-started',
+          ownerName: d.ownerName || '',
+          targetDate: d.targetDate || '',
+          deliveredDate: d.deliveredDate || '',
+          description: d.description || '',
+        })),
         metrics: {
           totalHours: totalHours.toFixed(1),
           billableHours: totalBillableHours.toFixed(1),
@@ -10933,6 +10949,207 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     } catch (error: any) {
       console.error("Error importing RAIDD entries:", error);
       res.status(500).json({ message: error.message || "Failed to import RAIDD entries" });
+    }
+  });
+
+  // ============================================================================
+  // PROJECT DELIVERABLES
+  // ============================================================================
+
+  app.get("/api/projects/:projectId/deliverables", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const deliverables = await storage.getProjectDeliverables(req.params.projectId);
+      res.json(deliverables);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch deliverables" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/deliverables", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const deliverable = await storage.createProjectDeliverable({
+        ...req.body,
+        tenantId: project.tenantId || tenantId,
+        projectId: req.params.projectId,
+        createdBy: req.user?.id || null,
+      });
+      res.status(201).json(deliverable);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to create deliverable" });
+    }
+  });
+
+  app.patch("/api/projects/:projectId/deliverables/:deliverableId", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const existing = await storage.getProjectDeliverable(req.params.deliverableId);
+      if (!existing || existing.projectId !== req.params.projectId) {
+        return res.status(404).json({ message: "Deliverable not found" });
+      }
+      const updated = await storage.updateProjectDeliverable(req.params.deliverableId, {
+        ...req.body,
+        createdBy: req.user?.id || null,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update deliverable" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/deliverables/:deliverableId", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const existing = await storage.getProjectDeliverable(req.params.deliverableId);
+      if (!existing || existing.projectId !== req.params.projectId) {
+        return res.status(404).json({ message: "Deliverable not found" });
+      }
+      await storage.deleteProjectDeliverable(req.params.deliverableId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to delete deliverable" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/deliverables/:deliverableId/history", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const history = await storage.getDeliverableStatusHistory(req.params.deliverableId);
+      res.json(history);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch deliverable history" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/deliverables/ai-extract", requireAuth, async (req, res) => {
+    try {
+      const { narrative } = req.body;
+      if (!narrative || typeof narrative !== 'string') {
+        return res.status(400).json({ message: "Narrative text is required" });
+      }
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const existingDeliverables = await storage.getProjectDeliverables(req.params.projectId);
+      const existingNames = existingDeliverables.map(d => d.name.toLowerCase());
+
+      const systemPrompt = `You are a project delivery expert. Analyze the provided project narrative or proposal text and extract all concrete deliverables — tangible outputs, documents, reports, or work products that will be produced during the engagement.
+
+For each deliverable, provide:
+- name: A clear, concise name (e.g., "Current-State Workflow Maps", "Governance Charter Deck")
+- description: A brief description of what this deliverable includes
+- suggestedPhase: Which phase or epic this belongs to (if identifiable)
+
+Rules:
+- Only extract concrete, tangible deliverables — not activities or tasks
+- A deliverable is something that gets "delivered" to the client (a document, report, plan, framework, presentation, etc.)
+- Do not include meetings, workshops, or interviews as deliverables — those are activities
+- Be specific: "Discovery Findings Report" not just "Report"
+- If the narrative mentions phases, associate each deliverable with its phase
+
+Return valid JSON in this exact format:
+{
+  "deliverables": [
+    {
+      "name": "Deliverable Name",
+      "description": "What this deliverable includes and its purpose",
+      "suggestedPhase": "Phase name or null"
+    }
+  ]
+}`;
+
+      const existingNote = existingNames.length > 0
+        ? `\n\nThe following deliverables already exist for this project (do NOT include these again):\n${existingNames.map(n => `- ${n}`).join('\n')}`
+        : '';
+
+      const userMessage = `Analyze this project narrative and extract all concrete deliverables:
+
+${narrative}${existingNote}`;
+
+      const { AIService } = await import('./services/ai-service.js');
+      const aiService = new AIService();
+      const result = await aiService.customPrompt(systemPrompt, userMessage, {
+        responseFormat: 'json',
+        maxTokens: 2048,
+      });
+
+      const parsed = JSON.parse(result.content);
+      const candidates = (parsed.deliverables || []).map((d: any) => ({
+        ...d,
+        isNew: !existingNames.includes(d.name.toLowerCase()),
+      }));
+
+      res.json({ candidates });
+    } catch (error: any) {
+      console.error("AI deliverable extraction error:", error);
+      res.status(500).json({ message: error.message || "Failed to extract deliverables" });
+    }
+  });
+
+  // Bulk create deliverables (used after AI extraction)
+  app.post("/api/projects/:projectId/deliverables/bulk", requireAuth, async (req, res) => {
+    try {
+      const project = await storage.getProject(req.params.projectId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+      const tenantId = req.user?.tenantId;
+      if (tenantId && project.tenantId && project.tenantId !== tenantId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const { deliverables } = req.body;
+      if (!Array.isArray(deliverables) || deliverables.length === 0) {
+        return res.status(400).json({ message: "Deliverables array is required" });
+      }
+      const created = [];
+      for (let i = 0; i < deliverables.length; i++) {
+        const d = deliverables[i];
+        const result = await storage.createProjectDeliverable({
+          tenantId: project.tenantId || tenantId!,
+          projectId: req.params.projectId,
+          name: d.name,
+          description: d.description || null,
+          ownerUserId: d.ownerUserId,
+          epicId: d.epicId || null,
+          stageId: d.stageId || null,
+          status: 'not-started',
+          targetDate: d.targetDate || null,
+          sortOrder: i,
+          createdBy: req.user?.id || null,
+        });
+        created.push(result);
+      }
+      res.status(201).json({ created: created.length, deliverables: created });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to bulk create deliverables" });
     }
   });
 

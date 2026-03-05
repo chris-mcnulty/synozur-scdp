@@ -2918,6 +2918,75 @@ export const insertCrmSyncLogSchema = createInsertSchema(crmSyncLog).omit({
 export type InsertCrmSyncLog = z.infer<typeof insertCrmSyncLogSchema>;
 export type CrmSyncLog = typeof crmSyncLog.$inferSelect;
 
+// ============================================================================
+// PROJECT DELIVERABLES
+// ============================================================================
+
+export const deliverableStatusEnum = z.enum(['not-started', 'in-progress', 'in-review', 'accepted', 'rejected']);
+export type DeliverableStatus = z.infer<typeof deliverableStatusEnum>;
+
+export const projectDeliverables = pgTable("project_deliverables", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id").notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  description: text("description"),
+  ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
+  epicId: varchar("epic_id"),
+  stageId: varchar("stage_id"),
+  status: varchar("status", { length: 20 }).notNull().default('not-started'),
+  targetDate: date("target_date"),
+  deliveredDate: date("delivered_date"),
+  acceptanceNotes: text("acceptance_notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+}, (table) => ({
+  tenantIdx: index("idx_project_deliverables_tenant").on(table.tenantId),
+  projectIdx: index("idx_project_deliverables_project").on(table.projectId),
+  statusIdx: index("idx_project_deliverables_status").on(table.status),
+}));
+
+export const projectDeliverablesRelations = relations(projectDeliverables, ({ one }) => ({
+  project: one(projects, { fields: [projectDeliverables.projectId], references: [projects.id] }),
+  tenant: one(tenants, { fields: [projectDeliverables.tenantId], references: [tenants.id] }),
+  owner: one(users, { fields: [projectDeliverables.ownerUserId], references: [users.id] }),
+  createdByUser: one(users, { fields: [projectDeliverables.createdBy], references: [users.id] }),
+}));
+
+export const insertProjectDeliverableSchema = createInsertSchema(projectDeliverables).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProjectDeliverable = z.infer<typeof insertProjectDeliverableSchema>;
+export type ProjectDeliverable = typeof projectDeliverables.$inferSelect;
+
+export const deliverableStatusHistory = pgTable("deliverable_status_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deliverableId: varchar("deliverable_id").notNull().references(() => projectDeliverables.id, { onDelete: 'cascade' }),
+  oldStatus: varchar("old_status", { length: 20 }),
+  newStatus: varchar("new_status", { length: 20 }).notNull(),
+  changedBy: varchar("changed_by").references(() => users.id),
+  changedAt: timestamp("changed_at").notNull().default(sql`now()`),
+  comments: text("comments"),
+}, (table) => ({
+  deliverableIdx: index("idx_deliverable_status_history_deliverable").on(table.deliverableId),
+}));
+
+export const deliverableStatusHistoryRelations = relations(deliverableStatusHistory, ({ one }) => ({
+  deliverable: one(projectDeliverables, { fields: [deliverableStatusHistory.deliverableId], references: [projectDeliverables.id] }),
+  changedByUser: one(users, { fields: [deliverableStatusHistory.changedBy], references: [users.id] }),
+}));
+
+export const insertDeliverableStatusHistorySchema = createInsertSchema(deliverableStatusHistory).omit({
+  id: true,
+  changedAt: true,
+});
+export type InsertDeliverableStatusHistory = z.infer<typeof insertDeliverableStatusHistorySchema>;
+export type DeliverableStatusHistory = typeof deliverableStatusHistory.$inferSelect;
+
 // Industry preset vocabularies
 export const INDUSTRY_PRESETS: Record<string, Required<VocabularyTerms>> = {
   default: DEFAULT_VOCABULARY,

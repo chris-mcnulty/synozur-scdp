@@ -61,7 +61,9 @@ import {
   supportTicketPlannerSync, type SupportTicketPlannerSync, type InsertSupportTicketPlannerSync,
   crmConnections, type CrmConnection, type InsertCrmConnection,
   crmObjectMappings, type CrmObjectMapping, type InsertCrmObjectMapping,
-  crmSyncLog, type CrmSyncLog, type InsertCrmSyncLog
+  crmSyncLog, type CrmSyncLog, type InsertCrmSyncLog,
+  projectDeliverables, type ProjectDeliverable, type InsertProjectDeliverable,
+  deliverableStatusHistory, type DeliverableStatusHistory, type InsertDeliverableStatusHistory
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ne, desc, and, or, gte, lte, sql, ilike, isNotNull, isNull, inArray, like, type SQL } from "drizzle-orm";
@@ -1066,6 +1068,14 @@ export interface IStorage {
   deleteCrmObjectMapping(id: string): Promise<void>;
   createCrmSyncLog(data: InsertCrmSyncLog): Promise<CrmSyncLog>;
   getCrmSyncLogs(tenantId: string, provider: string, limit?: number): Promise<CrmSyncLog[]>;
+
+  getProjectDeliverables(projectId: string): Promise<(ProjectDeliverable & { ownerName?: string })[]>;
+  getProjectDeliverable(id: string): Promise<ProjectDeliverable | undefined>;
+  createProjectDeliverable(data: InsertProjectDeliverable): Promise<ProjectDeliverable>;
+  updateProjectDeliverable(id: string, updates: Partial<InsertProjectDeliverable>): Promise<ProjectDeliverable>;
+  deleteProjectDeliverable(id: string): Promise<void>;
+  getDeliverableStatusHistory(deliverableId: string): Promise<(DeliverableStatusHistory & { changedByName?: string })[]>;
+  createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -11821,6 +11831,78 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(crmSyncLog.tenantId, tenantId), eq(crmSyncLog.crmProvider, provider)))
       .orderBy(desc(crmSyncLog.createdAt))
       .limit(limit);
+  }
+
+  async getProjectDeliverables(projectId: string): Promise<(ProjectDeliverable & { ownerName?: string })[]> {
+    const ownerAlias = alias(users, "owner");
+    const results = await db
+      .select({
+        deliverable: projectDeliverables,
+        ownerName: ownerAlias.name,
+      })
+      .from(projectDeliverables)
+      .leftJoin(ownerAlias, eq(projectDeliverables.ownerUserId, ownerAlias.id))
+      .where(eq(projectDeliverables.projectId, projectId))
+      .orderBy(projectDeliverables.sortOrder, projectDeliverables.createdAt);
+    return results.map(r => ({ ...r.deliverable, ownerName: r.ownerName || undefined }));
+  }
+
+  async getProjectDeliverable(id: string): Promise<ProjectDeliverable | undefined> {
+    const [result] = await db.select().from(projectDeliverables).where(eq(projectDeliverables.id, id));
+    return result;
+  }
+
+  async createProjectDeliverable(data: InsertProjectDeliverable): Promise<ProjectDeliverable> {
+    const [result] = await db.insert(projectDeliverables).values(data).returning();
+    await db.insert(deliverableStatusHistory).values({
+      deliverableId: result.id,
+      oldStatus: null,
+      newStatus: result.status,
+      changedBy: data.createdBy || null,
+      comments: "Deliverable created",
+    });
+    return result;
+  }
+
+  async updateProjectDeliverable(id: string, updates: Partial<InsertProjectDeliverable>): Promise<ProjectDeliverable> {
+    const existing = await this.getProjectDeliverable(id);
+    const [result] = await db.update(projectDeliverables)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projectDeliverables.id, id))
+      .returning();
+    if (existing && existing.status !== result.status) {
+      await db.insert(deliverableStatusHistory).values({
+        deliverableId: id,
+        oldStatus: existing.status,
+        newStatus: result.status,
+        changedBy: updates.createdBy || null,
+        comments: null,
+      });
+    }
+    return result;
+  }
+
+  async deleteProjectDeliverable(id: string): Promise<void> {
+    await db.delete(projectDeliverables).where(eq(projectDeliverables.id, id));
+  }
+
+  async getDeliverableStatusHistory(deliverableId: string): Promise<(DeliverableStatusHistory & { changedByName?: string })[]> {
+    const changedByAlias = alias(users, "changedByUser");
+    const results = await db
+      .select({
+        history: deliverableStatusHistory,
+        changedByName: changedByAlias.name,
+      })
+      .from(deliverableStatusHistory)
+      .leftJoin(changedByAlias, eq(deliverableStatusHistory.changedBy, changedByAlias.id))
+      .where(eq(deliverableStatusHistory.deliverableId, deliverableId))
+      .orderBy(desc(deliverableStatusHistory.changedAt));
+    return results.map(r => ({ ...r.history, changedByName: r.changedByName || undefined }));
+  }
+
+  async createDeliverableStatusHistory(data: InsertDeliverableStatusHistory): Promise<DeliverableStatusHistory> {
+    const [result] = await db.insert(deliverableStatusHistory).values(data).returning();
+    return result;
   }
 }
 

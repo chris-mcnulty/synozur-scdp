@@ -1080,6 +1080,98 @@ def create_project_plan_slides(prs, data, primary_color, secondary_color):
             y_cursor += ROW_HEIGHT
 
 
+def create_deliverables_slide(prs, data, primary_color, secondary_color):
+    """Deliverables tracking slide with status table."""
+    deliverables = data.get('deliverables', [])
+    if not deliverables:
+        return None
+
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "Deliverables Tracker"
+    set_font(run, size=22, bold=True, color=primary_color)
+
+    total = len(deliverables)
+    accepted = sum(1 for d in deliverables if d.get('status') == 'accepted')
+    in_progress = sum(1 for d in deliverables if d.get('status') == 'in-progress')
+    in_review = sum(1 for d in deliverables if d.get('status') == 'in-review')
+    not_started = sum(1 for d in deliverables if d.get('status') == 'not-started')
+    rejected = sum(1 for d in deliverables if d.get('status') == 'rejected')
+
+    summary_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.95), Inches(12), Inches(0.35))
+    stf = summary_box.text_frame
+    sp = stf.paragraphs[0]
+    summary_parts = [f"{total} Total"]
+    if accepted:
+        summary_parts.append(f"{accepted} Accepted")
+    if in_review:
+        summary_parts.append(f"{in_review} In Review")
+    if in_progress:
+        summary_parts.append(f"{in_progress} In Progress")
+    if not_started:
+        summary_parts.append(f"{not_started} Not Started")
+    if rejected:
+        summary_parts.append(f"{rejected} Rejected")
+    srun = sp.add_run()
+    srun.text = "  |  ".join(summary_parts)
+    set_font(srun, size=10, bold=False, color='#666666')
+
+    cols = 5
+    col_widths = [Inches(4.0), Inches(2.0), Inches(1.8), Inches(2.5), Inches(2.5)]
+    table_top = Inches(1.4)
+    max_rows = min(len(deliverables), 15)
+    rows = max_rows + 1
+
+    table_shape = slide.shapes.add_table(rows, cols, Inches(0.3), table_top, sum(col_widths), Inches(0.35 * rows))
+    table = table_shape.table
+    for i, w in enumerate(col_widths):
+        table.columns[i].width = w
+
+    headers = ['Deliverable', 'Owner', 'Status', 'Target Date', 'Delivered Date']
+    for i, h in enumerate(headers):
+        set_cell_text(table.cell(0, i), h, size=9, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
+
+    status_colors = {
+        'accepted': '#22C55E',
+        'in-review': '#3B82F6',
+        'in-progress': '#F59E0B',
+        'not-started': '#9CA3AF',
+        'rejected': '#EF4444',
+    }
+
+    for row_idx, d in enumerate(deliverables[:max_rows]):
+        r = row_idx + 1
+        bg = '#FFFFFF' if r % 2 == 1 else '#F8F8FC'
+        name = d.get('name', '')
+        if len(name) > 50:
+            name = name[:47] + '...'
+        set_cell_text(table.cell(r, 0), name, size=8, bg_color=bg)
+        set_cell_text(table.cell(r, 1), d.get('ownerName', ''), size=8, bg_color=bg)
+
+        status = d.get('status', 'not-started')
+        status_label = status.replace('-', ' ').title()
+        s_color = status_colors.get(status, '#9CA3AF')
+        set_cell_text(table.cell(r, 2), status_label, size=8, bold=True, color=s_color, bg_color=bg)
+
+        set_cell_text(table.cell(r, 3), d.get('targetDate', ''), size=8, bg_color=bg)
+        set_cell_text(table.cell(r, 4), d.get('deliveredDate', ''), size=8, bg_color=bg)
+
+    if len(deliverables) > max_rows:
+        note_box = slide.shapes.add_textbox(Inches(0.5), Inches(7.0), Inches(12), Inches(0.3))
+        ntf = note_box.text_frame
+        np = ntf.paragraphs[0]
+        nrun = np.add_run()
+        nrun.text = f"Showing {max_rows} of {len(deliverables)} deliverables."
+        set_font(nrun, size=8, italic=True, color='#999999')
+
+    return slide
+
+
 def generate_pptx(data, output_path):
     primary_color = data.get('primaryColor', '#810FFB')
     secondary_color = data.get('secondaryColor', '#E60CB3')
@@ -1096,6 +1188,7 @@ def generate_pptx(data, output_path):
     create_accomplishments_slide(prs, data, sections, primary_color, secondary_color)
     create_raidd_slide(prs, data, sections, primary_color, secondary_color)
     create_upcoming_slide(prs, data, sections, primary_color, secondary_color)
+    create_deliverables_slide(prs, data, primary_color, secondary_color)
     create_timeline_slide(prs, data, primary_color, secondary_color)
     create_project_plan_slides(prs, data, primary_color, secondary_color)
 

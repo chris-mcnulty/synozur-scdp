@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link, useLocation, useSearch } from "wouter";
 import { Layout } from "@/components/layout/layout";
 import { RaiddLogTab } from "@/components/raidd-log-tab";
+import { DeliverablesTab } from "@/components/project/deliverables-tab";
 import { Button } from "@/components/ui/button";
 
 // Error Boundary for catching render errors
@@ -241,7 +242,7 @@ export default function ProjectDetail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
   
-  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd'];
+  const validTabs = ['overview', 'analytics', 'delivery', 'contracts', 'time', 'invoices', 'raidd', 'deliverables'];
   
   const selectedTab = useMemo(() => {
     const params = new URLSearchParams(searchString);
@@ -2111,6 +2112,7 @@ export default function ProjectDetail() {
                 )}
                 <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
                 <TabsTrigger value="raidd" data-testid="tab-raidd">RAIDD</TabsTrigger>
+                <TabsTrigger value="deliverables" data-testid="tab-deliverables">Deliverables</TabsTrigger>
               </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -4434,6 +4436,15 @@ export default function ProjectDetail() {
 
           <TabsContent value="raidd" className="space-y-6">
             <RaiddLogTab
+              projectId={id || ''}
+              projectTeamMembers={engagements
+                .filter((e: any) => e.status === 'active' && e.user)
+                .map((e: any) => ({ id: e.user.id, name: e.user.name || e.user.email }))}
+            />
+          </TabsContent>
+
+          <TabsContent value="deliverables" className="space-y-6">
+            <DeliverablesTab
               projectId={id || ''}
               projectTeamMembers={engagements
                 .filter((e: any) => e.status === 'active' && e.user)
