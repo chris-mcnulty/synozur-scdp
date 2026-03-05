@@ -7635,17 +7635,44 @@ CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provi
 
 CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
 
-      const maxTasksForAI = 15;
-      const truncateList = (items: string[], max: number) => {
-        if (items.length <= max) return items.map(a => `- ${a}`).join('\n');
-        return items.slice(0, max).map(a => `- ${a}`).join('\n') + `\n  ... and ${items.length - max} more`;
+      const buildCompactTaskList = (allocs: any[], statusFilter: (a: any) => boolean) => {
+        const grouped = new Map<string, string[]>();
+        for (const alloc of allocs) {
+          const taskDesc = (alloc as any).taskDescription || (alloc as any).activity?.name || '';
+          const epicName = (alloc as any).epic?.name || '';
+          const stageName = (alloc as any).stage?.name || '';
+          const personName = (alloc as any).person?.name || (alloc as any).resourceName || '';
+          const allocStatus = (alloc as any).status || 'open';
+          const allocStart = (alloc as any).plannedStartDate || '';
+          const allocEnd = (alloc as any).plannedEndDate || allocStart;
+          const completedDate = (alloc as any).completedDate || '';
+
+          if (!taskDesc && !epicName) continue;
+          if (!statusFilter({ allocStatus, allocStart, allocEnd, completedDate, periodStart, periodEnd: effectiveEndDate })) continue;
+
+          const key = epicName || 'General';
+          const task = taskDesc || stageName || 'Task';
+          const person = personName ? ` (${personName.split(' ')[0]})` : '';
+          if (!grouped.has(key)) grouped.set(key, []);
+          grouped.get(key)!.push(`${task}${person}`);
+        }
+        if (grouped.size === 0) return 'None.';
+        return Array.from(grouped.entries()).map(([epic, tasks]) =>
+          `  ${epic}: ${tasks.join('; ')}`
+        ).join('\n');
       };
-      const shortenTask = (label: string) => {
-        return label.replace(/\s*\[\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\]\s*$/, '');
-      };
-      const shortPrior = priorActivities.map(shortenTask);
-      const shortCurrent = currentActivities.map(shortenTask);
-      const shortUpcoming = upcomingActivities.map(shortenTask);
+
+      const compactCompleted = buildCompactTaskList(allocations, (a) =>
+        a.allocStatus === 'completed' || (a.completedDate && a.completedDate <= a.periodEnd) || (a.allocStart && a.allocEnd < a.periodStart)
+      );
+      const compactInProgress = buildCompactTaskList(allocations, (a) =>
+        a.allocStatus !== 'completed' && !(a.completedDate && a.completedDate <= a.periodEnd) &&
+        (a.allocStatus === 'in_progress' || (a.allocStart && a.allocStart <= a.periodEnd && a.allocEnd >= a.periodStart))
+      );
+      const compactUpcoming = buildCompactTaskList(allocations, (a) =>
+        a.allocStatus !== 'completed' && !(a.completedDate && a.completedDate <= a.periodEnd) &&
+        a.allocStatus !== 'in_progress' && a.allocStart && a.allocStart > a.periodEnd
+      );
 
       const userMessage = `Generate a status report for the following project activity:
 
@@ -7670,17 +7697,17 @@ ${activeMilestones}
 MILESTONES — Completed:
 ${completedMilestonesSummary}
 
-COMPLETED TASKS (${priorActivities.length} total):
-${shortPrior.length > 0 ? truncateList(shortPrior, maxTasksForAI) : 'None.'}
+COMPLETED TASKS (${priorActivities.length} total, grouped by epic):
+${compactCompleted}
 
-IN-PROGRESS TASKS (${currentActivities.length} total):
-${shortCurrent.length > 0 ? truncateList(shortCurrent, maxTasksForAI) : 'None.'}
+IN-PROGRESS TASKS (${currentActivities.length} total, grouped by epic):
+${compactInProgress}
 
-UPCOMING TASKS (${upcomingActivities.length} total):
-${shortUpcoming.length > 0 ? truncateList(shortUpcoming, maxTasksForAI) : 'None.'}
+UPCOMING TASKS (${upcomingActivities.length} total, grouped by epic):
+${compactUpcoming}
 
 DELIVERABLES (${pptxDeliverables.length} total):
-${pptxDeliverables.length > 0 ? pptxDeliverables.slice(0, 10).map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''}`).join('\n') : 'No deliverables tracked.'}
+${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''}`).join('\n') : 'No deliverables tracked.'}
 
 RAIDD LOG — Active Risks (${activeRisks.length}):
 ${riskSummary}
