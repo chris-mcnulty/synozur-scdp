@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Clock, Pencil, X, Check, XCircle } from "lucide-react";
+import { Loader2, Plus, ArrowLeft, Send, LifeBuoy, Clock, Pencil, X, Check, XCircle, AlertCircle, CheckCircle2, Shield } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import {
   AlertDialog,
@@ -347,6 +347,7 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
   });
 
   const isOwner = ticket && user && ticket.author?.id === user.id;
+  const isAdmin = user && ['admin', 'billing-admin', 'constellation_admin', 'global_admin'].includes(user.role);
   const canEdit = isOwner && ticket.status !== 'resolved' && ticket.status !== 'closed';
 
   const sendReply = useMutation({
@@ -466,38 +467,42 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
             #{ticket.ticketNumber}
           </p>
         </div>
-        {canEdit && !isEditing && (
+        {(canEdit || (isAdmin && ticket.status !== 'closed')) && !isEditing && (
           <div className="flex gap-2 shrink-0">
-            <Button variant="outline" size="sm" onClick={startEditing} data-testid="button-edit-ticket">
-              <Pencil className="h-3.5 w-3.5 mr-1.5" />
-              Edit
-            </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" data-testid="button-close-ticket">
-                  <XCircle className="h-3.5 w-3.5 mr-1.5" />
-                  Close Ticket
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Close this ticket?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will close ticket #{ticket.ticketNumber}. You won't be able to edit it after closing. Are you sure?
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => closeTicket.mutate()}
-                    disabled={closeTicket.isPending}
-                  >
-                    {closeTicket.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={startEditing} data-testid="button-edit-ticket">
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                Edit
+              </Button>
+            )}
+            {ticket.status !== 'closed' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" data-testid="button-close-ticket">
+                    <XCircle className="h-3.5 w-3.5 mr-1.5" />
                     Close Ticket
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Close this ticket?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will close ticket #{ticket.ticketNumber}. You won't be able to edit it after closing. Are you sure?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => closeTicket.mutate()}
+                      disabled={closeTicket.isPending}
+                    >
+                      {closeTicket.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Close Ticket
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         )}
         {isEditing && (
@@ -574,6 +579,72 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
         </CardContent>
       </Card>
 
+      {isAdmin && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Admin Actions</span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <div className="min-w-[160px]">
+                <label className="text-xs text-muted-foreground mb-1 block">Status</label>
+                <Select
+                  value={ticket.status}
+                  onValueChange={(value) => updateTicket.mutate({ status: value })}
+                >
+                  <SelectTrigger data-testid="trigger-admin-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                        Open
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="in_progress">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
+                        In Progress
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="resolved">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                        Resolved
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="closed">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                        Closed
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[130px]">
+                <label className="text-xs text-muted-foreground mb-1 block">Priority</label>
+                <Select
+                  value={ticket.priority}
+                  onValueChange={(value) => updateTicket.mutate({ priority: value })}
+                >
+                  <SelectTrigger data-testid="trigger-admin-priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="space-y-4">
         <h2 className="text-lg font-medium">Replies</h2>
 
@@ -620,7 +691,7 @@ function TicketDetail({ ticketId, onBack }: { ticketId: string; onBack: () => vo
           </div>
         )}
 
-        {ticket.status !== 'resolved' && ticket.status !== 'closed' && (
+        {(isAdmin || (ticket.status !== 'resolved' && ticket.status !== 'closed')) && (
           <div className="flex items-start gap-3">
             <Textarea
               value={replyText}
