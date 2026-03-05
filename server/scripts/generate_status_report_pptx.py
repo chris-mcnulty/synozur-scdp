@@ -355,10 +355,47 @@ def create_accomplishments_slide(prs, data, sections, primary_color, secondary_c
                 run3.text = f"    – {sub}"
                 set_font(run3, size=9, color='#444444')
     else:
-        p = tf.paragraphs[0]
-        run = p.add_run()
-        run.text = "No accomplishments data available for this period."
-        set_font(run, size=11, color='#888888')
+        activities = data.get('projectActivities', {})
+        prior = activities.get('prior', [])
+        current = activities.get('current', [])
+        has_fallback = prior or current
+        if has_fallback:
+            first = True
+            if prior:
+                if first:
+                    p = tf.paragraphs[0]
+                    first = False
+                else:
+                    p = tf.add_paragraph()
+                p.space_before = Pt(6)
+                run = p.add_run()
+                run.text = "Completed Prior to This Period"
+                set_font(run, size=13, bold=True, color=primary_color)
+                for act in prior:
+                    p2 = tf.add_paragraph()
+                    p2.space_before = Pt(3)
+                    p2.space_after = Pt(2)
+                    run2 = p2.add_run()
+                    run2.text = f"  • {act}"
+                    set_font(run2, size=10)
+            if current:
+                p = tf.add_paragraph()
+                p.space_before = Pt(10)
+                run = p.add_run()
+                run.text = "Active During This Period"
+                set_font(run, size=13, bold=True, color=primary_color)
+                for act in current:
+                    p2 = tf.add_paragraph()
+                    p2.space_before = Pt(3)
+                    p2.space_after = Pt(2)
+                    run2 = p2.add_run()
+                    run2.text = f"  • {act}"
+                    set_font(run2, size=10)
+        else:
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = "No accomplishments data available for this period."
+            set_font(run, size=11, color='#888888')
 
     return slide
 
@@ -779,10 +816,26 @@ def create_upcoming_slide(prs, data, sections, primary_color, secondary_color):
                 run3.text = f"    – {sub}"
                 set_font(run3, size=9, color='#444444')
     else:
-        p = tf.paragraphs[0]
-        run = p.add_run()
-        run.text = "No upcoming activities data available."
-        set_font(run, size=11, color='#888888')
+        activities = data.get('projectActivities', {})
+        upcoming = activities.get('upcoming', [])
+        if upcoming:
+            first = True
+            for act in upcoming:
+                if first:
+                    p = tf.paragraphs[0]
+                    first = False
+                else:
+                    p = tf.add_paragraph()
+                p.space_before = Pt(5)
+                p.space_after = Pt(2)
+                run = p.add_run()
+                run.text = f"• {act}"
+                set_font(run, size=11)
+        else:
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = "No upcoming activities data available."
+            set_font(run, size=11, color='#888888')
 
     return slide
 

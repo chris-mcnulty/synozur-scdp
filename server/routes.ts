@@ -3895,7 +3895,9 @@ export async function registerRoutes(app: Express): Promise<void> {
 
 Format the output as clean markdown with headers (##), bullet points, and bold text for emphasis. Do not include a title header — the system will add the project name and period.
 
-CRITICAL: The RAIDD log (Risks, Action Items, Issues, Decisions, Dependencies) section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items even if the rest of the report is brief.`;
+CRITICAL: The RAIDD log (Risks, Action Items, Issues, Decisions, Dependencies) section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items even if the rest of the report is brief.
+
+CRITICAL: Use the PROJECT PLAN and PHASES/STAGES data to populate accomplishments and upcoming activities. Stages completed before or during this period ARE accomplishments — describe them as completed work with business value. Stages scheduled after this period ARE upcoming activities. Even if time entries are sparse, the project plan tells you what work was done and what is planned. NEVER say "no accomplishments" or "no upcoming activities" when project plan data is available.`;
 
       const userMessage = `Generate a status report for the following project activity:
 
@@ -7593,7 +7595,9 @@ Keep the tone positive, professional, and value-focused. Target 600-900 words.`,
 
 Format the output as clean markdown with headers (##), bullet points (- ), and **bold text** for emphasis. Each bullet point under Key Accomplishments and Upcoming Activities MUST have a **bold title** followed by a description.
 
-CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items. Use subsections (- Risks, - Issues, - Decisions, - Action Items, - Dependencies) within the RAIDD section.`;
+CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provided in the data. Never skip, consolidate, or omit individual RAIDD items. Use subsections (- Risks, - Issues, - Decisions, - Action Items, - Dependencies) within the RAIDD section.
+
+CRITICAL: Use the PROJECT PLAN and PHASES/STAGES data to populate Key Accomplishments and Upcoming Activities. Stages completed before or during this period ARE accomplishments — describe them as completed work with business value. Stages scheduled after this period ARE upcoming activities. Even if time entries are sparse, the project plan tells you what work was done and what is planned. NEVER say "no accomplishments" or "no upcoming activities" when project plan data is available.`;
 
       const userMessage = `Generate a status report for the following project activity:
 
@@ -7710,6 +7714,12 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         })),
       };
 
+      const projectActivities = {
+        prior: priorActivities,
+        current: currentActivities,
+        upcoming: upcomingActivities,
+      };
+
       let logoPath: string | null = null;
       const logoUrl = (tenant as any)?.logoUrl;
       if (logoUrl) {
@@ -7739,6 +7749,7 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         secondaryColor,
         logoPath,
         aiReport,
+        projectActivities,
         milestonePosture,
         milestones: milestones.map((m: any) => ({
           name: m.name,
