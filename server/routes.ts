@@ -3808,6 +3808,83 @@ export async function registerRoutes(app: Express): Promise<void> {
         overdueActionItems: activeActionItems.filter(r => r.dueDate && new Date(r.dueDate) < new Date()).length,
       };
 
+      // Build project plan context for AI
+      const srEpics = await storage.getProjectEpics(projectId);
+      const srEpicIds = srEpics.map(e => e.id);
+      const srStagesMap = srEpicIds.length > 0 ? await storage.getProjectStagesByEpicIds(srEpicIds) : new Map();
+      const srAllStages: Array<any> = [];
+      for (const epic of srEpics) {
+        const stages = srStagesMap.get(epic.id) || [];
+        for (const stage of stages) {
+          srAllStages.push({ ...stage, epicId: epic.id });
+        }
+      }
+
+      const srStageDateMap = new Map<string, { startDate: string; endDate: string; assignees: string[] }>();
+      for (const alloc of allocations) {
+        const sid = (alloc as any).projectStageId;
+        if (!sid || !(alloc as any).plannedStartDate) continue;
+        const aStart = (alloc as any).plannedStartDate;
+        const aEnd = (alloc as any).plannedEndDate || aStart;
+        const existing = srStageDateMap.get(sid);
+        const assigneeName = (alloc as any).userName || (alloc as any).user?.name || '';
+        if (!existing) {
+          srStageDateMap.set(sid, { startDate: aStart, endDate: aEnd, assignees: assigneeName ? [assigneeName] : [] });
+        } else {
+          if (aStart < existing.startDate) existing.startDate = aStart;
+          if (aEnd > existing.endDate) existing.endDate = aEnd;
+          if (assigneeName && !existing.assignees.includes(assigneeName)) existing.assignees.push(assigneeName);
+        }
+      }
+
+      const srEpicStageMap = new Map<string, { epicName: string; epicOrder: number; stages: Array<{ name: string; order: number; startDate: string; endDate: string; assignees: string[] }> }>();
+      for (const epic of srEpics) {
+        srEpicStageMap.set(epic.id, { epicName: epic.name, epicOrder: epic.order, stages: [] });
+      }
+      for (const stage of srAllStages) {
+        const epicEntry = srEpicStageMap.get(stage.epicId);
+        if (epicEntry) {
+          const dates = srStageDateMap.get(stage.id);
+          epicEntry.stages.push({
+            name: stage.name,
+            order: stage.order,
+            startDate: dates?.startDate || '',
+            endDate: dates?.endDate || '',
+            assignees: dates?.assignees || [],
+          });
+        }
+      }
+      srEpicStageMap.forEach(e => e.stages.sort((a, b) => a.order - b.order));
+
+      const srPriorActivities: string[] = [];
+      const srCurrentActivities: string[] = [];
+      const srUpcomingActivities: string[] = [];
+      const srSortedEpics = Array.from(srEpicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
+      for (const epic of srSortedEpics) {
+        for (const stage of epic.stages) {
+          if (!stage.startDate) continue;
+          const label = `${epic.epicName} > ${stage.name}${stage.assignees.length > 0 ? ` (${stage.assignees.join(', ')})` : ''} [${stage.startDate} to ${stage.endDate}]`;
+          if (stage.endDate < startDate) {
+            srPriorActivities.push(label);
+          } else if (stage.startDate > endDate) {
+            srUpcomingActivities.push(label);
+          } else {
+            srCurrentActivities.push(label);
+          }
+        }
+      }
+
+      const srProjectPlanSummary = srEpics.length > 0
+        ? srSortedEpics.map(e => {
+            const stageList = e.stages.map(s => {
+              const dateRange = s.startDate ? ` [${s.startDate} to ${s.endDate}]` : ' [no dates]';
+              const team = s.assignees.length > 0 ? ` — ${s.assignees.join(', ')}` : '';
+              return `    - ${s.name}${dateRange}${team}`;
+            }).join('\n');
+            return `  ${e.epicName}:\n${stageList || '    (no stages)'}`;
+          }).join('\n')
+        : 'No project plan defined.';
+
       const styleInstructions: Record<string, string> = {
         executive_brief: "Write a concise executive summary (3-5 paragraphs). Focus on key accomplishments, risks, issues, and next steps. Use bullet points for highlights. Keep it to roughly 400-600 words. This is for senior leadership who want a quick overview. You MUST include a dedicated 'RAIDD Summary' section that lists all active Risks, Issues, open Action Items, active Dependencies, and recent Decisions from the RAIDD log data provided. Highlight any critical or high-priority items prominently. Do not omit or summarize away individual RAIDD entries — list each one.",
         detailed_update: "Write a comprehensive project status update with clear sections: Summary, Work Completed, Team Activity, Expenses, Milestones, and Next Steps. You MUST include a dedicated 'RAIDD Log' section with subsections for each category: Risks, Issues, Action Items, Dependencies, and Decisions. List every active entry from the RAIDD log data provided — include its reference number, title, priority, status, owner, and due date where available. Include mitigation plans for risks and resolution notes for issues. Do not omit or summarize away any RAIDD entries. This is for project managers and internal stakeholders. Target 600-1000 words.",
@@ -3846,6 +3923,18 @@ ${activeMilestones}
 
 MILESTONES — Completed:
 ${completedMilestones}
+
+PROJECT PLAN (Epics & Stages with scheduled dates):
+${srProjectPlanSummary}
+
+PHASES/STAGES COMPLETED BEFORE THIS PERIOD (${srPriorActivities.length}):
+${srPriorActivities.length > 0 ? srPriorActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+
+PHASES/STAGES ACTIVE DURING THIS PERIOD (${srCurrentActivities.length}):
+${srCurrentActivities.length > 0 ? srCurrentActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+
+PHASES/STAGES UPCOMING AFTER THIS PERIOD (${srUpcomingActivities.length}):
+${srUpcomingActivities.length > 0 ? srUpcomingActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
 
 DELIVERABLES (${deliverables.length} total):
 ${deliverables.length > 0 ? deliverables.map(d => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
@@ -7336,6 +7425,75 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const activeTeamCount = allocations.filter((a: any) => a.status === "open" || a.status === "in_progress").length;
       const completedAllocationsCount = allocations.filter((a: any) => a.status === "completed").length;
 
+      // Build project plan context for AI — categorize epics/stages by timing relative to report period
+      const stageDateMap = new Map<string, { startDate: string; endDate: string; assignees: string[] }>();
+      for (const alloc of allocations) {
+        const sid = (alloc as any).projectStageId;
+        if (!sid || !(alloc as any).plannedStartDate) continue;
+        const aStart = (alloc as any).plannedStartDate;
+        const aEnd = (alloc as any).plannedEndDate || aStart;
+        const existing = stageDateMap.get(sid);
+        const assigneeName = (alloc as any).userName || (alloc as any).user?.name || '';
+        if (!existing) {
+          stageDateMap.set(sid, { startDate: aStart, endDate: aEnd, assignees: assigneeName ? [assigneeName] : [] });
+        } else {
+          if (aStart < existing.startDate) existing.startDate = aStart;
+          if (aEnd > existing.endDate) existing.endDate = aEnd;
+          if (assigneeName && !existing.assignees.includes(assigneeName)) existing.assignees.push(assigneeName);
+        }
+      }
+
+      const epicStageMap = new Map<string, { epicName: string; epicOrder: number; stages: Array<{ name: string; order: number; startDate: string; endDate: string; assignees: string[] }> }>();
+      for (const epic of epics) {
+        epicStageMap.set(epic.id, { epicName: epic.name, epicOrder: epic.order, stages: [] });
+      }
+      for (const stage of allStages) {
+        const epicEntry = epicStageMap.get(stage.epicId);
+        if (epicEntry) {
+          const dates = stageDateMap.get(stage.id);
+          epicEntry.stages.push({
+            name: stage.name,
+            order: stage.order,
+            startDate: dates?.startDate || '',
+            endDate: dates?.endDate || '',
+            assignees: dates?.assignees || [],
+          });
+        }
+      }
+      epicStageMap.forEach(e => e.stages.sort((a, b) => a.order - b.order));
+
+      const periodStart = effectiveStartDate;
+      const periodEnd = effectiveEndDate;
+      const priorActivities: string[] = [];
+      const currentActivities: string[] = [];
+      const upcomingActivities: string[] = [];
+
+      const sortedEpics = Array.from(epicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
+      for (const epic of sortedEpics) {
+        for (const stage of epic.stages) {
+          if (!stage.startDate) continue;
+          const label = `${epic.epicName} > ${stage.name}${stage.assignees.length > 0 ? ` (${stage.assignees.join(', ')})` : ''} [${stage.startDate} to ${stage.endDate}]`;
+          if (stage.endDate < periodStart) {
+            priorActivities.push(label);
+          } else if (stage.startDate > periodEnd) {
+            upcomingActivities.push(label);
+          } else {
+            currentActivities.push(label);
+          }
+        }
+      }
+
+      const projectPlanSummary = epics.length > 0
+        ? sortedEpics.map(e => {
+            const stageList = e.stages.map(s => {
+              const dateRange = s.startDate ? ` [${s.startDate} to ${s.endDate}]` : ' [no dates]';
+              const team = s.assignees.length > 0 ? ` — ${s.assignees.join(', ')}` : '';
+              return `    - ${s.name}${dateRange}${team}`;
+            }).join('\n');
+            return `  ${e.epicName}:\n${stageList || '    (no stages)'}`;
+          }).join('\n')
+        : 'No project plan defined.';
+
       const openStatuses = ["open", "in_progress"];
       const raiddByType = {
         risks: raiddEntries.filter(r => r.type === "risk"),
@@ -7463,6 +7621,18 @@ ${activeMilestones}
 
 MILESTONES — Completed:
 ${completedMilestonesSummary}
+
+PROJECT PLAN (Epics & Stages with scheduled dates):
+${projectPlanSummary}
+
+PHASES/STAGES COMPLETED BEFORE THIS PERIOD (${priorActivities.length}):
+${priorActivities.length > 0 ? priorActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+
+PHASES/STAGES ACTIVE DURING THIS PERIOD (${currentActivities.length}):
+${currentActivities.length > 0 ? currentActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
+
+PHASES/STAGES UPCOMING AFTER THIS PERIOD (${upcomingActivities.length}):
+${upcomingActivities.length > 0 ? upcomingActivities.map(a => `- ${a}`).join('\n') : 'None identified.'}
 
 DELIVERABLES (${pptxDeliverables.length} total):
 ${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
