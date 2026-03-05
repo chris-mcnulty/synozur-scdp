@@ -7707,13 +7707,13 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         const groundingCtx = buildGroundingContext(groundingDocs, 'status_report');
 
         const maxTokensByStyle: Record<string, number> = {
-          executive_brief: 4096,
-          detailed_update: 8192,
-          client_facing: 4096,
+          executive_brief: 8192,
+          detailed_update: 16384,
+          client_facing: 8192,
         };
         const result = await aiService.customPrompt(systemPrompt, userMessage, {
           temperature: 0.6,
-          maxTokens: maxTokensByStyle[reportStyle] || 4096,
+          maxTokens: maxTokensByStyle[reportStyle] || 8192,
           groundingContext: groundingCtx,
         });
         aiReport = result.content;
