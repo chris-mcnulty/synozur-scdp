@@ -362,17 +362,211 @@ def create_accomplishments_slide(prs, data, sections, primary_color, secondary_c
 
     return slide
 
-def create_raidd_slide(prs, data, sections, primary_color, secondary_color):
-    """Slide 4: RAIDD Log with AI narrative and structured data."""
+PRIORITY_COLORS = {
+    'critical': '#DC2626',
+    'high': '#EA580C',
+    'medium': '#CA8A04',
+    'low': '#16A34A',
+}
+
+STATUS_COLORS = {
+    'open': '#3B82F6',
+    'in_progress': '#F59E0B',
+    'mitigated': '#8B5CF6',
+    'resolved': '#22C55E',
+    'closed': '#6B7280',
+    'deferred': '#9CA3AF',
+    'superseded': '#9CA3AF',
+    'accepted': '#22C55E',
+}
+
+RAIDD_OPEN_STATUSES = ('open', 'in_progress')
+
+
+def _classify_raidd(raidd_raw):
+    """Classify flat raidd array into typed buckets."""
+    buckets = {
+        'risk': [],
+        'action_item': [],
+        'issue': [],
+        'decision': [],
+        'dependency': [],
+    }
+    if isinstance(raidd_raw, list):
+        for entry in raidd_raw:
+            t = entry.get('type', '')
+            if t in buckets:
+                buckets[t].append(entry)
+    elif isinstance(raidd_raw, dict):
+        buckets['risk'] = raidd_raw.get('risks', [])
+        buckets['issue'] = raidd_raw.get('issues', [])
+        buckets['action_item'] = raidd_raw.get('actionItems', [])
+        buckets['decision'] = raidd_raw.get('decisions', [])
+        buckets['dependency'] = raidd_raw.get('dependencies', [])
+    return buckets
+
+
+def _priority_sort_key(entry):
+    order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+    return order.get(entry.get('priority', 'medium'), 2)
+
+
+def _add_raidd_table_slide(prs, title_text, subtitle_text, entries, columns, col_widths, primary_color, secondary_color, page_num=None, total_pages=None):
+    """Create a single RAIDD category slide with a structured table."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     add_accent_bar(slide, primary_color, top=0)
 
-    txBox = slide.shapes.add_textbox(Inches(0.8), Inches(0.3), Inches(10), Inches(0.6))
+    page_label = f" ({page_num}/{total_pages})" if total_pages and total_pages > 1 else ""
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.25), Inches(10), Inches(0.5))
     tf = txBox.text_frame
     p = tf.paragraphs[0]
     run = p.add_run()
-    run.text = "Risks, Issues & Key Decisions (RAIDD)"
+    run.text = f"{title_text}{page_label}"
+    set_font(run, size=20, bold=True, color=primary_color)
+
+    if subtitle_text and page_num in (1, None):
+        sub_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.72), Inches(12), Inches(0.3))
+        stf = sub_box.text_frame
+        sp = stf.paragraphs[0]
+        srun = sp.add_run()
+        srun.text = subtitle_text
+        set_font(srun, size=9, color='#888888')
+
+    table_top = Inches(1.05) if (subtitle_text and page_num in (1, None)) else Inches(0.85)
+    max_rows_per_page = 14
+    display_entries = entries[:max_rows_per_page]
+    rows = len(display_entries) + 1
+    cols = len(columns)
+
+    table_shape = slide.shapes.add_table(rows, cols, Inches(0.2), table_top, sum(col_widths), Inches(0.38 * rows))
+    table = table_shape.table
+    for i, w in enumerate(col_widths):
+        table.columns[i].width = w
+
+    for i, (header, _) in enumerate(columns):
+        set_cell_text(table.cell(0, i), header, size=8, bold=True, color='#FFFFFF', bg_color=primary_color, alignment=PP_ALIGN.LEFT)
+
+    for row_idx, entry in enumerate(display_entries):
+        r = row_idx + 1
+        bg = '#FFFFFF' if r % 2 == 1 else '#F5F5FA'
+        for col_idx, (_, extractor) in enumerate(columns):
+            val, cell_opts = extractor(entry)
+            color = cell_opts.get('color', None)
+            bold = cell_opts.get('bold', False)
+            set_cell_text(table.cell(r, col_idx), val, size=7, bold=bold, color=color, bg_color=bg, alignment=PP_ALIGN.LEFT)
+
+    return slide
+
+
+def _truncate(text, max_len=60):
+    if not text:
+        return ''
+    return text[:max_len - 3] + '...' if len(text) > max_len else text
+
+
+def create_raidd_slides(prs, data, sections, primary_color, secondary_color):
+    """Generate RAIDD slides: a summary slide followed by per-category table slides."""
+    raidd_raw = data.get('raidd', [])
+    buckets = _classify_raidd(raidd_raw)
+
+    open_statuses = RAIDD_OPEN_STATUSES
+
+    risks = sorted(buckets['risk'], key=_priority_sort_key)
+    actions = sorted(buckets['action_item'], key=_priority_sort_key)
+    issues = sorted(buckets['issue'], key=_priority_sort_key)
+    decisions = buckets['decision']
+    dependencies = sorted(buckets['dependency'], key=_priority_sort_key)
+
+    active_risks = [e for e in risks if e.get('status') in open_statuses]
+    active_issues = [e for e in issues if e.get('status') in open_statuses]
+    active_actions = [e for e in actions if e.get('status') in open_statuses]
+    active_deps = [e for e in dependencies if e.get('status') in open_statuses]
+    total_active = len(active_risks) + len(active_issues) + len(active_actions) + len(active_deps)
+
+    critical_count = sum(1 for e in (active_risks + active_issues + active_actions + active_deps) if e.get('priority') == 'critical')
+    high_count = sum(1 for e in (active_risks + active_issues + active_actions + active_deps) if e.get('priority') == 'high')
+
+    overdue_actions = [e for e in active_actions if e.get('dueDate') and e['dueDate'] < datetime.now().strftime('%Y-%m-%d')]
+
+    # --- RAIDD Summary Slide ---
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_accent_bar(slide, primary_color, top=0)
+
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.25), Inches(10), Inches(0.5))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = "RAIDD Log Overview"
     set_font(run, size=22, bold=True, color=primary_color)
+
+    categories_summary = [
+        ('Risks', len(active_risks), len(risks), '#DC2626'),
+        ('Action Items', len(active_actions), len(actions), '#EA580C'),
+        ('Issues', len(active_issues), len(issues), '#CA8A04'),
+        ('Decisions', len(decisions), len(decisions), '#3B82F6'),
+        ('Dependencies', len(active_deps), len(dependencies), '#8B5CF6'),
+    ]
+
+    card_y = Inches(0.95)
+    card_w = Inches(2.3)
+    card_h = Inches(1.1)
+    card_gap = Inches(0.25)
+    start_x = Inches(0.5)
+
+    for idx, (cat_name, active_count, total_count, accent) in enumerate(categories_summary):
+        x = start_x + idx * (card_w + card_gap)
+        card_bg = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, card_y, card_w, card_h)
+        card_bg.fill.solid()
+        card_bg.fill.fore_color.rgb = hex_to_rgb('#F8F8FC')
+        card_bg.line.color.rgb = hex_to_rgb('#E5E5EA')
+        card_bg.line.width = Pt(0.5)
+
+        accent_bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, card_y, card_w, Inches(0.05))
+        accent_bar.fill.solid()
+        accent_bar.fill.fore_color.rgb = hex_to_rgb(accent)
+        accent_bar.line.fill.background()
+
+        num_box = slide.shapes.add_textbox(x + Inches(0.15), card_y + Inches(0.15), card_w - Inches(0.3), Inches(0.5))
+        ntf = num_box.text_frame
+        np = ntf.paragraphs[0]
+        np.alignment = PP_ALIGN.LEFT
+        nrun = np.add_run()
+        nrun.text = str(active_count)
+        set_font(nrun, size=28, bold=True, color=accent)
+
+        label_box = slide.shapes.add_textbox(x + Inches(0.15), card_y + Inches(0.65), card_w - Inches(0.3), Inches(0.35))
+        ltf = label_box.text_frame
+        lp = ltf.paragraphs[0]
+        lp.alignment = PP_ALIGN.LEFT
+        lrun = lp.add_run()
+        lrun.text = f"{cat_name}"
+        set_font(lrun, size=10, bold=True, color='#333333')
+        if total_count != active_count:
+            lrun2 = lp.add_run()
+            lrun2.text = f"  ({total_count} total)"
+            set_font(lrun2, size=8, color='#888888')
+
+    alert_y = card_y + card_h + Inches(0.3)
+    alerts = []
+    if critical_count > 0:
+        alerts.append(f"⚠ {critical_count} CRITICAL item{'s' if critical_count != 1 else ''} require immediate attention")
+    if high_count > 0:
+        alerts.append(f"▲ {high_count} HIGH priority item{'s' if high_count != 1 else ''}")
+    if overdue_actions:
+        alerts.append(f"⏰ {len(overdue_actions)} overdue action item{'s' if len(overdue_actions) != 1 else ''}")
+
+    if alerts:
+        alert_box = slide.shapes.add_textbox(Inches(0.5), alert_y, Inches(12), Inches(0.6))
+        atf = alert_box.text_frame
+        atf.word_wrap = True
+        for i, alert_text in enumerate(alerts):
+            ap = atf.paragraphs[0] if i == 0 else atf.add_paragraph()
+            ap.space_before = Pt(2)
+            arun = ap.add_run()
+            arun.text = alert_text
+            color = '#DC2626' if 'CRITICAL' in alert_text else ('#EA580C' if 'HIGH' in alert_text else '#B45309')
+            set_font(arun, size=10, bold=True, color=color)
+        alert_y += Inches(0.15) * len(alerts) + Inches(0.3)
 
     raidd_section_text = ''
     for key in sections:
@@ -380,75 +574,161 @@ def create_raidd_slide(prs, data, sections, primary_color, secondary_color):
             raidd_section_text = sections[key]
             break
 
-    content_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.0), Inches(12.3), Inches(6.0))
-    tf = content_box.text_frame
-    tf.word_wrap = True
-
     if raidd_section_text:
-        render_markdown_text(tf, raidd_section_text, primary_color, size=9)
-    else:
-        raidd = data.get('raidd', {})
-        categories = [
-            ('Risks', raidd.get('risks', [])),
-            ('Issues', raidd.get('issues', [])),
-            ('Action Items', raidd.get('actionItems', [])),
-            ('Decisions', raidd.get('decisions', [])),
-            ('Dependencies', raidd.get('dependencies', [])),
-        ]
+        narrative_y = alert_y if alerts else card_y + card_h + Inches(0.3)
+        narrative_box = slide.shapes.add_textbox(Inches(0.5), narrative_y, Inches(12.3), Inches(7.0 - narrative_y / Inches(1)))
+        ntf = narrative_box.text_frame
+        ntf.word_wrap = True
+        render_markdown_text(ntf, raidd_section_text, primary_color, size=9)
 
-        first = True
-        for cat_name, entries in categories:
-            active_entries = [e for e in entries if e.get('status', '') in ('open', 'in_progress')]
-            display = active_entries if active_entries else entries
+    # --- Per-category detail slides ---
+    max_rows_per_page = 14
 
-            if first:
-                p = tf.paragraphs[0]
-                first = False
-            else:
-                p = tf.add_paragraph()
-                p.space_before = Pt(8)
+    def _priority_cell(entry):
+        p = entry.get('priority', '')
+        return (p.upper() if p else '—', {'color': PRIORITY_COLORS.get(p, '#888888'), 'bold': True})
 
-            run = p.add_run()
-            run.text = cat_name
-            set_font(run, size=11, bold=True, color=primary_color)
+    def _status_cell(entry):
+        s = entry.get('status', '')
+        label = s.replace('_', ' ').title() if s else '—'
+        return (label, {'color': STATUS_COLORS.get(s, '#888888'), 'bold': True})
 
-            if not display:
-                p2 = tf.add_paragraph()
-                run2 = p2.add_run()
-                run2.text = f"  No active {cat_name.lower()} at this time."
-                set_font(run2, size=9, color='#888888')
-            else:
-                for entry in display:
-                    p2 = tf.add_paragraph()
-                    p2.space_before = Pt(2)
-                    ref = entry.get('refNumber', '')
-                    title = entry.get('title', '')
-                    priority = entry.get('priority', '')
-                    status = entry.get('status', '')
-                    owner = entry.get('ownerName', '')
-                    due = entry.get('dueDate', '')
-                    priority_tag = f" [{priority.upper()}]" if priority else ''
+    def _owner_cell(entry):
+        return (entry.get('ownerName', '') or entry.get('assigneeName', '') or '—', {})
 
-                    run2 = p2.add_run()
-                    run2.text = f"  {ref} {title}{priority_tag} ({status})"
-                    set_font(run2, size=9, bold=True)
+    def _ref_cell(entry):
+        return (entry.get('refNumber', '') or '—', {'bold': True})
 
-                    details = []
-                    if owner:
-                        details.append(f"Owner: {owner}")
-                    if due:
-                        details.append(f"Due: {due}")
-                    mitigation = entry.get('mitigationPlan', '')
-                    if mitigation:
-                        details.append(f"Mitigation: {mitigation}")
+    def _title_cell(entry):
+        return (_truncate(entry.get('title', ''), 55), {})
 
-                    if details:
-                        p3 = tf.add_paragraph()
-                        run3 = p3.add_run()
-                        run3.text = f"    {'; '.join(details)}"
-                        set_font(run3, size=8, color='#555555')
+    def _due_cell(entry):
+        d = entry.get('dueDate', '')
+        if d and d < datetime.now().strftime('%Y-%m-%d') and entry.get('status') in RAIDD_OPEN_STATUSES:
+            return (d, {'color': '#DC2626', 'bold': True})
+        return (d or '—', {})
 
-    return slide
+    def _desc_cell(entry):
+        return (_truncate(entry.get('description', '') or entry.get('mitigationPlan', '') or '', 80), {})
+
+    def _impact_cell(entry):
+        imp = entry.get('impact', '')
+        return (imp.title() if imp else '—', {'color': PRIORITY_COLORS.get(imp, '#888888')})
+
+    def _likelihood_cell(entry):
+        lk = entry.get('likelihood', '')
+        return (lk.replace('_', ' ').title() if lk else '—', {})
+
+    def _mitigation_cell(entry):
+        return (_truncate(entry.get('mitigationPlan', '') or '', 70), {})
+
+    def _resolution_cell(entry):
+        return (_truncate(entry.get('resolutionNotes', '') or '', 70), {})
+
+    def _paginate_category(entries, title, subtitle, columns, col_widths):
+        if not entries:
+            return
+        pages = []
+        for i in range(0, len(entries), max_rows_per_page):
+            pages.append(entries[i:i + max_rows_per_page])
+
+        total_pages = len(pages)
+        for page_idx, page_entries in enumerate(pages):
+            _add_raidd_table_slide(
+                prs, title, subtitle, page_entries,
+                columns, col_widths, primary_color, secondary_color,
+                page_num=page_idx + 1, total_pages=total_pages,
+            )
+
+    # Risks table
+    if risks:
+        active_label = f"{len(active_risks)} active" if active_risks else "None active"
+        _paginate_category(
+            risks,
+            "Risks",
+            f"{len(risks)} total  |  {active_label}  |  {sum(1 for r in active_risks if r.get('priority') == 'critical')} critical",
+            [
+                ('Ref', _ref_cell),
+                ('Risk', _title_cell),
+                ('Priority', _priority_cell),
+                ('Impact', _impact_cell),
+                ('Likelihood', _likelihood_cell),
+                ('Status', _status_cell),
+                ('Owner', _owner_cell),
+                ('Mitigation', _mitigation_cell),
+            ],
+            [Inches(0.7), Inches(2.8), Inches(0.9), Inches(0.8), Inches(1.0), Inches(1.0), Inches(1.3), Inches(4.2)],
+        )
+
+    # Action Items table
+    if actions:
+        overdue_label = f"  |  {len(overdue_actions)} overdue" if overdue_actions else ""
+        _paginate_category(
+            actions,
+            "Action Items",
+            f"{len(actions)} total  |  {len(active_actions)} open{overdue_label}",
+            [
+                ('Ref', _ref_cell),
+                ('Action', _title_cell),
+                ('Priority', _priority_cell),
+                ('Status', _status_cell),
+                ('Assignee', _owner_cell),
+                ('Due Date', _due_cell),
+                ('Notes', _desc_cell),
+            ],
+            [Inches(0.7), Inches(3.0), Inches(0.9), Inches(1.0), Inches(1.5), Inches(1.1), Inches(4.5)],
+        )
+
+    # Issues table
+    if issues:
+        _paginate_category(
+            issues,
+            "Issues",
+            f"{len(issues)} total  |  {len(active_issues)} active",
+            [
+                ('Ref', _ref_cell),
+                ('Issue', _title_cell),
+                ('Priority', _priority_cell),
+                ('Status', _status_cell),
+                ('Owner', _owner_cell),
+                ('Resolution', _resolution_cell),
+            ],
+            [Inches(0.7), Inches(3.2), Inches(0.9), Inches(1.0), Inches(1.5), Inches(5.4)],
+        )
+
+    # Decisions table
+    if decisions:
+        _paginate_category(
+            decisions,
+            "Decisions",
+            f"{len(decisions)} total",
+            [
+                ('Ref', _ref_cell),
+                ('Decision', _title_cell),
+                ('Status', _status_cell),
+                ('Owner', _owner_cell),
+                ('Resolution / Rationale', _resolution_cell),
+            ],
+            [Inches(0.7), Inches(3.5), Inches(1.0), Inches(1.5), Inches(6.0)],
+        )
+
+    # Dependencies table
+    if dependencies:
+        _paginate_category(
+            dependencies,
+            "Dependencies",
+            f"{len(dependencies)} total  |  {len(active_deps)} active",
+            [
+                ('Ref', _ref_cell),
+                ('Dependency', _title_cell),
+                ('Priority', _priority_cell),
+                ('Status', _status_cell),
+                ('Owner', _owner_cell),
+                ('Due Date', _due_cell),
+                ('Notes', _desc_cell),
+            ],
+            [Inches(0.7), Inches(3.0), Inches(0.9), Inches(1.0), Inches(1.5), Inches(1.1), Inches(4.5)],
+        )
 
 def create_upcoming_slide(prs, data, sections, primary_color, secondary_color):
     """Slide 5: Upcoming Activities with AI narrative."""
@@ -1186,7 +1466,7 @@ def generate_pptx(data, output_path):
     create_title_slide(prs, data, primary_color, secondary_color)
     create_progress_summary_slide(prs, data, sections, primary_color, secondary_color)
     create_accomplishments_slide(prs, data, sections, primary_color, secondary_color)
-    create_raidd_slide(prs, data, sections, primary_color, secondary_color)
+    create_raidd_slides(prs, data, sections, primary_color, secondary_color)
     create_upcoming_slide(prs, data, sections, primary_color, secondary_color)
     create_deliverables_slide(prs, data, primary_color, secondary_color)
     create_timeline_slide(prs, data, primary_color, secondary_color)
