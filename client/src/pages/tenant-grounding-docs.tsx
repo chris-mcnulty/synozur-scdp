@@ -150,10 +150,16 @@ export default function TenantGroundingDocs() {
       const sid = getSessionId();
       if (sid) headers['x-session-id'] = sid;
       const response = await fetch(endpoint, { method: "POST", body: formData, credentials: "include", headers });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ message: `Server error: ${response.status}` }));
+        throw new Error(errData.message || `Server error: ${response.status}`);
+      }
       const data = await response.json();
       if (data.text) {
         form.setValue("content", data.text);
         toast({ title: "File parsed successfully", description: `Extracted ${data.text.length} characters` });
+      } else {
+        throw new Error("No text content could be extracted from the file.");
       }
     } catch (error: any) {
       toast({ title: "Failed to parse file", description: error.message, variant: "destructive" });
