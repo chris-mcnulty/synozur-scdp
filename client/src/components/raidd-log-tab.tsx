@@ -72,10 +72,10 @@ interface RaiddLogTabProps {
 
 const RAIDD_TYPES = [
   { value: "risk", label: "Risk", icon: Shield },
+  { value: "action_item", label: "Action Item", icon: CheckSquare },
   { value: "issue", label: "Issue", icon: AlertTriangle },
   { value: "decision", label: "Decision", icon: Scale },
   { value: "dependency", label: "Dependency", icon: Link2 },
-  { value: "action_item", label: "Action Item", icon: CheckSquare },
 ] as const;
 
 const RAIDD_STATUSES = [
@@ -560,10 +560,10 @@ export function RaiddLogTab({ projectId, projectTeamMembers = [] }: RaiddLogTabP
             <CardTitle className="text-lg font-semibold text-gray-900 dark:text-gray-100">RAIDD Log</CardTitle>
             <div className="flex gap-1.5">
               {summaryCounts.R > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">R:{summaryCounts.R}</Badge>}
+              {summaryCounts.A > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">A:{summaryCounts.A}</Badge>}
               {summaryCounts.I > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">I:{summaryCounts.I}</Badge>}
               {summaryCounts.D > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">D:{summaryCounts.D}</Badge>}
               {summaryCounts.Dep > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">Dep:{summaryCounts.Dep}</Badge>}
-              {summaryCounts.A > 0 && <Badge variant="outline" className="text-xs px-1.5 py-0">A:{summaryCounts.A}</Badge>}
             </div>
           </div>
           <div className="flex gap-2">
