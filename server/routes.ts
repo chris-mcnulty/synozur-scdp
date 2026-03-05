@@ -10837,7 +10837,7 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
-  app.delete("/api/raidd/:id", requireAuth, requireRole(["admin", "pm"]), async (req, res) => {
+  app.delete("/api/raidd/:id", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
     try {
       const entry = await storage.getRaiddEntry(req.params.id);
       if (!entry) return res.status(404).json({ message: "RAIDD entry not found" });
