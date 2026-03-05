@@ -6365,24 +6365,22 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         return res.status(404).json({ message: "Project not found" });
       }
 
-      // Check user permissions - only allow admin, billing-admin, pm, portfolio-manager, and executive roles
       const user = req.user!;
       const allowedRoles = ["admin", "billing-admin", "pm", "portfolio-manager", "executive"];
-
-      // Check if user has an allowed role
       const hasAllowedRole = allowedRoles.includes(user.role);
-
-      // For PMs, also check if they are the PM of this specific project
-      const isProjectPM = user.role === "pm" && project.pm === user.id;
+      const isProjectPM = project.pm === user.id;
 
       if (!hasAllowedRole && !isProjectPM) {
-        return res.status(403).json({ 
-          message: "You don't have permission to view analytics for this project" 
-        });
+        const userAllocations = await storage.getProjectAllocations(req.params.id);
+        const isAssigned = userAllocations.some((a: any) => a.personId === user.id);
+        if (!isAssigned) {
+          return res.status(403).json({ 
+            message: "You don't have permission to view this project"
+          });
+        }
       }
 
-      // Additional check for PMs - they can only see their own projects (portfolio-managers can see all)
-      if (user.role === "pm" && project.pm !== user.id) {
+      if (user.role === "pm" && !isProjectPM && user.role !== "portfolio-manager") {
         return res.status(403).json({ 
           message: "You can only view analytics for projects you manage" 
         });
