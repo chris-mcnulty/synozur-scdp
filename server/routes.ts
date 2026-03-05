@@ -11526,14 +11526,16 @@ Return valid JSON in this exact format:
         ? `\n\nThe following deliverables already exist for this project (do NOT include these again):\n${existingNames.map(n => `- ${n}`).join('\n')}`
         : '';
 
+      const trimmedNarrative = narrative.length > 30000 ? narrative.substring(0, 30000) + '\n\n[... remainder truncated for length]' : narrative;
+
       const userMessage = `Analyze this project narrative and extract all concrete deliverables:
 
-${narrative}${existingNote}`;
+${trimmedNarrative}${existingNote}`;
 
       const { aiService } = await import('./services/ai-service.js');
       const result = await aiService.customPrompt(systemPrompt, userMessage, {
         responseFormat: 'json',
-        maxTokens: 2048,
+        maxTokens: 4096,
       });
 
       const parsed = JSON.parse(result.content);
