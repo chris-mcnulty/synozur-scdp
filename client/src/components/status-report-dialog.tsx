@@ -103,11 +103,18 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const generateMutation = useMutation({
     mutationFn: async () => {
       const { start, end } = getDateRange();
-      const res = await apiRequest(`/api/projects/${projectId}/status-report`, {
-        method: "POST",
-        body: JSON.stringify({ startDate: start, endDate: end, style }),
-      });
-      return res;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
+      try {
+        const res = await apiRequest(`/api/projects/${projectId}/status-report`, {
+          method: "POST",
+          body: JSON.stringify({ startDate: start, endDate: end, style }),
+          signal: controller.signal,
+        });
+        return res;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     },
     onSuccess: (data: { report: string; metadata: ReportMetadata }) => {
       setReportContent(data.report);
@@ -186,6 +193,8 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
       setIsDownloadingPptx(true);
       const { start, end } = getDateRange();
       const sessionId = localStorage.getItem('sessionId');
+      const pptxController = new AbortController();
+      const pptxTimeoutId = setTimeout(() => pptxController.abort(), 180000);
       const response = await fetch(`/api/projects/${projectId}/export-pptx`, {
         method: 'POST',
         credentials: 'include',
@@ -200,7 +209,9 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
           includeProjectPlan,
           projectPlanFilter,
         }),
+        signal: pptxController.signal,
       });
+      clearTimeout(pptxTimeoutId);
       if (!response.ok) throw new Error('Export failed');
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);

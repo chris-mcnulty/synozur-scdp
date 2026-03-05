@@ -3691,6 +3691,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // Generate AI-powered status report for a project
   app.post("/api/projects/:projectId/status-report", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), async (req, res) => {
+    req.setTimeout(180000);
+    res.setTimeout(180000);
     try {
       const { projectId } = req.params;
       const user = req.user as any;
@@ -3888,6 +3890,8 @@ export async function registerRoutes(app: Express): Promise<void> {
           srPriorActivities.push(label);
         }
       }
+
+      const srSortedEpics = Array.from(srEpicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
 
       const srProjectPlanSummary = srEpics.length > 0
         ? srSortedEpics.map(e => {
@@ -7332,6 +7336,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
 
   // PowerPoint status report export with AI-generated narrative content
   app.post("/api/projects/:id/export-pptx", requireAuth, async (req, res) => {
+    req.setTimeout(180000);
+    res.setTimeout(180000);
     try {
       const project = await storage.getProject(req.params.id);
       if (!project) {
@@ -7512,6 +7518,8 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
           priorActivities.push(label);
         }
       }
+
+      const sortedEpics = Array.from(epicStageMap.values()).sort((a, b) => a.epicOrder - b.epicOrder);
 
       const projectPlanSummary = epics.length > 0
         ? sortedEpics.map(e => {
