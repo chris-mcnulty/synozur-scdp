@@ -13,12 +13,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore } from "lucide-react";
+import { Plus, FileText, Edit, Eye, Download, Send, Calendar, DollarSign, Trash2, Copy, Archive, ArchiveRestore, Sparkles } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { NarrativeEstimateGenerator } from "@/components/estimates/narrative-estimate-generator";
 
 // Copy estimate form schemas
 const copySameClientSchema = z.object({
@@ -72,6 +73,7 @@ export default function Estimates() {
     { name: '', rate: '', maxHours: '' }
   ]);
   const [activeTab, setActiveTab] = useState<'draft' | 'final' | 'approved' | 'archive' | 'all'>('draft');
+  const [narrativeGeneratorOpen, setNarrativeGeneratorOpen] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -290,10 +292,16 @@ export default function Estimates() {
               Create and manage project estimates for clients
             </p>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-new-estimate">
-            <Plus className="w-4 h-4 mr-2" />
-            New Estimate
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setNarrativeGeneratorOpen(true)}>
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate from Narrative
+            </Button>
+            <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-new-estimate">
+              <Plus className="w-4 h-4 mr-2" />
+              New Estimate
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1292,6 +1300,11 @@ export default function Estimates() {
             </Tabs>
           </DialogContent>
         </Dialog>
+
+        <NarrativeEstimateGenerator
+          open={narrativeGeneratorOpen}
+          onClose={() => setNarrativeGeneratorOpen(false)}
+        />
       </div>
     </Layout>
   );

@@ -2695,6 +2695,7 @@ export const groundingDocCategoryEnum = z.enum([
   'raidd_guidance',
   'status_report',
   'estimate_narrative',
+  'estimate_generation',
   'invoice_narrative',
   'general',
 ]);
@@ -2706,6 +2707,7 @@ export const GROUNDING_DOC_CATEGORY_LABELS: Record<GroundingDocCategory, string>
   raidd_guidance: "RAIDD Governance Guidelines",
   status_report: "Status Report Guidance",
   estimate_narrative: "Estimate & Proposal Narrative",
+  estimate_generation: "Estimate Generation & WBS Methodology",
   invoice_narrative: "Invoice Narrative",
   general: "General Knowledge",
 };

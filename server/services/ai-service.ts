@@ -2,10 +2,11 @@ import { getAIProvider, ChatMessage, ChatCompletionResult } from './ai-provider.
 import type { GroundingDocument, GroundingDocCategory } from '@shared/schema';
 import { GROUNDING_DOC_CATEGORY_LABELS } from '@shared/schema';
 
-export type GroundingFeature = 'estimate_narrative' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
+export type GroundingFeature = 'estimate_narrative' | 'estimate_generation' | 'invoice_narrative' | 'status_report' | 'sub_sow' | 'changelog' | 'general';
 
 const FEATURE_CATEGORY_MAP: Record<GroundingFeature, GroundingDocCategory[]> = {
   estimate_narrative: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
+  estimate_generation: ['estimate_generation', 'estimate_narrative', 'pm_methodology', 'general'],
   invoice_narrative: ['invoice_narrative', 'brand_voice', 'general'],
   status_report: ['status_report', 'raidd_guidance', 'pm_methodology', 'brand_voice', 'general'],
   sub_sow: ['estimate_narrative', 'pm_methodology', 'brand_voice', 'general'],
@@ -50,9 +51,17 @@ export function buildGroundingContext(docs: GroundingDocument[], feature?: Groun
 
 export interface EstimateGenerationInput {
   projectDescription: string;
+  narrativeText?: string;
   clientName?: string;
   industry?: string;
   constraints?: string;
+  availableRoles?: Array<{
+    name: string;
+    rackRate: number;
+    costRate: number;
+    isSalaried: boolean;
+  }>;
+  groundingContext?: string;
 }
 
 export interface EstimateLineItemSuggestion {
@@ -62,6 +71,38 @@ export interface EstimateLineItemSuggestion {
   hours: number;
   role: string;
   notes?: string;
+}
+
+export interface GeneratedEstimateStructure {
+  estimateType: 'detailed' | 'program' | 'block' | 'retainer';
+  commercialScheme: 'time_and_materials' | 'fixed_price' | 'retainer';
+  epics: Array<{
+    name: string;
+    order: number;
+    stages: Array<{
+      name: string;
+      order: number;
+      lineItems: Array<{
+        description: string;
+        role: string;
+        hours: number;
+        rate: number;
+        costRate: number;
+        isSalaried: boolean;
+        notes?: string;
+        weekStart?: number;
+        durationWeeks?: number;
+      }>;
+    }>;
+  }>;
+  summary: {
+    totalHours: number;
+    totalFees: number;
+    totalCost: number;
+    marginPercent: number;
+    projectSize: string;
+    suggestedDurationWeeks: number;
+  };
 }
 
 export interface NaturalLanguageReportInput {
@@ -155,6 +196,56 @@ Each line item should include:
 - Optional notes
 
 Format your response as a JSON array of line items. Be realistic with hour estimates based on consulting industry standards.`,
+
+    estimateFromNarrative: `You are an expert consulting project estimator and work breakdown structure (WBS) architect. Your job is to analyze a project proposal, SOW, or narrative description and produce a fully structured estimate.
+
+You MUST return valid JSON matching this exact structure:
+{
+  "estimateType": "detailed" | "program" | "block" | "retainer",
+  "commercialScheme": "time_and_materials" | "fixed_price" | "retainer",
+  "epics": [
+    {
+      "name": "Epic Name (e.g., Discovery & Planning)",
+      "order": 1,
+      "stages": [
+        {
+          "name": "Stage Name (e.g., Stakeholder Analysis)",
+          "order": 1,
+          "lineItems": [
+            {
+              "description": "Specific task or deliverable",
+              "role": "Exact role name from the provided role catalog",
+              "hours": 16,
+              "rate": 225.00,
+              "costRate": 150.00,
+              "isSalaried": false,
+              "notes": "Optional assumptions or context"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "totalHours": 480,
+    "totalFees": 96000.00,
+    "totalCost": 64000.00,
+    "marginPercent": 33.3,
+    "projectSize": "Medium",
+    "suggestedDurationWeeks": 12
+  }
+}
+
+CRITICAL RULES:
+1. ROLE MATCHING: You will be given a list of available roles with their rates. You MUST use EXACT role names from that list. Map the narrative's implied roles to the closest available role. Use the role's rackRate as "rate" and costRate as "costRate".
+2. HIERARCHY: Every estimate must have at least 2 epics. Each epic has at least 1 stage. Each stage has at least 1 line item.
+3. ESTIMATE TYPE: Use "detailed" for most projects. Use "program" for large multi-workstream engagements (3000+ hours). Use "retainer" only if the narrative explicitly describes a monthly retained arrangement. Use "block" for simple fixed-fee engagements.
+4. LINE ITEM SIZING: No single line item should exceed 80 hours. Break larger tasks into smaller items.
+5. STAFFING RATIOS: Include PM oversight (10-20% of total), architecture/design time where relevant, and QA where applicable.
+6. INCLUDE SUPPORTING ACTIVITIES: Project kickoff, status reporting, knowledge transfer, documentation — these are real work that must be estimated.
+7. REALISTIC HOURS: Base your estimates on consulting industry standards. A 2-week sprint is ~60-80 hours per developer. Stakeholder interviews are 2-4 hours each.
+8. SUMMARY ACCURACY: The summary totals MUST match the sum of all line items. marginPercent = ((totalFees - totalCost) / totalFees) * 100.
+9. If grounding methodology documents are provided, follow their guidance for role selection, hour estimation multipliers, epic templates, and quality checks.`,
 
     naturalLanguageReport: `You are a business intelligence assistant for a consulting delivery platform. Help users understand their project, financial, and resource data.
 
@@ -257,6 +348,110 @@ Provide a comprehensive work breakdown with realistic hour estimates. Return as 
     } catch (error) {
       console.error('[AI_SERVICE] Failed to parse estimate generation response:', error);
       throw new Error('Failed to parse AI response for estimate generation');
+    }
+  }
+
+  async generateEstimateFromNarrative(input: EstimateGenerationInput): Promise<GeneratedEstimateStructure> {
+    const provider = getAIProvider();
+
+    const narrativeContent = input.narrativeText || input.projectDescription;
+    const truncatedNarrative = narrativeContent.substring(0, 100000);
+
+    let rolesSection = '';
+    if (input.availableRoles && input.availableRoles.length > 0) {
+      rolesSection = `\n\nAVAILABLE ROLE CATALOG (you MUST use these exact role names and rates):\n${input.availableRoles.map(r =>
+        `- ${r.name}: Billing Rate $${r.rackRate}/hr, Cost Rate $${r.costRate}/hr${r.isSalaried ? ' (Salaried — cost excluded from margin)' : ''}`
+      ).join('\n')}`;
+    }
+
+    const userMessage = `Analyze the following project narrative and generate a fully structured estimate.
+${input.clientName ? `\nClient: ${input.clientName}` : ''}
+${input.industry ? `\nIndustry: ${input.industry}` : ''}
+${input.constraints ? `\nConstraints/Notes: ${input.constraints}` : ''}
+${rolesSection}
+
+PROJECT NARRATIVE:
+---
+${truncatedNarrative}
+---
+
+Generate a complete hierarchical estimate structure with epics, stages, and line items. Use ONLY the roles from the catalog above. Return valid JSON.`;
+
+    const systemContent = this.systemPrompts.estimateFromNarrative + (input.groundingContext || '');
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userMessage }
+    ];
+
+    const result = await provider.chatCompletion({
+      messages,
+      maxTokens: 16384,
+      temperature: 0.4,
+      responseFormat: 'json'
+    });
+
+    try {
+      const parsed = JSON.parse(result.content);
+
+      const structure: GeneratedEstimateStructure = {
+        estimateType: parsed.estimateType || 'detailed',
+        commercialScheme: parsed.commercialScheme || 'time_and_materials',
+        epics: (parsed.epics || []).map((epic: any, ei: number) => ({
+          name: epic.name || `Phase ${ei + 1}`,
+          order: epic.order ?? ei + 1,
+          stages: (epic.stages || []).map((stage: any, si: number) => ({
+            name: stage.name || `Stage ${si + 1}`,
+            order: stage.order ?? si + 1,
+            lineItems: (stage.lineItems || []).map((li: any) => ({
+              description: li.description || '',
+              role: li.role || '',
+              hours: Number(li.hours) || 0,
+              rate: Number(li.rate) || 0,
+              costRate: Number(li.costRate) || 0,
+              isSalaried: li.isSalaried || false,
+              notes: li.notes || undefined,
+              weekStart: li.weekStart != null ? Number(li.weekStart) : undefined,
+              durationWeeks: li.durationWeeks != null ? Number(li.durationWeeks) : undefined,
+            })),
+          })),
+        })),
+        summary: {
+          totalHours: 0,
+          totalFees: 0,
+          totalCost: 0,
+          marginPercent: 0,
+          projectSize: parsed.summary?.projectSize || 'Medium',
+          suggestedDurationWeeks: parsed.summary?.suggestedDurationWeeks || 12,
+        },
+      };
+
+      let totalHours = 0;
+      let totalFees = 0;
+      let totalCost = 0;
+      for (const epic of structure.epics) {
+        for (const stage of epic.stages) {
+          for (const li of stage.lineItems) {
+            totalHours += li.hours;
+            totalFees += li.hours * li.rate;
+            totalCost += li.isSalaried ? 0 : li.hours * li.costRate;
+          }
+        }
+      }
+      structure.summary.totalHours = Math.round(totalHours * 10) / 10;
+      structure.summary.totalFees = Math.round(totalFees * 100) / 100;
+      structure.summary.totalCost = Math.round(totalCost * 100) / 100;
+      structure.summary.marginPercent = totalFees > 0
+        ? Math.round(((totalFees - totalCost) / totalFees) * 10000) / 100
+        : 0;
+
+      console.log(`[AI_SERVICE] Generated estimate from narrative: ${structure.epics.length} epics, ${totalHours} hours, $${totalFees.toFixed(0)} total`);
+
+      return structure;
+    } catch (error) {
+      console.error('[AI_SERVICE] Failed to parse narrative estimate response:', error);
+      console.error('[AI_SERVICE] Raw response:', result.content?.substring(0, 500));
+      throw new Error('Failed to parse AI response for estimate generation from narrative');
     }
   }
 

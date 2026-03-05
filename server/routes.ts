@@ -10223,6 +10223,176 @@ IMPORTANT: Always respond with valid JSON only. No text outside the JSON object.
     }
   });
 
+  // POST /api/ai/generate-estimate-from-narrative - Generate structured estimate from proposal/SOW narrative
+  app.post("/api/ai/generate-estimate-from-narrative", requireAuth, requireRole(["admin", "pm", "portfolio-manager", "executive"]), aiRateLimiter, async (req, res) => {
+    try {
+      const schema = z.object({
+        narrativeText: z.string().min(20).max(100000).optional(),
+        projectDescription: z.string().min(10).max(10000).optional(),
+        clientName: z.string().max(255).optional(),
+        industry: z.string().max(100).optional(),
+        constraints: z.string().max(10000).optional(),
+      }).refine(data => data.narrativeText || data.projectDescription, {
+        message: "Either narrativeText or projectDescription is required",
+      });
+
+      const validated = schema.parse(req.body);
+
+      const tenantId = (req.user as any)?.tenantId;
+      const [tenantRoles, groundingDocs] = await Promise.all([
+        tenantId ? storage.getRoles(tenantId) : storage.getRoles(),
+        tenantId
+          ? storage.getActiveGroundingDocumentsForTenant(tenantId)
+          : storage.getActiveGroundingDocuments(),
+      ]);
+
+      const { buildGroundingContext } = await import("./services/ai-service.js");
+      const groundingContext = buildGroundingContext(groundingDocs, 'estimate_generation');
+
+      const availableRoles = tenantRoles.map((r: any) => ({
+        name: r.name,
+        rackRate: Number(r.defaultRackRate) || 0,
+        costRate: Number(r.defaultCostRate) || 0,
+        isSalaried: r.isAlwaysSalaried || false,
+      }));
+
+      const result = await aiService.generateEstimateFromNarrative({
+        projectDescription: validated.projectDescription || '',
+        narrativeText: validated.narrativeText,
+        clientName: validated.clientName,
+        industry: validated.industry,
+        constraints: validated.constraints,
+        availableRoles,
+        groundingContext,
+      });
+
+      const roleNames = new Set(tenantRoles.map((r: any) => r.name));
+      const unmatchedRoles: string[] = [];
+      for (const epic of result.epics) {
+        for (const stage of epic.stages) {
+          for (const li of stage.lineItems) {
+            if (li.role && !roleNames.has(li.role) && !unmatchedRoles.includes(li.role)) {
+              unmatchedRoles.push(li.role);
+            }
+          }
+        }
+      }
+
+      console.log(`[AI] Generated estimate from narrative: ${result.epics.length} epics, ${result.summary.totalHours} hours, $${result.summary.totalFees.toFixed(0)} for user ${req.user!.id}`);
+
+      res.json({
+        estimate: result,
+        unmatchedRoles,
+        availableRoles: tenantRoles.map((r: any) => ({ id: r.id, name: r.name, rackRate: Number(r.defaultRackRate), costRate: Number(r.defaultCostRate), isSalaried: r.isAlwaysSalaried })),
+        hasGroundingDoc: groundingContext.length > 0,
+      });
+    } catch (error: any) {
+      console.error("[AI] Generate estimate from narrative failed:", error);
+      res.status(500).json({ message: error.message || "Failed to generate estimate from narrative" });
+    }
+  });
+
+  // POST /api/ai/generate-estimate-from-narrative/apply - Create actual estimate from confirmed AI-generated structure
+  app.post("/api/ai/generate-estimate-from-narrative/apply", requireAuth, requireRole(["admin", "pm", "portfolio-manager"]), async (req, res) => {
+    try {
+      const schema = z.object({
+        name: z.string().min(1).max(255),
+        clientId: z.string().optional(),
+        projectId: z.string().optional(),
+        estimateType: z.enum(['detailed', 'program', 'block', 'retainer']).default('detailed'),
+        commercialScheme: z.string().optional(),
+        epics: z.array(z.object({
+          name: z.string(),
+          order: z.number(),
+          stages: z.array(z.object({
+            name: z.string(),
+            order: z.number(),
+            lineItems: z.array(z.object({
+              description: z.string(),
+              role: z.string(),
+              roleId: z.string().optional(),
+              hours: z.number(),
+              rate: z.number(),
+              costRate: z.number(),
+              isSalaried: z.boolean().default(false),
+              notes: z.string().optional(),
+              weekStart: z.number().optional(),
+              durationWeeks: z.number().optional(),
+            })),
+          })),
+        })),
+      });
+
+      const validated = schema.parse(req.body);
+      const user = req.user as any;
+      const tenantId = user?.tenantId;
+
+      const tenantRoles = tenantId ? await storage.getRoles(tenantId) : await storage.getRoles();
+      const roleMap = new Map(tenantRoles.map((r: any) => [r.name, r]));
+
+      const estimate = await storage.createEstimate({
+        name: validated.name,
+        clientId: validated.clientId || null,
+        projectId: validated.projectId || null,
+        estimateType: validated.estimateType,
+        status: 'draft',
+        createdBy: user.id,
+        tenantId: tenantId || null,
+      } as any);
+
+      for (const epicData of validated.epics) {
+        const epic = await storage.createEstimateEpic({
+          estimateId: estimate.id,
+          name: epicData.name,
+          order: epicData.order,
+        } as any);
+
+        for (const stageData of epicData.stages) {
+          const stage = await storage.createEstimateStage({
+            epicId: epic.id,
+            name: stageData.name,
+            order: stageData.order,
+          } as any);
+
+          const activity = await storage.createEstimateActivity({
+            stageId: stage.id,
+            name: stageData.name,
+            order: 1,
+          } as any);
+
+          for (const liData of stageData.lineItems) {
+            const matchedRole = liData.roleId ? tenantRoles.find((r: any) => r.id === liData.roleId) : roleMap.get(liData.role);
+
+            await storage.createEstimateLineItem({
+              activityId: activity.id,
+              description: liData.description,
+              roleId: matchedRole?.id || null,
+              baseHours: String(liData.hours),
+              factor: '1',
+              rate: String(liData.rate),
+              costRate: String(liData.costRate),
+              adjustedHours: String(liData.hours),
+              totalAmount: String(liData.hours * liData.rate),
+              totalCost: String(liData.isSalaried ? 0 : liData.hours * liData.costRate),
+              margin: String((liData.hours * liData.rate) - (liData.isSalaried ? 0 : liData.hours * liData.costRate)),
+              marginPercent: String(liData.rate > 0 ? (((liData.rate - (liData.isSalaried ? 0 : liData.costRate)) / liData.rate) * 100) : 0),
+              comments: liData.notes || null,
+              weekStart: liData.weekStart != null ? liData.weekStart : null,
+              durationWeeks: liData.durationWeeks != null ? liData.durationWeeks : null,
+            } as any);
+          }
+        }
+      }
+
+      console.log(`[AI] Applied narrative estimate: ${estimate.id} (${validated.epics.length} epics) for user ${user.id}`);
+
+      res.json({ estimateId: estimate.id, message: "Estimate created successfully" });
+    } catch (error: any) {
+      console.error("[AI] Apply narrative estimate failed:", error);
+      res.status(500).json({ message: error.message || "Failed to create estimate from narrative" });
+    }
+  });
+
   // POST /api/ai/invoice-narrative - Generate invoice narrative
   app.post("/api/ai/invoice-narrative", requireAuth, requireRole(["admin", "billing-admin", "pm"]), aiRateLimiter, async (req, res) => {
     try {
