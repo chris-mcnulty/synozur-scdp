@@ -97,10 +97,11 @@ def parse_markdown_sections(md_text):
     current_content = []
 
     for line in md_text.split('\n'):
-        if line.startswith('## '):
+        header_match = re.match(r'^(#{1,3})\s+(.+)$', line)
+        if header_match:
             if current_section:
                 sections[current_section] = '\n'.join(current_content).strip()
-            raw_name = line[3:].strip()
+            raw_name = header_match.group(2).strip()
             current_section = _normalize_section_name(raw_name)
             current_content = []
         else:

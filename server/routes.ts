@@ -7714,7 +7714,14 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
         aiReport = result.content;
         console.log(`[PPTX] AI report generated: ${aiReport.length} chars, first 200: ${aiReport.substring(0, 200)}`);
       } catch (aiError: any) {
-        console.error("AI generation failed for PPTX, using fallback:", aiError.message);
+        console.error("[PPTX] AI generation failed, using fallback:", aiError.message);
+        console.error("[PPTX] AI error stack:", aiError.stack?.substring(0, 500));
+      }
+
+      if (!aiReport) {
+        console.warn("[PPTX] aiReport is empty — PPTX will use task fallback rendering");
+      } else {
+        console.log(`[PPTX] aiReport ready for Python: ${aiReport.length} chars`);
       }
 
       const milestonePosture: Record<string, string[]> = {
@@ -7989,11 +7996,18 @@ ${decisionSummary}${raiddCounts.overdueActionItems > 0 ? `\n\n⚠️ OVERDUE ACT
       const scriptPath = pathNode.join(process.cwd(), 'server', 'scripts', 'generate_status_report_pptx.py');
 
       try {
-        execSync(`python3 "${scriptPath}" "${tmpFile}"`, {
+        const { spawnSync } = await import('child_process');
+        const pyResult = spawnSync('python3', [scriptPath, tmpFile], {
           input: JSON.stringify(pptxData),
           timeout: 30000,
           maxBuffer: 10 * 1024 * 1024,
         });
+        if (pyResult.stderr && pyResult.stderr.length > 0) {
+          console.log(`[PPTX] Python stderr:\n${pyResult.stderr.toString().substring(0, 2000)}`);
+        }
+        if (pyResult.status !== 0) {
+          throw new Error(`Python script exited with code ${pyResult.status}: ${pyResult.stderr?.toString().substring(0, 500)}`);
+        }
 
         if (!fsNode.existsSync(tmpFile)) {
           throw new Error('PPTX file was not generated');
