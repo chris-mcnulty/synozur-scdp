@@ -7635,13 +7635,24 @@ CRITICAL: The RAIDD section is mandatory. Always include every RAIDD entry provi
 
 CRITICAL: Use the COMPLETED TASKS, IN-PROGRESS TASKS, and UPCOMING TASKS data to populate Key Accomplishments and Upcoming Activities. Each task listed is an individual assignment with a description, person, role, epic/stage context, and dates. For Key Accomplishments, describe what was COMPLETED and what is currently IN PROGRESS — group related tasks into coherent narrative bullets with bold titles explaining the business value and work done. For Upcoming Activities, describe the UPCOMING TASKS that are scheduled after this period. NEVER say "no accomplishments" or "no upcoming activities" when task data is available. Transform raw task names into professional, client-appropriate descriptions.`;
 
+      const maxTasksForAI = 15;
+      const truncateList = (items: string[], max: number) => {
+        if (items.length <= max) return items.map(a => `- ${a}`).join('\n');
+        return items.slice(0, max).map(a => `- ${a}`).join('\n') + `\n  ... and ${items.length - max} more`;
+      };
+      const shortenTask = (label: string) => {
+        return label.replace(/\s*\[\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}\]\s*$/, '');
+      };
+      const shortPrior = priorActivities.map(shortenTask);
+      const shortCurrent = currentActivities.map(shortenTask);
+      const shortUpcoming = upcomingActivities.map(shortenTask);
+
       const userMessage = `Generate a status report for the following project activity:
 
 PROJECT: ${project.name}
 CLIENT: ${project.client?.name || "Unknown"}
 PERIOD: ${effectiveStartDate} to ${effectiveEndDate}
 STATUS: ${project.status}
-COMMERCIAL SCHEME: ${project.commercialScheme}
 ${project.description ? `DESCRIPTION: ${project.description}` : ""}
 
 SUMMARY METRICS:
@@ -7653,29 +7664,23 @@ SUMMARY METRICS:
 TEAM ACTIVITY:
 ${teamSummary || "No time entries recorded in this period."}
 
-EXPENSES:
-${expenseSummary}
-
 MILESTONES — Active:
 ${activeMilestones}
 
 MILESTONES — Completed:
 ${completedMilestonesSummary}
 
-PROJECT PLAN (Epics & Stages with scheduled dates):
-${projectPlanSummary}
+COMPLETED TASKS (${priorActivities.length} total):
+${shortPrior.length > 0 ? truncateList(shortPrior, maxTasksForAI) : 'None.'}
 
-COMPLETED TASKS — finished before or during this period (${priorActivities.length}):
-${priorActivities.length > 0 ? priorActivities.map(a => `- ${a}`).join('\n') : 'None.'}
+IN-PROGRESS TASKS (${currentActivities.length} total):
+${shortCurrent.length > 0 ? truncateList(shortCurrent, maxTasksForAI) : 'None.'}
 
-IN-PROGRESS TASKS — active during this period (${currentActivities.length}):
-${currentActivities.length > 0 ? currentActivities.map(a => `- ${a}`).join('\n') : 'None.'}
-
-UPCOMING TASKS — scheduled after this period (${upcomingActivities.length}):
-${upcomingActivities.length > 0 ? upcomingActivities.map(a => `- ${a}`).join('\n') : 'None.'}
+UPCOMING TASKS (${upcomingActivities.length} total):
+${shortUpcoming.length > 0 ? truncateList(shortUpcoming, maxTasksForAI) : 'None.'}
 
 DELIVERABLES (${pptxDeliverables.length} total):
-${pptxDeliverables.length > 0 ? pptxDeliverables.map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — Owner: ${d.ownerName}` : ''}${d.targetDate ? ` — Target: ${d.targetDate}` : ''}${d.deliveredDate ? ` — Delivered: ${d.deliveredDate}` : ''}`).join('\n') : 'No deliverables tracked.'}
+${pptxDeliverables.length > 0 ? pptxDeliverables.slice(0, 10).map((d: any) => `- ${d.name} [${d.status}]${d.ownerName ? ` — ${d.ownerName}` : ''}`).join('\n') : 'No deliverables tracked.'}
 
 RAIDD LOG — Active Risks (${activeRisks.length}):
 ${riskSummary}
