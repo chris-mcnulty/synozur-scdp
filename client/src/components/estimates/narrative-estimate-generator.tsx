@@ -73,7 +73,7 @@ export function NarrativeEstimateGenerator({ open, onClose }: NarrativeEstimateG
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest('/api/ai/generate-estimate-from-narrative', {
+      const data = await apiRequest('/api/ai/generate-estimate-from-narrative', {
         method: 'POST',
         body: JSON.stringify({
           narrativeText: narrativeText || undefined,
@@ -83,7 +83,7 @@ export function NarrativeEstimateGenerator({ open, onClose }: NarrativeEstimateG
           constraints: constraints || undefined,
         }),
       });
-      return res.json();
+      return data;
     },
     onSuccess: (data) => {
       setGeneratedEstimate(data.estimate);
@@ -128,7 +128,7 @@ export function NarrativeEstimateGenerator({ open, onClose }: NarrativeEstimateG
         })),
       }));
 
-      const res = await apiRequest('/api/ai/generate-estimate-from-narrative/apply', {
+      const data = await apiRequest('/api/ai/generate-estimate-from-narrative/apply', {
         method: 'POST',
         body: JSON.stringify({
           name: estimateName || `AI-Generated Estimate — ${clientName || 'New'}`,
@@ -138,7 +138,7 @@ export function NarrativeEstimateGenerator({ open, onClose }: NarrativeEstimateG
           epics: epicsWithRemapping,
         }),
       });
-      return res.json();
+      return data;
     },
     onSuccess: (data) => {
       toast({ title: "Estimate Created", description: "Your estimate has been created from the narrative." });

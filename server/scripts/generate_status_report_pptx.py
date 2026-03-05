@@ -341,6 +341,67 @@ def create_progress_summary_slide(prs, data, sections, primary_color, secondary_
 
     return slide
 
+def _parse_task_string(task_str):
+    """Parse a raw task allocation string into structured components."""
+    name = task_str
+    person = ''
+    epic = ''
+    stage = ''
+
+    paren_match = re.match(r'^(.+?)\s*\(([^)]+)\)\s*[-–—]\s*(.+)$', task_str)
+    if paren_match:
+        name = paren_match.group(1).strip()
+        person = paren_match.group(2).strip()
+        rest = paren_match.group(3).strip()
+    else:
+        dash_match = re.match(r'^(.+?)\s*[-–—]\s*(.+)$', task_str)
+        if dash_match:
+            name = dash_match.group(1).strip()
+            rest = dash_match.group(2).strip()
+        else:
+            rest = ''
+
+    if rest:
+        date_match = re.match(r'^(.+?)\s*\[.*$', rest)
+        context = date_match.group(1).strip() if date_match else rest
+        parts = context.split('>')
+        if len(parts) >= 2:
+            epic = parts[0].strip()
+            stage = parts[1].strip()
+        elif context:
+            epic = context.strip()
+
+    if not person:
+        inner_match = re.match(r'^(.+?)\s*\(([^)]+)\)(.*)$', task_str)
+        if inner_match:
+            name = inner_match.group(1).strip()
+            person = inner_match.group(2).strip()
+
+    return {'name': name, 'person': person, 'epic': epic, 'stage': stage}
+
+
+def _group_tasks_by_epic(prior_tasks, current_tasks):
+    """Group task strings by epic for a cleaner fallback display."""
+    groups = {}
+
+    for task_str in prior_tasks:
+        parsed = _parse_task_string(task_str)
+        key = parsed['epic'] or 'General'
+        if key not in groups:
+            groups[key] = {'epic': key, 'tasks': []}
+        groups[key]['tasks'].append({'name': parsed['name'], 'person': parsed['person'], 'done': True})
+
+    for task_str in current_tasks:
+        parsed = _parse_task_string(task_str)
+        key = parsed['epic'] or 'General'
+        if key not in groups:
+            groups[key] = {'epic': key, 'tasks': []}
+        groups[key]['tasks'].append({'name': parsed['name'], 'person': parsed['person'], 'done': False})
+
+    result = sorted(groups.values(), key=lambda g: (-sum(1 for t in g['tasks'] if t['done']), g['epic']))
+    return result
+
+
 def create_accomplishments_slide(prs, data, sections, primary_color, secondary_color):
     """Slide 3: Key Accomplishments with rich AI narrative."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
@@ -390,52 +451,41 @@ def create_accomplishments_slide(prs, data, sections, primary_color, secondary_c
                 run3.text = f"    – {sub}"
                 set_font(run3, size=9, color='#444444')
     else:
+        print("[PPTX] No 'Key Accomplishments' section found in AI output — using grouped task fallback", file=sys.stderr)
         activities = data.get('projectActivities', {})
         prior = activities.get('prior', [])
         current = activities.get('current', [])
         has_fallback = prior or current
         if has_fallback:
+            grouped = _group_tasks_by_epic(prior, current)
             first = True
-            if prior:
+            for group in grouped[:12]:
                 if first:
                     p = tf.paragraphs[0]
                     first = False
                 else:
                     p = tf.add_paragraph()
                 p.space_before = Pt(6)
+                p.space_after = Pt(2)
                 run = p.add_run()
-                run.text = f"Completed Tasks ({len(prior)})"
-                set_font(run, size=13, bold=True, color=primary_color)
-                for act in prior[:15]:
+                run.text = f"• {group['epic']}"
+                set_font(run, size=11, bold=True, color=primary_color)
+
+                for task in group['tasks'][:6]:
                     p2 = tf.add_paragraph()
-                    p2.space_before = Pt(3)
-                    p2.space_after = Pt(2)
+                    p2.space_before = Pt(1)
+                    p2.space_after = Pt(1)
                     run2 = p2.add_run()
-                    run2.text = f"  \u2713 {act}"
-                    set_font(run2, size=9)
-                if len(prior) > 15:
-                    p2 = tf.add_paragraph()
-                    run2 = p2.add_run()
-                    run2.text = f"    ... and {len(prior) - 15} more completed tasks"
-                    set_font(run2, size=9, italic=True, color='#666666')
-            if current:
-                p = tf.add_paragraph()
-                p.space_before = Pt(10)
-                run = p.add_run()
-                run.text = f"In Progress ({len(current)})"
-                set_font(run, size=13, bold=True, color=primary_color)
-                for act in current[:15]:
-                    p2 = tf.add_paragraph()
-                    p2.space_before = Pt(3)
-                    p2.space_after = Pt(2)
-                    run2 = p2.add_run()
-                    run2.text = f"  \u25B8 {act}"
-                    set_font(run2, size=9)
-                if len(current) > 15:
-                    p2 = tf.add_paragraph()
-                    run2 = p2.add_run()
-                    run2.text = f"    ... and {len(current) - 15} more in-progress tasks"
-                    set_font(run2, size=9, italic=True, color='#666666')
+                    icon = '\u2713' if task['done'] else '\u25B8'
+                    run2.text = f"  {icon} {task['name']}"
+                    if task.get('person'):
+                        run2.text += f" ({task['person']})"
+                    set_font(run2, size=9, color='#333333' if task['done'] else '#555555')
+                if len(group['tasks']) > 6:
+                    p3 = tf.add_paragraph()
+                    run3 = p3.add_run()
+                    run3.text = f"    + {len(group['tasks']) - 6} more"
+                    set_font(run3, size=8, italic=True, color='#888888')
         else:
             p = tf.paragraphs[0]
             run = p.add_run()
@@ -1559,7 +1609,9 @@ def generate_pptx(data, output_path):
     secondary_color = data.get('secondaryColor', '#E60CB3')
 
     ai_report = data.get('aiReport', '')
+    print(f"[PPTX] aiReport length: {len(ai_report)}, first 300: {ai_report[:300]}", file=sys.stderr)
     sections = parse_markdown_sections(ai_report) if ai_report else {}
+    print(f"[PPTX] Sections found: {list(sections.keys())}, content lengths: {({k: len(v) for k, v in sections.items()})}", file=sys.stderr)
 
     prs = Presentation()
     prs.slide_width = SLIDE_WIDTH
