@@ -55,6 +55,7 @@ Multi-tenant user model: A user in one tenant can be a client in another tenant,
 - **Contractor Expense Invoices**: Contractors can generate invoices from their expense reports for reimbursement.
 - **Retainer Estimates & Management**: New estimate type for monthly hour-block engagements with creation wizard, utilization tracking, and live retainer month management.
 - **Project Rate Overrides**: Project-level billing and cost rate overrides.
+- **Deliverable Tracking**: `project_deliverables` table with status workflow (not-started/in-progress/in-review/accepted/rejected), owner assignment, target/delivered dates, epic/stage linking, sort order. `deliverable_status_history` table auto-logs every status change. AI narrative extraction from SOW/proposal text. Deliverables integrated into AI status reports and PPTX generation (dedicated Deliverables Tracker slide).
 
 ### Multi-Tenancy
 - **Architecture**: UUID-based tenant IDs, tenant-scoped data isolation, service plans, and subdomain routing.

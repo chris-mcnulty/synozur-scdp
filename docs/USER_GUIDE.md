@@ -2,7 +2,7 @@
 
 **Welcome to Constellation - The Synozur Consulting Delivery Platform**
 
-Version 1.4 | Last Updated: March 1, 2026
+Version 1.5 | Last Updated: March 5, 2026
 
 ---
 
@@ -13,16 +13,17 @@ Version 1.4 | Last Updated: March 1, 2026
 3. [Dashboard Overview](#dashboard-overview)
 4. [Core Features](#core-features)
 5. [Project Governance (RAIDD)](#project-governance-raidd)
-6. [AI-Powered Status Reports](#ai-powered-status-reports)
-7. [Portfolio Management](#portfolio-management)
-8. [User Roles](#user-roles)
-9. [Common Workflows](#common-workflows)
-10. [Microsoft 365 Integration](#microsoft-365-integration)
-11. [HubSpot CRM Integration](#hubspot-crm-integration)
-12. [Settings & Preferences](#settings--preferences)
-13. [Tips & Best Practices](#tips--best-practices)
-14. [Troubleshooting](#troubleshooting)
-15. [Detailed Documentation](#detailed-documentation)
+6. [Deliverable Tracking](#deliverable-tracking)
+7. [AI-Powered Status Reports](#ai-powered-status-reports)
+8. [Portfolio Management](#portfolio-management)
+9. [User Roles](#user-roles)
+10. [Common Workflows](#common-workflows)
+11. [Microsoft 365 Integration](#microsoft-365-integration)
+12. [HubSpot CRM Integration](#hubspot-crm-integration)
+13. [Settings & Preferences](#settings--preferences)
+14. [Tips & Best Practices](#tips--best-practices)
+15. [Troubleshooting](#troubleshooting)
+16. [Detailed Documentation](#detailed-documentation)
 
 ---
 
@@ -424,6 +425,63 @@ The RAIDD Log provides a structured way to track and manage Risks, Action Items,
 
 ---
 
+## Deliverable Tracking
+
+The Deliverables tab provides a structured way to track project deliverables from inception through client acceptance. Each deliverable is assigned an owner and follows a clear status workflow, giving the team and stakeholders visibility into what has been promised, what is in progress, and what has been accepted.
+
+### Accessing Deliverables
+
+1. Navigate to any project detail page
+2. Click the **Deliverables** tab
+3. The deliverables table shows all tracked items for that project
+
+### Creating a Deliverable
+
+1. Click **Add Deliverable** on the Deliverables tab
+2. Enter a **Name** (required) and optional **Description**
+3. Select an **Owner** (required) — the team member responsible for delivering this item
+4. Optionally link to an **Epic** or **Stage** for traceability
+5. Set a **Target Date** for when the deliverable is expected to be complete
+6. Click **Save**
+
+### Status Workflow
+
+Each deliverable moves through a defined lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| **Not Started** | Deliverable has been identified but work has not begun |
+| **In Progress** | Active work is underway |
+| **In Review** | Work is complete and under review or awaiting approval |
+| **Accepted** | Client or stakeholder has formally accepted the deliverable |
+| **Rejected** | Deliverable was reviewed and sent back for rework |
+
+Status changes are automatically recorded in the deliverable's history, creating an audit trail of when each transition happened and who made the change.
+
+### Viewing Status History
+
+1. Click the history icon on any deliverable row
+2. A dialog shows every status change with timestamps, the previous and new status, and the person who made the change
+3. Use this to understand the timeline and any rework cycles
+
+### AI-Powered Extraction from Narratives
+
+If you have a project proposal, SOW, or scope document, Constellation can use AI to identify candidate deliverables automatically:
+
+1. Click **Extract from Narrative** on the Deliverables tab
+2. Paste the relevant text from your proposal or SOW into the text area
+3. Click **Extract** — the AI will analyze the text and return a list of candidate deliverables
+4. Review the candidates, check the ones you want to add, and assign an owner to each
+5. Click **Add Selected** to create them all at once
+
+This saves time when onboarding new projects with lengthy scope documents. Existing deliverables are automatically filtered out to prevent duplicates.
+
+### Deliverables in Status Reports
+
+Deliverables are automatically included in both AI-generated status reports and PowerPoint status report slides. The AI summarizes deliverable progress alongside milestones, time entries, expenses, and RAIDD items, giving stakeholders a complete picture of project health.
+
+---
+
 ## AI-Powered Status Reports
 
 Constellation can generate AI-powered status reports for any project, summarizing recent activity and governance items into a professional narrative.
@@ -446,6 +504,7 @@ The AI analyzes and summarizes:
 - **Expenses** — Costs incurred during the period
 - **Assignment status** — Team member allocations and progress
 - **Milestone progress** — Payment milestones and deliverable status
+- **Deliverables** — Current status of all tracked deliverables, including owner, target dates, and acceptance status
 - **RAIDD items** — Open risks, issues, action items, dependencies, and recent decisions
   - Critical and overdue items are highlighted
   - RAIDD counts appear in the metadata bar above the report

@@ -17,6 +17,38 @@ Version history and release notes for Constellation, organized from newest to ol
 
 ## Current Version
 
+### Version 1.2026.03.05 (March 5, 2026)
+
+**Release Date:** March 5, 2026  
+**Status:** Production Release  
+**Codename:** Deliverable Tracking
+
+This release introduces the Deliverable Tracking system for managing project deliverables through their full lifecycle, from identification through client acceptance, with AI-powered extraction from proposal narratives and integration into status reports.
+
+#### ✨ New Features
+
+**Deliverable Tracking**
+- New **Deliverables** tab on the project detail page for tracking project deliverables
+- Full lifecycle status workflow: Not Started → In Progress → In Review → Accepted / Rejected
+- Every deliverable requires an assigned owner for clear accountability
+- Optional linking to Epics and Stages for traceability to the project plan
+- Target date and delivered date tracking
+- Automatic status history audit trail — every status change is recorded with timestamp and user
+- Sort order support for organizing deliverables by priority
+
+**AI Narrative Extraction**
+- **Extract from Narrative** feature: paste proposal or SOW text and let AI identify candidate deliverables
+- Review and select candidates before adding, with owner assignment during bulk creation
+- Existing deliverables are automatically filtered out to prevent duplicates
+
+**Status Report Integration**
+- Deliverables are now included in AI-generated markdown status reports
+- Deliverable data feeds into the PPTX status report generation
+- New **Deliverables Tracker** slide in PowerPoint reports with a color-coded status table showing name, owner, status, target date, and delivered date
+- Summary bar at top of slide shows counts by status (Accepted, In Review, In Progress, etc.)
+
+---
+
 ### Version 1.2026.03.01 (March 1, 2026)
 
 **Release Date:** March 1, 2026  
