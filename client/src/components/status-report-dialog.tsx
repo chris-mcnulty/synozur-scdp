@@ -79,6 +79,14 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const [includeProjectPlan, setIncludeProjectPlan] = useState(false);
   const [projectPlanFilter, setProjectPlanFilter] = useState<"open" | "all">("open");
 
+  const safeFormat = (dateStr: string, fmt: string) => {
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr || '—';
+      return format(d, fmt);
+    } catch { return dateStr || '—'; }
+  };
+
   const getDateRange = useCallback(() => {
     switch (periodPreset) {
       case "this_week":
@@ -130,7 +138,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   const emailMutation = useMutation({
     mutationFn: async () => {
       const { start, end } = getDateRange();
-      const periodLabel = `${format(new Date(start), "MMM d")} - ${format(new Date(end), "MMM d, yyyy")}`;
+      const periodLabel = `${safeFormat(start, "MMM d")} - ${safeFormat(end, "MMM d, yyyy")}`;
       const res = await apiRequest(`/api/projects/${projectId}/status-report/email`, {
         method: "POST",
         body: JSON.stringify({
@@ -231,7 +239,7 @@ export function StatusReportDialog({ open, onOpenChange, projectId, projectName 
   }, [projectId, style, includeProjectPlan, projectPlanFilter, getDateRange, toast]);
 
   const { start: displayStart, end: displayEnd } = getDateRange();
-  const periodLabel = `${format(new Date(displayStart), "MMM d")} - ${format(new Date(displayEnd), "MMM d, yyyy")}`;
+  const periodLabel = `${safeFormat(displayStart, "MMM d")} - ${safeFormat(displayEnd, "MMM d, yyyy")}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
