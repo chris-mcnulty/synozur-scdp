@@ -2513,10 +2513,10 @@ export default function ProjectDetail() {
 
           {/* Delivery Tab - Unified view of Structure and Team Allocations */}
           <TabsContent value="delivery" className="space-y-6">
-            <Tabs defaultValue="structure" className="w-full">
+            <Tabs defaultValue="allocations" className="w-full">
               <TabsList className="mb-4">
-                <TabsTrigger value="structure" data-testid="tab-delivery-structure">Project Structure</TabsTrigger>
                 <TabsTrigger value="allocations" data-testid="tab-delivery-allocations">Team & Assignments</TabsTrigger>
+                <TabsTrigger value="structure" data-testid="tab-delivery-structure">Project Structure</TabsTrigger>
               </TabsList>
               
               <TabsContent value="structure" className="space-y-6">
